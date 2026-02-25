@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import logoBW from "@assets/image_1772057689389.png";
+import logoBW from "@assets/WhatsApp_Image_2026-02-25_at_20.09.04_1772061256501.jpeg";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
