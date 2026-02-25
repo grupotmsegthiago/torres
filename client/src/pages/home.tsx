@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import logoPath from "@assets/image_1772057689389.png";
+import logoColor from "@assets/image_1772056652908.png";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
@@ -46,7 +46,7 @@ function Navbar() {
         <div className="flex items-center justify-between gap-4 h-20">
           <a href="#hero" className="flex items-center gap-2 shrink-0" data-testid="link-home">
             <img
-              src={logoPath}
+              src={logoColor}
               alt="Torres Vigilância Patrimonial"
               className="h-12 w-auto"
               data-testid="img-nav-logo"
@@ -180,9 +180,9 @@ function HeroSection() {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-full blur-3xl scale-150" />
               <img
-                src={logoPath}
+                src={logoColor}
                 alt="Torres"
-                className="relative w-72 xl:w-80 h-auto opacity-20"
+                className="relative w-72 xl:w-80 h-auto opacity-40"
                 data-testid="img-hero-logo"
               />
             </div>
@@ -426,9 +426,9 @@ function AboutSection() {
               <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-black" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <img
-                  src={logoPath}
+                  src={logoColor}
                   alt="Torres Vigilância Patrimonial"
-                  className="w-1/2 h-auto opacity-15"
+                  className="w-2/5 h-auto opacity-30"
                   data-testid="img-about-logo"
                 />
               </div>
@@ -692,7 +692,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
           <div>
-            <img src={logoPath} alt="Torres" className="h-10 w-auto opacity-40" data-testid="img-footer-logo" />
+            <img src={logoColor} alt="Torres" className="h-10 w-auto opacity-60" data-testid="img-footer-logo" />
           </div>
           <div className="text-center">
             <p className="text-xs text-white/20" data-testid="text-footer-cnpj">
