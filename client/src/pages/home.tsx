@@ -426,7 +426,8 @@ function AboutSection() {
               <img
                 src={logoBW}
                 alt="Torres Vigilância Patrimonial"
-                className="w-3/4 h-auto"
+                className="max-w-[320px] w-full h-auto object-contain"
+                style={{ imageRendering: "auto" }}
                 data-testid="img-about-logo"
               />
             </div>
