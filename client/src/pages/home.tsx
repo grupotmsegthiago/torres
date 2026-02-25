@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import logoBW from "@assets/image_1772057689389.png";
-import logoColor from "@assets/image_1772056652908.png";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
@@ -693,7 +692,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
           <div>
-            <img src={logoColor} alt="Torres" className="h-10 w-auto opacity-60" data-testid="img-footer-logo" />
+            <img src={logoBW} alt="Torres" className="h-10 w-auto opacity-40" data-testid="img-footer-logo" />
           </div>
           <div className="text-center">
             <p className="text-xs text-white/20" data-testid="text-footer-cnpj">
