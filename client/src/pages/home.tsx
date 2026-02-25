@@ -179,12 +179,7 @@ function HeroSection() {
           >
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-full blur-3xl scale-150" />
-              <img
-                src={logoBW}
-                alt="Torres"
-                className="relative w-72 xl:w-80 h-auto opacity-30"
-                data-testid="img-hero-logo"
-              />
+              <Shield className="relative w-48 xl:w-56 h-48 xl:h-56 text-white/[0.06]" strokeWidth={0.8} data-testid="icon-hero-shield" />
             </div>
           </motion.div>
         </div>
