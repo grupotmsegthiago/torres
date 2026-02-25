@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import logoPath from "@assets/image_1772056652908.png";
+import logoPath from "@assets/image_1772057689389.png";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
