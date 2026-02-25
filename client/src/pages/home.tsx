@@ -22,7 +22,7 @@ function Navbar() {
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 dark:bg-[hsl(220,10%,8%)]/90 backdrop-blur-md border-b border-border/50" data-testid="nav-main">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-black/5" data-testid="nav-main">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4 h-16 sm:h-20">
           <a href="#hero" className="flex items-center gap-2 shrink-0" data-testid="link-home">
@@ -34,7 +34,7 @@ function Navbar() {
               <a
                 key={l.href}
                 href={l.href}
-                className="text-sm font-medium text-foreground/70 transition-colors duration-200"
+                className="text-sm font-medium text-black/50 transition-colors duration-200"
                 data-testid={`link-nav-${l.label.toLowerCase()}`}
               >
                 {l.label}
@@ -48,7 +48,7 @@ function Navbar() {
           </div>
 
           <button
-            className="md:hidden p-2 text-foreground"
+            className="md:hidden p-2 text-black"
             onClick={() => setOpen(!open)}
             data-testid="button-mobile-menu"
             aria-label="Menu"
@@ -62,13 +62,13 @@ function Navbar() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="md:hidden border-t border-border bg-white dark:bg-[hsl(220,10%,8%)] pb-4"
+          className="md:hidden border-t border-black/5 bg-white pb-4"
         >
           {links.map((l) => (
             <a
               key={l.href}
               href={l.href}
-              className="block px-6 py-3 text-sm font-medium text-foreground/70"
+              className="block px-6 py-3 text-sm font-medium text-black/50"
               onClick={() => setOpen(false)}
               data-testid={`link-mobile-${l.label.toLowerCase()}`}
             >
@@ -92,16 +92,16 @@ function HeroSection() {
   return (
     <section
       id="hero"
-      className="relative min-h-[100vh] flex items-center overflow-hidden bg-[hsl(220,12%,10%)]"
+      className="relative min-h-[100vh] flex items-center overflow-hidden bg-black"
       data-testid="section-hero"
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-[hsl(220,12%,8%)] via-[hsl(220,12%,12%)] to-[hsl(0,40%,15%)]" />
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-neutral-950 to-neutral-900" />
 
-      <div className="absolute inset-0 opacity-[0.04]" style={{
+      <div className="absolute inset-0 opacity-[0.03]" style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
       }} />
 
-      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[hsl(220,12%,8%)] to-transparent" />
+      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black to-transparent" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32 sm:py-40">
         <div className="max-w-3xl">
@@ -110,26 +110,27 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            <div className="flex items-center gap-3 mb-6 flex-wrap">
-              <div className="h-px w-10 bg-primary" />
-              <span className="text-primary text-sm font-semibold tracking-widest uppercase" data-testid="text-hero-badge">
+            <div className="flex items-center gap-4 mb-8 flex-wrap">
+              <img src={logoPath} alt="Torres" className="h-16 sm:h-20 w-auto" data-testid="img-hero-logo" />
+              <div className="h-12 w-px bg-white/15 hidden sm:block" />
+              <span className="text-white/40 text-sm font-medium tracking-widest uppercase" data-testid="text-hero-badge">
                 Autorizada pela Policia Federal
               </span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white leading-[1.1] tracking-tight" data-testid="text-hero-title">
               Segurança Inteligente.{" "}
-              <span className="text-primary">Proteção Inabalável.</span>
+              <span className="text-white/60">Proteção Inabalável.</span>
             </h1>
 
-            <p className="mt-6 text-lg sm:text-xl text-white/60 max-w-2xl leading-relaxed" data-testid="text-hero-subtitle">
+            <p className="mt-6 text-lg sm:text-xl text-white/40 max-w-2xl leading-relaxed" data-testid="text-hero-subtitle">
               Especialistas em Vigilância Patrimonial, Escolta Armada e Gestão de
               Facilities com autorização da Policia Federal.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4 flex-wrap">
               <a href="#cotacao">
-                <Button size="lg" data-testid="button-hero-cta">
+                <Button size="lg" className="bg-white text-black" data-testid="button-hero-cta">
                   Solicitar Cotação Agora
                 </Button>
               </a>
@@ -155,9 +156,9 @@ function HeroSection() {
               { value: "100%", label: "Cobertura Nacional", icon: Users },
             ].map((stat, idx) => (
               <div key={stat.label} className="text-center sm:text-left" data-testid={`stat-hero-${idx}`}>
-                <stat.icon className="w-5 h-5 text-primary mb-2 mx-auto sm:mx-0" />
+                <stat.icon className="w-5 h-5 text-white/30 mb-2 mx-auto sm:mx-0" />
                 <div className="text-2xl sm:text-3xl font-bold text-white" data-testid={`text-stat-value-${idx}`}>{stat.value}</div>
-                <div className="text-xs sm:text-sm text-white/40 mt-1" data-testid={`text-stat-label-${idx}`}>{stat.label}</div>
+                <div className="text-xs sm:text-sm text-white/30 mt-1" data-testid={`text-stat-label-${idx}`}>{stat.label}</div>
               </div>
             ))}
           </motion.div>
@@ -169,7 +170,7 @@ function HeroSection() {
 
 function AboutSection() {
   return (
-    <section id="sobre" className="py-20 sm:py-28 bg-background" data-testid="section-about">
+    <section id="sobre" className="py-20 sm:py-28 bg-white" data-testid="section-about">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <motion.div
@@ -179,15 +180,15 @@ function AboutSection() {
             transition={{ duration: 0.6 }}
           >
             <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="h-px w-10 bg-primary" />
-              <span className="text-primary text-sm font-semibold tracking-widest uppercase">
+              <div className="h-px w-10 bg-black" />
+              <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
                 Sobre nós
               </span>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground leading-tight" data-testid="text-about-title">
+            <h2 className="text-3xl sm:text-4xl font-bold text-black leading-tight" data-testid="text-about-title">
               Sobre a Torres
             </h2>
-            <p className="mt-6 text-base sm:text-lg text-muted-foreground leading-relaxed" data-testid="text-about-description">
+            <p className="mt-6 text-base sm:text-lg text-black/50 leading-relaxed" data-testid="text-about-description">
               Fundada em 2020, a Torres Vigilância Patrimonial (CNPJ 36.982.392/0001-89)
               é uma empresa devidamente autorizada pela Policia Federal a operar em todo o
               território nacional. Unimos tecnologia de ponta a um rigoroso treinamento
@@ -202,8 +203,8 @@ function AboutSection() {
                 "Equipes altamente treinadas",
               ].map((item, idx) => (
                 <div key={item} className="flex items-center gap-3" data-testid={`text-about-feature-${idx}`}>
-                  <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
-                  <span className="text-sm text-foreground/80">{item}</span>
+                  <CheckCircle2 className="w-5 h-5 text-black/70 shrink-0" />
+                  <span className="text-sm text-black/60">{item}</span>
                 </div>
               ))}
             </div>
@@ -217,8 +218,8 @@ function AboutSection() {
             className="relative"
           >
             <div className="relative aspect-square max-w-md mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 rounded-md" />
-              <div className="absolute inset-4 border border-primary/20 rounded-md" />
+              <div className="absolute inset-0 bg-gradient-to-br from-black/5 to-black/[0.02] rounded-md" />
+              <div className="absolute inset-4 border border-black/10 rounded-md" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <img
                   src={logoPath}
@@ -227,8 +228,8 @@ function AboutSection() {
                   data-testid="img-about-logo"
                 />
               </div>
-              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-primary/10 rounded-md" />
-              <div className="absolute -top-4 -left-4 w-16 h-16 bg-primary/10 rounded-md" />
+              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-black/[0.03] rounded-md" />
+              <div className="absolute -top-4 -left-4 w-16 h-16 bg-black/[0.03] rounded-md" />
             </div>
           </motion.div>
         </div>
@@ -266,7 +267,7 @@ const services = [
 
 function ServicesSection() {
   return (
-    <section id="servicos" className="py-20 sm:py-28 bg-muted/30" data-testid="section-services">
+    <section id="servicos" className="py-20 sm:py-28 bg-neutral-50" data-testid="section-services">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -276,16 +277,16 @@ function ServicesSection() {
           className="text-center max-w-2xl mx-auto mb-14"
         >
           <div className="flex items-center gap-3 justify-center mb-4 flex-wrap">
-            <div className="h-px w-10 bg-primary" />
-            <span className="text-primary text-sm font-semibold tracking-widest uppercase">
+            <div className="h-px w-10 bg-black" />
+            <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
               O que fazemos
             </span>
-            <div className="h-px w-10 bg-primary" />
+            <div className="h-px w-10 bg-black" />
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold text-foreground" data-testid="text-services-title">
+          <h2 className="text-3xl sm:text-4xl font-bold text-black" data-testid="text-services-title">
             Nossos Serviços
           </h2>
-          <p className="mt-4 text-muted-foreground" data-testid="text-services-subtitle">
+          <p className="mt-4 text-black/40" data-testid="text-services-subtitle">
             Soluções completas de segurança e gestão para proteger o que é mais importante para você.
           </p>
         </motion.div>
@@ -299,18 +300,18 @@ function ServicesSection() {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.15 }}
             >
-              <Card className="p-6 sm:p-8 h-full border-border/50 bg-background hover-elevate" data-testid={`card-service-${service.id}`}>
-                <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mb-5">
-                  <service.icon className="w-6 h-6 text-primary" />
+              <Card className="p-6 sm:p-8 h-full border-black/5 bg-white hover-elevate" data-testid={`card-service-${service.id}`}>
+                <div className="w-12 h-12 rounded-md bg-black/5 flex items-center justify-center mb-5">
+                  <service.icon className="w-6 h-6 text-black/70" />
                 </div>
-                <h3 className="text-xl font-bold text-foreground mb-3" data-testid={`text-service-title-${service.id}`}>{service.title}</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed mb-5" data-testid={`text-service-desc-${service.id}`}>
+                <h3 className="text-xl font-bold text-black mb-3" data-testid={`text-service-title-${service.id}`}>{service.title}</h3>
+                <p className="text-black/40 text-sm leading-relaxed mb-5" data-testid={`text-service-desc-${service.id}`}>
                   {service.description}
                 </p>
                 <ul className="space-y-2">
                   {service.features.map((f, fi) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-foreground/70" data-testid={`text-service-feature-${service.id}-${fi}`}>
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    <li key={f} className="flex items-center gap-2 text-sm text-black/50" data-testid={`text-service-feature-${service.id}-${fi}`}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-black/30 shrink-0" />
                       {f}
                     </li>
                   ))}
@@ -343,7 +344,7 @@ function EscortCalculator() {
   const isValid = origem.trim() && destino.trim() && carga.trim();
 
   return (
-    <section id="cotacao" className="py-20 sm:py-28 bg-background" data-testid="section-quote">
+    <section id="cotacao" className="py-20 sm:py-28 bg-white" data-testid="section-quote">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <motion.div
@@ -353,15 +354,15 @@ function EscortCalculator() {
             transition={{ duration: 0.6 }}
           >
             <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="h-px w-10 bg-primary" />
-              <span className="text-primary text-sm font-semibold tracking-widest uppercase">
+              <div className="h-px w-10 bg-black" />
+              <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
                 Cotação rápida
               </span>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground leading-tight" data-testid="text-quote-title">
+            <h2 className="text-3xl sm:text-4xl font-bold text-black leading-tight" data-testid="text-quote-title">
               Solicite sua Cotação de Escolta Armada
             </h2>
-            <p className="mt-4 text-muted-foreground leading-relaxed" data-testid="text-quote-subtitle">
+            <p className="mt-4 text-black/40 leading-relaxed" data-testid="text-quote-subtitle">
               Preencha o formulário abaixo e envie diretamente pelo WhatsApp.
               Nossa equipe retornará com a melhor proposta para a sua operação.
             </p>
@@ -373,8 +374,8 @@ function EscortCalculator() {
                 { icon: CheckCircle2, text: "Atendimento personalizado" },
               ].map((item, idx) => (
                 <div key={item.text} className="flex items-center gap-3" data-testid={`text-quote-benefit-${idx}`}>
-                  <item.icon className="w-5 h-5 text-primary shrink-0" />
-                  <span className="text-sm text-foreground/80">{item.text}</span>
+                  <item.icon className="w-5 h-5 text-black/60 shrink-0" />
+                  <span className="text-sm text-black/50">{item.text}</span>
                 </div>
               ))}
             </div>
@@ -386,14 +387,14 @@ function EscortCalculator() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <Card className="p-6 sm:p-8 border-border/50 bg-card" data-testid="card-escort-form">
+            <Card className="p-6 sm:p-8 border-black/5 bg-neutral-50" data-testid="card-escort-form">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                  <label htmlFor="origem" className="text-sm font-medium text-foreground mb-2 block" data-testid="label-origem">
+                  <label htmlFor="origem" className="text-sm font-medium text-black mb-2 block" data-testid="label-origem">
                     Origem
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30" />
                     <Input
                       id="origem"
                       value={origem}
@@ -407,11 +408,11 @@ function EscortCalculator() {
                 </div>
 
                 <div>
-                  <label htmlFor="destino" className="text-sm font-medium text-foreground mb-2 block" data-testid="label-destino">
+                  <label htmlFor="destino" className="text-sm font-medium text-black mb-2 block" data-testid="label-destino">
                     Destino
                   </label>
                   <div className="relative">
-                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30" />
                     <Input
                       id="destino"
                       value={destino}
@@ -425,11 +426,11 @@ function EscortCalculator() {
                 </div>
 
                 <div>
-                  <label htmlFor="carga" className="text-sm font-medium text-foreground mb-2 block" data-testid="label-carga">
+                  <label htmlFor="carga" className="text-sm font-medium text-black mb-2 block" data-testid="label-carga">
                     Carga / Tipo de Serviço
                   </label>
                   <div className="relative">
-                    <Package className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                    <Package className="absolute left-3 top-3 w-4 h-4 text-black/30" />
                     <Textarea
                       id="carga"
                       value={carga}
@@ -463,7 +464,7 @@ function EscortCalculator() {
 
 function ContactSection() {
   return (
-    <section id="contato" className="py-20 sm:py-28 bg-[hsl(220,12%,10%)]" data-testid="section-contact">
+    <section id="contato" className="py-20 sm:py-28 bg-black" data-testid="section-contact">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -473,16 +474,16 @@ function ContactSection() {
           className="text-center max-w-2xl mx-auto mb-14"
         >
           <div className="flex items-center gap-3 justify-center mb-4 flex-wrap">
-            <div className="h-px w-10 bg-primary" />
-            <span className="text-primary text-sm font-semibold tracking-widest uppercase">
+            <div className="h-px w-10 bg-white/20" />
+            <span className="text-white/30 text-sm font-semibold tracking-widest uppercase">
               Fale conosco
             </span>
-            <div className="h-px w-10 bg-primary" />
+            <div className="h-px w-10 bg-white/20" />
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-white" data-testid="text-contact-title">
             Entre em Contato
           </h2>
-          <p className="mt-4 text-white/50" data-testid="text-contact-subtitle">
+          <p className="mt-4 text-white/35" data-testid="text-contact-subtitle">
             Estamos prontos para atender sua demanda de segurança. Fale com nossos especialistas.
           </p>
         </motion.div>
@@ -516,15 +517,15 @@ function ContactSection() {
               transition={{ duration: 0.5, delay: i * 0.1 }}
             >
               <div
-                className="text-center p-6 sm:p-8 rounded-md border border-white/10 bg-white/5 backdrop-blur-sm"
+                className="text-center p-6 sm:p-8 rounded-md border border-white/8 bg-white/[0.03] backdrop-blur-sm"
                 data-testid={`card-contact-${contact.title.toLowerCase()}`}
               >
-                <div className="w-12 h-12 rounded-md bg-primary/15 flex items-center justify-center mx-auto mb-4">
-                  <contact.icon className="w-5 h-5 text-primary" />
+                <div className="w-12 h-12 rounded-md bg-white/5 flex items-center justify-center mx-auto mb-4">
+                  <contact.icon className="w-5 h-5 text-white/50" />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-1" data-testid={`text-contact-title-${contact.title.toLowerCase()}`}>{contact.title}</h3>
-                <p className="text-sm text-white/70 mb-1" data-testid={`text-contact-value-${contact.title.toLowerCase()}`}>{contact.value}</p>
-                <p className="text-xs text-white/40">{contact.sub}</p>
+                <p className="text-sm text-white/50 mb-1" data-testid={`text-contact-value-${contact.title.toLowerCase()}`}>{contact.value}</p>
+                <p className="text-xs text-white/25">{contact.sub}</p>
               </div>
             </motion.div>
           ))}
@@ -536,13 +537,13 @@ function ContactSection() {
 
 function Footer() {
   return (
-    <footer className="bg-[hsl(220,12%,7%)] border-t border-white/5 py-10" data-testid="footer">
+    <footer className="bg-black border-t border-white/5 py-10" data-testid="footer">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src={logoPath} alt="Torres" className="h-8 w-auto" data-testid="img-footer-logo" />
           </div>
-          <p className="text-xs text-white/30 text-center" data-testid="text-footer-cnpj">
+          <p className="text-xs text-white/25 text-center" data-testid="text-footer-cnpj">
             Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89 — Todos os direitos reservados
           </p>
         </div>
