@@ -422,22 +422,21 @@ function AboutSection() {
             transition={{ duration: 0.6 }}
             className="relative"
           >
-            <div className="aspect-[4/3] rounded-md bg-black overflow-hidden relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-black" />
+            <div className="aspect-[4/3] rounded-md bg-neutral-50 overflow-hidden relative border border-black/5">
               <div className="absolute inset-0 flex items-center justify-center">
                 <img
                   src={logoBW}
                   alt="Torres Vigilância Patrimonial"
-                  className="w-2/5 h-auto opacity-20"
+                  className="w-2/5 h-auto opacity-60"
                   data-testid="img-about-logo"
                 />
               </div>
               <div className="absolute bottom-0 left-0 right-0 p-8">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="px-3 py-1.5 rounded-full bg-white/10 text-white/60 text-xs font-medium">
+                  <div className="px-3 py-1.5 rounded-full bg-black/5 text-black/50 text-xs font-medium">
                     Desde 2020
                   </div>
-                  <div className="px-3 py-1.5 rounded-full bg-white/10 text-white/60 text-xs font-medium">
+                  <div className="px-3 py-1.5 rounded-full bg-black/5 text-black/50 text-xs font-medium">
                     CNPJ 36.982.392/0001-89
                   </div>
                 </div>
