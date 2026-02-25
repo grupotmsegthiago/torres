@@ -48,7 +48,7 @@ function Navbar() {
             <img
               src={logoPath}
               alt="Torres Vigilância Patrimonial"
-              className="h-12 w-auto brightness-0 invert"
+              className="h-12 w-auto"
               data-testid="img-nav-logo"
             />
           </a>
@@ -182,7 +182,7 @@ function HeroSection() {
               <img
                 src={logoPath}
                 alt="Torres"
-                className="relative w-72 xl:w-80 h-auto brightness-0 invert opacity-20"
+                className="relative w-72 xl:w-80 h-auto opacity-20"
                 data-testid="img-hero-logo"
               />
             </div>
@@ -428,7 +428,7 @@ function AboutSection() {
                 <img
                   src={logoPath}
                   alt="Torres Vigilância Patrimonial"
-                  className="w-1/2 h-auto brightness-0 invert opacity-15"
+                  className="w-1/2 h-auto opacity-15"
                   data-testid="img-about-logo"
                 />
               </div>
@@ -692,7 +692,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
           <div>
-            <img src={logoPath} alt="Torres" className="h-10 w-auto brightness-0 invert opacity-40" data-testid="img-footer-logo" />
+            <img src={logoPath} alt="Torres" className="h-10 w-auto opacity-40" data-testid="img-footer-logo" />
           </div>
           <div className="text-center">
             <p className="text-xs text-white/20" data-testid="text-footer-cnpj">
