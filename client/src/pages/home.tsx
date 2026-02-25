@@ -177,10 +177,7 @@ function HeroSection() {
             transition={{ duration: 0.8, delay: 0.3 }}
             className="hidden lg:flex items-center justify-center"
           >
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-full blur-3xl scale-150" />
-              <Shield className="relative w-48 xl:w-56 h-48 xl:h-56 text-white/[0.06]" strokeWidth={0.8} data-testid="icon-hero-shield" />
-            </div>
+            <Shield className="w-48 xl:w-56 h-48 xl:h-56 text-white/[0.06]" strokeWidth={0.8} data-testid="icon-hero-shield" />
           </motion.div>
         </div>
 
