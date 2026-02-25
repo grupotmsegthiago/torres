@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import logoBW from "@assets/image_1772057689389.png";
 import logoColor from "@assets/image_1772056652908.png";
 
 const WHATSAPP_NUMBER = "5500000000000";
@@ -46,7 +47,7 @@ function Navbar() {
         <div className="flex items-center justify-between gap-4 h-20">
           <a href="#hero" className="flex items-center gap-2 shrink-0" data-testid="link-home">
             <img
-              src={logoColor}
+              src={logoBW}
               alt="Torres Vigilância Patrimonial"
               className="h-12 w-auto"
               data-testid="img-nav-logo"
@@ -180,9 +181,9 @@ function HeroSection() {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-full blur-3xl scale-150" />
               <img
-                src={logoColor}
+                src={logoBW}
                 alt="Torres"
-                className="relative w-72 xl:w-80 h-auto opacity-40"
+                className="relative w-72 xl:w-80 h-auto opacity-30"
                 data-testid="img-hero-logo"
               />
             </div>
