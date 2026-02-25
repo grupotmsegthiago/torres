@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Shield, Truck, Building2, Phone, MapPin, Navigation, Package, Send, Menu, X, ChevronDown, CheckCircle2, Award, Users, Clock } from "lucide-react";
+import {
+  Shield, Truck, Building2, Phone, MapPin, Navigation,
+  Package, Send, Menu, X, ArrowRight, Eye, Radio,
+  Users, Lock, ChevronLeft, ChevronRight
+} from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,48 +16,72 @@ const WHATSAPP_NUMBER = "5500000000000";
 
 function Navbar() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setScrolled(window.scrollY > 50);
+    window.addEventListener("scroll", handler, { passive: true });
+    return () => window.removeEventListener("scroll", handler);
+  }, []);
 
   const links = [
     { label: "Inicio", href: "#hero" },
-    { label: "Sobre", href: "#sobre" },
     { label: "Serviços", href: "#servicos" },
+    { label: "Diferenciais", href: "#diferenciais" },
+    { label: "Quem Somos", href: "#sobre" },
     { label: "Cotação", href: "#cotacao" },
     { label: "Contato", href: "#contato" },
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-black/5" data-testid="nav-main">
+    <nav
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? "bg-black/95 backdrop-blur-md shadow-lg shadow-black/10"
+          : "bg-transparent"
+      }`}
+      data-testid="nav-main"
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-4 h-16 sm:h-20">
+        <div className="flex items-center justify-between gap-4 h-20">
           <a href="#hero" className="flex items-center gap-2 shrink-0" data-testid="link-home">
-            <img src={logoPath} alt="Torres Vigilância Patrimonial" className="h-10 sm:h-14 w-auto" data-testid="img-nav-logo" />
+            <img
+              src={logoPath}
+              alt="Torres Vigilância Patrimonial"
+              className="h-12 w-auto brightness-0 invert"
+              data-testid="img-nav-logo"
+            />
           </a>
 
-          <div className="hidden md:flex items-center gap-6 lg:gap-8 flex-wrap">
+          <div className="hidden lg:flex items-center gap-8 flex-wrap">
             {links.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
-                className="text-sm font-medium text-black/50 transition-colors duration-200"
+                className="text-[13px] font-medium text-white/60 tracking-wide uppercase transition-colors duration-200"
                 data-testid={`link-nav-${l.label.toLowerCase()}`}
               >
                 {l.label}
               </a>
             ))}
             <a href="#cotacao">
-              <Button size="sm" data-testid="button-nav-cta">
+              <Button
+                size="sm"
+                className="bg-white text-black font-semibold uppercase text-xs tracking-wider"
+                data-testid="button-nav-cta"
+              >
                 Solicitar Cotação
               </Button>
             </a>
           </div>
 
           <button
-            className="md:hidden p-2 text-black"
+            className="lg:hidden p-2 text-white"
             onClick={() => setOpen(!open)}
             data-testid="button-mobile-menu"
             aria-label="Menu"
           >
-            {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
       </div>
@@ -62,22 +90,22 @@ function Navbar() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="md:hidden border-t border-black/5 bg-white pb-4"
+          className="lg:hidden bg-black/95 backdrop-blur-md border-t border-white/5 pb-6"
         >
           {links.map((l) => (
             <a
               key={l.href}
               href={l.href}
-              className="block px-6 py-3 text-sm font-medium text-black/50"
+              className="block px-6 py-3 text-sm font-medium text-white/60 uppercase tracking-wide"
               onClick={() => setOpen(false)}
               data-testid={`link-mobile-${l.label.toLowerCase()}`}
             >
               {l.label}
             </a>
           ))}
-          <div className="px-6 pt-2">
+          <div className="px-6 pt-3">
             <a href="#cotacao" onClick={() => setOpen(false)}>
-              <Button className="w-full" size="sm" data-testid="button-mobile-cta">
+              <Button className="w-full bg-white text-black" size="sm" data-testid="button-mobile-cta">
                 Solicitar Cotação
               </Button>
             </a>
@@ -92,147 +120,95 @@ function HeroSection() {
   return (
     <section
       id="hero"
-      className="relative min-h-[100vh] flex items-center overflow-hidden bg-black"
+      className="relative min-h-screen flex items-center overflow-hidden"
       data-testid="section-hero"
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-black via-neutral-950 to-neutral-900" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black via-neutral-950 to-black" />
 
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+      <div className="absolute inset-0 opacity-[0.02]" style={{
+        backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
+        backgroundSize: '40px 40px',
       }} />
 
-      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black to-transparent" />
+      <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-white/[0.02] to-transparent" />
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32 sm:py-40">
-        <div className="max-w-3xl">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-32 sm:py-40">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
           >
-            <div className="flex items-center gap-4 mb-8 flex-wrap">
-              <img src={logoPath} alt="Torres" className="h-16 sm:h-20 w-auto" data-testid="img-hero-logo" />
-              <div className="h-12 w-px bg-white/15 hidden sm:block" />
-              <span className="text-white/40 text-sm font-medium tracking-widest uppercase" data-testid="text-hero-badge">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 mb-8">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-white/50 text-xs font-medium tracking-wider uppercase" data-testid="text-hero-badge">
                 Autorizada pela Policia Federal
               </span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white leading-[1.1] tracking-tight" data-testid="text-hero-title">
-              Segurança Inteligente.{" "}
-              <span className="text-white/60">Proteção Inabalável.</span>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-white leading-[1.05] tracking-tight" data-testid="text-hero-title">
+              Garanta a segurança dos seus ativos
+              <span className="block text-white/40 mt-2">com nossa equipe de especialistas</span>
             </h1>
 
-            <p className="mt-6 text-lg sm:text-xl text-white/40 max-w-2xl leading-relaxed" data-testid="text-hero-subtitle">
+            <p className="mt-8 text-base sm:text-lg text-white/35 max-w-lg leading-relaxed" data-testid="text-hero-subtitle">
               Especialistas em Vigilância Patrimonial, Escolta Armada e Gestão de
-              Facilities com autorização da Policia Federal.
+              Facilities com cobertura em todo o território nacional.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4 flex-wrap">
               <a href="#cotacao">
-                <Button size="lg" className="bg-white text-black" data-testid="button-hero-cta">
-                  Solicitar Cotação Agora
+                <Button size="lg" className="bg-white text-black font-semibold gap-2" data-testid="button-hero-cta">
+                  Solicitar Cotação
+                  <ArrowRight className="w-4 h-4" />
                 </Button>
               </a>
               <a href="#servicos">
-                <Button size="lg" variant="outline" className="border-white/20 text-white backdrop-blur-sm bg-white/5" data-testid="button-hero-services">
+                <Button size="lg" variant="outline" className="border-white/15 text-white bg-white/5" data-testid="button-hero-services">
                   Nossos Serviços
-                  <ChevronDown className="ml-2 w-4 h-4" />
                 </Button>
               </a>
             </div>
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.4 }}
-            className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="hidden lg:flex items-center justify-center"
           >
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent rounded-full blur-3xl scale-150" />
+              <img
+                src={logoPath}
+                alt="Torres"
+                className="relative w-72 xl:w-80 h-auto brightness-0 invert opacity-20"
+                data-testid="img-hero-logo"
+              />
+            </div>
+          </motion.div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.8, delay: 0.6 }}
+          className="mt-20 pt-10 border-t border-white/5"
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-8">
             {[
-              { value: "5+", label: "Anos de Experiência", icon: Clock },
-              { value: "PF", label: "Autorização Federal", icon: Award },
-              { value: "24/7", label: "Operação Contínua", icon: Shield },
-              { value: "100%", label: "Cobertura Nacional", icon: Users },
+              { value: "5+", label: "Anos no mercado" },
+              { value: "PF", label: "Autorização Federal" },
+              { value: "24/7", label: "Operação contínua" },
+              { value: "BR", label: "Cobertura nacional" },
             ].map((stat, idx) => (
-              <div key={stat.label} className="text-center sm:text-left" data-testid={`stat-hero-${idx}`}>
-                <stat.icon className="w-5 h-5 text-white/30 mb-2 mx-auto sm:mx-0" />
-                <div className="text-2xl sm:text-3xl font-bold text-white" data-testid={`text-stat-value-${idx}`}>{stat.value}</div>
-                <div className="text-xs sm:text-sm text-white/30 mt-1" data-testid={`text-stat-label-${idx}`}>{stat.label}</div>
+              <div key={stat.label} className="text-center" data-testid={`stat-hero-${idx}`}>
+                <div className="text-3xl sm:text-4xl font-bold text-white" data-testid={`text-stat-value-${idx}`}>{stat.value}</div>
+                <div className="text-xs text-white/25 mt-2 uppercase tracking-wider" data-testid={`text-stat-label-${idx}`}>{stat.label}</div>
               </div>
             ))}
-          </motion.div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function AboutSection() {
-  return (
-    <section id="sobre" className="py-20 sm:py-28 bg-white" data-testid="section-about">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-          <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="h-px w-10 bg-black" />
-              <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
-                Sobre nós
-              </span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-black leading-tight" data-testid="text-about-title">
-              Sobre a Torres
-            </h2>
-            <p className="mt-6 text-base sm:text-lg text-black/50 leading-relaxed" data-testid="text-about-description">
-              Fundada em 2020, a Torres Vigilância Patrimonial (CNPJ 36.982.392/0001-89)
-              é uma empresa devidamente autorizada pela Policia Federal a operar em todo o
-              território nacional. Unimos tecnologia de ponta a um rigoroso treinamento
-              operacional para garantir a integridade de ativos e pessoas.
-            </p>
-
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                "Autorizada pela Policia Federal",
-                "Cobertura em todo o Brasil",
-                "Tecnologia de ponta",
-                "Equipes altamente treinadas",
-              ].map((item, idx) => (
-                <div key={item} className="flex items-center gap-3" data-testid={`text-about-feature-${idx}`}>
-                  <CheckCircle2 className="w-5 h-5 text-black/70 shrink-0" />
-                  <span className="text-sm text-black/60">{item}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 30 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="relative"
-          >
-            <div className="relative aspect-square max-w-md mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-br from-black/5 to-black/[0.02] rounded-md" />
-              <div className="absolute inset-4 border border-black/10 rounded-md" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <img
-                  src={logoPath}
-                  alt="Torres Vigilância Patrimonial"
-                  className="w-3/5 h-auto drop-shadow-lg"
-                  data-testid="img-about-logo"
-                />
-              </div>
-              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-black/[0.03] rounded-md" />
-              <div className="absolute -top-4 -left-4 w-16 h-16 bg-black/[0.03] rounded-md" />
-            </div>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   );
@@ -244,81 +220,260 @@ const services = [
     icon: Shield,
     title: "Vigilância Patrimonial",
     description:
-      "Segurança ostensiva para empresas, condomínios e indústrias com foco em prevenção de riscos.",
-    features: ["Monitoramento 24/7", "Equipes treinadas", "Prevenção de riscos", "Relatórios periódicos"],
+      "Segurança ostensiva para empresas, condomínios e indústrias com foco em prevenção de riscos. Equipes treinadas e monitoramento contínuo.",
   },
   {
     id: "escolta",
     icon: Truck,
     title: "Escolta Armada",
     description:
-      "Proteção de cargas e transporte de valores com equipes táticas altamente capacitadas.",
-    features: ["Equipes táticas", "Rastreamento em tempo real", "Transporte de valores", "Cobertura nacional"],
+      "Proteção de cargas e transporte de valores com equipes táticas altamente capacitadas, planejamento estratégico e rastreamento em tempo real.",
   },
   {
     id: "facilities",
     icon: Building2,
     title: "Facilities",
     description:
-      "Gestão completa de serviços (limpeza, portaria e manutenção) para que você foque apenas no seu core business.",
-    features: ["Limpeza profissional", "Portaria dedicada", "Manutenção predial", "Gestão integrada"],
+      "Gestão completa de serviços — limpeza, portaria e manutenção — para que você foque apenas no seu core business.",
   },
 ];
 
 function ServicesSection() {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (dir: "left" | "right") => {
+    if (!scrollRef.current) return;
+    const amount = scrollRef.current.offsetWidth * 0.8;
+    scrollRef.current.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
+  };
+
   return (
-    <section id="servicos" className="py-20 sm:py-28 bg-neutral-50" data-testid="section-services">
+    <section id="servicos" className="py-24 sm:py-32 bg-neutral-950" data-testid="section-services">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
-          className="text-center max-w-2xl mx-auto mb-14"
+          className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-14"
         >
-          <div className="flex items-center gap-3 justify-center mb-4 flex-wrap">
-            <div className="h-px w-10 bg-black" />
-            <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
+          <div>
+            <span className="text-white/25 text-xs font-semibold tracking-[0.2em] uppercase">
               O que fazemos
             </span>
-            <div className="h-px w-10 bg-black" />
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mt-3" data-testid="text-services-title">
+              Nossos Serviços
+            </h2>
+            <p className="mt-4 text-white/30 max-w-xl leading-relaxed" data-testid="text-services-subtitle">
+              Em nossa jornada, mantemos o compromisso inabalável com a segurança.
+              Nossa equipe é certificada e qualificada para oferecer serviços de alta qualidade.
+            </p>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-bold text-black" data-testid="text-services-title">
-            Nossos Serviços
-          </h2>
-          <p className="mt-4 text-black/40" data-testid="text-services-subtitle">
-            Soluções completas de segurança e gestão para proteger o que é mais importante para você.
-          </p>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="icon"
+              variant="outline"
+              className="border-white/10 text-white bg-white/5"
+              onClick={() => scroll("left")}
+              data-testid="button-services-prev"
+              aria-label="Anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              className="border-white/10 text-white bg-white/5"
+              onClick={() => scroll("right")}
+              data-testid="button-services-next"
+              aria-label="Próximo"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </motion.div>
 
-        <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
+        <div
+          ref={scrollRef}
+          className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
           {services.map((service, i) => (
             <motion.div
               key={service.id}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.15 }}
+              transition={{ duration: 0.5, delay: i * 0.1 }}
+              className="min-w-[320px] sm:min-w-[380px] flex-1 snap-start"
             >
-              <Card className="p-6 sm:p-8 h-full border-black/5 bg-white hover-elevate" data-testid={`card-service-${service.id}`}>
-                <div className="w-12 h-12 rounded-md bg-black/5 flex items-center justify-center mb-5">
-                  <service.icon className="w-6 h-6 text-black/70" />
+              <div
+                className="group relative h-full p-8 sm:p-10 rounded-md border border-white/5 bg-white/[0.02] transition-all duration-300"
+                data-testid={`card-service-${service.id}`}
+              >
+                <div className="w-14 h-14 rounded-md bg-white/5 flex items-center justify-center mb-6">
+                  <service.icon className="w-7 h-7 text-white/60" />
                 </div>
-                <h3 className="text-xl font-bold text-black mb-3" data-testid={`text-service-title-${service.id}`}>{service.title}</h3>
-                <p className="text-black/40 text-sm leading-relaxed mb-5" data-testid={`text-service-desc-${service.id}`}>
+                <h3 className="text-xl font-bold text-white mb-4" data-testid={`text-service-title-${service.id}`}>
+                  {service.title}
+                </h3>
+                <p className="text-white/30 text-sm leading-relaxed mb-8" data-testid={`text-service-desc-${service.id}`}>
                   {service.description}
                 </p>
-                <ul className="space-y-2">
-                  {service.features.map((f, fi) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-black/50" data-testid={`text-service-feature-${service.id}-${fi}`}>
-                      <div className="w-1.5 h-1.5 rounded-full bg-black/30 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
+                <a
+                  href="#cotacao"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-white/50 transition-colors duration-200"
+                  data-testid={`link-service-more-${service.id}`}
+                >
+                  Saiba mais
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              </div>
             </motion.div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const diferenciais = [
+  {
+    icon: Lock,
+    title: "Compromisso com a Segurança Total",
+    description: "Oferecemos soluções abrangentes e personalizadas que garantem a proteção de seus ativos e a tranquilidade de sua operação.",
+  },
+  {
+    icon: Radio,
+    title: "Pronta Resposta Personalizada",
+    description: "Equipe especializada com resposta ágil em situações de emergência, realizando averiguações e preservação com profissionalismo.",
+  },
+  {
+    icon: Eye,
+    title: "Monitoramento e Rastreamento",
+    description: "Tecnologia de ponta com rastreamento de última geração, assegurando máxima segurança e monitoramento eficaz em tempo real.",
+  },
+  {
+    icon: Users,
+    title: "Equipes Altamente Capacitadas",
+    description: "Profissionais treinados e certificados para atividades especializadas, priorizando segurança e eficiência em todas as operações.",
+  },
+];
+
+function DiferenciaisSection() {
+  return (
+    <section id="diferenciais" className="py-24 sm:py-32 bg-white" data-testid="section-diferenciais">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="text-center max-w-2xl mx-auto mb-16"
+        >
+          <span className="text-black/25 text-xs font-semibold tracking-[0.2em] uppercase">
+            Por que nos escolher
+          </span>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-black mt-3" data-testid="text-diferenciais-title">
+            Nossos Diferenciais
+          </h2>
+          <p className="mt-4 text-black/35 leading-relaxed">
+            Confie em nossa experiência e dedicação para manter seu negócio seguro e protegido em todos os momentos.
+          </p>
+        </motion.div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+          {diferenciais.map((item, i) => (
+            <motion.div
+              key={item.title}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: i * 0.1 }}
+            >
+              <div className="text-center p-6 sm:p-8" data-testid={`card-diferencial-${i}`}>
+                <div className="w-16 h-16 rounded-full bg-black/[0.04] flex items-center justify-center mx-auto mb-6">
+                  <item.icon className="w-7 h-7 text-black/60" />
+                </div>
+                <h3 className="text-base font-bold text-black mb-3" data-testid={`text-diferencial-title-${i}`}>
+                  {item.title}
+                </h3>
+                <p className="text-sm text-black/35 leading-relaxed" data-testid={`text-diferencial-desc-${i}`}>
+                  {item.description}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AboutSection() {
+  return (
+    <section id="sobre" className="py-24 sm:py-32 bg-neutral-50" data-testid="section-about">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+          <motion.div
+            initial={{ opacity: 0, x: -30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="relative"
+          >
+            <div className="aspect-[4/3] rounded-md bg-black overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-black" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <img
+                  src={logoPath}
+                  alt="Torres Vigilância Patrimonial"
+                  className="w-1/2 h-auto brightness-0 invert opacity-15"
+                  data-testid="img-about-logo"
+                />
+              </div>
+              <div className="absolute bottom-0 left-0 right-0 p-8">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="px-3 py-1.5 rounded-full bg-white/10 text-white/60 text-xs font-medium">
+                    Desde 2020
+                  </div>
+                  <div className="px-3 py-1.5 rounded-full bg-white/10 text-white/60 text-xs font-medium">
+                    CNPJ 36.982.392/0001-89
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <span className="text-black/25 text-xs font-semibold tracking-[0.2em] uppercase">
+              Quem somos
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-black mt-3 leading-tight" data-testid="text-about-title">
+              Quem Somos
+            </h2>
+            <p className="mt-6 text-base sm:text-lg text-black/40 leading-relaxed" data-testid="text-about-description">
+              A Torres Vigilância Patrimonial se posiciona como um parceiro estratégico,
+              dedicada a oferecer soluções de excelência em Vigilância Patrimonial,
+              Escolta Armada e Gestão de Facilities em todo o território nacional.
+            </p>
+            <p className="mt-4 text-base text-black/35 leading-relaxed">
+              Devidamente autorizada pela Policia Federal, nossa missão é garantir
+              que cada projeto seja executado com máxima eficiência, confiabilidade
+              e dentro dos mais altos padrões de segurança e qualidade.
+            </p>
+            <a href="#cotacao" className="mt-8 inline-block">
+              <Button className="gap-2" data-testid="button-about-cta">
+                Fale Conosco
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </a>
+          </motion.div>
         </div>
       </div>
     </section>
@@ -344,7 +499,7 @@ function EscortCalculator() {
   const isValid = origem.trim() && destino.trim() && carga.trim();
 
   return (
-    <section id="cotacao" className="py-20 sm:py-28 bg-white" data-testid="section-quote">
+    <section id="cotacao" className="py-24 sm:py-32 bg-black" data-testid="section-quote">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <motion.div
@@ -353,29 +508,28 @@ function EscortCalculator() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="h-px w-10 bg-black" />
-              <span className="text-black/40 text-sm font-semibold tracking-widest uppercase">
-                Cotação rápida
-              </span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-black leading-tight" data-testid="text-quote-title">
+            <span className="text-white/25 text-xs font-semibold tracking-[0.2em] uppercase">
+              Cotação rápida
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mt-3 leading-tight" data-testid="text-quote-title">
               Solicite sua Cotação de Escolta Armada
             </h2>
-            <p className="mt-4 text-black/40 leading-relaxed" data-testid="text-quote-subtitle">
-              Preencha o formulário abaixo e envie diretamente pelo WhatsApp.
+            <p className="mt-6 text-white/30 leading-relaxed" data-testid="text-quote-subtitle">
+              Preencha o formulário ao lado e envie diretamente pelo WhatsApp.
               Nossa equipe retornará com a melhor proposta para a sua operação.
             </p>
 
-            <div className="mt-8 space-y-4">
+            <div className="mt-10 space-y-5">
               {[
-                { icon: CheckCircle2, text: "Resposta rápida via WhatsApp" },
-                { icon: CheckCircle2, text: "Cotação sem compromisso" },
-                { icon: CheckCircle2, text: "Atendimento personalizado" },
+                "Resposta rápida via WhatsApp",
+                "Cotação sem compromisso",
+                "Atendimento personalizado 24/7",
               ].map((item, idx) => (
-                <div key={item.text} className="flex items-center gap-3" data-testid={`text-quote-benefit-${idx}`}>
-                  <item.icon className="w-5 h-5 text-black/60 shrink-0" />
-                  <span className="text-sm text-black/50">{item.text}</span>
+                <div key={item} className="flex items-center gap-4" data-testid={`text-quote-benefit-${idx}`}>
+                  <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                    <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                  </div>
+                  <span className="text-sm text-white/40">{item}</span>
                 </div>
               ))}
             </div>
@@ -387,20 +541,21 @@ function EscortCalculator() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <Card className="p-6 sm:p-8 border-black/5 bg-neutral-50" data-testid="card-escort-form">
+            <div className="p-8 sm:p-10 rounded-md border border-white/5 bg-white/[0.02]" data-testid="card-escort-form">
+              <h3 className="text-lg font-semibold text-white mb-6">Preencha os dados</h3>
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                  <label htmlFor="origem" className="text-sm font-medium text-black mb-2 block" data-testid="label-origem">
+                  <label htmlFor="origem" className="text-xs font-medium text-white/40 mb-2 block uppercase tracking-wider" data-testid="label-origem">
                     Origem
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30" />
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
                     <Input
                       id="origem"
                       value={origem}
                       onChange={(e) => setOrigem(e.target.value)}
                       placeholder="Cidade / Estado de origem"
-                      className="pl-10"
+                      className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Origem"
                       data-testid="input-origem"
                     />
@@ -408,17 +563,17 @@ function EscortCalculator() {
                 </div>
 
                 <div>
-                  <label htmlFor="destino" className="text-sm font-medium text-black mb-2 block" data-testid="label-destino">
+                  <label htmlFor="destino" className="text-xs font-medium text-white/40 mb-2 block uppercase tracking-wider" data-testid="label-destino">
                     Destino
                   </label>
                   <div className="relative">
-                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30" />
+                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
                     <Input
                       id="destino"
                       value={destino}
                       onChange={(e) => setDestino(e.target.value)}
                       placeholder="Cidade / Estado de destino"
-                      className="pl-10"
+                      className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Destino"
                       data-testid="input-destino"
                     />
@@ -426,17 +581,17 @@ function EscortCalculator() {
                 </div>
 
                 <div>
-                  <label htmlFor="carga" className="text-sm font-medium text-black mb-2 block" data-testid="label-carga">
+                  <label htmlFor="carga" className="text-xs font-medium text-white/40 mb-2 block uppercase tracking-wider" data-testid="label-carga">
                     Carga / Tipo de Serviço
                   </label>
                   <div className="relative">
-                    <Package className="absolute left-3 top-3 w-4 h-4 text-black/30" />
+                    <Package className="absolute left-3 top-3 w-4 h-4 text-white/20" />
                     <Textarea
                       id="carga"
                       value={carga}
                       onChange={(e) => setCarga(e.target.value)}
-                      placeholder="Descreva a carga ou tipo de serviço desejado"
-                      className="pl-10 min-h-[100px] resize-none"
+                      placeholder="Descreva a carga ou tipo de serviço"
+                      className="pl-10 min-h-[100px] resize-none bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Carga ou tipo de serviço"
                       data-testid="input-carga"
                     />
@@ -446,7 +601,7 @@ function EscortCalculator() {
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full gap-2"
+                  className="w-full gap-2 bg-white text-black font-semibold"
                   disabled={!isValid}
                   data-testid="button-submit-quote"
                 >
@@ -454,7 +609,7 @@ function EscortCalculator() {
                   Enviar via WhatsApp
                 </Button>
               </form>
-            </Card>
+            </div>
           </motion.div>
         </div>
       </div>
@@ -464,31 +619,27 @@ function EscortCalculator() {
 
 function ContactSection() {
   return (
-    <section id="contato" className="py-20 sm:py-28 bg-black" data-testid="section-contact">
+    <section id="contato" className="py-24 sm:py-32 bg-neutral-950" data-testid="section-contact">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
-          className="text-center max-w-2xl mx-auto mb-14"
+          className="text-center max-w-2xl mx-auto mb-16"
         >
-          <div className="flex items-center gap-3 justify-center mb-4 flex-wrap">
-            <div className="h-px w-10 bg-white/20" />
-            <span className="text-white/30 text-sm font-semibold tracking-widest uppercase">
-              Fale conosco
-            </span>
-            <div className="h-px w-10 bg-white/20" />
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-bold text-white" data-testid="text-contact-title">
+          <span className="text-white/25 text-xs font-semibold tracking-[0.2em] uppercase">
+            Fale conosco
+          </span>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mt-3" data-testid="text-contact-title">
             Entre em Contato
           </h2>
-          <p className="mt-4 text-white/35" data-testid="text-contact-subtitle">
-            Estamos prontos para atender sua demanda de segurança. Fale com nossos especialistas.
+          <p className="mt-4 text-white/25 leading-relaxed" data-testid="text-contact-subtitle">
+            Estamos prontos para atender sua demanda de segurança.
           </p>
         </motion.div>
 
-        <div className="grid sm:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
+        <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {[
             {
               icon: Phone,
@@ -517,15 +668,15 @@ function ContactSection() {
               transition={{ duration: 0.5, delay: i * 0.1 }}
             >
               <div
-                className="text-center p-6 sm:p-8 rounded-md border border-white/8 bg-white/[0.03] backdrop-blur-sm"
+                className="text-center p-8 rounded-md border border-white/5 bg-white/[0.02]"
                 data-testid={`card-contact-${contact.title.toLowerCase()}`}
               >
-                <div className="w-12 h-12 rounded-md bg-white/5 flex items-center justify-center mx-auto mb-4">
-                  <contact.icon className="w-5 h-5 text-white/50" />
+                <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-5">
+                  <contact.icon className="w-6 h-6 text-white/40" />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-1" data-testid={`text-contact-title-${contact.title.toLowerCase()}`}>{contact.title}</h3>
-                <p className="text-sm text-white/50 mb-1" data-testid={`text-contact-value-${contact.title.toLowerCase()}`}>{contact.value}</p>
-                <p className="text-xs text-white/25">{contact.sub}</p>
+                <p className="text-sm text-white/40 mb-1" data-testid={`text-contact-value-${contact.title.toLowerCase()}`}>{contact.value}</p>
+                <p className="text-xs text-white/20">{contact.sub}</p>
               </div>
             </motion.div>
           ))}
@@ -537,15 +688,22 @@ function ContactSection() {
 
 function Footer() {
   return (
-    <footer className="bg-black border-t border-white/5 py-10" data-testid="footer">
+    <footer className="bg-black border-t border-white/5" data-testid="footer">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src={logoPath} alt="Torres" className="h-8 w-auto" data-testid="img-footer-logo" />
+        <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
+          <div>
+            <img src={logoPath} alt="Torres" className="h-10 w-auto brightness-0 invert opacity-40" data-testid="img-footer-logo" />
           </div>
-          <p className="text-xs text-white/25 text-center" data-testid="text-footer-cnpj">
-            Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89 — Todos os direitos reservados
-          </p>
+          <div className="text-center">
+            <p className="text-xs text-white/20" data-testid="text-footer-cnpj">
+              CNPJ 36.982.392/0001-89
+            </p>
+          </div>
+          <div className="sm:text-right">
+            <p className="text-xs text-white/15">
+              Torres Vigilância Patrimonial — Todos os direitos reservados
+            </p>
+          </div>
         </div>
       </div>
     </footer>
@@ -554,11 +712,12 @@ function Footer() {
 
 export default function Home() {
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-black">
       <Navbar />
       <HeroSection />
-      <AboutSection />
       <ServicesSection />
+      <DiferenciaisSection />
+      <AboutSection />
       <EscortCalculator />
       <ContactSection />
       <Footer />
