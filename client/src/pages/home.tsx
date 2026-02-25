@@ -427,9 +427,9 @@ function AboutSection() {
               <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 to-black" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <img
-                  src={logoColor}
+                  src={logoBW}
                   alt="Torres Vigilância Patrimonial"
-                  className="w-2/5 h-auto opacity-30"
+                  className="w-2/5 h-auto opacity-20"
                   data-testid="img-about-logo"
                 />
               </div>
