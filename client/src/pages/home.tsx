@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import {
   Shield, Truck, Building2, Phone, MapPin, Navigation,
   Package, Send, Menu, X, ArrowRight, Eye, Radio,
-  Users, Lock, ChevronLeft, ChevronRight
+  Users, Lock, ChevronLeft, ChevronRight, Monitor
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import imgGuardRadio from "@assets/WhatsApp_Image_2026-03-02_at_14.38.49_1772473
 import imgEscortRoad from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(2)_1772473176100.jpeg";
 import imgVehicle from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(3)_1772473176100.jpeg";
 import imgGuardVehicle from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(1)_1772473176101.jpeg";
+import imgMonitoramento from "@assets/WhatsApp_Image_2026-03-02_at_14.53.45_1772474055275.jpeg";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
@@ -154,8 +155,8 @@ function HeroSection() {
             </h1>
 
             <p className="mt-8 text-base sm:text-lg text-white/35 max-w-lg leading-relaxed" data-testid="text-hero-subtitle">
-              Especialistas em Vigilância Patrimonial, Escolta Armada e Gestão de
-              Facilities com cobertura em todo o território nacional.
+              Especialistas em Vigilância Patrimonial, Escolta Armada, Monitoramento
+              de Câmeras e Gestão de Facilities com cobertura em todo o território nacional.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4 flex-wrap">
@@ -217,6 +218,14 @@ const services = [
     description:
       "Proteção de cargas e transporte de valores com equipes táticas altamente capacitadas, planejamento estratégico e rastreamento em tempo real.",
     image: imgEscortRoad,
+  },
+  {
+    id: "monitoramento",
+    icon: Monitor,
+    title: "Monitoramento de Câmeras",
+    description:
+      "Central de monitoramento 24 horas com tecnologia de ponta, câmeras de alta definição e análise inteligente de imagens para detecção proativa de ameaças e resposta imediata.",
+    image: imgMonitoramento,
   },
   {
     id: "facilities",
@@ -459,7 +468,7 @@ function AboutSection() {
             <p className="mt-6 text-base sm:text-lg text-black/40 leading-relaxed" data-testid="text-about-description">
               A Torres Vigilância Patrimonial se posiciona como um parceiro estratégico,
               dedicada a oferecer soluções de excelência em Vigilância Patrimonial,
-              Escolta Armada e Gestão de Facilities em todo o território nacional.
+              Escolta Armada, Monitoramento de Câmeras e Gestão de Facilities em todo o território nacional.
             </p>
             <p className="mt-4 text-base text-black/35 leading-relaxed">
               Devidamente autorizada pela Policia Federal, nossa missão é garantir
