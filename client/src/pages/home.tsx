@@ -310,11 +310,11 @@ function ServicesSection() {
                 className="group relative h-full rounded-md border border-white/5 bg-white/[0.02] overflow-hidden transition-all duration-300"
                 data-testid={`card-service-${service.id}`}
               >
-                <div className="relative h-48 overflow-hidden">
+                <div className="relative h-56 sm:h-60 overflow-hidden">
                   <img
                     src={service.image}
                     alt={service.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                     data-testid={`img-service-${service.id}`}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
