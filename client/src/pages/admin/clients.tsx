@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -7,11 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Search, Loader2 } from "lucide-react";
 import type { Client } from "@shared/schema";
+
+function formatCnpj(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 14);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
+  const [cnpjLoading, setCnpjLoading] = useState(false);
   const [form, setForm] = useState({
     name: client?.name || "",
     cnpj: client?.cnpj || "",
@@ -25,6 +35,42 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     zip: client?.zip || "",
     notes: client?.notes || "",
   });
+
+  const fetchCnpj = useCallback(async (cnpj: string) => {
+    const digits = cnpj.replace(/\D/g, "");
+    if (digits.length !== 14) return;
+    setCnpjLoading(true);
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+      if (!res.ok) throw new Error("CNPJ não encontrado");
+      const data = await res.json();
+      const phone = data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : form.phone;
+      setForm((prev) => ({
+        ...prev,
+        name: data.razao_social || prev.name,
+        email: data.email && data.email !== "" ? data.email : prev.email,
+        phone,
+        address: [data.logradouro, data.numero, data.complemento].filter(Boolean).join(", ") || prev.address,
+        city: data.municipio || prev.city,
+        state: data.uf || prev.state,
+        zip: data.cep ? data.cep.replace(/(\d{5})(\d{3})/, "$1-$2") : prev.zip,
+      }));
+      toast({ title: "CNPJ encontrado", description: data.razao_social });
+    } catch {
+      toast({ title: "CNPJ não encontrado", description: "Verifique o número e tente novamente", variant: "destructive" });
+    } finally {
+      setCnpjLoading(false);
+    }
+  }, [form.phone, toast]);
+
+  const handleCnpjChange = (value: string) => {
+    const formatted = formatCnpj(value);
+    setForm({ ...form, cnpj: formatted });
+    const digits = formatted.replace(/\D/g, "");
+    if (digits.length === 14) {
+      fetchCnpj(formatted);
+    }
+  };
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -51,13 +97,36 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-form"><X className="w-4 h-4" /></Button>
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="md:col-span-2">
-          <label className="text-xs text-neutral-500 mb-1 block">Nome / Razão Social *</label>
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="input-client-name" />
-        </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">CNPJ</label>
-          <Input value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} data-testid="input-client-cnpj" />
+          <div className="relative">
+            <Input
+              value={form.cnpj}
+              onChange={(e) => handleCnpjChange(e.target.value)}
+              placeholder="00.000.000/0000-00"
+              data-testid="input-client-cnpj"
+            />
+            {cnpjLoading && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
+              </div>
+            )}
+            {!cnpjLoading && form.cnpj.replace(/\D/g, "").length === 14 && (
+              <button
+                type="button"
+                onClick={() => fetchCnpj(form.cnpj)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                data-testid="button-search-cnpj"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-neutral-400 mt-1">Digite o CNPJ para preencher automaticamente</p>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Nome / Razão Social *</label>
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="input-client-name" />
         </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">CPF</label>
