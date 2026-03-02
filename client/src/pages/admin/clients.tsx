@@ -181,12 +181,17 @@ export default function ClientsPage() {
   const [editClient, setEditClient] = useState<Client | undefined>();
   const { toast } = useToast();
 
-  const handlePresentation = (name: string) => {
+  const [generatingPdf, setGeneratingPdf] = useState<number | null>(null);
+
+  const handlePresentation = async (id: number, name: string) => {
+    setGeneratingPdf(id);
     try {
-      generatePresentation(name);
+      await generatePresentation(name);
       toast({ title: "Apresentação gerada", description: "O download do PDF foi iniciado." });
     } catch {
       toast({ title: "Erro ao gerar apresentação", variant: "destructive" });
+    } finally {
+      setGeneratingPdf(null);
     }
   };
   const { data: clients = [], isLoading } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -243,11 +248,16 @@ export default function ClientsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handlePresentation(c.name)}
+                        onClick={() => handlePresentation(c.id, c.name)}
                         title="Gerar Apresentação"
+                        disabled={generatingPdf === c.id}
                         data-testid={`button-presentation-client-${c.id}`}
                       >
-                        <FileDown className="w-4 h-4 text-blue-600" />
+                        {generatingPdf === c.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        ) : (
+                          <FileDown className="w-4 h-4 text-blue-600" />
+                        )}
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => { setEditClient(c); setShowForm(true); }} data-testid={`button-edit-client-${c.id}`}>
                         <Pencil className="w-4 h-4" />
