@@ -155,8 +155,8 @@ function HeroSection() {
             </h1>
 
             <p className="mt-8 text-base sm:text-lg text-white/35 max-w-lg leading-relaxed" data-testid="text-hero-subtitle">
-              Especialistas em Vigilância Patrimonial, Escolta Armada, Monitoramento
-              de Câmeras e Gestão de Facilities com cobertura em todo o território nacional.
+              Especialistas em Vigilância Patrimonial, Escolta Armada, Central de
+              Monitoramento e Gestão de Facilities com cobertura em todo o território nacional.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4 flex-wrap">
@@ -222,7 +222,7 @@ const services = [
   {
     id: "monitoramento",
     icon: Monitor,
-    title: "Monitoramento de Câmeras",
+    title: "Central de Monitoramento",
     description:
       "Central de monitoramento 24 horas com tecnologia de ponta, câmeras de alta definição e análise inteligente de imagens para detecção proativa de ameaças e resposta imediata.",
     image: imgMonitoramento,
@@ -468,7 +468,7 @@ function AboutSection() {
             <p className="mt-6 text-base sm:text-lg text-black/40 leading-relaxed" data-testid="text-about-description">
               A Torres Vigilância Patrimonial se posiciona como um parceiro estratégico,
               dedicada a oferecer soluções de excelência em Vigilância Patrimonial,
-              Escolta Armada, Monitoramento de Câmeras e Gestão de Facilities em todo o território nacional.
+              Escolta Armada, Central de Monitoramento e Gestão de Facilities em todo o território nacional.
             </p>
             <p className="mt-4 text-base text-black/35 leading-relaxed">
               Devidamente autorizada pela Policia Federal, nossa missão é garantir
