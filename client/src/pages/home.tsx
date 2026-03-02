@@ -70,6 +70,13 @@ function Navbar() {
                 {l.label}
               </a>
             ))}
+            <a
+              href="/admin"
+              className="text-[13px] font-medium text-white/60 tracking-wide uppercase transition-colors duration-200"
+              data-testid="link-nav-area-interna"
+            >
+              Área Interna
+            </a>
             <a href="#cotacao">
               <Button
                 size="sm"
@@ -109,6 +116,14 @@ function Navbar() {
               {l.label}
             </a>
           ))}
+          <a
+            href="/admin"
+            className="block px-6 py-3 text-sm font-medium text-white/60 uppercase tracking-wide"
+            onClick={() => setOpen(false)}
+            data-testid="link-mobile-area-interna"
+          >
+            Área Interna
+          </a>
           <div className="px-6 pt-3">
             <a href="#cotacao" onClick={() => setOpen(false)}>
               <Button className="w-full bg-white text-black" size="sm" data-testid="button-mobile-cta">

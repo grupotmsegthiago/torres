@@ -1,34 +1,66 @@
-# Torres Vigilância Patrimonial - Website
+# Torres Vigilância Patrimonial - Website & Sistema Interno
 
 ## Overview
-Institutional landing page for Torres Vigilância Patrimonial, a security company authorized by the Brazilian Federal Police. Single-page website with sections for hero, about, services, escort quote calculator (WhatsApp integration), contact, and footer.
+Institutional landing page and internal management system for Torres Vigilância Patrimonial, a security company authorized by the Brazilian Federal Police.
 
 ## Architecture
-- **Frontend**: React + TypeScript + Vite (single-page landing site)
-- **Backend**: Express (minimal, serves static assets)
-- **Styling**: Tailwind CSS with custom theme (brand colors: red primary, dark charcoal)
-- **Animations**: Framer Motion for scroll-triggered animations
-- **Icons**: Lucide React + React Icons (WhatsApp logo)
+- **Frontend**: React + TypeScript + Vite
+- **Backend**: Express + Passport.js (session auth)
+- **Database**: PostgreSQL via Drizzle ORM (Neon serverless)
+- **Styling**: Tailwind CSS with custom theme
+- **Animations**: Framer Motion
+- **Icons**: Lucide React + React Icons
 
 ## Key Files
-- `client/src/pages/home.tsx` - Main landing page with all sections (Navbar, Hero, About, Services, Escort Calculator, Contact, Footer)
-- `client/src/App.tsx` - App router
-- `client/src/index.css` - Theme variables (red primary: 0 80% 40%)
-- `client/index.html` - SEO meta tags in Portuguese
+
+### Landing Page
+- `client/src/pages/home.tsx` - Main landing page (Navbar, Hero, Services, About, Escort Calculator, Contact, Footer)
+- `client/src/index.css` - Theme variables
+- `client/index.html` - SEO meta tags
+
+### Internal System (Área Interna)
+- `shared/schema.ts` - Database schema (users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets)
+- `server/db.ts` - Database connection
+- `server/auth.ts` - Authentication (Passport.js + express-session + connect-pg-simple)
+- `server/storage.ts` - DatabaseStorage with full CRUD operations
+- `server/routes.ts` - All API endpoints (auth + CRUD for all entities)
+- `client/src/hooks/use-auth.tsx` - Auth context/provider
+- `client/src/components/admin/layout.tsx` - Admin dashboard layout with sidebar
+- `client/src/pages/admin/` - All admin pages:
+  - `login.tsx` - Login page
+  - `dashboard.tsx` - Dashboard with stats overview
+  - `clients.tsx` - Client registration/management
+  - `employees.tsx` - Employee management
+  - `vehicles.tsx` - Vehicle fleet management with avg consumption
+  - `service-orders.tsx` - Service orders (OS) with workflow
+  - `trips.tsx` - Trip control linked to OS
+  - `fueling.tsx` - Vehicle fueling records
+  - `maintenance.tsx` - Vehicle maintenance control
+  - `timesheets.tsx` - Employee timesheet/punch clock
+  - `tracker.tsx` - Vehicle tracker (API placeholder)
 
 ## Features
-- Responsive navigation with mobile hamburger menu
-- Hero section with statistics and CTA
-- About section with company info and logo
-- Services section (Vigilância Patrimonial, Escolta Armada, Facilities)
-- Escort quote calculator that generates a pre-formatted WhatsApp message
-- Contact section with phone, WhatsApp, and email cards
-- Smooth scroll navigation between sections
 
-## WhatsApp Integration
-The escort calculator form collects origin, destination, and cargo type, then opens WhatsApp with a pre-formatted message using the `wa.me` API. The phone number constant `WHATSAPP_NUMBER` in `home.tsx` needs to be updated with the real number.
+### Landing Page
+- Responsive navigation with mobile menu + "Área Interna" link
+- Hero with team photo background
+- Services: Vigilância Patrimonial, Escolta Armada, Central de Monitoramento, Facilities
+- Escort quote calculator (WhatsApp integration)
+- Contact section
 
-## Brand Colors
-- Primary (Red): `0 80% 40%` (light) / `0 80% 50%` (dark)
-- Background dark sections: `hsl(220, 12%, 10%)`
+### Internal System
+- Session-based authentication (default: admin / admin123)
+- Full CRUD for: Clients, Employees, Vehicles, Service Orders, Trips, Fueling, Maintenance, Timesheets
+- Dashboard with real-time stats
+- Vehicle average consumption calculation
+- Service order workflow (aberta → em_andamento → concluída)
+- Trip tracking linked to service orders
+- Vehicle tracker placeholder (ready for API integration)
+
+## Database Tables
+users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets
+
+## Brand
+- Colors: Black/white professional aesthetic
 - Fonts: Montserrat (primary), Inter (fallback)
+- Logo: Vectorized, uses CSS `invert` filter on dark backgrounds

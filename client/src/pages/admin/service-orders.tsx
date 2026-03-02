@@ -1,0 +1,228 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import AdminLayout from "@/components/admin/layout";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, X, Pencil, Trash2, Eye } from "lucide-react";
+import type { ServiceOrder, Client, Employee, Vehicle } from "@shared/schema";
+
+function OrderForm({ order, clients, employees, vehicles, onClose }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    osNumber: order?.osNumber || `OS-${Date.now().toString().slice(-6)}`,
+    clientId: order?.clientId || 0,
+    type: order?.type || "escolta",
+    description: order?.description || "",
+    status: order?.status || "aberta",
+    priority: order?.priority || "normal",
+    scheduledDate: order?.scheduledDate ? new Date(order.scheduledDate).toISOString().slice(0, 16) : "",
+    completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
+    assignedEmployeeId: order?.assignedEmployeeId || null,
+    vehicleId: order?.vehicleId || null,
+    notes: order?.notes || "",
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (data: any) => {
+      const payload = {
+        ...data,
+        clientId: Number(data.clientId),
+        assignedEmployeeId: data.assignedEmployeeId ? Number(data.assignedEmployeeId) : null,
+        vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
+        scheduledDate: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
+        completedDate: data.completedDate ? new Date(data.completedDate).toISOString() : null,
+      };
+      if (order) {
+        await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
+      } else {
+        await apiRequest("POST", "/api/service-orders", payload);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      toast({ title: order ? "OS atualizada" : "OS criada" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card className="p-6 bg-white border-neutral-200 mb-6" data-testid="card-order-form">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">{order ? "Editar OS" : "Nova Ordem de Serviço"}</h2>
+        <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Número da OS</label>
+          <Input value={form.osNumber} onChange={(e) => setForm({ ...form, osNumber: e.target.value })} required data-testid="input-os-number" />
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Cliente *</label>
+          <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-os-client">
+            <option value={0}>Selecione...</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Tipo de Serviço *</label>
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-type">
+            <option value="escolta">Escolta Armada</option>
+            <option value="vigilancia">Vigilância Patrimonial</option>
+            <option value="monitoramento">Central de Monitoramento</option>
+            <option value="facilities">Facilities</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Prioridade</label>
+          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-priority">
+            <option value="baixa">Baixa</option>
+            <option value="normal">Normal</option>
+            <option value="alta">Alta</option>
+            <option value="urgente">Urgente</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Status</label>
+          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-status">
+            <option value="aberta">Aberta</option>
+            <option value="em_andamento">Em Andamento</option>
+            <option value="concluída">Concluída</option>
+            <option value="cancelada">Cancelada</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Data Agendada</label>
+          <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} data-testid="input-os-scheduled" />
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Funcionário Responsável</label>
+          <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-employee">
+            <option value="">Selecione...</option>
+            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Veículo</label>
+          <select value={form.vehicleId || ""} onChange={(e) => setForm({ ...form, vehicleId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-vehicle">
+            <option value="">Selecione...</option>
+            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
+          </select>
+        </div>
+        {form.status === "concluída" && (
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">Data de Conclusão</label>
+            <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} data-testid="input-os-completed" />
+          </div>
+        )}
+        <div className="md:col-span-3">
+          <label className="text-xs text-neutral-500 mb-1 block">Descrição</label>
+          <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} data-testid="input-os-description" />
+        </div>
+        <div className="md:col-span-3">
+          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-os-notes" />
+        </div>
+        <div className="md:col-span-3 flex gap-3">
+          <Button type="submit" disabled={mutation.isPending} data-testid="button-save-order">
+            {mutation.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+export default function ServiceOrdersPage() {
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
+  const { toast } = useToast();
+  const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); toast({ title: "OS removida" }); },
+  });
+
+  const getClientName = (id: number) => (clients || []).find((c) => c.id === id)?.name || "-";
+
+  return (
+    <AdminLayout>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-orders-title">Ordens de Serviço</h1>
+          <p className="text-sm text-neutral-500 mt-1">Gestão completa de OS</p>
+        </div>
+        <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-order">
+          <Plus className="w-4 h-4 mr-2" /> Nova OS
+        </Button>
+      </div>
+
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
+
+      <Card className="bg-white border-neutral-200 overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-neutral-400">Carregando...</div>
+        ) : (orders || []).length === 0 ? (
+          <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-orders">
+              <thead className="bg-neutral-50 border-b border-neutral-200">
+                <tr>
+                  <th className="text-left p-3 font-medium text-neutral-600">OS</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Cliente</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Prioridade</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
+                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(orders || []).map((o) => (
+                  <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
+                    <td className="p-3 font-medium text-neutral-900">{o.osNumber}</td>
+                    <td className="p-3 text-neutral-600">{getClientName(o.clientId)}</td>
+                    <td className="p-3 text-neutral-600">{o.type}</td>
+                    <td className="p-3">
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        o.priority === "urgente" ? "bg-red-100 text-red-700" :
+                        o.priority === "alta" ? "bg-amber-100 text-amber-700" :
+                        "bg-neutral-100 text-neutral-600"
+                      }`}>{o.priority}</span>
+                    </td>
+                    <td className="p-3">
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        o.status === "aberta" ? "bg-blue-100 text-blue-700" :
+                        o.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
+                        o.status === "concluída" ? "bg-green-100 text-green-700" :
+                        "bg-neutral-100 text-neutral-600"
+                      }`}>{o.status}</span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(o.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </AdminLayout>
+  );
+}
