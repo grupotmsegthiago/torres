@@ -11,6 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import logoBW from "@assets/WhatsApp_Image_2026-02-25_at_20.09.04_1772061256501.jpeg";
+import imgTeam from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_1772473176101.jpeg";
+import imgGuardRadio from "@assets/WhatsApp_Image_2026-03-02_at_14.38.49_1772473176101.jpeg";
+import imgEscortRoad from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(2)_1772473176100.jpeg";
+import imgVehicle from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(3)_1772473176100.jpeg";
+import imgGuardVehicle from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(1)_1772473176101.jpeg";
 
 const WHATSAPP_NUMBER = "5500000000000";
 
@@ -123,14 +128,11 @@ function HeroSection() {
       className="relative min-h-screen flex items-center overflow-hidden"
       data-testid="section-hero"
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-black via-neutral-950 to-black" />
-
-      <div className="absolute inset-0 opacity-[0.02]" style={{
-        backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-        backgroundSize: '40px 40px',
-      }} />
-
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-white/[0.02] to-transparent" />
+      <div className="absolute inset-0">
+        <img src={imgTeam} alt="" className="w-full h-full object-cover object-top" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-black/40" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60" />
+      </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-32 sm:py-40">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -171,14 +173,7 @@ function HeroSection() {
             </div>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="hidden lg:flex items-center justify-center"
-          >
-            <Shield className="w-48 xl:w-56 h-48 xl:h-56 text-white/[0.06]" strokeWidth={0.8} data-testid="icon-hero-shield" />
-          </motion.div>
+          <div className="hidden lg:block" />
         </div>
 
         <motion.div
@@ -213,6 +208,7 @@ const services = [
     title: "Vigilância Patrimonial",
     description:
       "Segurança ostensiva para empresas, condomínios e indústrias com foco em prevenção de riscos. Equipes treinadas e monitoramento contínuo.",
+    image: imgGuardRadio,
   },
   {
     id: "escolta",
@@ -220,6 +216,7 @@ const services = [
     title: "Escolta Armada",
     description:
       "Proteção de cargas e transporte de valores com equipes táticas altamente capacitadas, planejamento estratégico e rastreamento em tempo real.",
+    image: imgEscortRoad,
   },
   {
     id: "facilities",
@@ -227,6 +224,7 @@ const services = [
     title: "Facilities",
     description:
       "Gestão completa de serviços — limpeza, portaria e manutenção — para que você foque apenas no seu core business.",
+    image: imgVehicle,
   },
 ];
 
@@ -300,26 +298,39 @@ function ServicesSection() {
               className="min-w-[320px] sm:min-w-[380px] flex-1 snap-start"
             >
               <div
-                className="group relative h-full p-8 sm:p-10 rounded-md border border-white/5 bg-white/[0.02] transition-all duration-300"
+                className="group relative h-full rounded-md border border-white/5 bg-white/[0.02] overflow-hidden transition-all duration-300"
                 data-testid={`card-service-${service.id}`}
               >
-                <div className="w-14 h-14 rounded-md bg-white/5 flex items-center justify-center mb-6">
-                  <service.icon className="w-7 h-7 text-white/60" />
+                <div className="relative h-48 overflow-hidden">
+                  <img
+                    src={service.image}
+                    alt={service.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    data-testid={`img-service-${service.id}`}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent" />
+                  <div className="absolute bottom-4 left-4">
+                    <div className="w-10 h-10 rounded-md bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                      <service.icon className="w-5 h-5 text-white/80" />
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-white mb-4" data-testid={`text-service-title-${service.id}`}>
-                  {service.title}
-                </h3>
-                <p className="text-white/30 text-sm leading-relaxed mb-8" data-testid={`text-service-desc-${service.id}`}>
-                  {service.description}
-                </p>
-                <a
-                  href="#cotacao"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-white/50 transition-colors duration-200"
-                  data-testid={`link-service-more-${service.id}`}
-                >
-                  Saiba mais
-                  <ArrowRight className="w-4 h-4" />
-                </a>
+                <div className="p-8">
+                  <h3 className="text-xl font-bold text-white mb-4" data-testid={`text-service-title-${service.id}`}>
+                    {service.title}
+                  </h3>
+                  <p className="text-white/30 text-sm leading-relaxed mb-8" data-testid={`text-service-desc-${service.id}`}>
+                    {service.description}
+                  </p>
+                  <a
+                    href="#cotacao"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-white/50 transition-colors duration-200"
+                    data-testid={`link-service-more-${service.id}`}
+                  >
+                    Saiba mais
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
+                </div>
               </div>
             </motion.div>
           ))}
@@ -414,14 +425,22 @@ function AboutSection() {
             transition={{ duration: 0.6 }}
             className="relative"
           >
-            <div className="flex items-center justify-center">
+            <div className="aspect-[4/3] rounded-md overflow-hidden relative">
               <img
-                src={logoBW}
-                alt="Torres Vigilância Patrimonial"
-                className="max-w-[320px] w-full h-auto object-contain"
-                style={{ imageRendering: "auto" }}
-                data-testid="img-about-logo"
+                src={imgGuardVehicle}
+                alt="Vigilante Torres com viatura"
+                className="w-full h-full object-cover"
+                data-testid="img-about-photo"
               />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+              <div className="absolute bottom-4 left-4">
+                <img
+                  src={logoBW}
+                  alt="Torres"
+                  className="h-10 w-auto drop-shadow-lg"
+                  data-testid="img-about-logo"
+                />
+              </div>
             </div>
           </motion.div>
 
@@ -479,8 +498,12 @@ function EscortCalculator() {
   const isValid = origem.trim() && destino.trim() && carga.trim();
 
   return (
-    <section id="cotacao" className="py-24 sm:py-32 bg-black" data-testid="section-quote">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="cotacao" className="relative py-24 sm:py-32 overflow-hidden" data-testid="section-quote">
+      <div className="absolute inset-0">
+        <img src={imgEscortRoad} alt="" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-black/80" />
+      </div>
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <motion.div
             initial={{ opacity: 0, x: -30 }}
