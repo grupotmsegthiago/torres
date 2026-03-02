@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,13 @@ export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (user) {
+      setLocation("/admin/dashboard");
+    }
+  }, [user, setLocation]);
+
   if (user) {
-    setLocation("/admin/dashboard");
     return null;
   }
 
@@ -26,7 +31,6 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      setLocation("/admin/dashboard");
     } catch (err: any) {
       toast({
         title: "Erro ao entrar",

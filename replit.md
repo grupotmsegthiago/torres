@@ -56,6 +56,8 @@ Institutional landing page and internal management system for Torres Vigilância
 - Service order workflow (aberta → em_andamento → concluída)
 - Trip tracking linked to service orders
 - Vehicle tracker placeholder (ready for API integration)
+- PDF presentation generator per client (jsPDF) — professional multi-page presentation with company info
+- CNPJ auto-fill via BrasilAPI (auto-formats and fetches company data)
 
 ## Database Tables
 users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets

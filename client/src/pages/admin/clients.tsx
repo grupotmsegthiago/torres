@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Search, Loader2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Search, Loader2, FileDown } from "lucide-react";
 import type { Client } from "@shared/schema";
+import { generatePresentation } from "@/lib/presentation";
 
 function formatCnpj(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 14);
@@ -179,6 +180,15 @@ export default function ClientsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editClient, setEditClient] = useState<Client | undefined>();
   const { toast } = useToast();
+
+  const handlePresentation = (name: string) => {
+    try {
+      generatePresentation(name);
+      toast({ title: "Apresentação gerada", description: "O download do PDF foi iniciado." });
+    } catch {
+      toast({ title: "Erro ao gerar apresentação", variant: "destructive" });
+    }
+  };
   const { data: clients = [], isLoading } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
@@ -229,7 +239,16 @@ export default function ClientsPage() {
                     <td className="p-3 text-neutral-600">{c.cnpj || c.cpf || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.phone || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.city || "-"}</td>
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handlePresentation(c.name)}
+                        title="Gerar Apresentação"
+                        data-testid={`button-presentation-client-${c.id}`}
+                      >
+                        <FileDown className="w-4 h-4 text-blue-600" />
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => { setEditClient(c); setShowForm(true); }} data-testid={`button-edit-client-${c.id}`}>
                         <Pencil className="w-4 h-4" />
                       </Button>
