@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import logoBW from "@assets/WhatsApp_Image_2026-02-25_at_20.09.04_1772061256501.jpeg";
+import logoBW from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 import imgTeam from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_1772473176101.jpeg";
 import imgGuardRadio from "@assets/WhatsApp_Image_2026-03-02_at_14.38.49_1772473176101.jpeg";
 import imgEscortRoad from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(2)_1772473176100.jpeg";
@@ -53,7 +53,7 @@ function Navbar() {
             <img
               src={logoBW}
               alt="Torres Vigilância Patrimonial"
-              className="h-12 w-auto"
+              className="h-12 w-auto invert"
               data-testid="img-nav-logo"
             />
           </a>
@@ -437,7 +437,7 @@ function AboutSection() {
                 <img
                   src={logoBW}
                   alt="Torres"
-                  className="h-10 w-auto drop-shadow-lg"
+                  className="h-10 w-auto invert drop-shadow-lg"
                   data-testid="img-about-logo"
                 />
               </div>
@@ -695,7 +695,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
           <div>
-            <img src={logoBW} alt="Torres" className="h-10 w-auto opacity-40" data-testid="img-footer-logo" />
+            <img src={logoBW} alt="Torres" className="h-10 w-auto invert opacity-50" data-testid="img-footer-logo" />
           </div>
           <div className="text-center">
             <p className="text-xs text-white/20" data-testid="text-footer-cnpj">
