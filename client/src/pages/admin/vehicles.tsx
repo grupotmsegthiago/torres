@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Gauge } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2 } from "lucide-react";
 import type { Vehicle, VehicleFueling } from "@shared/schema";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
   const { toast } = useToast();
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const lookupTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [form, setForm] = useState({
     plate: vehicle?.plate || "",
     model: vehicle?.model || "",
@@ -26,6 +28,46 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     km: vehicle?.km || 0,
     notes: vehicle?.notes || "",
   });
+
+  const lookupPlate = useCallback(async (plate: string) => {
+    const clean = plate.replace(/[^a-zA-Z0-9]/g, "");
+    if (clean.length < 7) return;
+
+    setLookupLoading(true);
+    try {
+      const res = await fetch(`/api/plate-lookup/${clean}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: "Consulta de placa", description: err.message || "Erro na consulta", variant: "destructive" });
+        return;
+      }
+      const data = await res.json();
+      setForm(prev => ({
+        ...prev,
+        brand: data.brand || prev.brand,
+        model: data.model || prev.model,
+        year: data.year || prev.year,
+        color: data.color || prev.color,
+        chassi: data.chassi || prev.chassi,
+        notes: prev.notes || [data.fuel, data.type, data.city && data.state ? `${data.city}/${data.state}` : ""].filter(Boolean).join(" | "),
+      }));
+      toast({ title: "Dados do veículo preenchidos automaticamente" });
+    } catch {
+      toast({ title: "Erro ao consultar placa", variant: "destructive" });
+    } finally {
+      setLookupLoading(false);
+    }
+  }, [toast]);
+
+  const handlePlateChange = useCallback((value: string) => {
+    const upper = value.toUpperCase();
+    setForm(prev => ({ ...prev, plate: upper }));
+    if (lookupTimeout.current) clearTimeout(lookupTimeout.current);
+    const clean = upper.replace(/[^A-Z0-9]/g, "");
+    if (clean.length === 7 && !vehicle) {
+      lookupTimeout.current = setTimeout(() => lookupPlate(clean), 500);
+    }
+  }, [lookupPlate, vehicle]);
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -54,7 +96,33 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Placa *</label>
-          <Input value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} required data-testid="input-vehicle-plate" />
+          <div className="relative">
+            <Input
+              value={form.plate}
+              onChange={(e) => handlePlateChange(e.target.value)}
+              required
+              placeholder="ABC1D23"
+              maxLength={8}
+              className="pr-10 uppercase font-mono font-bold tracking-wider"
+              data-testid="input-vehicle-plate"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              {lookupLoading ? (
+                <Loader2 className="w-4 h-4 text-neutral-400 animate-spin" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => lookupPlate(form.plate)}
+                  className="p-1 hover:bg-neutral-100 rounded"
+                  title="Consultar placa"
+                  data-testid="button-lookup-plate"
+                >
+                  <Search className="w-4 h-4 text-neutral-400" />
+                </button>
+              )}
+            </div>
+          </div>
+          {!vehicle && <p className="text-[10px] text-neutral-400 mt-1">Digite a placa completa para buscar automaticamente</p>}
         </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Marca *</label>

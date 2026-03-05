@@ -317,6 +317,126 @@ export async function registerRoutes(
     res.json({ message: "Ponto removido" });
   });
 
+  // ====================== DATAJUD (CNJ) LOOKUP ======================
+
+  const DATAJUD_API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
+  const DATAJUD_TRIBUNALS = [
+    "tjsp", "tjrj", "tjmg", "tjrs", "tjpr", "tjsc", "tjba", "tjgo", "tjdf",
+    "tjpe", "tjce", "tjma", "tjpa", "tjpb", "tjrn", "tjal", "tjse", "tjes",
+    "tjms", "tjmt", "tjam", "tjro", "tjac", "tjap", "tjto", "tjpi", "tjrr",
+    "trt1", "trt2", "trt3", "trt4", "trt5", "trt6", "trt7", "trt8", "trt9",
+    "trt10", "trt11", "trt12", "trt13", "trt14", "trt15", "trt16", "trt17",
+    "trt18", "trt19", "trt20", "trt21", "trt22", "trt23", "trt24",
+  ];
+
+  app.get("/api/datajud/:cnpj", requireAuth, async (req, res) => {
+    const cnpj = req.params.cnpj.replace(/\D/g, "");
+    if (cnpj.length !== 14) return res.status(400).json({ message: "CNPJ inválido" });
+
+    const tribunals = (req.query.tribunals as string || "tjsp,trt2,trt15").split(",").map(t => t.trim().toLowerCase());
+    const size = Math.min(Number(req.query.size) || 10, 50);
+
+    const allResults: any[] = [];
+
+    for (const tribunal of tribunals) {
+      if (!DATAJUD_TRIBUNALS.includes(tribunal)) continue;
+      try {
+        const response = await fetch(`https://api-publica.datajud.cnj.jus.br/api_publica_${tribunal}/_search`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `APIKey ${DATAJUD_API_KEY}`,
+          },
+          body: JSON.stringify({
+            query: {
+              bool: {
+                should: [
+                  { match: { "numeroProcesso": cnpj } },
+                  { wildcard: { "numeroProcesso": `*${cnpj}*` } },
+                ],
+                minimum_should_match: 1,
+              },
+            },
+            size,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const hits = data.hits?.hits || [];
+          for (const hit of hits) {
+            const src = hit._source;
+            allResults.push({
+              tribunal: src.tribunal || tribunal.toUpperCase(),
+              numeroProcesso: src.numeroProcesso || "",
+              classe: src.classe?.nome || "",
+              assuntos: (src.assuntos || []).map((a: any) => a.nome).join(", "),
+              dataAjuizamento: src.dataAjuizamento || "",
+              grau: src.grau || "",
+              orgaoJulgador: src.orgaoJulgador?.nome || "",
+              ultimaAtualizacao: src.dataHoraUltimaAtualizacao || "",
+              nivelSigilo: src.nivelSigilo || 0,
+              movimentos: (src.movimentos || []).slice(0, 5).map((m: any) => ({
+                nome: m.nome,
+                dataHora: m.dataHora,
+              })),
+            });
+          }
+        }
+      } catch {
+      }
+    }
+
+    res.json({
+      cnpj,
+      totalResultados: allResults.length,
+      processos: allResults,
+    });
+  });
+
+  // ====================== VEHICLE PLATE LOOKUP ======================
+
+  app.get("/api/plate-lookup/:plate", requireAuth, async (req, res) => {
+    const plate = req.params.plate.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (plate.length < 7) return res.status(400).json({ message: "Placa inválida" });
+
+    const token = process.env.APIBRASIL_TOKEN;
+    if (!token) return res.status(503).json({ message: "Token da API Brasil não configurado" });
+
+    try {
+      const response = await fetch("https://gateway.apibrasil.io/api/v2/vehicles/dados", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ placa: plate }),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        return res.status(400).json({ message: data.message || "Erro na consulta" });
+      }
+
+      const result = data.response || data;
+      res.json({
+        plate: result.placa || plate,
+        brand: result.marca || result.MARCA || "",
+        model: result.modelo || result.MODELO || "",
+        year: parseInt(result.ano || result.anoModelo || result.ANO || "0") || null,
+        color: result.cor || result.COR || "",
+        chassi: result.chassi || result.CHASSI || "",
+        fuel: result.combustivel || result.COMBUSTIVEL || "",
+        type: result.tipo || result.TIPO || "",
+        city: result.municipio || result.MUNICIPIO || "",
+        state: result.uf || result.UF || "",
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: "Erro ao consultar placa: " + (err.message || "erro desconhecido") });
+    }
+  });
+
   // ====================== OPERATIONAL GRID ======================
 
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
