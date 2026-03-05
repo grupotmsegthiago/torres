@@ -698,20 +698,23 @@ function ContactSection() {
             {
               icon: Phone,
               title: "Telefone",
-              value: "Ligue agora",
+              value: "(11) 96369-6699",
               sub: "Atendimento 24h",
+              href: "tel:+5511963696699",
             },
             {
               icon: SiWhatsapp,
               title: "WhatsApp",
-              value: "Envie uma mensagem",
+              value: "(11) 96369-6699",
               sub: "Resposta rápida",
+              href: `https://wa.me/${WHATSAPP_NUMBER}`,
             },
             {
               icon: Send,
               title: "E-mail",
-              value: "contato@torresvigilancia.com.br",
+              value: "escolta@torresseguranca.com.br",
               sub: "Retorno em até 24h",
+              href: "mailto:escolta@torresseguranca.com.br",
             },
           ].map((contact, i) => (
             <motion.div
@@ -721,8 +724,11 @@ function ContactSection() {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
             >
-              <div
-                className="text-center p-8 rounded-md border border-white/5 bg-white/[0.02]"
+              <a
+                href={contact.href}
+                target={contact.href.startsWith("http") ? "_blank" : undefined}
+                rel={contact.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                className="block text-center p-8 rounded-md border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors cursor-pointer"
                 data-testid={`card-contact-${contact.title.toLowerCase()}`}
               >
                 <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-5">
@@ -731,7 +737,7 @@ function ContactSection() {
                 <h3 className="text-lg font-semibold text-white mb-1" data-testid={`text-contact-title-${contact.title.toLowerCase()}`}>{contact.title}</h3>
                 <p className="text-sm text-white/40 mb-1" data-testid={`text-contact-value-${contact.title.toLowerCase()}`}>{contact.value}</p>
                 <p className="text-xs text-white/20">{contact.sub}</p>
-              </div>
+              </a>
             </motion.div>
           ))}
         </div>
