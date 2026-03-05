@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
-import { Building2, Users, Car, FileText, Fuel, Wrench, Route, Clock } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Building2, Users, Car, FileText, Fuel, Wrench, Route, Clock, AlertTriangle } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 import type { Client, Employee, Vehicle, ServiceOrder, Trip, VehicleFueling, VehicleMaintenance, Timesheet } from "@shared/schema";
 
 function StatCard({ title, value, icon: Icon, color }: { title: string; value: number | string; icon: any; color: string }) {
@@ -22,6 +25,7 @@ function StatCard({ title, value, icon: Icon, color }: { title: string; value: n
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "returnNull" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "returnNull" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "returnNull" }) });
@@ -30,6 +34,12 @@ export default function DashboardPage() {
   const { data: fuelings = [] } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "returnNull" }) });
   const { data: maintenances = [] } = useQuery<VehicleMaintenance[]>({ queryKey: ["/api/maintenance"], queryFn: getQueryFn({ on401: "returnNull" }) });
   const { data: timesheets = [] } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"], queryFn: getQueryFn({ on401: "returnNull" }) });
+
+  const { data: activeMission } = useQuery<any>({
+    queryKey: ["/api/mission/active"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: user?.role === "funcionario",
+  });
 
   const openOrders = (orders || []).filter((o) => o.status === "aberta" || o.status === "em_andamento").length;
   const activeVehicles = (vehicles || []).filter((v) => v.status === "disponível").length;
@@ -40,6 +50,19 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-dashboard-title">Painel de Controle</h1>
         <p className="text-sm text-neutral-500 mt-1">Visão geral do sistema</p>
       </div>
+
+      {user?.role === "funcionario" && activeMission && (
+        <Alert className="mb-6 border-amber-300 bg-amber-50" data-testid="alert-active-mission">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800">Missão Ativa</AlertTitle>
+          <AlertDescription className="text-amber-700">
+            Você possui uma missão ativa (OS: {activeMission.osNumber}).{" "}
+            <Link href="/admin/mission" className="underline font-medium" data-testid="link-go-to-mission">
+              Clique aqui para acessar
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Clientes" value={(clients || []).length} icon={Building2} color="bg-blue-600" />
@@ -60,7 +83,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {(orders || []).slice(0, 5).map((order) => (
-                <div key={order.id} className="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0" data-testid={`row-order-${order.id}`}>
+                <div key={order.id} className="flex items-center justify-between gap-2 py-2 border-b border-neutral-100 last:border-0" data-testid={`row-order-${order.id}`}>
                   <div>
                     <p className="text-sm font-medium text-neutral-900">{order.osNumber}</p>
                     <p className="text-xs text-neutral-500">{order.type}</p>
@@ -68,7 +91,7 @@ export default function DashboardPage() {
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                     order.status === "aberta" ? "bg-blue-100 text-blue-700" :
                     order.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
-                    order.status === "concluída" ? "bg-green-100 text-green-700" :
+                    order.status === "concluída" || order.status === "concluida" ? "bg-green-100 text-green-700" :
                     "bg-neutral-100 text-neutral-600"
                   }`}>
                     {order.status}
@@ -86,7 +109,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {(vehicles || []).map((vehicle) => (
-                <div key={vehicle.id} className="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0" data-testid={`row-vehicle-${vehicle.id}`}>
+                <div key={vehicle.id} className="flex items-center justify-between gap-2 py-2 border-b border-neutral-100 last:border-0" data-testid={`row-vehicle-${vehicle.id}`}>
                   <div>
                     <p className="text-sm font-medium text-neutral-900">{vehicle.plate}</p>
                     <p className="text-xs text-neutral-500">{vehicle.brand} {vehicle.model}</p>

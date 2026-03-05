@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default("admin"),
+  employeeId: integer("employee_id"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
@@ -86,7 +87,9 @@ export const serviceOrders = pgTable("service_orders", {
   scheduledDate: timestamp("scheduled_date"),
   completedDate: timestamp("completed_date"),
   assignedEmployeeId: integer("assigned_employee_id"),
+  assignedEmployee2Id: integer("assigned_employee_2_id"),
   vehicleId: integer("vehicle_id"),
+  missionStatus: text("mission_status").default("aguardando"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -171,3 +174,18 @@ export const timesheets = pgTable("timesheets", {
 export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true, createdAt: true });
 export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
 export type Timesheet = typeof timesheets.$inferSelect;
+
+export const missionPhotos = pgTable("mission_photos", {
+  id: serial("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  step: text("step").notNull(),
+  photoData: text("photo_data").notNull(),
+  kmValue: integer("km_value"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMissionPhotoSchema = createInsertSchema(missionPhotos).omit({ id: true, createdAt: true });
+export type InsertMissionPhoto = z.infer<typeof insertMissionPhotoSchema>;
+export type MissionPhoto = typeof missionPhotos.$inferSelect;

@@ -1,8 +1,8 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
-  vehicleMaintenance, vehicleFueling, timesheets,
+  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -12,6 +12,7 @@ import {
   type VehicleMaintenance, type InsertVehicleMaintenance,
   type VehicleFueling, type InsertVehicleFueling,
   type Timesheet, type InsertTimesheet,
+  type MissionPhoto, type InsertMissionPhoto,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -66,6 +67,11 @@ export interface IStorage {
   createTimesheet(t: InsertTimesheet): Promise<Timesheet>;
   updateTimesheet(id: number, t: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
   deleteTimesheet(id: number): Promise<void>;
+
+  getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]>;
+  getMissionPhoto(id: number): Promise<MissionPhoto | undefined>;
+  createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto>;
+  getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -266,6 +272,33 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTimesheet(id: number): Promise<void> {
     await db.delete(timesheets).where(eq(timesheets.id, id));
+  }
+
+  async getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]> {
+    return db.select().from(missionPhotos)
+      .where(eq(missionPhotos.serviceOrderId, serviceOrderId))
+      .orderBy(missionPhotos.createdAt);
+  }
+
+  async getMissionPhoto(id: number): Promise<MissionPhoto | undefined> {
+    const [p] = await db.select().from(missionPhotos).where(eq(missionPhotos.id, id));
+    return p;
+  }
+
+  async createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto> {
+    const [created] = await db.insert(missionPhotos).values(photo).returning();
+    return created;
+  }
+
+  async getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]> {
+    return db.select().from(serviceOrders)
+      .where(
+        or(
+          eq(serviceOrders.assignedEmployeeId, employeeId),
+          eq(serviceOrders.assignedEmployee2Id, employeeId)
+        )
+      )
+      .orderBy(desc(serviceOrders.createdAt));
   }
 }
 

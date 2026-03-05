@@ -59,8 +59,22 @@ Institutional landing page and internal management system for Torres Vigilância
 - PDF presentation generator per client (jsPDF) — professional multi-page presentation with company info
 - CNPJ auto-fill via BrasilAPI (auto-formats and fetches company data)
 
+### Mission Workflow System
+- Step-by-step employee mission workflow with mandatory photo documentation
+- Mission steps: km_saida → checklist_saida → em_transito_origem → km_chegada_origem → fotos_cliente → em_transito_destino → km_chegada_destino → checklist_retorno → finalizada
+- Each OS supports 2 assigned employees with real-time status visibility (5s polling)
+- Photo capture with client-side compression (max 1024px, JPEG quality 0.7)
+- KM readings required at departure, client arrival, and destination arrival
+- Vehicle checklist photos (4 angles) at departure and return
+- Client site photos (3 shots: vehicle at client, client vehicle front/back)
+- Admin can create employee user accounts (Criar Acesso) from employees page
+- Mission status badges visible on service orders list
+- Authorization: employees can only access their own assigned missions
+- Express body limit increased to 10mb for photo uploads
+- Mission page: `/admin/mission` — mobile-friendly responsive layout
+
 ## Database Tables
-users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets
+users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos
 
 ## Brand
 - Colors: Black/white professional aesthetic

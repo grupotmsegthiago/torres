@@ -6,9 +6,76 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound } from "lucide-react";
 import type { Employee } from "@shared/schema";
+
+function CreateAccessModal({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/auth/register", {
+        username,
+        password,
+        name: employee.name,
+        role: "funcionario",
+        employeeId: employee.id,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Acesso criado com sucesso" });
+      setUsername("");
+      setPassword("");
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Criar Acesso - {employee.name}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }} className="space-y-4">
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">Usuário *</label>
+            <Input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              placeholder="Ex: joao.silva"
+              data-testid="input-access-username"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">Senha *</label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Senha de acesso"
+              data-testid="input-access-password"
+            />
+          </div>
+          <div className="flex gap-3">
+            <Button type="submit" disabled={mutation.isPending} data-testid="button-save-access">
+              {mutation.isPending ? "Criando..." : "Criar Acesso"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
   const { toast } = useToast();
@@ -109,6 +176,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 export default function EmployeesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Employee | undefined>();
+  const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
   const { toast } = useToast();
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
 
@@ -130,6 +198,14 @@ export default function EmployeesPage() {
       </div>
 
       {showForm && <EmployeeForm employee={editItem} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
+
+      {accessEmployee && (
+        <CreateAccessModal
+          employee={accessEmployee}
+          open={!!accessEmployee}
+          onClose={() => setAccessEmployee(null)}
+        />
+      )}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
@@ -162,8 +238,19 @@ export default function EmployeesPage() {
                       }`}>{e.status}</span>
                     </td>
                     <td className="p-3 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(e.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      <div className="flex items-center justify-end gap-1 flex-wrap">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setAccessEmployee(e)}
+                          title="Criar Acesso"
+                          data-testid={`button-create-access-${e.id}`}
+                        >
+                          <KeyRound className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }} data-testid={`button-edit-employee-${e.id}`}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(e.id)} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

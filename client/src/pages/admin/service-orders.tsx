@@ -6,9 +6,32 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Eye } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play } from "lucide-react";
 import type { ServiceOrder, Client, Employee, Vehicle } from "@shared/schema";
+
+const MISSION_STATUS_LABELS: Record<string, string> = {
+  aguardando: "Aguardando",
+  km_saida: "KM Saída",
+  checklist_saida: "Checklist Saída",
+  em_transito_origem: "Em Trânsito (Origem)",
+  km_chegada_origem: "KM Chegada Origem",
+  fotos_cliente: "Fotos Cliente",
+  em_transito_destino: "Em Trânsito (Destino)",
+  km_chegada_destino: "KM Chegada Destino",
+  checklist_retorno: "Checklist Retorno",
+  finalizada: "Finalizada",
+};
+
+function getMissionStatusColor(status: string | null) {
+  if (!status) return "bg-neutral-100 text-neutral-600";
+  switch (status) {
+    case "aguardando": return "bg-slate-100 text-slate-700";
+    case "finalizada": return "bg-green-100 text-green-700";
+    default: return "bg-cyan-100 text-cyan-700";
+  }
+}
 
 function OrderForm({ order, clients, employees, vehicles, onClose }: {
   order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void;
@@ -24,6 +47,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose }: {
     scheduledDate: order?.scheduledDate ? new Date(order.scheduledDate).toISOString().slice(0, 16) : "",
     completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
     assignedEmployeeId: order?.assignedEmployeeId || null,
+    assignedEmployee2Id: order?.assignedEmployee2Id || null,
     vehicleId: order?.vehicleId || null,
     notes: order?.notes || "",
   });
@@ -34,6 +58,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose }: {
         ...data,
         clientId: Number(data.clientId),
         assignedEmployeeId: data.assignedEmployeeId ? Number(data.assignedEmployeeId) : null,
+        assignedEmployee2Id: data.assignedEmployee2Id ? Number(data.assignedEmployee2Id) : null,
         vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
         scheduledDate: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
         completedDate: data.completedDate ? new Date(data.completedDate).toISOString() : null,
@@ -105,8 +130,15 @@ function OrderForm({ order, clients, employees, vehicles, onClose }: {
           <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} data-testid="input-os-scheduled" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Funcionário Responsável</label>
+          <label className="text-xs text-neutral-500 mb-1 block">Funcionário 1</label>
           <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-employee">
+            <option value="">Selecione...</option>
+            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 block">Funcionário 2</label>
+          <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm({ ...form, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-employee2">
             <option value="">Selecione...</option>
             {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
           </select>
@@ -157,7 +189,27 @@ export default function ServiceOrdersPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); toast({ title: "OS removida" }); },
   });
 
+  const startMissionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/service-orders/${id}`, {
+        status: "em_andamento",
+        missionStatus: "aguardando",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      toast({ title: "Missão iniciada" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
   const getClientName = (id: number) => (clients || []).find((c) => c.id === id)?.name || "-";
+  const getEmployeeName = (id: number | null) => {
+    if (!id) return null;
+    return (employees || []).find((e) => e.id === id)?.name || null;
+  };
 
   return (
     <AdminLayout>
@@ -188,6 +240,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
                   <th className="text-left p-3 font-medium text-neutral-600">Prioridade</th>
                   <th className="text-left p-3 font-medium text-neutral-600">Status</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Missão</th>
                   <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
                 </tr>
               </thead>
@@ -208,13 +261,36 @@ export default function ServiceOrdersPage() {
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         o.status === "aberta" ? "bg-blue-100 text-blue-700" :
                         o.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
-                        o.status === "concluída" ? "bg-green-100 text-green-700" :
+                        o.status === "concluída" || o.status === "concluida" ? "bg-green-100 text-green-700" :
                         "bg-neutral-100 text-neutral-600"
                       }`}>{o.status}</span>
                     </td>
+                    <td className="p-3">
+                      {o.missionStatus ? (
+                        <Badge variant="secondary" className={`text-xs ${getMissionStatusColor(o.missionStatus)}`} data-testid={`badge-mission-${o.id}`}>
+                          {MISSION_STATUS_LABELS[o.missionStatus] || o.missionStatus}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-neutral-400">-</span>
+                      )}
+                    </td>
                     <td className="p-3 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(o.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      <div className="flex items-center justify-end gap-1 flex-wrap">
+                        {o.status === "aberta" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => startMissionMutation.mutate(o.id)}
+                            disabled={startMissionMutation.isPending}
+                            title="Iniciar Missão"
+                            data-testid={`button-start-mission-${o.id}`}
+                          >
+                            <Play className="w-4 h-4 text-green-600" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(o.id)} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
