@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import {
   Shield, Truck, Building2, Phone, MapPin, Navigation,
   Package, Send, Menu, X, ArrowRight, Eye, Radio,
-  Users, Lock, ChevronLeft, ChevronRight, Monitor
+  Users, Lock, ChevronLeft, ChevronRight, Monitor, CalendarClock
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -507,19 +507,28 @@ function EscortCalculator() {
   const [origem, setOrigem] = useState("");
   const [destino, setDestino] = useState("");
   const [carga, setCarga] = useState("");
+  const [dataEmbarque, setDataEmbarque] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!origem.trim() || !destino.trim() || !carga.trim()) return;
+    if (!origem.trim() || !destino.trim() || !carga.trim() || !dataEmbarque) return;
+
+    const dataFormatada = new Date(dataEmbarque).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const msg = encodeURIComponent(
-      `Olá, gostaria de uma cotação de Escolta Armada:\n\nOrigem: ${origem}\nDestino: ${destino}\nCarga/Tipo de Serviço: ${carga}\n\nSolicitado via Site Torres`
+      `Olá, gostaria de uma cotação de *Escolta Armada*:\n\n*Origem:* ${origem}\n*Destino:* ${destino}\n*Data/Hora do Embarque:* ${dataFormatada}\n*Carga / Tipo de Serviço:* ${carga}\n\n_Solicitado via Site Torres_`
     );
 
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`, "_blank");
   };
 
-  const isValid = origem.trim() && destino.trim() && carga.trim();
+  const isValid = origem.trim() && destino.trim() && carga.trim() && dataEmbarque;
 
   return (
     <section id="cotacao" className="relative py-24 sm:py-32 overflow-hidden" data-testid="section-quote">
@@ -603,6 +612,24 @@ function EscortCalculator() {
                       className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Destino"
                       data-testid="input-destino"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="dataEmbarque" className="text-xs font-medium text-white/40 mb-2 block uppercase tracking-wider" data-testid="label-data-embarque">
+                    Data / Hora do Embarque
+                  </label>
+                  <div className="relative">
+                    <CalendarClock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                    <Input
+                      id="dataEmbarque"
+                      type="datetime-local"
+                      value={dataEmbarque}
+                      onChange={(e) => setDataEmbarque(e.target.value)}
+                      className="pl-10 bg-white/5 border-white/10 text-white [color-scheme:dark]"
+                      aria-label="Data e hora do embarque"
+                      data-testid="input-data-embarque"
                     />
                   </div>
                 </div>
