@@ -290,3 +290,25 @@
     inset: -1px;
   }
 }
+
+@media print {
+  body, html {
+    background: #000 !important;
+    visibility: hidden !important;
+  }
+  * {
+    display: none !important;
+    visibility: hidden !important;
+    color: #000 !important;
+    background: #000 !important;
+    opacity: 0 !important;
+  }
+}
+
+.no-print-zone {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

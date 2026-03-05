@@ -79,7 +79,8 @@ Institutional landing page and internal management system for Torres Vigilância
 - Mission status badges visible on service orders list
 - Authorization: employees can only access their own assigned missions
 - Express body limit increased to 10mb for photo uploads
-- Mission page: `/admin/mission` — mobile-friendly responsive layout
+- Mission page: `/admin/mission` — military/operational aesthetic with olive gradient, Torres shield watermark, golden action buttons, real-time timer
+- Screenshot/print protection: @media print makes everything black; .no-print-zone disables text selection
 
 ## Database Tables
 users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos
