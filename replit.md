@@ -58,6 +58,13 @@ Institutional landing page and internal management system for Torres Vigilância
 - Vehicle tracker placeholder (ready for API integration)
 - PDF presentation generator per client (jsPDF) — professional multi-page presentation with company info
 - CNPJ auto-fill via BrasilAPI (auto-formats and fetches company data)
+- Vehicle plate auto-fill via API Brasil (APIBRASIL_TOKEN required)
+
+### Consultas (API Lookups)
+- Dedicated page at `/admin/consultas` with tabbed interface
+- **DataJud (CNJ)**: Public judicial process lookup by CNPJ across Brazilian tribunals. Uses public APIKey. Supports tribunal selection (TJSP, TRT2, TRT15, etc.). Shows process number, class, subjects, court, filing date, and last 5 movements with expandable details.
+- **Consulta de Placa**: Vehicle plate lookup via API Brasil. Returns brand, model, year, color, chassis, fuel type, city/state. Requires APIBRASIL_TOKEN env var.
+- Architecture: backend proxy routes at `/api/datajud/:cnpj` and `/api/plate-lookup/:plate` to handle auth and normalize responses
 
 ### Operational Grid
 - Real-time operational monitoring page (`/admin/operational-grid`)
