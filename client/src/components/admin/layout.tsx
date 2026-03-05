@@ -4,12 +4,13 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle,
-  ChevronDown, ChevronRight, Building2, Target
+  ChevronDown, ChevronRight, Building2, Target, Radio
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const menuItems = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
+  { path: "/admin/operational-grid", label: "Grid Operacional", icon: Radio },
   { path: "/admin/clients", label: "Clientes", icon: Building2 },
   { path: "/admin/employees", label: "Funcionários", icon: Users },
   { path: "/admin/service-orders", label: "Ordens de Serviço", icon: FileText },

@@ -59,6 +59,14 @@ Institutional landing page and internal management system for Torres Vigilância
 - PDF presentation generator per client (jsPDF) — professional multi-page presentation with company info
 - CNPJ auto-fill via BrasilAPI (auto-formats and fetches company data)
 
+### Operational Grid
+- Real-time operational monitoring page (`/admin/operational-grid`)
+- Shows all active/open service orders with enriched data
+- Columns: OS#, scheduled date/time, client name, agents (First Last format) with WhatsApp links, mission status, location (map link), ignition (green/red key icon), last position time (color-coded: green <5min, yellow 5-30min, red >30min), GPS signal, edit button
+- Auto-refreshes every 15 seconds
+- Tracker integration: fetches from vehicle's `trackerApiUrl` when configured; shows "Sem rastreador" placeholder when not
+- Backend: `GET /api/operational-grid` joins service orders with clients, employees, vehicles, and tracker data
+
 ### Mission Workflow System
 - Step-by-step employee mission workflow with mandatory photo documentation
 - Mission steps: km_saida → checklist_saida → em_transito_origem → km_chegada_origem → fotos_cliente → em_transito_destino → km_chegada_destino → checklist_retorno → finalizada

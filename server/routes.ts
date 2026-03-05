@@ -317,6 +317,79 @@ export async function registerRoutes(
     res.json({ message: "Ponto removido" });
   });
 
+  // ====================== OPERATIONAL GRID ======================
+
+  app.get("/api/operational-grid", requireAuth, async (_req, res) => {
+    const orders = await storage.getServiceOrders();
+    const activeOrders = orders.filter(
+      (o) => o.status === "em_andamento" || o.status === "aberta"
+    );
+
+    const enriched = await Promise.all(
+      activeOrders.map(async (o) => {
+        const [client, vehicle, emp1, emp2] = await Promise.all([
+          storage.getClient(o.clientId),
+          o.vehicleId ? storage.getVehicle(o.vehicleId) : null,
+          o.assignedEmployeeId ? storage.getEmployee(o.assignedEmployeeId) : null,
+          o.assignedEmployee2Id ? storage.getEmployee(o.assignedEmployee2Id) : null,
+        ]);
+
+        const formatName = (name?: string) => {
+          if (!name) return null;
+          const parts = name.trim().split(/\s+/);
+          if (parts.length <= 1) return name;
+          return `${parts[0]} ${parts[parts.length - 1]}`;
+        };
+
+        let trackerData: {
+          latitude?: number;
+          longitude?: number;
+          ignition?: boolean;
+          lastPositionTime?: string;
+          gpsSignal?: boolean;
+          speed?: number;
+          address?: string;
+        } | null = null;
+
+        if (vehicle?.trackerApiUrl && vehicle?.trackerId) {
+          try {
+            const resp = await fetch(vehicle.trackerApiUrl);
+            if (resp.ok) {
+              trackerData = await resp.json();
+            }
+          } catch (_e) {
+            trackerData = null;
+          }
+        }
+
+        return {
+          id: o.id,
+          osNumber: o.osNumber,
+          scheduledDate: o.scheduledDate,
+          status: o.status,
+          missionStatus: o.missionStatus,
+          clientName: client?.name || "—",
+          employee1: emp1 ? {
+            name: formatName(emp1.name),
+            phone: emp1.phone || null,
+          } : null,
+          employee2: emp2 ? {
+            name: formatName(emp2.name),
+            phone: emp2.phone || null,
+          } : null,
+          vehicle: vehicle ? {
+            plate: vehicle.plate,
+            model: vehicle.model,
+            hasTracker: !!(vehicle.trackerId && vehicle.trackerApiUrl),
+          } : null,
+          tracker: trackerData,
+        };
+      })
+    );
+
+    res.json(enriched);
+  });
+
   // ====================== MISSION ROUTES ======================
 
   app.get("/api/mission/active", requireAuth, async (req, res) => {

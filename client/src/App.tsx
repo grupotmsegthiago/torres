@@ -18,6 +18,7 @@ import MaintenancePage from "@/pages/admin/maintenance";
 import TimesheetsPage from "@/pages/admin/timesheets";
 import TrackerPage from "@/pages/admin/tracker";
 import MissionPage from "@/pages/admin/mission";
+import OperationalGridPage from "@/pages/admin/operational-grid";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 
@@ -57,6 +58,7 @@ function Router() {
       <Route path="/admin/timesheets">{() => <ProtectedRoute component={TimesheetsPage} />}</Route>
       <Route path="/admin/tracker">{() => <ProtectedRoute component={TrackerPage} />}</Route>
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
+      <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
