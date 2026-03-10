@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { useAuth } from "@/hooks/use-auth";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 import {
   Shield, Camera, Car, Clock, Truck, User, Siren,
@@ -285,7 +286,7 @@ function StepMockup({ step }: { step: typeof steps[0] }) {
                 </div>
               </div>
               <div className="bg-muted/60 rounded-lg border border-border p-2 text-[10px] space-y-1 text-left">
-                <p><span className="font-bold">CLIENTE:</span> Torres Vigilância</p>
+                {!isVigilante && <p><span className="font-bold">CLIENTE:</span> Torres Vigilância</p>}
                 <p><span className="font-bold">OS:</span> OS-2026-001</p>
                 <p><span className="font-bold">VIATURA:</span> RIO2A34 (Hilux SW4)</p>
               </div>
@@ -453,6 +454,8 @@ function StepMockup({ step }: { step: typeof steps[0] }) {
 }
 
 export default function GuiaMissaoPage() {
+  const { user } = useAuth();
+  const isVigilante = user?.role === "funcionario";
   return (
     <AdminLayout>
       <div className="max-w-4xl mx-auto pb-16" data-testid="guia-missao-page">
@@ -531,10 +534,10 @@ export default function GuiaMissaoPage() {
                   <div className="p-6">
                     <div className="grid md:grid-cols-2 gap-6">
                       <div>
-                        <p className="text-sm text-foreground mb-4">{step.description}</p>
+                        <p className="text-sm text-foreground mb-4">{isVigilante ? step.description.replace(/,?\s*cliente/gi, '').replace(/cliente,?\s*/gi, '') : step.description}</p>
 
                         <div className="space-y-2">
-                          {step.details.map((detail, i) => (
+                          {step.details.filter(d => !isVigilante || !d.toLowerCase().includes("cliente")).map((detail, i) => (
                             <div key={i} className="flex items-start gap-2">
                               <ChevronRight className="w-3 h-3 text-muted-foreground mt-1 shrink-0" />
                               <p className="text-xs text-muted-foreground">{detail}</p>
