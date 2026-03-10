@@ -75,7 +75,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - **Auto-consultation on registration**: When creating employees (CPF → CNH, Processos, SPC, Quod, Protesto, Situação Eleitoral), clients (CPF/CNPJ → SPC, Quod, Protesto, Processos if CPF), or vehicles (Plate → Dados Veículo, Multas PRF) — all consultations fire asynchronously in the background with source tags (cadastro_funcionario, cadastro_cliente, cadastro_veiculo)
 - Architecture: `server/apibrasil.ts` centralized service with auto-logging to `api_logs` table
 - Backend routes: `/api/consulta/*` for all API Brasil endpoints, `/api/api-logs` and `/api/api-logs/stats` for consumption tracking
-- Credit Analysis: "Análise de Risco" button on clients page runs SPC+Quod+Protesto simultaneously
+- Credit Analysis: "Análise de Risco" button on clients page uses ReceitaWS (receitaws.com.br) for CNPJ lookup with automated risk scoring (BAIXO/MEDIO/ALTO), company data, partners, and contact info
 
 ### Automated Tasks (Cron Jobs)
 - **Fleet Monitoring**: Daily at 02:00 AM — iterates all vehicles, checks multas PRF, logs results

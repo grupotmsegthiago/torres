@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Search, Loader2, FileDown, ShieldCheck } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Search, Loader2, FileDown, ShieldCheck, AlertTriangle, CheckCircle2, Building2, Users, MapPin, Phone, Mail, Calendar, Banknote, BadgeCheck } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
 
@@ -189,7 +189,7 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/consulta/analise-credito/${doc}`, { credentials: "include" });
+      const res = await fetch(`/api/consulta/analise-risco/${doc}`, { credentials: "include" });
       const data = await res.json();
       setResult(data);
     } catch {
@@ -199,13 +199,15 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
     }
   }, [client, toast]);
 
+  const riskColor = result?.riskLevel === "BAIXO" ? "green" : result?.riskLevel === "MEDIO" ? "amber" : result?.riskLevel === "ALTO" ? "red" : "neutral";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="modal-credit-analysis">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="modal-credit-analysis">
         <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Análise de Risco</h2>
-            <p className="text-xs text-neutral-500">{client.name}</p>
+            <p className="text-xs text-neutral-500">{client.name} — via ReceitaWS</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-analysis"><X className="w-4 h-4" /></Button>
         </div>
@@ -213,57 +215,156 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
           {!result && !loading && (
             <div className="text-center py-8">
               <ShieldCheck className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
-              <p className="text-sm text-neutral-500 mb-4">Consultar SPC/Serasa, Score Quod e Protestos para:</p>
+              <p className="text-sm text-neutral-500 mb-4">Consultar dados cadastrais e análise de risco via ReceitaWS para:</p>
               <p className="font-medium text-neutral-900 mb-1">{client.name}</p>
-              <p className="text-xs text-neutral-500 font-mono mb-6">{client.cnpj || client.cpf || "Sem documento"}</p>
-              <Button onClick={runAnalysis} disabled={!client.cnpj && !client.cpf} data-testid="button-run-analysis">
-                <ShieldCheck className="w-4 h-4 mr-2" /> Iniciar Análise
+              <p className="text-xs text-neutral-500 font-mono mb-2">{client.cnpj || client.cpf || "Sem documento"}</p>
+              {!client.cnpj && client.cpf && (
+                <p className="text-xs text-amber-600 mb-4">Análise de risco via ReceitaWS disponível apenas para CNPJ</p>
+              )}
+              <Button onClick={runAnalysis} disabled={!client.cnpj} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-run-analysis">
+                <ShieldCheck className="w-4 h-4 mr-2" /> Iniciar Análise de Risco
               </Button>
             </div>
           )}
           {loading && (
             <div className="text-center py-8">
-              <Loader2 className="w-8 h-8 animate-spin text-neutral-400 mx-auto mb-3" />
-              <p className="text-sm text-neutral-500">Consultando 3 fontes simultaneamente...</p>
+              <Loader2 className="w-8 h-8 animate-spin text-emerald-500 mx-auto mb-3" />
+              <p className="text-sm text-neutral-500">Consultando ReceitaWS...</p>
             </div>
           )}
           {result && !loading && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "SPC/Serasa", status: result.summary?.spcStatus, data: result.spc },
-                  { label: "Score Quod", status: result.summary?.quodStatus, data: result.quod },
-                  { label: "Protestos", status: result.summary?.protestoStatus, data: result.protesto },
-                ].map((item) => (
-                  <div key={item.label} className={`p-3 rounded-lg border text-center ${item.status === "consultado" ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
-                    <p className="text-[10px] text-neutral-500 mb-1">{item.label}</p>
-                    <p className={`text-xs font-bold ${item.status === "consultado" ? "text-green-700" : "text-red-700"}`} data-testid={`text-status-${item.label.toLowerCase().replace(/[/\s]/g, '-')}`}>
-                      {item.status === "consultado" ? "Consultado" : "Erro"}
-                    </p>
-                  </div>
-                ))}
+              <div className={`p-4 rounded-lg border-2 flex items-center gap-3 ${
+                riskColor === "green" ? "border-green-300 bg-green-50" :
+                riskColor === "amber" ? "border-amber-300 bg-amber-50" :
+                riskColor === "red" ? "border-red-300 bg-red-50" :
+                "border-neutral-300 bg-neutral-50"
+              }`}>
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                  riskColor === "green" ? "bg-green-200" :
+                  riskColor === "amber" ? "bg-amber-200" :
+                  riskColor === "red" ? "bg-red-200" : "bg-neutral-200"
+                }`}>
+                  {riskColor === "green" ? <CheckCircle2 className="w-6 h-6 text-green-700" /> :
+                   riskColor === "red" ? <AlertTriangle className="w-6 h-6 text-red-700" /> :
+                   <ShieldCheck className="w-6 h-6 text-amber-700" />}
+                </div>
+                <div>
+                  <p className={`text-lg font-bold ${
+                    riskColor === "green" ? "text-green-800" :
+                    riskColor === "amber" ? "text-amber-800" :
+                    riskColor === "red" ? "text-red-800" : "text-neutral-800"
+                  }`} data-testid="text-risk-level">
+                    Risco {result.riskLevel}
+                  </p>
+                  <p className="text-xs text-neutral-600">
+                    {result.risks?.length === 0 ? "Nenhum fator de risco identificado" : `${result.risks?.length} fator(es) de risco`}
+                  </p>
+                </div>
               </div>
-              {result.hasRestrictions && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                  Algumas consultas retornaram erro. Verifique se o token APIBRASIL_TOKEN está configurado corretamente.
+
+              {result.risks?.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                  {result.risks.map((r: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-red-800">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-red-500" />
+                      <span>{r}</span>
+                    </div>
+                  ))}
                 </div>
               )}
-              {[
-                { label: "SPC/Serasa", data: result.spc },
-                { label: "Score Quod", data: result.quod },
-                { label: "Protestos", data: result.protesto },
-              ].map((item) => (
-                <div key={item.label} className="border border-neutral-200 rounded-lg overflow-hidden">
-                  <div className="bg-neutral-50 p-2.5 text-xs font-medium text-neutral-700">{item.label}</div>
-                  <pre className="p-3 text-[10px] text-neutral-600 overflow-auto max-h-[150px] whitespace-pre-wrap break-words">
-                    {JSON.stringify(item.data?.data || item.data, null, 2)}
-                  </pre>
+
+              {result.companyInfo && (
+                <>
+                  <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                    <div className="bg-neutral-50 p-3 flex items-center gap-2 border-b border-neutral-200">
+                      <Building2 className="w-4 h-4 text-neutral-500" />
+                      <span className="text-sm font-medium text-neutral-700">Dados da Empresa</span>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 gap-3">
+                      <InfoRow label="Razão Social" value={result.companyInfo.nome} />
+                      {result.companyInfo.fantasia && <InfoRow label="Nome Fantasia" value={result.companyInfo.fantasia} />}
+                      <InfoRow label="Situação" value={result.companyInfo.situacao} highlight={result.companyInfo.situacao === "ATIVA" ? "green" : "red"} />
+                      <InfoRow label="Abertura" value={result.companyInfo.abertura} icon={<Calendar className="w-3 h-3" />} />
+                      <InfoRow label="Tipo" value={result.companyInfo.tipo} />
+                      <InfoRow label="Porte" value={result.companyInfo.porte} />
+                      <InfoRow label="Natureza Jurídica" value={result.companyInfo.natureza} />
+                      <InfoRow label="Capital Social" value={`R$ ${parseFloat(result.companyInfo.capitalSocial || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} icon={<Banknote className="w-3 h-3" />} />
+                      <InfoRow label="Atividade Principal" value={result.companyInfo.atividadePrincipal} full />
+                      <InfoRow label="Simples Nacional" value={result.companyInfo.simples} icon={<BadgeCheck className="w-3 h-3" />} />
+                    </div>
+                  </div>
+
+                  {result.companyInfo.socios?.length > 0 && (
+                    <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                      <div className="bg-neutral-50 p-3 flex items-center gap-2 border-b border-neutral-200">
+                        <Users className="w-4 h-4 text-neutral-500" />
+                        <span className="text-sm font-medium text-neutral-700">Quadro Societário ({result.companyInfo.socios.length})</span>
+                      </div>
+                      <div className="divide-y divide-neutral-100">
+                        {result.companyInfo.socios.map((s: any, i: number) => (
+                          <div key={i} className="px-4 py-2.5 flex items-center justify-between">
+                            <span className="text-sm text-neutral-900 font-medium">{s.nome}</span>
+                            <span className="text-[10px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">{s.qualificacao}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                    <div className="bg-neutral-50 p-3 flex items-center gap-2 border-b border-neutral-200">
+                      <MapPin className="w-4 h-4 text-neutral-500" />
+                      <span className="text-sm font-medium text-neutral-700">Contato e Endereço</span>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-neutral-700">
+                        <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                        <span>{result.companyInfo.endereco}</span>
+                      </div>
+                      {result.companyInfo.telefone && (
+                        <div className="flex items-center gap-2 text-sm text-neutral-700">
+                          <Phone className="w-3.5 h-3.5 text-neutral-400" />
+                          <span>{result.companyInfo.telefone}</span>
+                        </div>
+                      )}
+                      {result.companyInfo.email && (
+                        <div className="flex items-center gap-2 text-sm text-neutral-700">
+                          <Mail className="w-3.5 h-3.5 text-neutral-400" />
+                          <span>{result.companyInfo.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {!result.receita?.success && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  {result.receita?.error || "Erro ao consultar ReceitaWS"}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, icon, highlight, full }: { label: string; value?: string; icon?: React.ReactNode; highlight?: "green" | "red"; full?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className={full ? "col-span-2" : ""}>
+      <p className="text-[10px] text-neutral-400 mb-0.5">{label}</p>
+      <div className="flex items-center gap-1">
+        {icon && <span className="text-neutral-400">{icon}</span>}
+        <p className={`text-xs font-medium ${
+          highlight === "green" ? "text-green-700" :
+          highlight === "red" ? "text-red-700" :
+          "text-neutral-800"
+        }`}>{value}</p>
       </div>
     </div>
   );

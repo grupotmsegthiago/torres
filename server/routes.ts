@@ -568,11 +568,82 @@ export async function registerRoutes(
     res.status(result.status || 200).json(result);
   });
 
-  app.get("/api/consulta/analise-credito/:document", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/consulta/analise-risco/:document", requireAuth, requireAdmin, async (req, res) => {
     const doc = String(req.params.document).replace(/\D/g, "");
     if (doc.length !== 11 && doc.length !== 14) return res.status(400).json({ message: "CPF/CNPJ inválido" });
-    const result = await apibrasil.analiseCredito(doc, req.user!.id);
-    res.json(result);
+
+    const results: any = { document: doc, type: doc.length === 14 ? "CNPJ" : "CPF" };
+
+    if (doc.length === 14) {
+      try {
+        const receitaRes = await fetch(`https://receitaws.com.br/v1/cnpj/${doc}`, {
+          headers: { "Authorization": `Bearer ${process.env.RECEITAWS_TOKEN || ""}` },
+        });
+        const receitaData = await receitaRes.json();
+        results.receita = {
+          success: receitaData.status === "OK",
+          data: receitaData,
+        };
+
+        if (receitaData.status === "OK") {
+          const risks: string[] = [];
+          if (receitaData.situacao !== "ATIVA") risks.push(`Situação cadastral: ${receitaData.situacao}`);
+          if (receitaData.motivo_situacao) risks.push(`Motivo: ${receitaData.motivo_situacao}`);
+          if (receitaData.situacao_especial) risks.push(`Situação especial: ${receitaData.situacao_especial}`);
+          const capital = parseFloat(receitaData.capital_social || "0");
+          if (capital < 10000) risks.push(`Capital social baixo: R$ ${capital.toLocaleString("pt-BR")}`);
+
+          const abertura = receitaData.abertura;
+          if (abertura) {
+            const parts = abertura.split("/");
+            if (parts.length === 3) {
+              const openDate = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+              const diffYears = (Date.now() - openDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+              if (diffYears < 2) risks.push(`Empresa recente (aberta em ${abertura})`);
+            }
+          }
+
+          results.riskLevel = risks.length === 0 ? "BAIXO" : risks.length <= 2 ? "MEDIO" : "ALTO";
+          results.risks = risks;
+          results.companyInfo = {
+            nome: receitaData.nome,
+            fantasia: receitaData.fantasia,
+            situacao: receitaData.situacao,
+            abertura: receitaData.abertura,
+            tipo: receitaData.tipo,
+            porte: receitaData.porte,
+            natureza: receitaData.natureza_juridica,
+            capitalSocial: receitaData.capital_social,
+            atividadePrincipal: receitaData.atividade_principal?.[0]?.text,
+            socios: receitaData.qsa?.map((s: any) => ({ nome: s.nome, qualificacao: s.qual })),
+            simples: receitaData.simples?.optante ? "Sim" : "Não",
+            endereco: `${receitaData.logradouro}, ${receitaData.numero} - ${receitaData.bairro}, ${receitaData.municipio}/${receitaData.uf}`,
+            telefone: receitaData.telefone,
+            email: receitaData.email,
+          };
+        }
+      } catch (e: any) {
+        results.receita = { success: false, error: e.message };
+        results.riskLevel = "INDETERMINADO";
+        results.risks = ["Erro ao consultar ReceitaWS"];
+      }
+    } else {
+      results.riskLevel = "INDETERMINADO";
+      results.risks = ["Análise de risco via ReceitaWS disponível apenas para CNPJ"];
+      results.receita = { success: false, error: "CPF não suportado pela ReceitaWS" };
+    }
+
+    await storage.createApiLog({
+      endpoint: "/receitaws/cnpj",
+      method: "GET",
+      requestData: JSON.stringify({ document: doc }),
+      responseStatus: results.receita?.success ? 200 : 400,
+      responseData: JSON.stringify(results).substring(0, 5000),
+      userId: req.user!.id,
+      source: "analise_risco",
+    });
+
+    res.json(results);
   });
 
   app.get("/api/api-logs", requireAuth, async (req, res) => {
