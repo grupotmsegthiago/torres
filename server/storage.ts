@@ -1,4 +1,4 @@
-import { eq, desc, or } from "drizzle-orm";
+import { eq, desc, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
@@ -21,6 +21,8 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  hasAnyUsers(): Promise<boolean>;
+  createFirstAdmin(data: { username: string; password: string; name: string }): Promise<User>;
 
   getClients(): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
@@ -98,6 +100,28 @@ export class DatabaseStorage implements IStorage {
   async createUser(user: InsertUser): Promise<User> {
     const [created] = await db.insert(users).values(user).returning();
     return created;
+  }
+
+  async hasAnyUsers(): Promise<boolean> {
+    const [row] = await db.select({ id: users.id }).from(users).limit(1);
+    return !!row;
+  }
+
+  async createFirstAdmin(data: { username: string; password: string; name: string }): Promise<User> {
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx.select({ id: users.id }).from(users).limit(1);
+      if (existing) {
+        throw new Error("Sistema já possui usuários cadastrados");
+      }
+      const [created] = await tx.insert(users).values({
+        username: data.username,
+        password: data.password,
+        name: data.name,
+        role: "admin",
+      }).returning();
+      return created;
+    });
+    return result;
   }
 
   async getClients(): Promise<Client[]> {

@@ -49,7 +49,9 @@ Institutional landing page and internal management system for Torres Vigilância
 - Contact section
 
 ### Internal System
-- Session-based authentication (default: admin / admin123)
+- Session-based authentication with initial setup flow (first access creates admin account)
+- No hardcoded credentials — first user registers via /admin setup wizard
+- Setup check: GET /api/auth/setup-check, POST /api/auth/setup (only when no users exist)
 - Full CRUD for: Clients, Employees, Vehicles, Service Orders, Trips, Fueling, Maintenance, Timesheets
 - Dashboard with real-time stats
 - Vehicle average consumption calculation

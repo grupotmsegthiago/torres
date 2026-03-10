@@ -41,6 +41,38 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  app.get("/api/auth/setup-check", async (_req, res) => {
+    const hasUsers = await storage.hasAnyUsers();
+    res.json({ needsSetup: !hasUsers });
+  });
+
+  app.post("/api/auth/setup", async (req, res) => {
+    const { username, password, name } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
+    }
+
+    try {
+      const user = await storage.createFirstAdmin({
+        username,
+        password: await hashPassword(password),
+        name,
+      });
+
+      req.logIn(user, (err) => {
+        if (err) return res.status(500).json({ message: "Erro ao fazer login automático" });
+        const { password: _, ...safeUser } = user;
+        res.status(201).json(safeUser);
+      });
+    } catch (err: any) {
+      return res.status(403).json({ message: err.message || "Sistema já possui usuários cadastrados" });
+    }
+  });
+
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);

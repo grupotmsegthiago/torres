@@ -85,25 +85,6 @@ export function setupAuth(app: Express): void {
     }
   });
 
-  createDefaultAdmin();
-}
-
-async function createDefaultAdmin(): Promise<void> {
-  try {
-    const existing = await storage.getUserByUsername("admin");
-    if (!existing) {
-      const hashedPassword = await hashPassword("admin123");
-      await storage.createUser({
-        username: "admin",
-        password: hashedPassword,
-        name: "Administrador",
-        role: "admin",
-      });
-      console.log("Default admin user created (admin / admin123)");
-    }
-  } catch (err) {
-    console.error("Error creating default admin:", err);
-  }
 }
 
 export const requireAuth: RequestHandler = (req, res, next) => {
