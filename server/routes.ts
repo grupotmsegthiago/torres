@@ -114,7 +114,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/employees", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
@@ -130,7 +130,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/employees/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
@@ -143,19 +143,19 @@ export async function registerRoutes(
   });
 
   app.delete("/api/employees/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     await storage.deleteEmployee(Number(req.params.id));
     res.json({ message: "Funcionário removido" });
   });
 
   app.get("/api/employees/:id/salaries", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const salaries = await storage.getEmployeeSalaries(Number(req.params.id));
     res.json(salaries);
   });
 
   app.post("/api/employees/:id/salaries", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const emp = await storage.getEmployee(Number(req.params.id));
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
     const { baseSalary, effectiveDate, reason, notes } = req.body;
@@ -171,7 +171,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/employee-salaries/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     await storage.deleteEmployeeSalary(Number(req.params.id));
     res.json({ message: "Registro salarial removido" });
   });
@@ -506,10 +506,10 @@ export async function registerRoutes(
     }
   });
 
-  // ====================== API BRASIL CONSULTAS (admin-only) ======================
+  // ====================== API BRASIL CONSULTAS (admin + diretoria) ======================
 
   const requireAdmin = (req: any, res: any, next: any) => {
-    if (req.user?.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user?.role !== "admin" && req.user?.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     next();
   };
 
@@ -576,7 +576,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/api-logs", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const logs = await storage.getRecentApiLogs(limit);
     const safeLogs = logs.map(({ responseData, requestData, ...rest }) => ({
@@ -588,7 +588,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/api-logs/stats", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
     const today = new Date().toISOString().split("T")[0];
     const todayLogs = logs.filter(l => l.createdAt && l.createdAt.toISOString().startsWith(today));
@@ -608,7 +608,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/api-logs/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
     const log = logs.find(l => l.id === Number(req.params.id));
     if (!log) return res.status(404).json({ message: "Log não encontrado" });
@@ -864,10 +864,76 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // ====================== TESTAR TODAS APIs ======================
+
+  app.post("/api/consulta/testar-todas", requireAuth, requireAdmin, async (req, res) => {
+    const cpfTeste = "00000000000";
+    const cnpjTeste = "00000000000000";
+    const placaTeste = "ABC1D23";
+
+    const results: Record<string, any> = {};
+
+    const tests = [
+      { name: "Multas PRF", fn: () => apibrasil.consultaMultasPRF(placaTeste, req.user!.id, "teste_api") },
+      { name: "Dados Veículo", fn: () => apibrasil.consultaDadosVeiculo(placaTeste, req.user!.id, "teste_api") },
+      { name: "CNH", fn: () => apibrasil.consultaCNH(cpfTeste, req.user!.id, "teste_api") },
+      { name: "Processos", fn: () => apibrasil.consultaProcessos(cpfTeste, req.user!.id, "teste_api") },
+      { name: "SPC/Serasa", fn: () => apibrasil.consultaSPC(cpfTeste, req.user!.id, "teste_api") },
+      { name: "Score Quod", fn: () => apibrasil.consultaQuodScore(cpfTeste, req.user!.id, "teste_api") },
+      { name: "Protesto Nacional", fn: () => apibrasil.consultaProtestoNacional(cnpjTeste, req.user!.id, "teste_api") },
+      { name: "Situação Eleitoral", fn: () => apibrasil.consultaSituacaoEleitoral(cpfTeste, req.user!.id, "teste_api") },
+    ];
+
+    const startTime = Date.now();
+    const settled = await Promise.allSettled(tests.map(t => t.fn()));
+    const elapsed = Date.now() - startTime;
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    tests.forEach((t, i) => {
+      const s = settled[i];
+      if (s.status === "fulfilled") {
+        results[t.name] = { status: s.value.status, success: s.value.success, data: s.value.data };
+        if (s.value.success) successCount++; else errorCount++;
+      } else {
+        results[t.name] = { status: 0, success: false, error: s.reason?.message || "Erro desconhecido" };
+        errorCount++;
+      }
+    });
+
+    let datajudResult: any = null;
+    try {
+      const djRes = await fetch("https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "APIKey cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==",
+        },
+        body: JSON.stringify({ query: { match: { numeroProcesso: "0000000000000000000" } }, size: 1 }),
+      });
+      datajudResult = { status: djRes.status, success: djRes.ok, message: djRes.ok ? "API pública acessível" : "Erro" };
+      if (djRes.ok) successCount++;
+    } catch (e: any) {
+      datajudResult = { status: 0, success: false, error: e.message };
+      errorCount++;
+    }
+    results["DataJud (CNJ)"] = datajudResult;
+
+    res.json({
+      totalApis: tests.length + 1,
+      success: successCount,
+      errors: errorCount,
+      elapsed: `${elapsed}ms`,
+      tokenConfigured: !!process.env.APIBRASIL_TOKEN,
+      results,
+    });
+  });
+
   // ====================== AUTH REGISTER (admin only) ======================
 
   app.post("/api/auth/register", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin") {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Apenas administradores podem criar usuários" });
     }
 

@@ -29,6 +29,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
   const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("funcionario");
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -36,7 +37,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
         username,
         password,
         name: employee.name,
-        role: "funcionario",
+        role,
         employeeId: employee.id,
       });
     },
@@ -44,6 +45,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
       toast({ title: "Acesso criado com sucesso" });
       setUsername("");
       setPassword("");
+      setRole("funcionario");
       onClose();
     },
     onError: (err: any) => {
@@ -65,6 +67,19 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">Senha *</label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Senha de acesso" data-testid="input-access-password" />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">Perfil</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              data-testid="select-access-role"
+            >
+              <option value="funcionario">Funcionário</option>
+              <option value="admin">Administrador</option>
+              <option value="diretoria">Diretoria</option>
+            </select>
           </div>
           <div className="flex gap-3">
             <Button type="submit" disabled={mutation.isPending} data-testid="button-save-access">

@@ -12,7 +12,7 @@ import {
   Search, Loader2, Scale, Car, ChevronDown, ChevronRight,
   Calendar, Building2, Gavel, FileText, MapPin, ShieldAlert,
   CreditCard, AlertTriangle, Receipt, ScrollText, IdCard, Vote,
-  Activity, Clock
+  Activity, Clock, Zap, CheckCircle2, XCircle
 } from "lucide-react";
 
 function formatCnpjInput(value: string): string {
@@ -546,7 +546,127 @@ function InfoField({ label, value, testId }: { label: string; value?: string; te
   );
 }
 
+function TestarTodasTab() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const handleTest = useCallback(async () => {
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/consulta/testar-todas", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      setResult(data);
+      toast({
+        title: `Teste concluído em ${data.elapsed}`,
+        description: `${data.success} OK / ${data.errors} erros de ${data.totalApis} APIs`,
+      });
+    } catch {
+      toast({ title: "Erro ao executar testes", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-6 bg-white border-neutral-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-neutral-900">Testar Todas as APIs</h3>
+            <p className="text-xs text-neutral-500">Executa uma consulta de teste em cada API simultaneamente</p>
+          </div>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">
+          Serão testadas 9 APIs: DataJud (CNJ), Multas PRF, Dados Veículo, CNH, Processos, SPC/Serasa, Score Quod, Protesto Nacional e Situação Eleitoral.
+          Dados fictícios serão usados para verificar a conectividade.
+        </p>
+        <Button onClick={handleTest} disabled={loading} className="bg-amber-600 hover:bg-amber-700" data-testid="button-test-all-apis">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
+          {loading ? "Testando todas as APIs..." : "Executar Teste Completo"}
+        </Button>
+      </Card>
+
+      {loading && (
+        <Card className="p-8 bg-white border-neutral-200 text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-amber-500 mx-auto mb-3" />
+          <p className="text-sm text-neutral-600 font-medium">Testando 9 APIs simultaneamente...</p>
+          <p className="text-xs text-neutral-400 mt-1">Isso pode levar alguns segundos</p>
+        </Card>
+      )}
+
+      {result && !loading && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="p-4 bg-white border-neutral-200 text-center">
+              <p className="text-2xl font-bold text-neutral-900" data-testid="text-test-total">{result.totalApis}</p>
+              <p className="text-xs text-neutral-500">Total APIs</p>
+            </Card>
+            <Card className="p-4 bg-white border-neutral-200 text-center">
+              <p className="text-2xl font-bold text-green-600" data-testid="text-test-success">{result.success}</p>
+              <p className="text-xs text-neutral-500">Sucesso</p>
+            </Card>
+            <Card className="p-4 bg-white border-neutral-200 text-center">
+              <p className="text-2xl font-bold text-red-600" data-testid="text-test-errors">{result.errors}</p>
+              <p className="text-xs text-neutral-500">Erros</p>
+            </Card>
+            <Card className="p-4 bg-white border-neutral-200 text-center">
+              <p className="text-2xl font-bold text-blue-600" data-testid="text-test-elapsed">{result.elapsed}</p>
+              <p className="text-xs text-neutral-500">Tempo</p>
+            </Card>
+          </div>
+
+          {!result.tokenConfigured && (
+            <Card className="p-4 bg-amber-50 border-amber-200">
+              <div className="flex items-center gap-2 text-amber-800 text-sm">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>APIBRASIL_TOKEN não configurado. As APIs pagas retornarão erro 503 até que o token seja definido.</span>
+              </div>
+            </Card>
+          )}
+
+          <Card className="bg-white border-neutral-200 overflow-hidden">
+            <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-medium text-neutral-700">Resultado por API</span>
+            </div>
+            <div className="divide-y divide-neutral-100">
+              {Object.entries(result.results).map(([name, r]: [string, any]) => (
+                <div key={name} className="flex items-center gap-3 px-4 py-3" data-testid={`row-test-${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${r.success ? "bg-green-100" : "bg-red-100"}`}>
+                    {r.success ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-900">{name}</p>
+                    <p className="text-[10px] text-neutral-400">
+                      Status HTTP: {r.status || "N/A"}
+                      {r.error && ` — ${r.error}`}
+                      {r.data?.error && typeof r.data.error === "string" && ` — ${r.data.error}`}
+                    </p>
+                  </div>
+                  <Badge variant={r.success ? "secondary" : "destructive"} className="text-[10px] shrink-0">
+                    {r.success ? "OK" : "ERRO"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 const TABS = [
+  { id: "testar", label: "Testar Todas", icon: Zap },
   { id: "datajud", label: "DataJud (CNJ)", icon: Scale },
   { id: "placa", label: "Placa", icon: Car },
   { id: "multas", label: "Multas PRF", icon: ShieldAlert },
@@ -562,7 +682,7 @@ const TABS = [
 type TabId = typeof TABS[number]["id"];
 
 export default function ConsultasPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("datajud");
+  const [activeTab, setActiveTab] = useState<TabId>("testar");
 
   return (
     <AdminLayout>
@@ -578,7 +698,9 @@ export default function ConsultasPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                activeTab === tab.id ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"
+                activeTab === tab.id
+                  ? tab.id === "testar" ? "bg-amber-500 text-white shadow-sm" : "bg-white text-neutral-900 shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-700"
               }`}
               data-testid={`tab-${tab.id}`}
             >
@@ -589,6 +711,7 @@ export default function ConsultasPage() {
         </div>
       </div>
 
+      {activeTab === "testar" && <TestarTodasTab />}
       {activeTab === "datajud" && <DataJudTab />}
       {activeTab === "placa" && <PlacaTab />}
       {activeTab === "multas" && <MultasPRFTab />}

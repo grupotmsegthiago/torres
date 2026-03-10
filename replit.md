@@ -127,6 +127,17 @@ Institutional landing page and internal management system for Torres Vigilância
 - Salary management: separate modal with history (employee_salaries table)
 - Auto API Brasil consultations on creation (CNH, Processos, SPC, Quod, Protesto, Situação Eleitoral)
 
+### DIRETORIA Role
+- Dedicated role with same access as admin for all HR/API/consulta routes
+- Crown icon (amber/golden) displayed in sidebar for diretoria users
+- Role label shows "DIRETORIA" in amber text
+- Default credentials: diretoria / diretoria123
+- User creation supports role selection (Funcionário, Administrador, Diretoria) in CreateAccessModal
+- "Testar Todas APIs" tab on Consultas page: tests all 9 APIs simultaneously with connectivity report
+  - Endpoint: POST /api/consulta/testar-todas
+  - Shows per-API results with success/error counts and elapsed time
+  - Warning banner when APIBRASIL_TOKEN not configured
+
 ## Database Tables
 users, clients, employees, employee_salaries, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs
 
