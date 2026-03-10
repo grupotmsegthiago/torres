@@ -235,6 +235,8 @@ function PhotoButton({ slot, uploaded, onCapture, onFileSelect, uploading }: {
 }
 
 function MissionDataCard({ mission }: { mission: ActiveMission }) {
+  const { user } = useAuth();
+  const isVigilante = user?.role === "funcionario";
   const formatName = (name: string) => {
     const parts = name.trim().split(/\s+/);
     if (parts.length <= 1) return name;
@@ -271,9 +273,11 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
       </div>
 
       <div className="bg-muted/60 rounded-xl border border-border p-4 space-y-2">
-        <p className="text-sm text-foreground" data-testid="text-client-name">
-          <span className="font-bold">CLIENTE:</span> {mission.clientName}
-        </p>
+        {!isVigilante && (
+          <p className="text-sm text-foreground" data-testid="text-client-name">
+            <span className="font-bold">CLIENTE:</span> {mission.clientName}
+          </p>
+        )}
         <p className="text-sm text-foreground" data-testid="text-os-number">
           <span className="font-bold">OS:</span> {mission.osNumber}
         </p>
@@ -310,6 +314,8 @@ function StepIcon({ stepKey }: { stepKey: string }) {
 }
 
 function MissionWorkflow({ mission }: { mission: ActiveMission }) {
+  const { user } = useAuth();
+  const isVigilante = user?.role === "funcionario";
   const { toast } = useToast();
   const [kmValue, setKmValue] = useState("");
   const [driverName, setDriverName] = useState(mission.escortedDriverName || "");
@@ -525,7 +531,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
 
         <div className="bg-muted/50 rounded-xl p-3 mb-4 flex items-center justify-between text-xs border border-border">
           <span className="font-bold text-foreground">{mission.osNumber}</span>
-          <span className="text-foreground font-medium">{mission.clientName}</span>
+          {!isVigilante && <span className="text-foreground font-medium">{mission.clientName}</span>}
           <span className="text-muted-foreground">{mission.vehiclePlate}</span>
         </div>
 
