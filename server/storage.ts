@@ -1,4 +1,4 @@
-import { eq, desc, or, sql, ilike } from "drizzle-orm";
+import { eq, desc, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
@@ -96,7 +96,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(ilike(users.username, username));
+    const [user] = await db.select().from(users).where(
+      sql`LOWER(${users.username}) = LOWER(${username})`
+    );
     return user;
   }
 
@@ -119,15 +121,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async hasAnyUsers(): Promise<boolean> {
-    const [row] = await db.select({ id: users.id }).from(users).limit(1);
-    return !!row;
+    const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
+    if (allUsers.length === 0) return false;
+    if (allUsers.length === 1 && allUsers[0].username === "admin") return false;
+    return true;
   }
 
   async createFirstAdmin(data: { username: string; password: string; name: string }): Promise<User> {
     const result = await db.transaction(async (tx) => {
-      const [existing] = await tx.select({ id: users.id }).from(users).limit(1);
-      if (existing) {
+      const allUsers = await tx.select({ id: users.id, username: users.username }).from(users);
+      const hasRealUsers = allUsers.some(u => u.username !== "admin");
+      if (hasRealUsers) {
         throw new Error("Sistema já possui usuários cadastrados");
+      }
+      if (allUsers.length > 0) {
+        for (const u of allUsers) {
+          await tx.delete(users).where(eq(users.id, u.id));
+        }
       }
       const [created] = await tx.insert(users).values({
         username: data.username,

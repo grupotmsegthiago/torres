@@ -61,7 +61,7 @@ export function setupAuth(app: Express): void {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        const user = await storage.getUserByUsername(username.toLowerCase().trim());
         if (!user) return done(null, false, { message: "Usuário não encontrado" });
         const valid = await comparePasswords(password, user.password);
         if (!valid) return done(null, false, { message: "Senha incorreta" });
