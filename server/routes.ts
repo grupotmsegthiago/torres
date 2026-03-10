@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import { type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
@@ -1107,13 +1107,77 @@ export async function registerRoutes(
     });
   });
 
-  // ====================== AUTH REGISTER (admin only) ======================
+  // ====================== USER MANAGEMENT (admin/diretoria only) ======================
 
-  app.post("/api/auth/register", requireAuth, async (req, res) => {
+  const requireAdminRole: RequestHandler = (req, res, next) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") {
-      return res.status(403).json({ message: "Apenas administradores podem criar usuários" });
+      return res.status(403).json({ message: "Apenas administradores podem gerenciar usuários" });
+    }
+    next();
+  };
+
+  app.get("/api/users", requireAuth, requireAdminRole, async (_req, res) => {
+    const allUsers = await storage.getUsers();
+    const safeUsers = allUsers.map(({ password, ...u }) => u);
+    res.json(safeUsers);
+  });
+
+  app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
+    const { username, password, name, role, employeeId } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
     }
 
+    const existing = await storage.getUserByUsername(username);
+    if (existing) return res.status(409).json({ message: "Nome de usuário já existe" });
+
+    const hashedPassword = await hashPassword(password);
+    const user = await storage.createUser({
+      username,
+      password: hashedPassword,
+      name,
+      role: role || "funcionario",
+      employeeId: employeeId || null,
+    });
+
+    const { password: _, ...safeUser } = user;
+    res.status(201).json(safeUser);
+  });
+
+  app.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { name, role, employeeId, password } = req.body;
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (role) updateData.role = role;
+    if (employeeId !== undefined) updateData.employeeId = employeeId || null;
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
+      }
+      updateData.password = await hashPassword(password);
+    }
+
+    const updated = await storage.updateUser(id, updateData);
+    if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
+
+    const { password: _, ...safeUser } = updated;
+    res.json(safeUser);
+  });
+
+  app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    if (id === req.user!.id) {
+      return res.status(400).json({ message: "Você não pode excluir seu próprio usuário" });
+    }
+    await storage.deleteUser(id);
+    res.json({ message: "Usuário excluído" });
+  });
+
+  app.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
     const { username, password, name, role, employeeId } = req.body;
     if (!username || !password || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });

@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
-  Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle,
+  Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown, BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ const menuItems = [
   { path: "/admin/consultas", label: "Consultas", icon: Search },
   { path: "/admin/mission", label: "Missão Ativa", icon: Target },
   { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
+  { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -55,7 +56,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="p-3 space-y-1 overflow-y-auto h-[calc(100vh-140px)]">
-          {menuItems.map((item, i) => {
+          {menuItems.filter((item) => {
+            if ("adminOnly" in item && item.adminOnly) {
+              return user?.role === "admin" || user?.role === "diretoria";
+            }
+            return true;
+          }).map((item, i) => {
             if ("children" in item) {
               return (
                 <div key={i}>
