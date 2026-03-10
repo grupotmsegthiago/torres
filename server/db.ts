@@ -1,16 +1,13 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 import * as schema from "@shared/schema";
 
-const connectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("SUPABASE_DATABASE_URL or DATABASE_URL must be set.");
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set.");
 }
 
-export const pool = new pg.Pool({
-  connectionString,
-  ssl: { rejectUnauthorized: false },
+export const db = drizzle({
+  connection: process.env.DATABASE_URL,
+  schema,
+  ws: ws,
 });
-
-export const db = drizzle(pool, { schema });
