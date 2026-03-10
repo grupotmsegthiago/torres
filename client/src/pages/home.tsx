@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Shield, Truck, Building2, Phone, MapPin, Navigation,
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import logoBW from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 import imgTeam from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_1772473176101.jpeg";
 import imgGuardRadio from "@assets/WhatsApp_Image_2026-03-02_at_14.38.49_1772473176101.jpeg";
@@ -585,11 +586,11 @@ function EscortCalculator() {
                     Origem
                   </label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                    <Input
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 z-10 pointer-events-none" />
+                    <PlacesAutocomplete
                       id="origem"
                       value={origem}
-                      onChange={(e) => setOrigem(e.target.value)}
+                      onChange={setOrigem}
                       placeholder="Cidade / Estado de origem"
                       className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Origem"
@@ -603,11 +604,11 @@ function EscortCalculator() {
                     Destino
                   </label>
                   <div className="relative">
-                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                    <Input
+                    <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 z-10 pointer-events-none" />
+                    <PlacesAutocomplete
                       id="destino"
                       value={destino}
-                      onChange={(e) => setDestino(e.target.value)}
+                      onChange={setDestino}
                       placeholder="Cidade / Estado de destino"
                       className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/20"
                       aria-label="Destino"

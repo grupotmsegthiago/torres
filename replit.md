@@ -75,6 +75,13 @@ users, perfis_acesso, clients, employees, employee_salaries, vehicles, service_o
 ## Users Table Schema
 - `id` (serial PK), `supabase_uid` (text, unique - links to Supabase Auth), `email` (text, unique), `username` (text, nullable - legacy), `password` (text, nullable - legacy), `name` (text), `role` (text), `employee_id` (int), `must_change_password` (int, legacy), `avatar_url` (text), `created_at` (timestamp)
 
+## Google Maps Integration
+- `VITE_GOOGLE_MAPS_API_KEY` - API key for Maps JS + Places library
+- Script loaded in `client/index.html` with `libraries=places`
+- `PlacesAutocomplete` component at `client/src/components/places-autocomplete.tsx` - wraps Input with Google Places city autocomplete (Brazil only)
+- Used in EscortCalculator section (Origem/Destino inputs) on landing page
+- Dark-themed `.pac-*` styles in `client/src/index.css`
+
 ## Brand
 - Colors: Black/white professional aesthetic (monochrome system — NO olive/military colors)
 - Fonts: Montserrat (primary), Inter (fallback)

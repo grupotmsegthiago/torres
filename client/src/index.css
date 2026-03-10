@@ -312,3 +312,52 @@
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+.pac-container {
+  background-color: #171717 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  margin-top: 4px !important;
+  font-family: "Inter", sans-serif !important;
+  z-index: 9999 !important;
+}
+
+.pac-item {
+  padding: 8px 12px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  cursor: pointer !important;
+  font-size: 0.875rem !important;
+  line-height: 1.4 !important;
+}
+
+.pac-item:first-child {
+  border-top: none !important;
+}
+
+.pac-item:hover,
+.pac-item-selected {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.pac-item-query {
+  color: #fff !important;
+  font-size: 0.875rem !important;
+}
+
+.pac-matched {
+  font-weight: 600 !important;
+  color: #fff !important;
+}
+
+.pac-icon {
+  filter: invert(1) !important;
+  opacity: 0.4 !important;
+}
+
+.pac-logo::after {
+  background-image: none !important;
+  filter: invert(1) !important;
+  opacity: 0.3 !important;
+}
