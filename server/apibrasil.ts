@@ -2,8 +2,20 @@ import { storage } from "./storage";
 
 const API_BASE = "https://gateway.apibrasil.io/api/v2";
 
-function getDeviceToken(): string | null {
-  return process.env.APIBRASIL_DEVICE_TOKEN || null;
+function getDeviceTokenForEndpoint(endpoint: string): string | null {
+  const map: Record<string, string | undefined> = {
+    "/vehicles/dados": process.env.APIBRASIL_DEVICE_PLACA_DADOS,
+    "/vehicles/multas": process.env.APIBRASIL_DEVICE_MULTAS,
+    "/vehicles/cnh": process.env.APIBRASIL_DEVICE_CNH,
+    "/judiciais/processos": process.env.APIBRASIL_DEVICE_PROCESSOS,
+    "/credito/spc": process.env.APIBRASIL_DEVICE_SPC,
+    "/credito/quod": process.env.APIBRASIL_DEVICE_QUOD,
+    "/credito/protesto": process.env.APIBRASIL_DEVICE_PROTESTO,
+    "/dados/situacao-eleitoral": process.env.APIBRASIL_DEVICE_ELEITORAL,
+    "/nfe/emitir": process.env.APIBRASIL_DEVICE_NOTAS,
+    "/cnpj/certidao-negativa": process.env.APIBRASIL_DEVICE_CERTIDAO_PJ,
+  };
+  return map[endpoint] || process.env.APIBRASIL_DEVICE_TOKEN || null;
 }
 
 function getToken(): string | null {
@@ -32,7 +44,7 @@ async function apiRequest(
     return { success: false, data: { error: "Token APIBRASIL_TOKEN não configurado" }, status: 503 };
   }
 
-  const deviceToken = getDeviceToken();
+  const deviceToken = getDeviceTokenForEndpoint(endpoint);
 
   try {
     const headers: Record<string, string> = {
