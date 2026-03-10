@@ -6,7 +6,7 @@ Institutional landing page and internal management system for Torres Vigilância
 ## Architecture
 - **Frontend**: React + TypeScript + Vite
 - **Backend**: Express + Passport.js (session auth)
-- **Database**: PostgreSQL via Drizzle ORM (Neon serverless)
+- **Database**: PostgreSQL via Drizzle ORM (Supabase - shared between dev and production)
 - **Styling**: Tailwind CSS with custom theme
 - **Animations**: Framer Motion
 - **Icons**: Lucide React + React Icons
