@@ -2,6 +2,20 @@ import { storage } from "./storage";
 
 const API_BASE = "https://gateway.apibrasil.io/api/v2";
 
+function getDeviceTokens(): Record<string, string | undefined> {
+  return {
+    "/vehicles/multas": process.env.APIBRASIL_DEVICE_MULTAS,
+    "/vehicles/cnh": process.env.APIBRASIL_DEVICE_CNH,
+    "/vehicles/dados": process.env.APIBRASIL_DEVICE_PLACA_DADOS,
+    "/judiciais/processos": process.env.APIBRASIL_DEVICE_PROCESSOS,
+    "/credito/spc": process.env.APIBRASIL_DEVICE_SPC,
+    "/credito/quod": process.env.APIBRASIL_DEVICE_QUOD,
+    "/credito/protesto": process.env.APIBRASIL_DEVICE_PROTESTO,
+    "/dados/situacao-eleitoral": process.env.APIBRASIL_DEVICE_ELEITORAL,
+    "/nfe/emitir": process.env.APIBRASIL_DEVICE_NOTAS,
+  };
+}
+
 function getToken(): string | null {
   return process.env.APIBRASIL_TOKEN || null;
 }
@@ -28,13 +42,20 @@ async function apiRequest(
     return { success: false, data: { error: "Token APIBRASIL_TOKEN não configurado" }, status: 503 };
   }
 
+  const deviceToken = getDeviceTokens()[endpoint];
+
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    };
+    if (deviceToken) {
+      headers["DeviceToken"] = deviceToken;
+    }
+
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
+      headers,
       body: method !== "GET" ? JSON.stringify(body) : undefined,
     });
 
