@@ -102,6 +102,11 @@ export async function registerRoutes(
     res.json(data);
   });
 
+  app.get("/api/employees/next-matricula", requireAuth, async (_req, res) => {
+    const matricula = await storage.getNextMatricula();
+    res.json({ matricula });
+  });
+
   app.get("/api/employees/:id", requireAuth, async (req, res) => {
     const data = await storage.getEmployee(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
@@ -109,7 +114,13 @@ export async function registerRoutes(
   });
 
   app.post("/api/employees", requireAuth, async (req, res) => {
-    const parsed = insertEmployeeSchema.safeParse(req.body);
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const body = { ...req.body };
+    const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
+    for (const f of dateFields) { if (body[f] === "") body[f] = null; }
+    const matricula = await storage.getNextMatricula();
+    body.matricula = matricula;
+    const parsed = insertEmployeeSchema.safeParse(body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createEmployee(parsed.data);
     if (data.cpf) {
@@ -119,7 +130,12 @@ export async function registerRoutes(
   });
 
   app.patch("/api/employees/:id", requireAuth, async (req, res) => {
-    const parsed = insertEmployeeSchema.partial().safeParse(req.body);
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const body = { ...req.body };
+    const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
+    for (const f of dateFields) { if (body[f] === "") body[f] = null; }
+    delete body.matricula;
+    const parsed = insertEmployeeSchema.partial().safeParse(body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
@@ -127,8 +143,50 @@ export async function registerRoutes(
   });
 
   app.delete("/api/employees/:id", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
     await storage.deleteEmployee(Number(req.params.id));
     res.json({ message: "Funcionário removido" });
+  });
+
+  app.get("/api/employees/:id/salaries", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const salaries = await storage.getEmployeeSalaries(Number(req.params.id));
+    res.json(salaries);
+  });
+
+  app.post("/api/employees/:id/salaries", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const emp = await storage.getEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+    const { baseSalary, effectiveDate, reason, notes } = req.body;
+    if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
+    const salary = await storage.createEmployeeSalary({
+      employeeId: emp.id,
+      baseSalary: String(baseSalary),
+      effectiveDate,
+      reason: reason || null,
+      notes: notes || null,
+    });
+    res.status(201).json(salary);
+  });
+
+  app.delete("/api/employee-salaries/:id", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    await storage.deleteEmployeeSalary(Number(req.params.id));
+    res.json({ message: "Registro salarial removido" });
+  });
+
+  app.get("/api/cpf-lookup/:cpf", requireAuth, async (req, res) => {
+    const cpf = String(req.params.cpf).replace(/\D/g, "");
+    if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
+      if (!response.ok) return res.status(response.status).json({ message: "CPF não encontrado" });
+      const data = await response.json();
+      res.json(data);
+    } catch {
+      res.status(500).json({ message: "Erro ao consultar CPF" });
+    }
   });
 
   app.get("/api/vehicles", requireAuth, async (_req, res) => {

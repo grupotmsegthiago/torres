@@ -38,15 +38,32 @@ export type Client = typeof clients.$inferSelect;
 
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
+  matricula: text("matricula").notNull().unique(),
   name: text("name").notNull(),
-  cpf: text("cpf"),
-  rg: text("rg"),
+  cpf: text("cpf").notNull(),
+  rg: text("rg").notNull(),
   cnhNumber: text("cnh_number"),
+  pis: text("pis"),
   role: text("role").notNull(),
+  category: text("category").default("mensalista"),
   phone: text("phone"),
   email: text("email"),
   address: text("address"),
+  birthDate: date("birth_date"),
+  motherName: text("mother_name"),
+  fatherName: text("father_name"),
+  nationality: text("nationality"),
+  maritalStatus: text("marital_status"),
+  education: text("education"),
   hireDate: date("hire_date"),
+  vacationExpiry: date("vacation_expiry"),
+  sindicato: text("sindicato"),
+  paymentMethod: text("payment_method").default("pix"),
+  bankName: text("bank_name"),
+  bankAgency: text("bank_agency"),
+  bankAccount: text("bank_account"),
+  pixKey: text("pix_key"),
+  photoUrl: text("photo_url"),
   status: text("status").notNull().default("ativo"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -55,6 +72,20 @@ export const employees = pgTable("employees", {
 export const insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
+
+export const employeeSalaries = pgTable("employee_salaries", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  baseSalary: decimal("base_salary", { precision: 10, scale: 2 }).notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  reason: text("reason"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeSalarySchema = createInsertSchema(employeeSalaries).omit({ id: true, createdAt: true });
+export type InsertEmployeeSalary = z.infer<typeof insertEmployeeSalarySchema>;
+export type EmployeeSalary = typeof employeeSalaries.$inferSelect;
 
 export const vehicles = pgTable("vehicles", {
   id: serial("id").primaryKey(),

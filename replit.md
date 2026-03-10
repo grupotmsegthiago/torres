@@ -112,8 +112,23 @@ Institutional landing page and internal management system for Torres Vigilância
 - Mission page: `/admin/mission` — military/operational aesthetic with olive gradient, Torres shield watermark, golden action buttons, real-time timer
 - Screenshot/print protection: @media print makes everything black; .no-print-zone disables text selection
 
+### Employee Management
+- CPF and RG are required fields
+- Matrícula auto-generated (TVP-XXXX format, immutable after creation)
+- Cargo dropdown: Vigilante, Adm, Gerente, Supervisor, Operador
+- Category: Mensalista, Free Lance, Temporário, Terceirizado
+- Full personal data: birth date, mother/father name, nationality, marital status, education
+- Documents: CPF, RG, CNH, PIS
+- Bank data: payment method, bank name, agency, account, PIX key
+- Dates: admission, vacation expiry
+- Sindicato field
+- Photo upload with client-side compression (400px max, JPEG 0.7)
+- CPF auto-fill via BrasilAPI (name, birth date, mother name)
+- Salary management: separate modal with history (employee_salaries table)
+- Auto API Brasil consultations on creation (CNH, Processos, SPC, Quod, Protesto, Situação Eleitoral)
+
 ## Database Tables
-users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs
+users, clients, employees, employee_salaries, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs
 
 ## Brand
 - Colors: Black/white professional aesthetic

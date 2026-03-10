@@ -2,7 +2,7 @@ import { eq, desc, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
-  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs,
+  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -14,6 +14,7 @@ import {
   type Timesheet, type InsertTimesheet,
   type MissionPhoto, type InsertMissionPhoto,
   type ApiLog, type InsertApiLog,
+  type EmployeeSalary, type InsertEmployeeSalary,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -76,6 +77,11 @@ export interface IStorage {
 
   createApiLog(log: InsertApiLog): Promise<ApiLog>;
   getRecentApiLogs(limit?: number): Promise<ApiLog[]>;
+
+  getEmployeeSalaries(employeeId: number): Promise<EmployeeSalary[]>;
+  createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary>;
+  deleteEmployeeSalary(id: number): Promise<void>;
+  getNextMatricula(): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -312,6 +318,27 @@ export class DatabaseStorage implements IStorage {
 
   async getRecentApiLogs(limit = 100): Promise<ApiLog[]> {
     return db.select().from(apiLogs).orderBy(desc(apiLogs.createdAt)).limit(limit);
+  }
+
+  async getEmployeeSalaries(employeeId: number): Promise<EmployeeSalary[]> {
+    return db.select().from(employeeSalaries)
+      .where(eq(employeeSalaries.employeeId, employeeId))
+      .orderBy(desc(employeeSalaries.effectiveDate));
+  }
+
+  async createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary> {
+    const [created] = await db.insert(employeeSalaries).values(salary).returning();
+    return created;
+  }
+
+  async deleteEmployeeSalary(id: number): Promise<void> {
+    await db.delete(employeeSalaries).where(eq(employeeSalaries.id, id));
+  }
+
+  async getNextMatricula(): Promise<string> {
+    const result = await db.select().from(employees).orderBy(desc(employees.id)).limit(1);
+    const nextId = result.length > 0 ? result[0].id + 1 : 1;
+    return "TVP-" + String(nextId).padStart(4, "0");
   }
 }
 
