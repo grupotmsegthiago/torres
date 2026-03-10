@@ -41,12 +41,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-neutral-100 flex" data-testid="admin-layout">
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static flex flex-col ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         data-testid="admin-sidebar"
       >
-        <div className="p-4 border-b border-white/10">
+        <div className="p-4 border-b border-white/10 shrink-0">
           <Link href="/">
             <span className="text-lg font-bold tracking-tight cursor-pointer" data-testid="link-admin-home">
               TORRES
@@ -55,7 +55,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <nav className="p-3 space-y-1 overflow-y-auto h-[calc(100vh-140px)]">
+        <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
           {menuItems.filter((item) => {
             if ("adminOnly" in item && item.adminOnly) {
               return user?.role === "admin" || user?.role === "diretoria";
@@ -114,7 +114,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
+        <div className="shrink-0 p-4 border-t border-white/10">
           <div className="flex items-center gap-3">
             {user?.role === "diretoria" ? (
               <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
