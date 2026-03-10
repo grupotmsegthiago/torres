@@ -122,6 +122,9 @@ export const serviceOrders = pgTable("service_orders", {
   assignedEmployee2Id: integer("assigned_employee_2_id"),
   vehicleId: integer("vehicle_id"),
   missionStatus: text("mission_status").default("aguardando"),
+  escortedDriverName: text("escorted_driver_name"),
+  escortedVehiclePlate: text("escorted_vehicle_plate"),
+  missionStartedAt: timestamp("mission_started_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -214,6 +217,8 @@ export const missionPhotos = pgTable("mission_photos", {
   step: text("step").notNull(),
   photoData: text("photo_data").notNull(),
   kmValue: integer("km_value"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

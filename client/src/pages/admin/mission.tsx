@@ -4,50 +4,56 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import AdminLayout from "@/components/admin/layout";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Camera, Check, ChevronRight, X,
-  Shield, Car, Users, MapPin, Clock,
-  AlertTriangle, CheckCircle2, Circle,
+  Camera, Check, ChevronRight,
+  Shield, Car, Users, Clock, Crosshair,
+  AlertTriangle, CheckCircle2, Truck, User, Siren,
 } from "lucide-react";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
 const MISSION_STEPS = [
-  { key: "km_saida", label: "KM Saída", description: "Registre a quilometragem de saída e tire foto do odômetro", screenTitle: "Saída", screenSub: "REGISTRO DE KM" },
-  { key: "checklist_saida", label: "Checklist Saída", description: "Tire as 4 fotos do veículo antes de sair", screenTitle: "Checklist", screenSub: "SAÍDA DO VEÍCULO" },
-  { key: "em_transito_origem", label: "Em Trânsito", description: "Deslocamento até o cliente", screenTitle: "Em Trânsito", screenSub: "DESLOCAMENTO" },
-  { key: "km_chegada_origem", label: "KM Chegada", description: "Registre a quilometragem de chegada ao cliente", screenTitle: "Chegada", screenSub: "NO CLIENTE" },
-  { key: "fotos_cliente", label: "Fotos Cliente", description: "Tire as fotos no local do cliente", screenTitle: "Registro", screenSub: "NO CLIENTE" },
-  { key: "em_transito_destino", label: "Retorno", description: "Deslocamento de retorno", screenTitle: "Em Trânsito", screenSub: "RETORNO" },
-  { key: "km_chegada_destino", label: "KM Destino", description: "Registre a quilometragem de chegada ao destino", screenTitle: "Chegada", screenSub: "NO DESTINO" },
-  { key: "checklist_retorno", label: "Checklist Retorno", description: "Tire as 4 fotos do veículo no retorno", screenTitle: "Checklist", screenSub: "RETORNO DO VEÍCULO" },
+  { key: "checkout_armamento", label: "Armamento", screenTitle: "Armamento", screenSub: "CONFERÊNCIA DE ARMAS" },
+  { key: "checkout_viatura", label: "Viatura", screenTitle: "Viatura", screenSub: "CHECK-OUT DA VIATURA" },
+  { key: "checkout_km_saida", label: "KM Saída", screenTitle: "KM Saída", screenSub: "REGISTRO DE ODÔMETRO" },
+  { key: "em_transito_origem", label: "Em Trânsito", screenTitle: "Em Trânsito", screenSub: "DESLOCAMENTO AO CLIENTE" },
+  { key: "checkin_chegada_km", label: "KM Chegada", screenTitle: "KM Chegada", screenSub: "CHEGADA NO CLIENTE" },
+  { key: "checkin_veiculo_escoltado", label: "Veíc. Escoltado", screenTitle: "Veículo Escoltado", screenSub: "REGISTRO DO CAMINHÃO" },
+  { key: "checkin_dados_motorista", label: "Dados Motorista", screenTitle: "Dados do Motorista", screenSub: "INFORMAÇÕES DO ESCOLTADO" },
+  { key: "iniciar_missao", label: "Iniciar Missão", screenTitle: "Iniciar Missão", screenSub: "EXECUÇÃO DA ESCOLTA" },
+  { key: "em_transito_destino", label: "Retorno", screenTitle: "Em Trânsito", screenSub: "DESLOCAMENTO AO DESTINO" },
+  { key: "checkout_km_final", label: "KM Final", screenTitle: "KM Final", screenSub: "REGISTRO DE CHEGADA" },
+  { key: "checkout_viatura_retorno", label: "Viatura Retorno", screenTitle: "Viatura Retorno", screenSub: "CHECK-OUT FINAL" },
 ] as const;
 
 const STEP_PHOTO_SLOTS: Record<string, { key: string; label: string }[]> = {
-  km_saida: [{ key: "km_saida", label: "Hodômetro" }],
-  checklist_saida: [
-    { key: "checklist_saida_frente", label: "Dianteira" },
-    { key: "checklist_saida_lateral_esq", label: "Lateral Esq." },
-    { key: "checklist_saida_lateral_dir", label: "Lateral Dir." },
-    { key: "checklist_saida_traseira", label: "Traseira" },
+  checkout_armamento: [
+    { key: "arma_pistola_1", label: "Pistola 1" },
+    { key: "arma_pistola_2", label: "Pistola 2" },
+    { key: "arma_espingarda", label: "Espingarda 12" },
   ],
-  km_chegada_origem: [{ key: "km_chegada_origem", label: "Hodômetro" }],
-  fotos_cliente: [
-    { key: "foto_viatura_cliente", label: "Viatura no Cliente" },
-    { key: "foto_veiculo_cliente_frente", label: "Frente Veículo" },
-    { key: "foto_veiculo_cliente_traseira", label: "Traseira Veículo" },
+  checkout_viatura: [
+    { key: "viatura_frente", label: "Dianteira" },
+    { key: "viatura_lateral_esq", label: "Lateral Esq." },
+    { key: "viatura_lateral_dir", label: "Lateral Dir." },
+    { key: "viatura_traseira", label: "Traseira" },
   ],
-  km_chegada_destino: [{ key: "km_chegada_destino", label: "Hodômetro" }],
-  checklist_retorno: [
-    { key: "checklist_retorno_frente", label: "Dianteira" },
-    { key: "checklist_retorno_lateral_esq", label: "Lateral Esq." },
-    { key: "checklist_retorno_lateral_dir", label: "Lateral Dir." },
-    { key: "checklist_retorno_traseira", label: "Traseira" },
+  checkout_km_saida: [{ key: "km_saida", label: "Hodômetro" }],
+  checkin_chegada_km: [{ key: "km_chegada", label: "Hodômetro" }],
+  checkin_veiculo_escoltado: [
+    { key: "escoltado_frente", label: "Frente Caminhão" },
+    { key: "escoltado_traseira", label: "Traseira Caminhão" },
+  ],
+  checkout_km_final: [{ key: "km_final", label: "Hodômetro" }],
+  checkout_viatura_retorno: [
+    { key: "viatura_retorno_frente", label: "Dianteira" },
+    { key: "viatura_retorno_lateral_esq", label: "Lateral Esq." },
+    { key: "viatura_retorno_lateral_dir", label: "Lateral Dir." },
+    { key: "viatura_retorno_traseira", label: "Traseira" },
   ],
 };
 
-const KM_STEPS = ["km_saida", "km_chegada_origem", "km_chegada_destino"];
+const KM_STEPS = ["checkout_km_saida", "checkin_chegada_km", "checkout_km_final"];
 
 type ActiveMission = {
   id: number;
@@ -61,6 +67,9 @@ type ActiveMission = {
   completedSteps: string[];
   scheduledDate?: string;
   description?: string;
+  escortedDriverName?: string | null;
+  escortedVehiclePlate?: string | null;
+  missionStartedAt?: string | null;
 };
 
 function compressImage(file: File, maxDim = 1024, quality = 0.7): Promise<string> {
@@ -90,6 +99,17 @@ function compressImage(file: File, maxDim = 1024, quality = 0.7): Promise<string
   });
 }
 
+function getGeoLocation(): Promise<{ latitude: string; longitude: string } | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ latitude: String(pos.coords.latitude), longitude: String(pos.coords.longitude) }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+}
+
 function ShieldWatermark() {
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden opacity-[0.04]">
@@ -98,48 +118,59 @@ function ShieldWatermark() {
   );
 }
 
-function MissionTimer() {
-  const [time, setTime] = useState(new Date());
+function MissionTimer({ startedAt }: { startedAt?: string | null }) {
+  const [now, setNow] = useState(new Date());
   useEffect(() => {
-    const iv = setInterval(() => setTime(new Date()), 1000);
+    const iv = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(iv);
   }, []);
+
+  if (startedAt) {
+    const start = new Date(startedAt).getTime();
+    const diff = Math.max(0, Math.floor((now.getTime() - start) / 1000));
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const s = diff % 60;
+    return (
+      <div className="font-mono text-2xl tracking-widest text-foreground font-bold" data-testid="mission-timer">
+        {String(h).padStart(2, "0")}:{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
+      </div>
+    );
+  }
+
   return (
     <div className="font-mono text-2xl tracking-widest text-muted-foreground font-bold" data-testid="mission-timer">
-      {time.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+      {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
     </div>
   );
 }
 
-function StepProgress({ steps, currentStatus }: {
-  steps: typeof MISSION_STEPS;
-  currentStatus: string;
-}) {
-  const allKeys = ["aguardando", ...steps.map(s => s.key), "finalizada"];
+function StepProgress({ currentStatus }: { currentStatus: string }) {
+  const allKeys = ["aguardando", ...MISSION_STEPS.map(s => s.key), "finalizada"];
   const currentIdx = allKeys.indexOf(currentStatus);
 
   return (
-    <div className="flex items-center justify-center gap-1.5 py-3" data-testid="mission-timeline">
-      {steps.map((step, i) => {
+    <div className="flex items-center justify-center gap-1 py-3 flex-wrap" data-testid="mission-timeline">
+      {MISSION_STEPS.map((step, i) => {
         const stepIdx = i + 1;
         const isComplete = currentIdx > stepIdx;
         const isCurrent = currentIdx === stepIdx;
 
         return (
-          <div key={step.key} className="flex items-center gap-1.5">
+          <div key={step.key} className="flex items-center gap-1">
             <div
-              className={`w-3 h-3 rounded-full transition-all ${
+              className={`w-2.5 h-2.5 rounded-full transition-all ${
                 isComplete
                   ? "bg-foreground"
                   : isCurrent
-                    ? "bg-foreground animate-pulse shadow-[0_0_8px_rgba(0,0,0,0.3)]"
-                    : "bg-muted-foreground/30"
+                    ? "bg-foreground animate-pulse shadow-[0_0_6px_rgba(0,0,0,0.3)]"
+                    : "bg-muted-foreground/25"
               }`}
               title={step.label}
               data-testid={`step-indicator-${step.key}`}
             />
-            {i < steps.length - 1 && (
-              <div className={`w-4 h-0.5 ${isComplete ? "bg-foreground" : "bg-muted-foreground/20"}`} />
+            {i < MISSION_STEPS.length - 1 && (
+              <div className={`w-3 h-0.5 ${isComplete ? "bg-foreground" : "bg-muted-foreground/15"}`} />
             )}
           </div>
         );
@@ -218,15 +249,17 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
             <Users className="w-7 h-7 text-background" />
           </div>
           <p className="text-sm font-bold text-foreground" data-testid="text-employee1-name">{formatName(mission.employee1Name)}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Agente 1</p>
         </div>
 
-        <div className="text-muted-foreground font-bold text-xl">X</div>
+        <div className="text-muted-foreground font-bold text-xl">+</div>
 
         <div className="text-center">
           <div className="w-14 h-14 rounded-full bg-foreground flex items-center justify-center mx-auto mb-1">
             <Users className="w-7 h-7 text-background" />
           </div>
           <p className="text-sm font-bold text-foreground" data-testid="text-employee2-name">{formatName(mission.employee2Name)}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Agente 2</p>
         </div>
       </div>
 
@@ -238,11 +271,6 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
       </div>
 
       <div className="bg-muted/60 rounded-xl border border-border p-4 space-y-2">
-        <div className="flex justify-center gap-1.5 mb-3">
-          <div className="w-2 h-2 rounded-full bg-foreground" />
-          <div className="w-2 h-2 rounded-full bg-foreground" />
-          <div className="w-2 h-2 rounded-full bg-foreground" />
-        </div>
         <p className="text-sm text-foreground" data-testid="text-client-name">
           <span className="font-bold">CLIENTE:</span> {mission.clientName}
         </p>
@@ -265,9 +293,27 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
   );
 }
 
+function StepIcon({ stepKey }: { stepKey: string }) {
+  const iconClass = "w-8 h-8 text-muted-foreground mx-auto mb-1";
+  switch (stepKey) {
+    case "checkout_armamento": return <Crosshair className={iconClass} />;
+    case "checkout_viatura":
+    case "checkout_viatura_retorno": return <Car className={iconClass} />;
+    case "checkout_km_saida":
+    case "checkin_chegada_km":
+    case "checkout_km_final": return <Clock className={iconClass} />;
+    case "checkin_veiculo_escoltado": return <Truck className={iconClass} />;
+    case "checkin_dados_motorista": return <User className={iconClass} />;
+    case "iniciar_missao": return <Siren className={iconClass} />;
+    default: return <Shield className={iconClass} />;
+  }
+}
+
 function MissionWorkflow({ mission }: { mission: ActiveMission }) {
   const { toast } = useToast();
   const [kmValue, setKmValue] = useState("");
+  const [driverName, setDriverName] = useState(mission.escortedDriverName || "");
+  const [escortedPlate, setEscortedPlate] = useState(mission.escortedVehiclePlate || "");
   const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [pendingCaptureSlot, setPendingCaptureSlot] = useState<string | null>(null);
@@ -276,9 +322,11 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
   const photoSlots = STEP_PHOTO_SLOTS[mission.missionStatus] || [];
   const needsKm = KM_STEPS.includes(mission.missionStatus);
   const isTransitStep = mission.missionStatus === "em_transito_origem" || mission.missionStatus === "em_transito_destino";
+  const isDriverDataStep = mission.missionStatus === "checkin_dados_motorista";
+  const isStartMissionStep = mission.missionStatus === "iniciar_missao";
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: { serviceOrderId: number; step: string; photoData: string; kmValue?: number }) => {
+    mutationFn: async (data: { serviceOrderId: number; step: string; photoData: string; kmValue?: number; latitude?: string; longitude?: string }) => {
       const res = await apiRequest("POST", "/api/mission/photo", data);
       return res.json();
     },
@@ -290,6 +338,33 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
   });
 
+  const escortDataMutation = useMutation({
+    mutationFn: async (data: { serviceOrderId: number; driverName: string; vehiclePlate: string }) => {
+      const res = await apiRequest("POST", "/api/mission/escort-data", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      toast({ title: "Dados salvos com sucesso" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao salvar dados", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const startMissionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/mission/start", { serviceOrderId: mission.id });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao iniciar missão", description: err.message, variant: "destructive" });
+    },
+  });
+
   const advanceMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/mission/advance", { serviceOrderId: mission.id });
@@ -297,7 +372,11 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
-      toast({ title: "Etapa avançada com sucesso" });
+      if (mission.missionStatus === "checkout_km_saida") {
+        toast({ title: "OK, Viagem Liberada!", description: "Boa viagem! Dirija com segurança." });
+      } else {
+        toast({ title: "Etapa avançada com sucesso" });
+      }
       setKmValue("");
     },
     onError: (err: Error) => {
@@ -308,12 +387,14 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
   const handlePhotoUpload = useCallback(async (slotKey: string, file: File) => {
     setUploadingSlot(slotKey);
     try {
-      const compressed = await compressImage(file);
+      const [compressed, geo] = await Promise.all([compressImage(file), getGeoLocation()]);
       await uploadMutation.mutateAsync({
         serviceOrderId: mission.id,
         step: slotKey,
         photoData: compressed,
         kmValue: needsKm && kmValue ? Number(kmValue) : undefined,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
       });
     } catch {
     } finally {
@@ -336,7 +417,28 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
   const allPhotosUploaded = photoSlots.length > 0
     ? photoSlots.every(slot => mission.completedSteps.includes(slot.key))
     : true;
-  const canAdvance = isTransitStep || (allPhotosUploaded && (!needsKm || (photoSlots.length > 0 && allPhotosUploaded)));
+
+  const canAdvance = (() => {
+    if (isTransitStep) return true;
+    if (isDriverDataStep) return !!(driverName.trim() && escortedPlate.trim());
+    if (isStartMissionStep) return true;
+    if (photoSlots.length > 0 && !allPhotosUploaded) return false;
+    return true;
+  })();
+
+  const handleAdvance = async () => {
+    if (isDriverDataStep) {
+      await escortDataMutation.mutateAsync({
+        serviceOrderId: mission.id,
+        driverName: driverName.trim(),
+        vehiclePlate: escortedPlate.trim().toUpperCase(),
+      });
+    }
+    if (isStartMissionStep) {
+      await startMissionMutation.mutateAsync();
+    }
+    advanceMutation.mutate();
+  };
 
   if (mission.missionStatus === "finalizada") {
     return (
@@ -350,6 +452,12 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             Missão Finalizada
           </h2>
           <p className="text-muted-foreground font-medium">Todas as etapas foram concluídas com sucesso.</p>
+          {mission.missionStartedAt && (
+            <div className="mt-4 bg-muted/60 rounded-xl border border-border px-6 py-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Tempo de Missão</p>
+              <MissionTimer startedAt={mission.missionStartedAt} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -368,13 +476,13 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             <h1 className="text-2xl font-black text-foreground uppercase tracking-wider leading-tight">
               Dados da Missão
             </h1>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">C.C.O</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">ESCOLTA ARMADA</p>
           </div>
 
           <MissionDataCard mission={mission} />
 
           <div className="flex items-center justify-between mt-6 mb-4">
-            <MissionTimer />
+            <MissionTimer startedAt={null} />
             <button
               onClick={() => advanceMutation.mutate()}
               disabled={advanceMutation.isPending}
@@ -391,7 +499,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             className="w-full py-4 rounded-full bg-foreground hover:bg-foreground/90 text-background font-black text-lg uppercase tracking-wider shadow-lg transition-all hover:shadow-xl disabled:opacity-50"
             data-testid="button-advance-step"
           >
-            {advanceMutation.isPending ? "INICIANDO..." : "START"}
+            {advanceMutation.isPending ? "INICIANDO..." : "INICIAR CHECK-OUT"}
           </button>
         </div>
       </div>
@@ -413,7 +521,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
           </p>
         </div>
 
-        <StepProgress steps={MISSION_STEPS} currentStatus={mission.missionStatus} />
+        <StepProgress currentStatus={mission.missionStatus} />
 
         <div className="bg-muted/50 rounded-xl p-3 mb-4 flex items-center justify-between text-xs border border-border">
           <span className="font-bold text-foreground">{mission.osNumber}</span>
@@ -424,7 +532,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         {needsKm && (
           <div className="mb-5">
             <p className="text-sm font-bold text-foreground uppercase tracking-wider text-center mb-3">
-              Digite KM de {mission.missionStatus === "km_saida" ? "Saída" : "Chegada"}
+              Digite a Quilometragem
             </p>
             <Input
               type="number"
@@ -441,7 +549,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         {photoSlots.length > 0 && (
           <div className="space-y-3 mb-5">
             <div className="text-center mb-2">
-              <Camera className="w-8 h-8 text-muted-foreground mx-auto mb-1" />
+              <StepIcon stepKey={mission.missionStatus} />
             </div>
             {photoSlots.map(slot => (
               <PhotoButton
@@ -457,16 +565,82 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         )}
 
         {isTransitStep && (
-          <div className="flex items-center gap-3 p-4 bg-muted rounded-xl border border-border mb-5">
-            <AlertTriangle className="w-8 h-8 text-foreground shrink-0" />
-            <p className="text-sm font-medium text-foreground">
-              Você está em deslocamento. Confirme a chegada ao destino.
+          <div className="flex flex-col items-center gap-4 py-8">
+            <div className="w-20 h-20 rounded-full bg-muted border-2 border-border flex items-center justify-center animate-pulse">
+              <Car className="w-10 h-10 text-foreground" />
+            </div>
+            <p className="text-lg font-bold text-foreground uppercase tracking-wider">
+              Em deslocamento
             </p>
+            <p className="text-sm text-muted-foreground text-center">
+              {mission.missionStatus === "em_transito_origem"
+                ? "Deslocamento até o cliente. Confirme a chegada ao chegar no local."
+                : "Deslocamento ao destino final. Confirme a chegada."}
+            </p>
+            <MissionTimer startedAt={mission.missionStartedAt} />
+          </div>
+        )}
+
+        {isDriverDataStep && (
+          <div className="space-y-4 mb-5">
+            <div className="text-center mb-2">
+              <User className="w-8 h-8 text-muted-foreground mx-auto mb-1" />
+              <p className="text-sm font-bold text-foreground uppercase tracking-wider">
+                Dados do veículo escoltado
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Nome do Motorista
+              </label>
+              <Input
+                type="text"
+                placeholder="Nome completo do motorista"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                className="bg-background border-2 border-foreground rounded-xl h-12 font-medium"
+                data-testid="input-driver-name"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Placa do Veículo Escoltado
+              </label>
+              <Input
+                type="text"
+                placeholder="Ex: ABC1D23"
+                value={escortedPlate}
+                onChange={(e) => setEscortedPlate(e.target.value.toUpperCase())}
+                className="bg-background border-2 border-foreground rounded-xl h-12 font-mono font-bold text-center uppercase"
+                maxLength={7}
+                data-testid="input-escorted-plate"
+              />
+            </div>
+          </div>
+        )}
+
+        {isStartMissionStep && (
+          <div className="flex flex-col items-center gap-4 py-6">
+            <div className="w-24 h-24 rounded-full bg-foreground flex items-center justify-center shadow-xl">
+              <Siren className="w-12 h-12 text-background" />
+            </div>
+            <p className="text-lg font-black text-foreground uppercase tracking-wider text-center">
+              Pronto para iniciar?
+            </p>
+            <p className="text-sm text-muted-foreground text-center max-w-[280px]">
+              Ao confirmar, o sistema registrará o horário de início da escolta e iniciará o monitoramento.
+            </p>
+            {mission.escortedDriverName && (
+              <div className="bg-muted/60 rounded-xl border border-border p-3 w-full text-sm space-y-1">
+                <p><span className="font-bold">Motorista:</span> {mission.escortedDriverName}</p>
+                <p><span className="font-bold">Placa Escoltado:</span> {mission.escortedVehiclePlate}</p>
+              </div>
+            )}
           </div>
         )}
 
         <p className="text-xs text-center text-muted-foreground mb-4 italic">
-          Localização e horário serão enviados automaticamente após confirmações
+          GPS e horário registrados automaticamente
         </p>
 
         <input
@@ -479,20 +653,26 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         />
 
         <button
-          onClick={() => advanceMutation.mutate()}
-          disabled={!canAdvance || advanceMutation.isPending}
+          onClick={handleAdvance}
+          disabled={!canAdvance || advanceMutation.isPending || escortDataMutation.isPending || startMissionMutation.isPending}
           className="w-full py-4 rounded-full bg-foreground hover:bg-foreground/90 text-background font-black text-base uppercase tracking-wider shadow-lg transition-all hover:shadow-xl disabled:opacity-30 disabled:cursor-not-allowed"
           data-testid="button-advance-step"
         >
-          {advanceMutation.isPending
+          {(advanceMutation.isPending || escortDataMutation.isPending || startMissionMutation.isPending)
             ? "PROCESSANDO..."
             : isTransitStep
               ? "CONFIRMAR CHEGADA"
-              : `CONFIRMAR ${currentStepDef?.screenTitle?.toUpperCase() || "ETAPA"}`}
+              : isStartMissionStep
+                ? "INICIAR MISSÃO"
+                : isDriverDataStep
+                  ? "SALVAR E AVANÇAR"
+                  : mission.missionStatus === "checkout_km_saida"
+                    ? "LIBERAR VIAGEM"
+                    : `CONFIRMAR ${currentStepDef?.screenTitle?.toUpperCase() || "ETAPA"}`}
         </button>
 
         <div className="mt-4 flex items-center justify-center">
-          <MissionTimer />
+          <MissionTimer startedAt={mission.missionStartedAt} />
         </div>
       </div>
     </div>

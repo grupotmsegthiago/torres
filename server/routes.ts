@@ -12,24 +12,28 @@ import * as apibrasil from "./apibrasil";
 
 const MISSION_STEPS = [
   "aguardando",
-  "km_saida",
-  "checklist_saida",
+  "checkout_armamento",
+  "checkout_viatura",
+  "checkout_km_saida",
   "em_transito_origem",
-  "km_chegada_origem",
-  "fotos_cliente",
+  "checkin_chegada_km",
+  "checkin_veiculo_escoltado",
+  "checkin_dados_motorista",
+  "iniciar_missao",
   "em_transito_destino",
-  "km_chegada_destino",
-  "checklist_retorno",
+  "checkout_km_final",
+  "checkout_viatura_retorno",
   "finalizada",
 ] as const;
 
 const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
-  km_saida: ["km_saida"],
-  checklist_saida: ["checklist_saida_frente", "checklist_saida_lateral_esq", "checklist_saida_lateral_dir", "checklist_saida_traseira"],
-  km_chegada_origem: ["km_chegada_origem"],
-  fotos_cliente: ["foto_viatura_cliente", "foto_veiculo_cliente_frente", "foto_veiculo_cliente_traseira"],
-  km_chegada_destino: ["km_chegada_destino"],
-  checklist_retorno: ["checklist_retorno_frente", "checklist_retorno_lateral_esq", "checklist_retorno_lateral_dir", "checklist_retorno_traseira"],
+  checkout_armamento: ["arma_pistola_1", "arma_pistola_2", "arma_espingarda"],
+  checkout_viatura: ["viatura_frente", "viatura_lateral_esq", "viatura_lateral_dir", "viatura_traseira"],
+  checkout_km_saida: ["km_saida"],
+  checkin_chegada_km: ["km_chegada"],
+  checkin_veiculo_escoltado: ["escoltado_frente", "escoltado_traseira"],
+  checkout_km_final: ["km_final"],
+  checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
 };
 
 export async function registerRoutes(
@@ -789,6 +793,9 @@ export async function registerRoutes(
       employee1Name: emp1?.name || "—",
       employee2Name: emp2?.name || "—",
       completedSteps,
+      escortedDriverName: active.escortedDriverName || null,
+      escortedVehiclePlate: active.escortedVehiclePlate || null,
+      missionStartedAt: active.missionStartedAt || null,
     });
   });
 
@@ -853,7 +860,7 @@ export async function registerRoutes(
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
-    const { serviceOrderId, step, photoData, kmValue } = req.body;
+    const { serviceOrderId, step, photoData, kmValue, latitude, longitude } = req.body;
     if (!serviceOrderId || !step || !photoData) {
       return res.status(400).json({ message: "Campos obrigatórios: serviceOrderId, step, photoData" });
     }
@@ -869,12 +876,17 @@ export async function registerRoutes(
       return res.status(400).json({ message: "OS não está em andamento" });
     }
 
+    const currentStepPhotos = STEP_REQUIRED_PHOTOS[so.missionStatus as string];
+    if (!currentStepPhotos || !currentStepPhotos.includes(step)) {
+      return res.status(400).json({ message: "Foto não pertence à etapa atual da missão" });
+    }
+
     const isAssigned =
       so.assignedEmployeeId === user.employeeId ||
       so.assignedEmployee2Id === user.employeeId;
     if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
 
-    const kmSteps = ["km_saida", "km_chegada_origem", "km_chegada_destino"];
+    const kmSteps = ["km_saida", "km_chegada", "km_final"];
     if (kmSteps.includes(step) && (!kmValue || Number(kmValue) <= 0)) {
       return res.status(400).json({ message: "Valor de KM obrigatório para esta etapa" });
     }
@@ -885,11 +897,64 @@ export async function registerRoutes(
       step,
       photoData,
       kmValue: kmValue ? Number(kmValue) : null,
+      latitude: latitude || null,
+      longitude: longitude || null,
       notes: null,
     });
 
     const { photoData: _, ...safePhoto } = photo;
     res.status(201).json(safePhoto);
+  });
+
+  app.post("/api/mission/escort-data", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+
+    const { serviceOrderId, driverName, vehiclePlate } = req.body;
+    if (!serviceOrderId || !driverName || !vehiclePlate) {
+      return res.status(400).json({ message: "Campos obrigatórios: serviceOrderId, driverName, vehiclePlate" });
+    }
+
+    const so = await storage.getServiceOrder(serviceOrderId);
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    const isAssigned =
+      so.assignedEmployeeId === user.employeeId ||
+      so.assignedEmployee2Id === user.employeeId;
+    if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
+
+    const updated = await storage.updateServiceOrder(serviceOrderId, {
+      escortedDriverName: driverName,
+      escortedVehiclePlate: vehiclePlate,
+    });
+    res.json(updated);
+  });
+
+  app.post("/api/mission/start", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+
+    const { serviceOrderId } = req.body;
+    const so = await storage.getServiceOrder(serviceOrderId);
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    const isAssigned =
+      so.assignedEmployeeId === user.employeeId ||
+      so.assignedEmployee2Id === user.employeeId;
+    if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
+
+    if (so.missionStatus !== "iniciar_missao") {
+      return res.status(400).json({ message: "Etapa atual não permite iniciar missão" });
+    }
+
+    if (so.missionStartedAt) {
+      return res.json(so);
+    }
+
+    const updated = await storage.updateServiceOrder(serviceOrderId, {
+      missionStartedAt: new Date(),
+    });
+    res.json(updated);
   });
 
   app.post("/api/mission/advance", requireAuth, async (req, res) => {
@@ -924,8 +989,17 @@ export async function registerRoutes(
       }
     }
 
+    if (currentStep === "checkin_dados_motorista") {
+      if (!so.escortedDriverName || !so.escortedVehiclePlate) {
+        return res.status(400).json({
+          message: "Dados do motorista e placa do veículo escoltado são obrigatórios",
+        });
+      }
+    }
+
     const nextStep = MISSION_STEPS[currentIdx + 1];
     const updates: any = { missionStatus: nextStep };
+
     if (nextStep === "finalizada") {
       updates.status = "concluida";
       updates.completedDate = new Date();

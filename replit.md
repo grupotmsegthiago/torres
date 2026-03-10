@@ -97,19 +97,22 @@ Institutional landing page and internal management system for Torres Vigilância
 - Tracker integration: fetches from vehicle's `trackerApiUrl` when configured; shows "Sem rastreador" placeholder when not
 - Backend: `GET /api/operational-grid` joins service orders with clients, employees, vehicles, and tracker data
 
-### Mission Workflow System
-- Step-by-step employee mission workflow with mandatory photo documentation
-- Mission steps: km_saida → checklist_saida → em_transito_origem → km_chegada_origem → fotos_cliente → em_transito_destino → km_chegada_destino → checklist_retorno → finalizada
-- Each OS supports 2 assigned employees with real-time status visibility (5s polling)
+### Mission Workflow System (Escolta Armada)
+- Complete digital OS workflow for armed escort operations
+- Mission steps: aguardando → checkout_armamento (3 weapon photos: 2 pistols + shotgun) → checkout_viatura (4 vehicle angles) → checkout_km_saida (odometer photo + KM value, toast "OK, Viagem Liberada!") → em_transito_origem → checkin_chegada_km (arrival KM) → checkin_veiculo_escoltado (2 escorted truck photos) → checkin_dados_motorista (driver name + plate input) → iniciar_missao (timestamp recorded) → em_transito_destino → checkout_km_final (final KM) → checkout_viatura_retorno (4 vehicle angles) → finalizada
+- Each OS supports 2 assigned agents (Agente 1 + Agente 2) with real-time sync (5s polling)
 - Photo capture with client-side compression (max 1024px, JPEG quality 0.7)
-- KM readings required at departure, client arrival, and destination arrival
-- Vehicle checklist photos (4 angles) at departure and return
-- Client site photos (3 shots: vehicle at client, client vehicle front/back)
+- GPS geolocation captured with every photo upload (latitude/longitude stored in mission_photos)
+- Escort data: driver name and escorted vehicle plate saved on service order
+- Mission timer: elapsed time displayed from missionStartedAt
+- Backend enforces: photo uploads only valid for current step, driver data required before advance, mission start only at correct step
+- Service order fields: escortedDriverName, escortedVehiclePlate, missionStartedAt
+- API routes: POST /api/mission/photo, /api/mission/advance, /api/mission/escort-data, /api/mission/start
 - Admin can create employee user accounts (Criar Acesso) from employees page
 - Mission status badges visible on service orders list
 - Authorization: employees can only access their own assigned missions
 - Express body limit increased to 10mb for photo uploads
-- Mission page: `/admin/mission` — military/operational aesthetic with olive gradient, Torres shield watermark, golden action buttons, real-time timer
+- Mission page: `/admin/mission` — monochrome professional palette, Torres shield watermark, real-time timer
 - Screenshot/print protection: @media print makes everything black; .no-print-zone disables text selection
 
 ### Employee Management
