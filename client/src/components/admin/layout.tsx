@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown
+  ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown, BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -28,6 +28,7 @@ const menuItems = [
   { path: "/admin/timesheets", label: "Folha de Ponto", icon: Clock },
   { path: "/admin/consultas", label: "Consultas", icon: Search },
   { path: "/admin/mission", label: "Missão Ativa", icon: Target },
+  { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

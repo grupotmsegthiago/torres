@@ -113,6 +113,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - Authorization: employees can only access their own assigned missions
 - Express body limit increased to 10mb for photo uploads
 - Mission page: `/admin/mission` — monochrome professional palette, Torres shield watermark, real-time timer
+- Guia Operacional: `/admin/guia-missao` — visual walkthrough of all 14 mission steps with mockups, descriptions, and details
 - Screenshot/print protection: @media print makes everything black; .no-print-zone disables text selection
 
 ### Employee Management

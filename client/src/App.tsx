@@ -20,6 +20,7 @@ import TrackerPage from "@/pages/admin/tracker";
 import MissionPage from "@/pages/admin/mission";
 import OperationalGridPage from "@/pages/admin/operational-grid";
 import ConsultasPage from "@/pages/admin/consultas";
+import GuiaMissaoPage from "@/pages/admin/guia-missao";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 
@@ -61,6 +62,7 @@ function Router() {
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
       <Route path="/admin/consultas">{() => <ProtectedRoute component={ConsultasPage} />}</Route>
+      <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
