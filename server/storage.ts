@@ -1,4 +1,4 @@
-import { eq, desc, or, sql } from "drizzle-orm";
+import { eq, desc, or, sql, ilike } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
@@ -96,7 +96,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const [user] = await db.select().from(users).where(ilike(users.username, username));
     return user;
   }
 

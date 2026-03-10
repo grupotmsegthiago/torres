@@ -91,7 +91,7 @@ export async function registerRoutes(
 
     try {
       const user = await storage.createFirstAdmin({
-        username,
+        username: username.toLowerCase().trim(),
         password: await hashPassword(password),
         name,
       });
@@ -1182,13 +1182,14 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Campos obrigatórios: username, name" });
     }
 
-    const existing = await storage.getUserByUsername(username);
+    const normalizedUsername = username.toLowerCase().trim();
+    const existing = await storage.getUserByUsername(normalizedUsername);
     if (existing) return res.status(409).json({ message: "Nome de usuário já existe" });
 
     const tempPassword = generateTempPassword();
     const hashedPassword = await hashPassword(tempPassword);
     const user = await storage.createUser({
-      username,
+      username: normalizedUsername,
       password: hashedPassword,
       name,
       role: role || "funcionario",
@@ -1250,12 +1251,13 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
     }
 
-    const existing = await storage.getUserByUsername(username);
+    const normalizedUsername = username.toLowerCase().trim();
+    const existing = await storage.getUserByUsername(normalizedUsername);
     if (existing) return res.status(409).json({ message: "Usuário já existe" });
 
     const hashedPassword = await hashPassword(password);
     const user = await storage.createUser({
-      username,
+      username: normalizedUsername,
       password: hashedPassword,
       name,
       role: role || "funcionario",
