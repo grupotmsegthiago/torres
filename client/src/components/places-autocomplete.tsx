@@ -1,21 +1,39 @@
 import { useEffect, useRef } from "react";
-import { Input } from "@/components/ui/input";
 
 declare global {
   interface Window {
     google: any;
     _gmapsLoading?: boolean;
+    _gmapsLoaded?: boolean;
+    _gmapsCallbacks?: (() => void)[];
   }
 }
 
-function loadGoogleMapsScript() {
-  if (window.google?.maps?.places || window._gmapsLoading) return;
+function loadGoogleMapsScript(callback: () => void) {
+  if (window._gmapsLoaded) {
+    callback();
+    return;
+  }
+
+  if (!window._gmapsCallbacks) {
+    window._gmapsCallbacks = [];
+  }
+  window._gmapsCallbacks.push(callback);
+
+  if (window._gmapsLoading) return;
+
   const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!key) return;
+
   window._gmapsLoading = true;
   const s = document.createElement("script");
   s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
   s.async = true;
+  s.onload = () => {
+    window._gmapsLoaded = true;
+    window._gmapsCallbacks?.forEach((cb) => cb());
+    window._gmapsCallbacks = [];
+  };
   document.head.appendChild(s);
 }
 
@@ -37,59 +55,48 @@ export function PlacesAutocomplete({
   id,
   ...props
 }: PlacesAutocompleteProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
+  const initializedRef = useRef(false);
   onChangeRef.current = onChange;
 
   useEffect(() => {
-    loadGoogleMapsScript();
-  }, []);
+    if (initializedRef.current || !containerRef.current) return;
 
-  useEffect(() => {
-    if (autocompleteRef.current || !inputRef.current) return;
+    loadGoogleMapsScript(() => {
+      if (initializedRef.current || !containerRef.current) return;
+      if (!window.google?.maps?.places?.PlaceAutocompleteElement) return;
 
-    function init() {
-      if (!window.google?.maps?.places || !inputRef.current || autocompleteRef.current) return;
+      initializedRef.current = true;
 
-      autocompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
-        types: ["(cities)"],
-        componentRestrictions: { country: "br" },
-        fields: ["formatted_address", "name"],
+      const autocomplete = new window.google.maps.places.PlaceAutocompleteElement({
+        includedRegionCodes: ["br"],
+        includedPrimaryTypes: ["locality", "administrative_area_level_2"],
       });
 
-      autocompleteRef.current.addListener("place_changed", () => {
-        const place = autocompleteRef.current.getPlace();
-        if (place?.formatted_address) {
-          onChangeRef.current(place.formatted_address);
-        } else if (place?.name) {
-          onChangeRef.current(place.name);
+      autocomplete.id = id || "";
+      autocomplete.setAttribute("data-testid", props["data-testid"] || "");
+      if (placeholder) {
+        autocomplete.setAttribute("placeholder", placeholder);
+      }
+
+      containerRef.current.appendChild(autocomplete);
+
+      autocomplete.addEventListener("gmp-placeselect", async (event: any) => {
+        const place = event.place;
+        if (place) {
+          await place.fetchFields({ fields: ["displayName", "formattedAddress"] });
+          const text = place.formattedAddress || place.displayName || "";
+          onChangeRef.current(text);
         }
       });
-    }
-
-    if (window.google?.maps?.places) {
-      init();
-    } else {
-      const interval = setInterval(() => {
-        if (window.google?.maps?.places) {
-          clearInterval(interval);
-          init();
-        }
-      }, 200);
-      return () => clearInterval(interval);
-    }
-  }, []);
+    });
+  }, [id]);
 
   return (
-    <Input
-      ref={inputRef}
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={className}
-      aria-label={props["aria-label"]}
+    <div
+      ref={containerRef}
+      className={`places-autocomplete-wrapper ${className || ""}`}
       data-testid={props["data-testid"]}
     />
   );
