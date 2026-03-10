@@ -39,7 +39,10 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
 
 function toSafeUser(user: any) {
   const { password, ...safe } = user;
-  return safe;
+  return {
+    ...safe,
+    mustChangePassword: user.mustChangePassword === 1 || user.mustChangePassword === true,
+  };
 }
 
 export async function registerRoutes(
@@ -108,6 +111,8 @@ export async function registerRoutes(
     if (error) {
       return res.status(500).json({ message: "Erro ao atualizar senha: " + error.message });
     }
+
+    await storage.updateUser(req.user!.id, { mustChangePassword: 0 } as any);
 
     res.json({ message: "Senha atualizada com sucesso" });
   });
@@ -1178,6 +1183,7 @@ export async function registerRoutes(
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
+        mustChangePassword: 1,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -1225,7 +1231,8 @@ export async function registerRoutes(
     });
 
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
-    res.json({ ...toSafeUser(user), tempPassword });
+    await storage.updateUser(id, { mustChangePassword: 1 } as any);
+    res.json({ ...toSafeUser(user), tempPassword, mustChangePassword: true });
   });
 
   app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
@@ -1280,6 +1287,7 @@ export async function registerRoutes(
         name,
         role: role || "funcionario",
         employeeId: employeeId || null,
+        mustChangePassword: 1,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});

@@ -41,21 +41,21 @@ function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => v
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
-  const message = `🔐 Torres Vigilância Patrimonial — Acesso ao Sistema
+  const message = `🔐 *Torres Vigilância Patrimonial* — Acesso ao Sistema
 
-Olá ${user.name},
+Olá *${user.name}*,
 
 Seu acesso ao sistema foi criado com sucesso.
 
-📧 E-mail: ${user.email}
-🔑 Senha: ${user.tempPassword}
-🌐 Link: www.torresseguranca.com.br na Área Restrita
+📧 *E-mail:* ${user.email}
+🔑 *Senha:* ${user.tempPassword}
+🌐 *Link:* www.torresseguranca.com.br na Área Restrita
 
 ⚠️ No primeiro acesso, recomendamos trocar sua senha por segurança.
 
 Em caso de dúvidas, entre em contato com o suporte.
 
-Torres Vigilância Patrimonial — Gestão Operacional`;
+_Torres Vigilância Patrimonial — Gestão Operacional_`;
 
   const handleCopy = async () => {
     try {
