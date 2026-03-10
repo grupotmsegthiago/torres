@@ -233,6 +233,8 @@ const steps = [
 ];
 
 function StepMockup({ step }: { step: typeof steps[0] }) {
+  const { user } = useAuth();
+  const isVigilante = user?.role === "funcionario";
   const Icon = step.icon;
 
   return (
