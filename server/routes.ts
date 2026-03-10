@@ -59,6 +59,7 @@ export async function registerRoutes(
   };
 
   app.use("/api", (req, res, next) => {
+    const fullPath = req.baseUrl + req.path;
     const openPaths = [
       "/api/auth/setup-check",
       "/api/auth/setup",
@@ -67,7 +68,7 @@ export async function registerRoutes(
       "/api/auth/me",
       "/api/auth/change-password",
     ];
-    if (openPaths.includes(req.path)) return next();
+    if (openPaths.includes(fullPath)) return next();
     if (req.user && (req.user as any).mustChangePassword === 1) {
       return res.status(403).json({ message: "Troca de senha obrigatória", code: "MUST_CHANGE_PASSWORD" });
     }
