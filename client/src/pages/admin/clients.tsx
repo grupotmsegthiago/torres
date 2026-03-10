@@ -189,7 +189,8 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/consulta/analise-risco/${doc}`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/consulta/analise-risco/${doc}`);
       const data = await res.json();
       setResult(data);
     } catch {

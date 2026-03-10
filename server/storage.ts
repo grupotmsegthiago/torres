@@ -3,6 +3,7 @@ import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
+  perfisAcesso,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -15,17 +16,21 @@ import {
   type MissionPhoto, type InsertMissionPhoto,
   type ApiLog, type InsertApiLog,
   type EmployeeSalary, type InsertEmployeeSalary,
+  type PerfilAcesso,
 } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserBySupabaseUid(uid: string): Promise<User | undefined>;
   getUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined>;
   deleteUser(id: number): Promise<void>;
   hasAnyUsers(): Promise<boolean>;
-  createFirstAdmin(data: { username: string; password: string; name: string }): Promise<User>;
+  createFirstAdmin(data: { supabaseUid: string; email: string; name: string }): Promise<User>;
+  getPerfilAcesso(role: string): Promise<PerfilAcesso | undefined>;
+  getAllPerfis(): Promise<PerfilAcesso[]>;
 
   getClients(): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
@@ -95,10 +100,15 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
+  async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(
-      sql`LOWER(${users.username}) = LOWER(${username})`
+      sql`LOWER(${users.email}) = LOWER(${email})`
     );
+    return user;
+  }
+
+  async getUserBySupabaseUid(uid: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.supabaseUid, uid));
     return user;
   }
 
@@ -121,33 +131,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async hasAnyUsers(): Promise<boolean> {
-    const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
-    if (allUsers.length === 0) return false;
-    if (allUsers.length === 1 && allUsers[0].username === "admin") return false;
-    return true;
+    const allUsers = await db.select({ id: users.id }).from(users);
+    return allUsers.length > 0;
   }
 
-  async createFirstAdmin(data: { username: string; password: string; name: string }): Promise<User> {
+  async createFirstAdmin(data: { supabaseUid: string; email: string; name: string }): Promise<User> {
     const result = await db.transaction(async (tx) => {
-      const allUsers = await tx.select({ id: users.id, username: users.username }).from(users);
-      const hasRealUsers = allUsers.some(u => u.username !== "admin");
-      if (hasRealUsers) {
+      const existing = await tx.select({ id: users.id }).from(users);
+      if (existing.length > 0) {
         throw new Error("Sistema já possui usuários cadastrados");
       }
-      if (allUsers.length > 0) {
-        for (const u of allUsers) {
-          await tx.delete(users).where(eq(users.id, u.id));
-        }
-      }
       const [created] = await tx.insert(users).values({
-        username: data.username,
-        password: data.password,
+        supabaseUid: data.supabaseUid,
+        email: data.email.toLowerCase().trim(),
         name: data.name,
-        role: "admin",
+        role: "diretoria",
       }).returning();
       return created;
     });
     return result;
+  }
+
+  async getPerfilAcesso(role: string): Promise<PerfilAcesso | undefined> {
+    const [perfil] = await db.select().from(perfisAcesso).where(eq(perfisAcesso.role, role));
+    return perfil;
+  }
+
+  async getAllPerfis(): Promise<PerfilAcesso[]> {
+    return db.select().from(perfisAcesso);
   }
 
   async getClients(): Promise<Client[]> {

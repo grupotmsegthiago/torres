@@ -1,9 +1,9 @@
-import type { Express, RequestHandler } from "express";
+import type { Express } from "express";
 import { type Server } from "http";
-import { randomInt } from "crypto";
-import passport from "passport";
+import { randomBytes } from "crypto";
 import { storage } from "./storage";
-import { requireAuth, hashPassword } from "./auth";
+import { requireAuth, requireAdminRole } from "./auth";
+import { supabaseAdmin } from "./supabase";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
@@ -37,13 +37,9 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
 };
 
-function generateTempPassword(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*";
-  let result = "";
-  for (let i = 0; i < 10; i++) {
-    result += chars.charAt(randomInt(chars.length));
-  }
-  return result;
+function toSafeUser(user: any) {
+  const { password, ...safe } = user;
+  return safe;
 }
 
 export async function registerRoutes(
@@ -51,39 +47,15 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  const requirePasswordChanged: RequestHandler = (req, res, next) => {
-    if (req.user && req.user.mustChangePassword === 1) {
-      return res.status(403).json({ message: "Troca de senha obrigatória", code: "MUST_CHANGE_PASSWORD" });
-    }
-    next();
-  };
-
-  app.use("/api", (req, res, next) => {
-    const fullPath = req.baseUrl + req.path;
-    const openPaths = [
-      "/api/auth/setup-check",
-      "/api/auth/setup",
-      "/api/auth/login",
-      "/api/auth/logout",
-      "/api/auth/me",
-      "/api/auth/change-password",
-    ];
-    if (openPaths.includes(fullPath)) return next();
-    if (req.user && (req.user as any).mustChangePassword === 1) {
-      return res.status(403).json({ message: "Troca de senha obrigatória", code: "MUST_CHANGE_PASSWORD" });
-    }
-    next();
-  });
-
   app.get("/api/auth/setup-check", async (_req, res) => {
     const hasUsers = await storage.hasAnyUsers();
     res.json({ needsSetup: !hasUsers });
   });
 
   app.post("/api/auth/setup", async (req, res) => {
-    const { username, password, name } = req.body;
-    if (!username || !password || !name) {
-      return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: email, password, name" });
     }
 
     if (password.length < 6) {
@@ -91,45 +63,36 @@ export async function registerRoutes(
     }
 
     try {
-      const user = await storage.createFirstAdmin({
-        username: username.toLowerCase().trim(),
-        password: await hashPassword(password),
-        name,
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: email.toLowerCase().trim(),
+        password,
+        email_confirm: true,
       });
 
-      req.logIn(user, (err) => {
-        if (err) return res.status(500).json({ message: "Erro ao fazer login automático" });
-        const { password: _, ...safeUser } = user;
-        res.status(201).json(safeUser);
-      });
+      if (authError) {
+        return res.status(400).json({ message: authError.message });
+      }
+
+      let user;
+      try {
+        user = await storage.createFirstAdmin({
+          supabaseUid: authData.user.id,
+          email: email.toLowerCase().trim(),
+          name,
+        });
+      } catch (dbErr: any) {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+        return res.status(403).json({ message: dbErr.message || "Sistema já possui usuários cadastrados" });
+      }
+
+      res.status(201).json(toSafeUser(user));
     } catch (err: any) {
-      return res.status(403).json({ message: err.message || "Sistema já possui usuários cadastrados" });
+      return res.status(400).json({ message: err.message || "Erro ao criar conta" });
     }
   });
 
-  app.post("/api/auth/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ message: info?.message || "Credenciais inválidas" });
-      req.logIn(user, (err) => {
-        if (err) return next(err);
-        const { password, ...safeUser } = user;
-        return res.json(safeUser);
-      });
-    })(req, res, next);
-  });
-
-  app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) return res.status(500).json({ message: "Erro ao sair" });
-      res.json({ message: "Logout realizado" });
-    });
-  });
-
-  app.get("/api/auth/me", (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Não autorizado" });
-    const { password, ...safeUser } = req.user!;
-    res.json(safeUser);
+  app.get("/api/auth/me", requireAuth, (req, res) => {
+    res.json(toSafeUser(req.user));
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
@@ -138,19 +101,29 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
     }
 
-    const hashedPassword = await hashPassword(newPassword);
-    const updated = await storage.updateUser(req.user!.id, {
-      password: hashedPassword,
-      mustChangePassword: 0,
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.supabaseUid!, {
+      password: newPassword,
     });
 
-    if (!updated) return res.status(500).json({ message: "Erro ao atualizar senha" });
+    if (error) {
+      return res.status(500).json({ message: "Erro ao atualizar senha: " + error.message });
+    }
 
-    req.logIn(updated, (err) => {
-      if (err) return res.status(500).json({ message: "Erro ao atualizar sessão" });
-      const { password: _, ...safeUser } = updated;
-      res.json(safeUser);
+    res.json({ message: "Senha atualizada com sucesso" });
+  });
+
+  app.get("/api/auth/perfil", requireAuth, async (req, res) => {
+    const perfil = await storage.getPerfilAcesso(req.user!.role);
+    res.json({
+      user: toSafeUser(req.user!),
+      permissions: perfil ? JSON.parse(perfil.permissions) : [],
+      role: perfil?.label || req.user!.role,
     });
+  });
+
+  app.get("/api/auth/perfis", requireAuth, requireAdminRole, async (_req, res) => {
+    const perfis = await storage.getAllPerfis();
+    res.json(perfis);
   });
 
   app.get("/api/clients", requireAuth, async (_req, res) => {
@@ -1164,77 +1137,75 @@ export async function registerRoutes(
 
   // ====================== USER MANAGEMENT (admin/diretoria only) ======================
 
-  const requireAdminRole: RequestHandler = (req, res, next) => {
-    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") {
-      return res.status(403).json({ message: "Apenas administradores podem gerenciar usuários" });
-    }
-    next();
-  };
-
   app.get("/api/users", requireAuth, requireAdminRole, async (_req, res) => {
     const allUsers = await storage.getUsers();
-    const safeUsers = allUsers.map(({ password, ...u }) => u);
-    res.json(safeUsers);
+    res.json(allUsers.map(toSafeUser));
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
-    const { username, name, role, employeeId } = req.body;
-    if (!username || !name) {
-      return res.status(400).json({ message: "Campos obrigatórios: username, name" });
+    const { email, name, role, employeeId } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
 
-    const normalizedUsername = username.toLowerCase().trim();
-    const existing = await storage.getUserByUsername(normalizedUsername);
-    if (existing) return res.status(409).json({ message: "Nome de usuário já existe" });
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await storage.getUserByEmail(normalizedEmail);
+    if (existing) return res.status(409).json({ message: "E-mail já cadastrado" });
 
-    const tempPassword = generateTempPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-    const user = await storage.createUser({
-      username: normalizedUsername,
-      password: hashedPassword,
-      name,
-      role: role || "funcionario",
-      employeeId: employeeId || null,
-      mustChangePassword: 1,
+    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password: tempPassword,
+      email_confirm: true,
     });
 
-    const { password: _, ...safeUser } = user;
-    res.status(201).json({ ...safeUser, tempPassword });
+    if (authError) {
+      return res.status(400).json({ message: "Erro ao criar conta: " + authError.message });
+    }
+
+    let user;
+    try {
+      user = await storage.createUser({
+        supabaseUid: authData.user.id,
+        email: normalizedEmail,
+        name,
+        role: role || "funcionario",
+        employeeId: employeeId || null,
+      });
+    } catch (dbErr: any) {
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
+    }
+
+    res.status(201).json({ ...toSafeUser(user), tempPassword });
   });
 
   app.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
-    const { name, role, employeeId, password } = req.body;
+    const { name, role, employeeId } = req.body;
     const updateData: any = {};
     if (name) updateData.name = name;
     if (role) updateData.role = role;
     if (employeeId !== undefined) updateData.employeeId = employeeId || null;
-    if (password) {
-      if (password.length < 6) {
-        return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
-      }
-      updateData.password = await hashPassword(password);
-    }
 
     const updated = await storage.updateUser(id, updateData);
     if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
-
-    const { password: _, ...safeUser } = updated;
-    res.json(safeUser);
+    res.json(toSafeUser(updated));
   });
 
   app.patch("/api/users/:id/reset-password", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
-    const tempPassword = generateTempPassword();
-    const hashedPassword = await hashPassword(tempPassword);
-    const updated = await storage.updateUser(id, {
-      password: hashedPassword,
-      mustChangePassword: 1,
-    });
-    if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
+    const user = await storage.getUser(id);
+    if (!user || !user.supabaseUid) return res.status(404).json({ message: "Usuário não encontrado" });
 
-    const { password: _, ...safeUser } = updated;
-    res.json({ ...safeUser, tempPassword });
+    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseUid, {
+      password: tempPassword,
+    });
+
+    if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
+    res.json({ ...toSafeUser(user), tempPassword });
   });
 
   app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
@@ -1242,31 +1213,52 @@ export async function registerRoutes(
     if (id === req.user!.id) {
       return res.status(400).json({ message: "Você não pode excluir seu próprio usuário" });
     }
+
+    const user = await storage.getUser(id);
+    if (user?.supabaseUid) {
+      await supabaseAdmin.auth.admin.deleteUser(user.supabaseUid).catch(() => {});
+    }
     await storage.deleteUser(id);
     res.json({ message: "Usuário excluído" });
   });
 
   app.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
-    const { username, password, name, role, employeeId } = req.body;
-    if (!username || !password || !name) {
-      return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
+    const { email, name, role, employeeId } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
 
-    const normalizedUsername = username.toLowerCase().trim();
-    const existing = await storage.getUserByUsername(normalizedUsername);
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "Usuário já existe" });
 
-    const hashedPassword = await hashPassword(password);
-    const user = await storage.createUser({
-      username: normalizedUsername,
-      password: hashedPassword,
-      name,
-      role: role || "funcionario",
-      employeeId: employeeId || null,
+    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password: tempPassword,
+      email_confirm: true,
     });
 
-    const { password: _, ...safeUser } = user;
-    res.status(201).json(safeUser);
+    if (authError) {
+      return res.status(400).json({ message: "Erro ao criar conta: " + authError.message });
+    }
+
+    let user;
+    try {
+      user = await storage.createUser({
+        supabaseUid: authData.user.id,
+        email: normalizedEmail,
+        name,
+        role: role || "funcionario",
+        employeeId: employeeId || null,
+      });
+    } catch (dbErr: any) {
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
+    }
+
+    res.status(201).json({ ...toSafeUser(user), tempPassword });
   });
 
   return httpServer;

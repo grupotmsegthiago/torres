@@ -35,7 +35,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
 
     setLookupLoading(true);
     try {
-      const res = await fetch(`/api/plate-lookup/${clean}`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/plate-lookup/${clean}`);
       if (!res.ok) {
         const err = await res.json();
         toast({ title: "Consulta de placa", description: err.message || "Erro na consulta", variant: "destructive" });

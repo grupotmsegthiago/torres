@@ -115,30 +115,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="shrink-0 p-4 border-t border-white/10">
-          <div className="flex items-center gap-3">
-            {user?.role === "diretoria" ? (
-              <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                <Crown className="w-5 h-5 text-amber-400" />
+          <Link href="/admin/perfil">
+            <div className="flex items-center gap-3 cursor-pointer hover:bg-white/5 rounded-md p-1 -m-1 transition-colors" data-testid="link-profile">
+              {user?.role === "diretoria" ? (
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <Crown className="w-5 h-5 text-amber-400" />
+                </div>
+              ) : (
+                <UserCircle className="w-8 h-8 text-white/40" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate" data-testid="text-admin-username">{user?.name}</p>
+                <p className={`text-xs ${user?.role === "diretoria" ? "text-amber-400 font-semibold" : "text-white/40"}`}>
+                  {user?.role === "diretoria" ? "DIRETORIA" : user?.role}
+                </p>
               </div>
-            ) : (
-              <UserCircle className="w-8 h-8 text-white/40" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate" data-testid="text-admin-username">{user?.name}</p>
-              <p className={`text-xs ${user?.role === "diretoria" ? "text-amber-400 font-semibold" : "text-white/40"}`}>
-                {user?.role === "diretoria" ? "DIRETORIA" : user?.role}
-              </p>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); logout(); }}
+                className="text-white/40 hover:text-white hover:bg-white/10"
+                data-testid="button-logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={logout}
-              className="text-white/40 hover:text-white hover:bg-white/10"
-              data-testid="button-logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
+          </Link>
         </div>
       </aside>
 

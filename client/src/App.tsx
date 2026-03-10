@@ -22,6 +22,7 @@ import OperationalGridPage from "@/pages/admin/operational-grid";
 import ConsultasPage from "@/pages/admin/consultas";
 import GuiaMissaoPage from "@/pages/admin/guia-missao";
 import UsersPage from "@/pages/admin/users";
+import ProfilePage from "@/pages/admin/profile";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 
@@ -38,11 +39,6 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!user) {
-    setLocation("/admin");
-    return null;
-  }
-
-  if (user.mustChangePassword === 1) {
     setLocation("/admin");
     return null;
   }
@@ -70,6 +66,7 @@ function Router() {
       <Route path="/admin/consultas">{() => <ProtectedRoute component={ConsultasPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
+      <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

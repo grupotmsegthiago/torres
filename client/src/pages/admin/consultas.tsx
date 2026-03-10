@@ -89,7 +89,8 @@ function useConsulta(baseUrl: string) {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch(`${baseUrl}/${param}`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`${baseUrl}/${param}`);
       const data = await res.json();
       setResult(data);
       if (!data.success && data.data?.error) {
@@ -136,7 +137,8 @@ function DataJudTab() {
     if (selectedTribunals.length === 0) { toast({ title: "Selecione pelo menos um tribunal", variant: "destructive" }); return; }
     setLoading(true); setResults(null);
     try {
-      const res = await fetch(`/api/datajud/${digits}?tribunals=${selectedTribunals.join(",")}&size=20`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/datajud/${digits}?tribunals=${selectedTribunals.join(",")}&size=20`);
       if (!res.ok) { const err = await res.json(); toast({ title: "Erro", description: err.message, variant: "destructive" }); return; }
       const data = await res.json();
       setResults(data);
@@ -238,7 +240,8 @@ function PlacaTab() {
     if (clean.length < 7) { toast({ title: "Placa inválida", variant: "destructive" }); return; }
     setLoading(true); setResult(null);
     try {
-      const res = await fetch(`/api/plate-lookup/${clean}`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/plate-lookup/${clean}`);
       if (!res.ok) { const err = await res.json(); toast({ title: "Erro", description: err.message, variant: "destructive" }); return; }
       setResult(await res.json());
       toast({ title: "Veículo encontrado" });
@@ -418,10 +421,10 @@ function NFTab() {
     setLoading(true); setResult(null);
     try {
       const parsed = JSON.parse(nfData);
-      const res = await fetch("/api/consulta/emitir-nf", {
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch("/api/consulta/emitir-nf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(parsed),
       });
       const data = await res.json();
@@ -555,9 +558,9 @@ function TestarTodasTab() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("/api/consulta/testar-todas", {
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch("/api/consulta/testar-todas", {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
       });
       const data = await res.json();

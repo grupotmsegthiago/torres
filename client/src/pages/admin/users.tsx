@@ -9,15 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Shield, Crown, UserCircle, Copy, Check, KeyRound } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, Mail } from "lucide-react";
 
 type SafeUser = {
   id: number;
-  username: string;
+  email: string;
   name: string;
   role: string;
   employeeId: number | null;
-  mustChangePassword: number;
+  username: string | null;
 };
 
 type CreatedUser = SafeUser & { tempPassword: string };
@@ -42,11 +42,11 @@ Olá ${user.name},
 
 Seu acesso ao sistema foi criado com sucesso.
 
-📧 Login: ${user.username}
+📧 E-mail: ${user.email}
 🔑 Senha: ${user.tempPassword}
 🌐 Link: www.torresseguranca.com.br na Área Restrita
 
-⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.
+⚠️ No primeiro acesso, recomendamos trocar sua senha por segurança.
 
 Em caso de dúvidas, entre em contato com o suporte.
 
@@ -105,10 +105,8 @@ export default function UsersPage() {
   const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
 
   const [formName, setFormName] = useState("");
-  const [formUsername, setFormUsername] = useState("");
-  const [formPassword, setFormPassword] = useState("");
+  const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState("funcionario");
-  const [showPassword, setShowPassword] = useState(false);
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "diretoria";
 
@@ -118,7 +116,7 @@ export default function UsersPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { username: string; name: string; role: string }) => {
+    mutationFn: async (data: { email: string; name: string; role: string }) => {
       const res = await apiRequest("POST", "/api/users", data);
       return res.json() as Promise<CreatedUser>;
     },
@@ -163,11 +161,11 @@ export default function UsersPage() {
   const resetPasswordMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiRequest("PATCH", `/api/users/${id}/reset-password`);
-      return res.json() as Promise<{ tempPassword: string; name: string; username: string }>;
+      return res.json() as Promise<CreatedUser>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setCreatedUser({ ...data, id: 0, role: "", employeeId: null, mustChangePassword: 1 } as CreatedUser);
+      setCreatedUser(data);
     },
     onError: (err: any) => {
       toast({ title: "Erro ao resetar senha", description: err.message, variant: "destructive" });
@@ -177,20 +175,16 @@ export default function UsersPage() {
   function openCreate() {
     setEditingUser(null);
     setFormName("");
-    setFormUsername("");
-    setFormPassword("");
+    setFormEmail("");
     setFormRole("funcionario");
-    setShowPassword(false);
     setDialogOpen(true);
   }
 
   function openEdit(u: SafeUser) {
     setEditingUser(u);
     setFormName(u.name);
-    setFormUsername(u.username);
-    setFormPassword("");
+    setFormEmail(u.email);
     setFormRole(u.role);
-    setShowPassword(false);
     setDialogOpen(true);
   }
 
@@ -202,12 +196,10 @@ export default function UsersPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editingUser) {
-      const data: any = { name: formName, role: formRole };
-      if (formPassword) data.password = formPassword;
-      updateMutation.mutate({ id: editingUser.id, data });
+      updateMutation.mutate({ id: editingUser.id, data: { name: formName, role: formRole } });
     } else {
       createMutation.mutate({
-        username: formUsername,
+        email: formEmail,
         name: formName,
         role: formRole,
       });
@@ -281,14 +273,12 @@ export default function UsersPage() {
                             VOCÊ
                           </span>
                         )}
-                        {u.mustChangePassword === 1 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">
-                            PRIMEIRO ACESSO
-                          </span>
-                        )}
                       </div>
                       <div className="flex items-center gap-3 text-sm text-neutral-500">
-                        <span data-testid={`text-user-username-${u.id}`}>@{u.username}</span>
+                        <span className="flex items-center gap-1" data-testid={`text-user-email-${u.id}`}>
+                          <Mail className="w-3 h-3" />
+                          {u.email}
+                        </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           u.role === "diretoria" ? "bg-amber-50 text-amber-700" :
                           u.role === "admin" ? "bg-blue-50 text-blue-700" :
@@ -362,48 +352,22 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
-                {editingUser ? "Nome de Usuário" : "Login de Acesso"}
-              </label>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">E-mail</label>
               <Input
-                value={formUsername}
-                onChange={(e) => setFormUsername(e.target.value)}
-                placeholder={editingUser ? "" : "ex: nome.sobrenome"}
+                type="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder="usuario@email.com"
                 required
                 disabled={!!editingUser}
-                data-testid="input-user-username"
+                data-testid="input-user-email"
               />
               {editingUser ? (
-                <p className="text-xs text-neutral-400 mt-1">O nome de usuário não pode ser alterado</p>
+                <p className="text-xs text-neutral-400 mt-1">O e-mail não pode ser alterado</p>
               ) : (
-                <p className="text-xs text-neutral-400 mt-1">Uma senha aleatória será gerada automaticamente</p>
+                <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada automaticamente</p>
               )}
             </div>
-            {editingUser && (
-              <div>
-                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
-                  Nova Senha (deixe em branco para manter)
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    value={formPassword}
-                    onChange={(e) => setFormPassword(e.target.value)}
-                    placeholder="••••••"
-                    minLength={formPassword ? 6 : undefined}
-                    className="pr-10"
-                    data-testid="input-user-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            )}
             <div>
               <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Perfil</label>
               <Select value={formRole} onValueChange={setFormRole}>
@@ -437,7 +401,7 @@ export default function UsersPage() {
             <DialogTitle>Excluir Usuário</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-neutral-600">
-            Tem certeza que deseja excluir o usuário <strong>{deleteConfirm?.name}</strong> (@{deleteConfirm?.username})?
+            Tem certeza que deseja excluir o usuário <strong>{deleteConfirm?.name}</strong> ({deleteConfirm?.email})?
             Esta ação não pode ser desfeita.
           </p>
           <div className="flex justify-end gap-3 pt-2">

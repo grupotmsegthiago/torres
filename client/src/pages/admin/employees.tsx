@@ -98,7 +98,8 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
   const { data: salaries = [], isLoading } = useQuery<EmployeeSalary[]>({
     queryKey: ["/api/employees", employee.id, "salaries"],
     queryFn: async () => {
-      const res = await fetch(`/api/employees/${employee.id}/salaries`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/employees/${employee.id}/salaries`);
       return res.json();
     },
     enabled: open,
@@ -221,7 +222,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   const { data: nextMatricula } = useQuery<{ matricula: string }>({
     queryKey: ["/api/employees/next-matricula"],
     queryFn: async () => {
-      const res = await fetch("/api/employees/next-matricula", { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch("/api/employees/next-matricula");
       return res.json();
     },
     enabled: !employee,
@@ -232,7 +234,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     if (clean.length !== 11) return;
     setCpfLoading(true);
     try {
-      const res = await fetch(`/api/cpf-lookup/${clean}`, { credentials: "include" });
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/cpf-lookup/${clean}`);
       if (res.ok) {
         const data = await res.json();
         setForm((prev) => ({

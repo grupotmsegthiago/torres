@@ -5,17 +5,32 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  supabaseUid: text("supabase_uid").unique(),
+  email: text("email").unique(),
+  username: text("username"),
+  password: text("password"),
   name: text("name").notNull(),
-  role: text("role").notNull().default("admin"),
+  role: text("role").notNull().default("funcionario"),
   employeeId: integer("employee_id"),
-  mustChangePassword: integer("must_change_password").notNull().default(0),
+  mustChangePassword: integer("must_change_password").default(0),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export const perfisAcesso = pgTable("perfis_acesso", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull().unique(),
+  label: text("label").notNull(),
+  permissions: text("permissions").notNull(),
+});
+
+export const insertPerfilAcessoSchema = createInsertSchema(perfisAcesso).omit({ id: true });
+export type InsertPerfilAcesso = z.infer<typeof insertPerfilAcessoSchema>;
+export type PerfilAcesso = typeof perfisAcesso.$inferSelect;
 
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
