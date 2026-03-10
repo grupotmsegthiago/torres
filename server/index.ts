@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
+import { initCronJobs } from "./cron";
 
 const app = express();
 const httpServer = createServer(app);
@@ -88,6 +89,8 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  initCronJobs();
+
   httpServer.listen(
     {
       port,

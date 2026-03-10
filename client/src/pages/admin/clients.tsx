@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Search, Loader2, FileDown } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Search, Loader2, FileDown, ShieldCheck } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
 
@@ -176,9 +176,103 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
   );
 }
 
+function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const { toast } = useToast();
+
+  const runAnalysis = useCallback(async () => {
+    const doc = (client.cnpj || client.cpf || "").replace(/\D/g, "");
+    if (!doc || (doc.length !== 11 && doc.length !== 14)) {
+      toast({ title: "Cliente sem CPF/CNPJ válido", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/consulta/analise-credito/${doc}`, { credentials: "include" });
+      const data = await res.json();
+      setResult(data);
+    } catch {
+      toast({ title: "Erro ao realizar análise", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [client, toast]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="modal-credit-analysis">
+        <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Análise de Risco</h2>
+            <p className="text-xs text-neutral-500">{client.name}</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-analysis"><X className="w-4 h-4" /></Button>
+        </div>
+        <div className="p-5">
+          {!result && !loading && (
+            <div className="text-center py-8">
+              <ShieldCheck className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
+              <p className="text-sm text-neutral-500 mb-4">Consultar SPC/Serasa, Score Quod e Protestos para:</p>
+              <p className="font-medium text-neutral-900 mb-1">{client.name}</p>
+              <p className="text-xs text-neutral-500 font-mono mb-6">{client.cnpj || client.cpf || "Sem documento"}</p>
+              <Button onClick={runAnalysis} disabled={!client.cnpj && !client.cpf} data-testid="button-run-analysis">
+                <ShieldCheck className="w-4 h-4 mr-2" /> Iniciar Análise
+              </Button>
+            </div>
+          )}
+          {loading && (
+            <div className="text-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-neutral-400 mx-auto mb-3" />
+              <p className="text-sm text-neutral-500">Consultando 3 fontes simultaneamente...</p>
+            </div>
+          )}
+          {result && !loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "SPC/Serasa", status: result.summary?.spcStatus, data: result.spc },
+                  { label: "Score Quod", status: result.summary?.quodStatus, data: result.quod },
+                  { label: "Protestos", status: result.summary?.protestoStatus, data: result.protesto },
+                ].map((item) => (
+                  <div key={item.label} className={`p-3 rounded-lg border text-center ${item.status === "consultado" ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+                    <p className="text-[10px] text-neutral-500 mb-1">{item.label}</p>
+                    <p className={`text-xs font-bold ${item.status === "consultado" ? "text-green-700" : "text-red-700"}`} data-testid={`text-status-${item.label.toLowerCase().replace(/[/\s]/g, '-')}`}>
+                      {item.status === "consultado" ? "Consultado" : "Erro"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {result.hasRestrictions && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                  Algumas consultas retornaram erro. Verifique se o token APIBRASIL_TOKEN está configurado corretamente.
+                </div>
+              )}
+              {[
+                { label: "SPC/Serasa", data: result.spc },
+                { label: "Score Quod", data: result.quod },
+                { label: "Protestos", data: result.protesto },
+              ].map((item) => (
+                <div key={item.label} className="border border-neutral-200 rounded-lg overflow-hidden">
+                  <div className="bg-neutral-50 p-2.5 text-xs font-medium text-neutral-700">{item.label}</div>
+                  <pre className="p-3 text-[10px] text-neutral-600 overflow-auto max-h-[150px] whitespace-pre-wrap break-words">
+                    {JSON.stringify(item.data?.data || item.data, null, 2)}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editClient, setEditClient] = useState<Client | undefined>();
+  const [analysisClient, setAnalysisClient] = useState<Client | null>(null);
   const { toast } = useToast();
 
   const [generatingPdf, setGeneratingPdf] = useState<number | null>(null);
@@ -248,6 +342,15 @@ export default function ClientsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => setAnalysisClient(c)}
+                        title="Análise de Risco"
+                        data-testid={`button-credit-analysis-${c.id}`}
+                      >
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handlePresentation(c.id, c.name)}
                         title="Gerar Apresentação"
                         disabled={generatingPdf === c.id}
@@ -273,6 +376,10 @@ export default function ClientsPage() {
           </div>
         )}
       </Card>
+
+      {analysisClient && (
+        <CreditAnalysisModal client={analysisClient} onClose={() => setAnalysisClient(null)} />
+      )}
     </AdminLayout>
   );
 }

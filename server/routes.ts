@@ -8,6 +8,7 @@ import {
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
   insertVehicleFuelingSchema, insertTimesheetSchema, insertMissionPhotoSchema,
 } from "@shared/schema";
+import * as apibrasil from "./apibrasil";
 
 const MISSION_STEPS = [
   "aguardando",
@@ -435,6 +436,115 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ message: "Erro ao consultar placa: " + (err.message || "erro desconhecido") });
     }
+  });
+
+  // ====================== API BRASIL CONSULTAS (admin-only) ======================
+
+  const requireAdmin = (req: any, res: any, next: any) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    next();
+  };
+
+  app.get("/api/consulta/multas-prf/:placa", requireAuth, requireAdmin, async (req, res) => {
+    const placa = String(req.params.placa).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (placa.length < 7) return res.status(400).json({ message: "Placa inválida" });
+    const result = await apibrasil.consultaMultasPRF(placa, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/cnh/:cpf", requireAuth, requireAdmin, async (req, res) => {
+    const cpf = String(req.params.cpf).replace(/\D/g, "");
+    if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+    const result = await apibrasil.consultaCNH(cpf, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/processos/:cpf", requireAuth, requireAdmin, async (req, res) => {
+    const cpf = String(req.params.cpf).replace(/\D/g, "");
+    if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+    const result = await apibrasil.consultaProcessos(cpf, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/spc/:document", requireAuth, requireAdmin, async (req, res) => {
+    const doc = String(req.params.document).replace(/\D/g, "");
+    if (doc.length !== 11 && doc.length !== 14) return res.status(400).json({ message: "CPF/CNPJ inválido" });
+    const result = await apibrasil.consultaSPC(doc, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/quod/:document", requireAuth, requireAdmin, async (req, res) => {
+    const doc = String(req.params.document).replace(/\D/g, "");
+    if (doc.length !== 11 && doc.length !== 14) return res.status(400).json({ message: "CPF/CNPJ inválido" });
+    const result = await apibrasil.consultaQuodScore(doc, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/protesto/:document", requireAuth, requireAdmin, async (req, res) => {
+    const doc = String(req.params.document).replace(/\D/g, "");
+    if (doc.length !== 11 && doc.length !== 14) return res.status(400).json({ message: "CPF/CNPJ inválido" });
+    const result = await apibrasil.consultaProtestoNacional(doc, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/situacao-eleitoral/:cpf", requireAuth, requireAdmin, async (req, res) => {
+    const cpf = String(req.params.cpf).replace(/\D/g, "");
+    if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+    const result = await apibrasil.consultaSituacaoEleitoral(cpf, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.post("/api/consulta/emitir-nf", requireAuth, requireAdmin, async (req, res) => {
+    if (!req.body || typeof req.body !== "object") return res.status(400).json({ message: "Dados da NF inválidos" });
+    const result = await apibrasil.emitirNotaFiscal(req.body, req.user!.id);
+    res.status(result.status || 200).json(result);
+  });
+
+  app.get("/api/consulta/analise-credito/:document", requireAuth, requireAdmin, async (req, res) => {
+    const doc = String(req.params.document).replace(/\D/g, "");
+    if (doc.length !== 11 && doc.length !== 14) return res.status(400).json({ message: "CPF/CNPJ inválido" });
+    const result = await apibrasil.analiseCredito(doc, req.user!.id);
+    res.json(result);
+  });
+
+  app.get("/api/api-logs", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const logs = await storage.getRecentApiLogs(limit);
+    const safeLogs = logs.map(({ responseData, requestData, ...rest }) => ({
+      ...rest,
+      hasResponseData: !!responseData,
+      requestPreview: requestData ? requestData.substring(0, 100) : null,
+    }));
+    res.json(safeLogs);
+  });
+
+  app.get("/api/api-logs/stats", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const logs = await storage.getRecentApiLogs(500);
+    const today = new Date().toISOString().split("T")[0];
+    const todayLogs = logs.filter(l => l.createdAt && l.createdAt.toISOString().startsWith(today));
+    const byEndpoint: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    for (const l of logs) {
+      byEndpoint[l.endpoint] = (byEndpoint[l.endpoint] || 0) + 1;
+      const s = l.responseStatus ? (l.responseStatus >= 200 && l.responseStatus < 300 ? "success" : "error") : "unknown";
+      byStatus[s] = (byStatus[s] || 0) + 1;
+    }
+    res.json({
+      total: logs.length,
+      today: todayLogs.length,
+      byEndpoint,
+      byStatus,
+    });
+  });
+
+  app.get("/api/api-logs/:id", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ message: "Acesso negado" });
+    const logs = await storage.getRecentApiLogs(500);
+    const log = logs.find(l => l.id === Number(req.params.id));
+    if (!log) return res.status(404).json({ message: "Log não encontrado" });
+    res.json(log);
   });
 
   // ====================== OPERATIONAL GRID ======================

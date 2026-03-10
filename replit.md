@@ -61,10 +61,32 @@ Institutional landing page and internal management system for Torres Vigilância
 - Vehicle plate auto-fill via API Brasil (APIBRASIL_TOKEN required)
 
 ### Consultas (API Lookups)
-- Dedicated page at `/admin/consultas` with tabbed interface
-- **DataJud (CNJ)**: Public judicial process lookup by CNPJ across Brazilian tribunals. Uses public APIKey. Supports tribunal selection (TJSP, TRT2, TRT15, etc.). Shows process number, class, subjects, court, filing date, and last 5 movements with expandable details.
-- **Consulta de Placa**: Vehicle plate lookup via API Brasil. Returns brand, model, year, color, chassis, fuel type, city/state. Requires APIBRASIL_TOKEN env var.
-- Architecture: backend proxy routes at `/api/datajud/:cnpj` and `/api/plate-lookup/:plate` to handle auth and normalize responses
+- Dedicated page at `/admin/consultas` with 10 tabbed interfaces
+- **DataJud (CNJ)**: Public judicial process lookup by CNPJ across Brazilian tribunals. Uses public APIKey.
+- **Consulta de Placa**: Vehicle plate lookup via API Brasil.
+- **Multas PRF**: Traffic fine lookup by plate
+- **CNH**: Driver license lookup by CPF
+- **Processos**: Judicial process lookup by CPF
+- **SPC/Serasa**: Credit restriction lookup by CPF/CNPJ
+- **Score Quod**: Credit score lookup by CPF/CNPJ
+- **Protesto Nacional**: National protest lookup by CPF/CNPJ
+- **Notas Fiscais**: NF emission via API Brasil (JSON input)
+- **Logs API**: API consumption log viewer with stats (total, today, success, errors)
+- Architecture: `server/apibrasil.ts` centralized service with auto-logging to `api_logs` table
+- Backend routes: `/api/consulta/*` for all API Brasil endpoints, `/api/api-logs` and `/api/api-logs/stats` for consumption tracking
+- Credit Analysis: "Análise de Risco" button on clients page runs SPC+Quod+Protesto simultaneously
+
+### Automated Tasks (Cron Jobs)
+- **Fleet Monitoring**: Daily at 02:00 AM — iterates all vehicles, checks multas PRF, logs results
+- **HR Compliance**: Every 90 days (1st of quarter at 03:00 AM) — iterates active employees, checks CNH, Processos, Situação Eleitoral
+- Implementation: `server/cron.ts` using node-cron, initialized from `server/index.ts`
+- All automated queries logged with source "cron_frota" or "cron_rh"
+
+### Dashboard Alerts (Admin)
+- "Multas do Dia" card — recent multa queries
+- "Status Notas Fiscais" card — recent NF emissions
+- "Alertas Processos" card — recent judicial process queries
+- "Consumo API Brasil" summary — today/total count with success/error breakdown
 
 ### Operational Grid
 - Real-time operational monitoring page (`/admin/operational-grid`)
@@ -90,7 +112,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - Screenshot/print protection: @media print makes everything black; .no-print-zone disables text selection
 
 ## Database Tables
-users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos
+users, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs
 
 ## Brand
 - Colors: Black/white professional aesthetic

@@ -2,7 +2,7 @@ import { eq, desc, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
-  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos,
+  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -13,6 +13,7 @@ import {
   type VehicleFueling, type InsertVehicleFueling,
   type Timesheet, type InsertTimesheet,
   type MissionPhoto, type InsertMissionPhoto,
+  type ApiLog, type InsertApiLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -72,6 +73,9 @@ export interface IStorage {
   getMissionPhoto(id: number): Promise<MissionPhoto | undefined>;
   createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto>;
   getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]>;
+
+  createApiLog(log: InsertApiLog): Promise<ApiLog>;
+  getRecentApiLogs(limit?: number): Promise<ApiLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -299,6 +303,15 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(serviceOrders.createdAt));
+  }
+
+  async createApiLog(log: InsertApiLog): Promise<ApiLog> {
+    const [created] = await db.insert(apiLogs).values(log).returning();
+    return created;
+  }
+
+  async getRecentApiLogs(limit = 100): Promise<ApiLog[]> {
+    return db.select().from(apiLogs).orderBy(desc(apiLogs.createdAt)).limit(limit);
   }
 }
 

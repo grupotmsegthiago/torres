@@ -41,6 +41,7 @@ export const employees = pgTable("employees", {
   name: text("name").notNull(),
   cpf: text("cpf"),
   rg: text("rg"),
+  cnhNumber: text("cnh_number"),
   role: text("role").notNull(),
   phone: text("phone"),
   email: text("email"),
@@ -189,3 +190,19 @@ export const missionPhotos = pgTable("mission_photos", {
 export const insertMissionPhotoSchema = createInsertSchema(missionPhotos).omit({ id: true, createdAt: true });
 export type InsertMissionPhoto = z.infer<typeof insertMissionPhotoSchema>;
 export type MissionPhoto = typeof missionPhotos.$inferSelect;
+
+export const apiLogs = pgTable("api_logs", {
+  id: serial("id").primaryKey(),
+  endpoint: text("endpoint").notNull(),
+  method: text("method").notNull().default("GET"),
+  requestData: text("request_data"),
+  responseStatus: integer("response_status"),
+  responseData: text("response_data"),
+  userId: integer("user_id"),
+  source: text("source").default("manual"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertApiLogSchema = createInsertSchema(apiLogs).omit({ id: true, createdAt: true });
+export type InsertApiLog = z.infer<typeof insertApiLogSchema>;
+export type ApiLog = typeof apiLogs.$inferSelect;
