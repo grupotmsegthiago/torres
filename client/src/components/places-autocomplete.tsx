@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { MapPin } from "lucide-react";
 
 declare global {
   interface Window {
@@ -37,6 +39,13 @@ function loadGoogleMapsScript(callback: () => void) {
   document.head.appendChild(s);
 }
 
+interface Suggestion {
+  placeId: string;
+  text: string;
+  mainText: string;
+  secondaryText: string;
+}
+
 interface PlacesAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
@@ -55,49 +64,113 @@ export function PlacesAutocomplete({
   id,
   ...props
 }: PlacesAutocompleteProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const onChangeRef = useRef(onChange);
-  const initializedRef = useRef(false);
-  onChangeRef.current = onChange;
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [apiReady, setApiReady] = useState(false);
+  const sessionTokenRef = useRef<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (initializedRef.current || !containerRef.current) return;
+    loadGoogleMapsScript(() => setApiReady(true));
+  }, []);
 
-    loadGoogleMapsScript(() => {
-      if (initializedRef.current || !containerRef.current) return;
-      if (!window.google?.maps?.places?.PlaceAutocompleteElement) return;
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-      initializedRef.current = true;
+  const fetchSuggestions = useCallback(async (input: string) => {
+    if (!input || input.length < 2 || !apiReady) {
+      setSuggestions([]);
+      return;
+    }
 
-      const autocomplete = new window.google.maps.places.PlaceAutocompleteElement({
-        includedRegionCodes: ["br"],
-        includedPrimaryTypes: ["locality", "administrative_area_level_2"],
-      });
-
-      autocomplete.id = id || "";
-      autocomplete.setAttribute("data-testid", props["data-testid"] || "");
-      if (placeholder) {
-        autocomplete.setAttribute("placeholder", placeholder);
+    try {
+      if (!sessionTokenRef.current) {
+        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
       }
 
-      containerRef.current.appendChild(autocomplete);
-
-      autocomplete.addEventListener("gmp-placeselect", async (event: any) => {
-        const place = event.place;
-        if (place) {
-          await place.fetchFields({ fields: ["displayName", "formattedAddress"] });
-          const text = place.formattedAddress || place.displayName || "";
-          onChangeRef.current(text);
-        }
+      const { AutocompleteSuggestion } = window.google.maps.places;
+      const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input,
+        sessionToken: sessionTokenRef.current,
+        includedRegionCodes: ["br"],
+        includedPrimaryTypes: ["locality", "administrative_area_level_2"],
+        language: "pt-BR",
       });
-    });
-  }, [id]);
+
+      const items: Suggestion[] = (response.suggestions || []).map((s: any) => ({
+        placeId: s.placePrediction?.placeId || "",
+        text: s.placePrediction?.text?.text || "",
+        mainText: s.placePrediction?.mainText?.text || "",
+        secondaryText: s.placePrediction?.secondaryText?.text || "",
+      }));
+
+      setSuggestions(items);
+      setShowDropdown(items.length > 0);
+    } catch {
+      setSuggestions([]);
+    }
+  }, [apiReady]);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    onChange(val);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 300);
+  }, [onChange, fetchSuggestions]);
+
+  const handleSelect = useCallback((suggestion: Suggestion) => {
+    onChange(suggestion.text);
+    setSuggestions([]);
+    setShowDropdown(false);
+    sessionTokenRef.current = null;
+  }, [onChange]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`places-autocomplete-wrapper ${className || ""}`}
-      data-testid={props["data-testid"]}
-    />
+    <div ref={wrapperRef} className="relative w-full">
+      <Input
+        id={id}
+        value={value}
+        onChange={handleInputChange}
+        onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+        placeholder={placeholder}
+        className={className}
+        aria-label={props["aria-label"]}
+        data-testid={props["data-testid"]}
+        autoComplete="off"
+      />
+      {showDropdown && suggestions.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 rounded-lg border border-white/10 bg-[#171717] shadow-xl overflow-hidden" data-testid="dropdown-suggestions">
+          {suggestions.map((s, i) => (
+            <button
+              key={s.placeId || i}
+              type="button"
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-white/[0.08] transition-colors border-t border-white/5 first:border-t-0"
+              onClick={() => handleSelect(s)}
+              data-testid={`suggestion-item-${i}`}
+            >
+              <MapPin className="w-3.5 h-3.5 text-white/30 shrink-0" />
+              <div className="min-w-0">
+                <span className="text-sm text-white font-medium">{s.mainText}</span>
+                {s.secondaryText && (
+                  <span className="text-sm text-white/40 ml-1">{s.secondaryText}</span>
+                )}
+              </div>
+            </button>
+          ))}
+          <div className="px-3 py-1.5 text-[10px] text-white/20 text-right">
+            Powered by Google
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
