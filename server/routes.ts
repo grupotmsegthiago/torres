@@ -1,5 +1,6 @@
 import type { Express, RequestHandler } from "express";
 import { type Server } from "http";
+import { randomInt } from "crypto";
 import passport from "passport";
 import { storage } from "./storage";
 import { requireAuth, hashPassword } from "./auth";
@@ -36,10 +37,42 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
 };
 
+function generateTempPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*";
+  let result = "";
+  for (let i = 0; i < 10; i++) {
+    result += chars.charAt(randomInt(chars.length));
+  }
+  return result;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  const requirePasswordChanged: RequestHandler = (req, res, next) => {
+    if (req.user && req.user.mustChangePassword === 1) {
+      return res.status(403).json({ message: "Troca de senha obrigatória", code: "MUST_CHANGE_PASSWORD" });
+    }
+    next();
+  };
+
+  app.use("/api", (req, res, next) => {
+    const openPaths = [
+      "/api/auth/setup-check",
+      "/api/auth/setup",
+      "/api/auth/login",
+      "/api/auth/logout",
+      "/api/auth/me",
+      "/api/auth/change-password",
+    ];
+    if (openPaths.includes(req.path)) return next();
+    if (req.user && (req.user as any).mustChangePassword === 1) {
+      return res.status(403).json({ message: "Troca de senha obrigatória", code: "MUST_CHANGE_PASSWORD" });
+    }
+    next();
+  });
 
   app.get("/api/auth/setup-check", async (_req, res) => {
     const hasUsers = await storage.hasAnyUsers();
@@ -96,6 +129,27 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Não autorizado" });
     const { password, ...safeUser } = req.user!;
     res.json(safeUser);
+  });
+
+  app.post("/api/auth/change-password", requireAuth, async (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    const updated = await storage.updateUser(req.user!.id, {
+      password: hashedPassword,
+      mustChangePassword: 0,
+    });
+
+    if (!updated) return res.status(500).json({ message: "Erro ao atualizar senha" });
+
+    req.logIn(updated, (err) => {
+      if (err) return res.status(500).json({ message: "Erro ao atualizar sessão" });
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    });
   });
 
   app.get("/api/clients", requireAuth, async (_req, res) => {
@@ -1123,28 +1177,27 @@ export async function registerRoutes(
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
-    const { username, password, name, role, employeeId } = req.body;
-    if (!username || !password || !name) {
-      return res.status(400).json({ message: "Campos obrigatórios: username, password, name" });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Senha deve ter no mínimo 6 caracteres" });
+    const { username, name, role, employeeId } = req.body;
+    if (!username || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: username, name" });
     }
 
     const existing = await storage.getUserByUsername(username);
     if (existing) return res.status(409).json({ message: "Nome de usuário já existe" });
 
-    const hashedPassword = await hashPassword(password);
+    const tempPassword = generateTempPassword();
+    const hashedPassword = await hashPassword(tempPassword);
     const user = await storage.createUser({
       username,
       password: hashedPassword,
       name,
       role: role || "funcionario",
       employeeId: employeeId || null,
+      mustChangePassword: 1,
     });
 
     const { password: _, ...safeUser } = user;
-    res.status(201).json(safeUser);
+    res.status(201).json({ ...safeUser, tempPassword });
   });
 
   app.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
@@ -1166,6 +1219,20 @@ export async function registerRoutes(
 
     const { password: _, ...safeUser } = updated;
     res.json(safeUser);
+  });
+
+  app.patch("/api/users/:id/reset-password", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const tempPassword = generateTempPassword();
+    const hashedPassword = await hashPassword(tempPassword);
+    const updated = await storage.updateUser(id, {
+      password: hashedPassword,
+      mustChangePassword: 1,
+    });
+    if (!updated) return res.status(404).json({ message: "Usuário não encontrado" });
+
+    const { password: _, ...safeUser } = updated;
+    res.json({ ...safeUser, tempPassword });
   });
 
   app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {

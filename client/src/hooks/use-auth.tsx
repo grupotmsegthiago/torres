@@ -8,12 +8,13 @@ type AuthUser = {
   username: string;
   name: string;
   role: string;
+  mustChangePassword: number;
 };
 
 type AuthContextType = {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
 };
 
@@ -43,8 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await apiRequest("POST", "/api/auth/login", { username, password });
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/auth/me"], data);
     },
   });
 
@@ -59,7 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const login = useCallback(async (username: string, password: string) => {
-    await loginMutation.mutateAsync({ username, password });
+    const data = await loginMutation.mutateAsync({ username, password });
+    return data as AuthUser;
   }, [loginMutation]);
 
   const logout = useCallback(async () => {

@@ -42,6 +42,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     return null;
   }
 
+  if (user.mustChangePassword === 1) {
+    setLocation("/admin");
+    return null;
+  }
+
   return <Component />;
 }
 

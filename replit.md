@@ -52,6 +52,12 @@ Institutional landing page and internal management system for Torres Vigilância
 - Session-based authentication with initial setup flow (first access creates admin account)
 - No hardcoded credentials — first user registers via /admin setup wizard
 - Setup check: GET /api/auth/setup-check, POST /api/auth/setup (only when no users exist)
+- User creation auto-generates random password + forces change on first login (mustChangePassword flag)
+- Credential card template (Torres branding) shown after user creation for copy/share
+- POST /api/auth/change-password for forced first-login password change
+- PATCH /api/users/:id/reset-password to reset password with new temp password
+- Backend enforces password change: all /api/* routes blocked except auth routes when mustChangePassword=1
+- User management page: /admin/usuarios (admin/diretoria only)
 - Full CRUD for: Clients, Employees, Vehicles, Service Orders, Trips, Fueling, Maintenance, Timesheets
 - Dashboard with real-time stats
 - Vehicle average consumption calculation

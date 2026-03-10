@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Shield, Crown, UserCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye, EyeOff, Shield, Crown, UserCircle, Copy, Check, KeyRound } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -17,7 +17,10 @@ type SafeUser = {
   name: string;
   role: string;
   employeeId: number | null;
+  mustChangePassword: number;
 };
+
+type CreatedUser = SafeUser & { tempPassword: string };
 
 const ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
@@ -29,12 +32,77 @@ function getRoleInfo(role: string) {
   return ROLES.find((r) => r.value === role) || ROLES[2];
 }
 
+function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
+
+  const message = `🔐 Torres Vigilância Patrimonial — Acesso ao Sistema
+
+Olá ${user.name},
+
+Seu acesso ao sistema foi criado com sucesso.
+
+📧 Login: ${user.username}
+🔑 Senha: ${user.tempPassword}
+🌐 Link: www.torresseguranca.com.br na Área Restrita
+
+⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.
+
+Em caso de dúvidas, entre em contato com o suporte.
+
+Torres Vigilância Patrimonial — Gestão Operacional`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+      toast({ title: "Mensagem copiada!" });
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      toast({ title: "Erro ao copiar", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md" data-testid="dialog-credentials">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-green-600" />
+            Acesso Criado com Sucesso
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 text-sm font-mono whitespace-pre-wrap leading-relaxed" data-testid="text-credential-message">
+          {message}
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1 gap-2"
+            onClick={handleCopy}
+            data-testid="button-copy-credentials"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            {copied ? "Copiado!" : "Copiar Mensagem"}
+          </Button>
+          <Button onClick={onClose} className="flex-1" data-testid="button-close-credentials">
+            Fechar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function UsersPage() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SafeUser | null>(null);
+  const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formUsername, setFormUsername] = useState("");
@@ -50,12 +118,13 @@ export default function UsersPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { username: string; password: string; name: string; role: string }) => {
-      await apiRequest("POST", "/api/users", data);
+    mutationFn: async (data: { username: string; name: string; role: string }) => {
+      const res = await apiRequest("POST", "/api/users", data);
+      return res.json() as Promise<CreatedUser>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Usuário criado com sucesso" });
+      setCreatedUser(data);
       closeDialog();
     },
     onError: (err: any) => {
@@ -88,6 +157,20 @@ export default function UsersPage() {
     },
     onError: (err: any) => {
       toast({ title: "Erro ao excluir", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("PATCH", `/api/users/${id}/reset-password`);
+      return res.json() as Promise<{ tempPassword: string; name: string; username: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setCreatedUser({ ...data, id: 0, role: "", employeeId: null, mustChangePassword: 1 } as CreatedUser);
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao resetar senha", description: err.message, variant: "destructive" });
     },
   });
 
@@ -125,7 +208,6 @@ export default function UsersPage() {
     } else {
       createMutation.mutate({
         username: formUsername,
-        password: formPassword,
         name: formName,
         role: formRole,
       });
@@ -199,6 +281,11 @@ export default function UsersPage() {
                             VOCÊ
                           </span>
                         )}
+                        {u.mustChangePassword === 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">
+                            PRIMEIRO ACESSO
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-sm text-neutral-500">
                         <span data-testid={`text-user-username-${u.id}`}>@{u.username}</span>
@@ -213,7 +300,19 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    {!isCurrentUser && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => resetPasswordMutation.mutate(u.id)}
+                        className="text-neutral-400 hover:text-amber-600"
+                        title="Resetar senha"
+                        data-testid={`button-reset-password-${u.id}`}
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -242,6 +341,10 @@ export default function UsersPage() {
         )}
       </div>
 
+      {createdUser && (
+        <CredentialCard user={createdUser} onClose={() => setCreatedUser(null)} />
+      )}
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md" data-testid="dialog-user-form">
           <DialogHeader>
@@ -259,43 +362,48 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Nome de Usuário</label>
+              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
+                {editingUser ? "Nome de Usuário" : "Login de Acesso"}
+              </label>
               <Input
                 value={formUsername}
                 onChange={(e) => setFormUsername(e.target.value)}
-                placeholder="Login de acesso"
+                placeholder={editingUser ? "" : "ex: nome.sobrenome"}
                 required
                 disabled={!!editingUser}
                 data-testid="input-user-username"
               />
-              {editingUser && (
+              {editingUser ? (
                 <p className="text-xs text-neutral-400 mt-1">O nome de usuário não pode ser alterado</p>
+              ) : (
+                <p className="text-xs text-neutral-400 mt-1">Uma senha aleatória será gerada automaticamente</p>
               )}
             </div>
-            <div>
-              <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
-                {editingUser ? "Nova Senha (deixe em branco para manter)" : "Senha"}
-              </label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  placeholder={editingUser ? "••••••" : "Mínimo 6 caracteres"}
-                  required={!editingUser}
-                  minLength={formPassword ? 6 : undefined}
-                  className="pr-10"
-                  data-testid="input-user-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+            {editingUser && (
+              <div>
+                <label className="text-sm font-medium text-neutral-700 mb-1.5 block">
+                  Nova Senha (deixe em branco para manter)
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                    placeholder="••••••"
+                    minLength={formPassword ? 6 : undefined}
+                    className="pr-10"
+                    data-testid="input-user-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div>
               <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Perfil</label>
               <Select value={formRole} onValueChange={setFormRole}>

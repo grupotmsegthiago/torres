@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("admin"),
   employeeId: integer("employee_id"),
+  mustChangePassword: integer("must_change_password").notNull().default(0),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
