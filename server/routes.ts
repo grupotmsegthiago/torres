@@ -1137,15 +1137,21 @@ export async function registerRoutes(
 
   // ====================== USER MANAGEMENT (admin/diretoria only) ======================
 
-  app.get("/api/users", requireAuth, requireAdminRole, async (_req, res) => {
+  app.get("/api/users", requireAuth, requireAdminRole, async (req, res) => {
     const allUsers = await storage.getUsers();
-    res.json(allUsers.map(toSafeUser));
+    const filtered = req.user!.role === "diretoria"
+      ? allUsers
+      : allUsers.filter(u => u.role !== "diretoria");
+    res.json(filtered.map(toSafeUser));
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
     const { email, name, role, employeeId } = req.body;
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
+    }
+    if (role === "diretoria" && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -1183,10 +1189,21 @@ export async function registerRoutes(
 
   app.patch("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
     const id = Number(req.params.id);
+    const target = await storage.getUser(id);
+    if (!target) return res.status(404).json({ message: "Usuário não encontrado" });
+    if (target.role === "diretoria" && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Sem permissão para editar usuários Diretoria" });
+    }
+
     const { name, role, employeeId } = req.body;
     const updateData: any = {};
     if (name) updateData.name = name;
-    if (role) updateData.role = role;
+    if (role) {
+      if (role === "diretoria" && req.user!.role !== "diretoria") {
+        return res.status(403).json({ message: "Sem permissão para atribuir role Diretoria" });
+      }
+      updateData.role = role;
+    }
     if (employeeId !== undefined) updateData.employeeId = employeeId || null;
 
     const updated = await storage.updateUser(id, updateData);
@@ -1198,6 +1215,9 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const user = await storage.getUser(id);
     if (!user || !user.supabaseUid) return res.status(404).json({ message: "Usuário não encontrado" });
+    if (user.role === "diretoria" && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Sem permissão para resetar senha de Diretoria" });
+    }
 
     const tempPassword = "Torres@" + randomBytes(4).toString("hex");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseUid, {
@@ -1215,7 +1235,12 @@ export async function registerRoutes(
     }
 
     const user = await storage.getUser(id);
-    if (user?.supabaseUid) {
+    if (!user) return res.status(404).json({ message: "Usuário não encontrado" });
+    if (user.role === "diretoria" && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Sem permissão para excluir usuários Diretoria" });
+    }
+
+    if (user.supabaseUid) {
       await supabaseAdmin.auth.admin.deleteUser(user.supabaseUid).catch(() => {});
     }
     await storage.deleteUser(id);
@@ -1226,6 +1251,9 @@ export async function registerRoutes(
     const { email, name, role, employeeId } = req.body;
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
+    }
+    if (role === "diretoria" && req.user!.role !== "diretoria") {
+      return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
     }
 
     const normalizedEmail = email.toLowerCase().trim();

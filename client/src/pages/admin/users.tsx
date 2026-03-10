@@ -22,14 +22,19 @@ type SafeUser = {
 
 type CreatedUser = SafeUser & { tempPassword: string };
 
-const ROLES = [
+const ALL_ROLES = [
   { value: "admin", label: "Administrador", icon: Shield },
   { value: "diretoria", label: "Diretoria", icon: Crown },
   { value: "funcionario", label: "Funcionário", icon: UserCircle },
 ];
 
+function getRolesForUser(currentRole: string) {
+  if (currentRole === "diretoria") return ALL_ROLES;
+  return ALL_ROLES.filter(r => r.value !== "diretoria");
+}
+
 function getRoleInfo(role: string) {
-  return ROLES.find((r) => r.value === role) || ROLES[2];
+  return ALL_ROLES.find((r) => r.value === role) || ALL_ROLES[2];
 }
 
 function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => void }) {
@@ -375,7 +380,7 @@ export default function UsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((r) => (
+                  {getRolesForUser(currentUser?.role || "").map((r) => (
                     <SelectItem key={r.value} value={r.value} data-testid={`option-role-${r.value}`}>
                       {r.label}
                     </SelectItem>
