@@ -114,6 +114,46 @@ export async function consultaDadosVeiculo(placa: string, userId?: number, sourc
   return apiRequest("/vehicles/dados", "POST", { placa }, userId, source);
 }
 
+export async function autoConsultaFuncionario(cpf: string, userId?: number) {
+  const clean = cpf.replace(/\D/g, "");
+  if (clean.length !== 11) return;
+  const source = "cadastro_funcionario";
+  await Promise.allSettled([
+    consultaCNH(clean, userId, source),
+    consultaProcessos(clean, userId, source),
+    consultaSPC(clean, userId, source),
+    consultaQuodScore(clean, userId, source),
+    consultaProtestoNacional(clean, userId, source),
+    consultaSituacaoEleitoral(clean, userId, source),
+  ]);
+}
+
+export async function autoConsultaCliente(document: string, userId?: number) {
+  const clean = document.replace(/\D/g, "");
+  if (clean.length !== 11 && clean.length !== 14) return;
+  const source = "cadastro_cliente";
+  const tasks: Promise<any>[] = [
+    consultaSPC(clean, userId, source),
+    consultaQuodScore(clean, userId, source),
+    consultaProtestoNacional(clean, userId, source),
+  ];
+  if (clean.length === 11) {
+    tasks.push(consultaProcessos(clean, userId, source));
+    tasks.push(consultaSituacaoEleitoral(clean, userId, source));
+  }
+  await Promise.allSettled(tasks);
+}
+
+export async function autoConsultaVeiculo(placa: string, userId?: number) {
+  const clean = placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (clean.length < 7) return;
+  const source = "cadastro_veiculo";
+  await Promise.allSettled([
+    consultaDadosVeiculo(clean, userId, source),
+    consultaMultasPRF(clean, userId, source),
+  ]);
+}
+
 export async function analiseCredito(document: string, userId?: number) {
   const [spc, quod, protesto] = await Promise.all([
     consultaSPC(document, userId, "analise_credito"),

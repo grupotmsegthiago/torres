@@ -72,6 +72,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - **Protesto Nacional**: National protest lookup by CPF/CNPJ
 - **Notas Fiscais**: NF emission via API Brasil (JSON input)
 - **Logs API**: API consumption log viewer with stats (total, today, success, errors)
+- **Auto-consultation on registration**: When creating employees (CPF → CNH, Processos, SPC, Quod, Protesto, Situação Eleitoral), clients (CPF/CNPJ → SPC, Quod, Protesto, Processos if CPF), or vehicles (Plate → Dados Veículo, Multas PRF) — all consultations fire asynchronously in the background with source tags (cadastro_funcionario, cadastro_cliente, cadastro_veiculo)
 - Architecture: `server/apibrasil.ts` centralized service with auto-logging to `api_logs` table
 - Backend routes: `/api/consulta/*` for all API Brasil endpoints, `/api/api-logs` and `/api/api-logs/stats` for consumption tracking
 - Credit Analysis: "Análise de Risco" button on clients page runs SPC+Quod+Protesto simultaneously

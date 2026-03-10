@@ -77,6 +77,10 @@ export async function registerRoutes(
     const parsed = insertClientSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createClient(parsed.data);
+    const doc = data.cnpj || data.cpf || "";
+    if (doc.replace(/\D/g, "").length >= 11) {
+      apibrasil.autoConsultaCliente(doc, req.user!.id).catch(() => {});
+    }
     res.status(201).json(data);
   });
 
@@ -108,6 +112,9 @@ export async function registerRoutes(
     const parsed = insertEmployeeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createEmployee(parsed.data);
+    if (data.cpf) {
+      apibrasil.autoConsultaFuncionario(data.cpf, req.user!.id).catch(() => {});
+    }
     res.status(201).json(data);
   });
 
@@ -139,6 +146,9 @@ export async function registerRoutes(
     const parsed = insertVehicleSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createVehicle(parsed.data);
+    if (data.plate) {
+      apibrasil.autoConsultaVeiculo(data.plate, req.user!.id).catch(() => {});
+    }
     res.status(201).json(data);
   });
 
