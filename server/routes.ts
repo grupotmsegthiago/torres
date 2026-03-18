@@ -852,11 +852,13 @@ export async function registerRoutes(
 
     res.json({
       ...active,
+      serviceOrderId: active.id,
       clientName: client?.name || "—",
       vehiclePlate: vehicle?.plate || "—",
       vehicleModel: vehicle?.model || "—",
       employee1Name: emp1?.name || "—",
       employee2Name: emp2?.name || "—",
+      employeeId: user.employeeId,
       completedSteps,
       escortedDriverName: active.escortedDriverName || null,
       escortedVehiclePlate: active.escortedVehiclePlate || null,

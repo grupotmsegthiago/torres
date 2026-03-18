@@ -82,6 +82,19 @@ users, perfis_acesso, clients, employees, employee_salaries, vehicles, service_o
 - Used in EscortCalculator section (Origem/Destino inputs) on landing page
 - Dark-themed `.pac-*` styles in `client/src/index.css`
 
+### Mobile Interface (Agentes de Campo)
+- `client/src/components/mobile/layout.tsx` - Mobile layout with bottom navigation bar (Início, Minha Missão, Checklist, Perfil)
+- `client/src/pages/mobile/home.tsx` - Agent home page with active mission card
+- `client/src/pages/mobile/missao.tsx` - Full mission workflow (camera, GPS, KM, driver data)
+- `client/src/pages/mobile/checklist.tsx` - Mission step checklist with progress
+- `client/src/pages/mobile/perfil.tsx` - Agent profile with logout
+- Routes: `/mobile`, `/mobile/missao`, `/mobile/checklist`, `/mobile/perfil`, `/mobile-test`
+- Auto-redirect: `funcionario` role users redirected to `/mobile` after login
+- Camera: Uses browser `capture="environment"` API for photos (compressed to 800px JPEG 70%)
+- GPS: `navigator.geolocation` with high accuracy for each photo
+- Telemetry: KM values tracked at checkout, checkin, and final; timestamps per step
+- Admin/Diretoria can access via sidebar link "Mobile (Agente)"
+
 ## Brand
 - Colors: Black/white professional aesthetic (monochrome system — NO olive/military colors)
 - Fonts: Montserrat (primary), Inter (fallback)

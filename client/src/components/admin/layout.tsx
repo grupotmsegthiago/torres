@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown, BookOpen
+  ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown, BookOpen, Smartphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -29,6 +29,7 @@ const menuItems = [
   { path: "/admin/consultas", label: "Consultas", icon: Search },
   { path: "/admin/mission", label: "Missão Ativa", icon: Target },
   { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
+  { path: "/mobile", label: "Mobile (Agente)", icon: Smartphone },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
 ];
 

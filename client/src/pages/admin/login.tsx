@@ -32,7 +32,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (user && !user.mustChangePassword) {
-      setLocation("/admin/dashboard");
+      if (user.role === "funcionario") {
+        setLocation("/mobile");
+      } else {
+        setLocation("/admin/dashboard");
+      }
     }
     if (user && user.mustChangePassword) {
       setChangingPassword(true);
@@ -75,7 +79,11 @@ export default function LoginPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({ title: "Senha alterada com sucesso!" });
       setChangingPassword(false);
-      setLocation("/admin/dashboard");
+      if (user?.role === "funcionario") {
+        setLocation("/mobile");
+      } else {
+        setLocation("/admin/dashboard");
+      }
     } catch (err: any) {
       toast({
         title: "Erro ao alterar senha",

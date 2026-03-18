@@ -23,6 +23,10 @@ import ConsultasPage from "@/pages/admin/consultas";
 import GuiaMissaoPage from "@/pages/admin/guia-missao";
 import UsersPage from "@/pages/admin/users";
 import ProfilePage from "@/pages/admin/profile";
+import MobileHomePage from "@/pages/mobile/home";
+import MobileMissaoPage from "@/pages/mobile/missao";
+import MobileChecklistPage from "@/pages/mobile/checklist";
+import MobilePerfilPage from "@/pages/mobile/perfil";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 
@@ -33,6 +37,26 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
+        <div className="text-neutral-400">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    setLocation("/admin");
+    return null;
+  }
+
+  return <Component />;
+}
+
+function MobileProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-neutral-400">Carregando...</div>
       </div>
     );
@@ -67,6 +91,11 @@ function Router() {
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
+      <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
+      <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
+      <Route path="/mobile/checklist">{() => <MobileProtectedRoute component={MobileChecklistPage} />}</Route>
+      <Route path="/mobile/perfil">{() => <MobileProtectedRoute component={MobilePerfilPage} />}</Route>
+      <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
