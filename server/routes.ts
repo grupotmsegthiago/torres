@@ -252,97 +252,75 @@ export async function registerRoutes(
     const cpf = String(req.params.cpf).replace(/\D/g, "");
     if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
 
-    const token = process.env.APIBRASIL_TOKEN;
-    const deviceToken = process.env.APIBRASIL_DEVICE_CPF || process.env.APIBRASIL_DEVICE_TOKEN;
-
-    if (!token) {
-      try {
-        const response = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
-        if (!response.ok) return res.status(response.status).json({ message: "CPF não encontrado" });
-        const data = await response.json();
-        return res.json(data);
-      } catch {
-        return res.status(500).json({ message: "Erro ao consultar CPF" });
-      }
-    }
-
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      };
-      if (deviceToken) {
-        headers["DeviceToken"] = deviceToken;
+      const response = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
+      if (response.ok) {
+        const data = await response.json();
+        const normalized: Record<string, string> = {};
+        if (data.nome) normalized.nome = data.nome;
+        if (data.data_nascimento) normalized.data_nascimento = data.data_nascimento;
+        if (data.nome_mae) normalized.nome_mae = data.nome_mae;
+        if (data.situacao) normalized.situacao = data.situacao;
+        return res.json(normalized);
+      }
+    } catch {}
+
+    return res.status(404).json({ message: "CPF não encontrado nas bases públicas. Use o Cadastro Inteligente para preencher os dados via documento." });
+  });
+
+  app.post("/api/employees/ocr", requireAdminRole, async (req, res) => {
+    try {
+      const { imageData } = req.body;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ message: "Envie imageData (base64 data URL da imagem)" });
       }
 
-      const response = await fetch("https://gateway.apibrasil.io/api/v2/dados/cpf", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ cpf }),
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
       });
 
-      const raw = await response.json().catch(() => null);
-
-      await storage.createApiLog({
-        endpoint: "/dados/cpf",
-        method: "POST",
-        requestData: JSON.stringify({ cpf }),
-        responseStatus: response.status,
-        responseData: JSON.stringify(raw).substring(0, 5000),
-        userId: req.user?.id ?? null,
-        source: "cpf_lookup",
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CTPS, Certificado de Reservista, etc).
+Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem markdown, sem texto extra):
+{
+  "name": "nome completo da pessoa",
+  "cpf": "CPF no formato 000.000.000-00",
+  "rg": "número do RG com órgão emissor",
+  "cnhNumber": "número da CNH se for CNH",
+  "birthDate": "data de nascimento no formato YYYY-MM-DD",
+  "motherName": "nome da mãe",
+  "fatherName": "nome do pai",
+  "nationality": "nacionalidade (ex: Brasileira)",
+  "maritalStatus": "estado civil se visível",
+  "address": "endereço se visível no documento",
+  "notes": "tipo do documento identificado e informações adicionais relevantes"
+}
+Se um campo não for encontrado no documento, retorne string vazia "". Nunca invente dados.
+Para datas, sempre converta para o formato YYYY-MM-DD.
+Para CPF, formate como 000.000.000-00.`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extraia os dados pessoais deste documento de identificação brasileiro:" },
+              { type: "image_url", image_url: { url: imageData } },
+            ],
+          },
+        ],
       });
 
-      if (!response.ok || !raw) {
-        try {
-          const fallback = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
-          if (fallback.ok) {
-            const data = await fallback.json();
-            return res.json(data);
-          }
-        } catch {}
-        return res.status(response.status || 500).json({ message: "CPF não encontrado" });
-      }
-
-      const data = raw?.response || raw;
-
-      const normalized: Record<string, string> = {};
-      if (data.nome || data.name || data.nomeCompleto) {
-        normalized.nome = data.nome || data.name || data.nomeCompleto || "";
-      }
-      if (data.data_nascimento || data.dataNascimento || data.nascimento || data.birth_date) {
-        let rawDate = data.data_nascimento || data.dataNascimento || data.nascimento || data.birth_date || "";
-        if (rawDate.includes("/")) {
-          const parts = rawDate.split("/");
-          if (parts.length === 3) {
-            rawDate = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
-          }
-        }
-        normalized.data_nascimento = rawDate;
-      }
-      if (data.nome_mae || data.nomeMae || data.mae || data.mother_name) {
-        normalized.nome_mae = data.nome_mae || data.nomeMae || data.mae || data.mother_name || "";
-      }
-      if (data.nome_pai || data.nomePai || data.pai || data.father_name) {
-        normalized.nome_pai = data.nome_pai || data.nomePai || data.pai || data.father_name || "";
-      }
-      if (data.sexo || data.genero || data.gender) {
-        normalized.sexo = data.sexo || data.genero || data.gender || "";
-      }
-      if (data.situacao || data.situacaoCadastral || data.status) {
-        normalized.situacao = data.situacao || data.situacaoCadastral || data.status || "";
-      }
-
-      res.json(normalized);
+      const text = response.choices?.[0]?.message?.content || "";
+      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+      res.json(parsed);
     } catch (err: any) {
-      try {
-        const fallback = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
-        if (fallback.ok) {
-          const data = await fallback.json();
-          return res.json(data);
-        }
-      } catch {}
-      res.status(500).json({ message: "Erro ao consultar CPF: " + (err.message || "") });
+      console.error("OCR employee error:", err);
+      res.status(500).json({ message: "Erro ao processar documento: " + (err.message || "Erro desconhecido") });
     }
   });
 

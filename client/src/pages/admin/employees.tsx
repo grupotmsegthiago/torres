@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -450,7 +450,9 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
 function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ocrInputRef = useRef<HTMLInputElement>(null);
   const [cpfLoading, setCpfLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const [form, setForm] = useState({
     matricula: employee?.matricula || "",
@@ -556,6 +558,68 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     reader.readAsDataURL(file);
   }, []);
 
+  const handleOcrUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+      return;
+    }
+    setScanning(true);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = (ev) => resolve(ev.target!.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await authFetch("/api/employees/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erro ao processar");
+      }
+
+      const extracted = await res.json();
+      const filledFields: string[] = [];
+
+      setForm((prev) => {
+        const updated = { ...prev };
+        if (extracted.name && !prev.name) { updated.name = extracted.name; filledFields.push("Nome"); }
+        if (extracted.cpf && !prev.cpf) { updated.cpf = extracted.cpf; filledFields.push("CPF"); }
+        if (extracted.rg && !prev.rg) { updated.rg = extracted.rg; filledFields.push("RG"); }
+        if (extracted.cnhNumber && !prev.cnhNumber) { updated.cnhNumber = extracted.cnhNumber; filledFields.push("CNH"); }
+        if (extracted.birthDate && !prev.birthDate) { updated.birthDate = extracted.birthDate; filledFields.push("Nascimento"); }
+        if (extracted.motherName && !prev.motherName) { updated.motherName = extracted.motherName; filledFields.push("Mãe"); }
+        if (extracted.fatherName && !prev.fatherName) { updated.fatherName = extracted.fatherName; filledFields.push("Pai"); }
+        if (extracted.nationality && !prev.nationality) { updated.nationality = extracted.nationality; filledFields.push("Nacionalidade"); }
+        if (extracted.maritalStatus && !prev.maritalStatus) { updated.maritalStatus = extracted.maritalStatus; filledFields.push("Est. Civil"); }
+        if (extracted.address && !prev.address) { updated.address = extracted.address; filledFields.push("Endereço"); }
+        if (extracted.notes) {
+          updated.notes = prev.notes ? prev.notes + "\n" + extracted.notes : extracted.notes;
+        }
+        return updated;
+      });
+
+      toast({
+        title: "Documento processado",
+        description: filledFields.length > 0
+          ? `Campos preenchidos: ${filledFields.join(", ")}. Confira antes de salvar.`
+          : "Nenhum dado novo extraído. Tente outro documento.",
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao ler documento", description: err.message || "Tente preencher manualmente", variant: "destructive" });
+    } finally {
+      setScanning(false);
+      if (ocrInputRef.current) ocrInputRef.current.value = "";
+    }
+  }, [toast]);
+
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
       const payload = {
@@ -587,6 +651,29 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         <h2 className="text-lg font-semibold">{employee ? "Editar Funcionário" : "Novo Funcionário"}</h2>
         <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
       </div>
+
+      {!employee && (
+        <div className="mb-5 p-4 border-2 border-dashed border-neutral-300 rounded-lg bg-neutral-50 text-center" data-testid="ocr-employee-upload">
+          <input ref={ocrInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} disabled={scanning} />
+          {scanning ? (
+            <div className="flex flex-col items-center gap-2 py-2">
+              <Loader2 className="w-8 h-8 text-neutral-500 animate-spin" />
+              <p className="text-sm text-neutral-600 font-medium">Lendo documento...</p>
+              <p className="text-xs text-neutral-400">A IA está extraindo os dados do funcionário</p>
+            </div>
+          ) : (
+            <div
+              className="flex flex-col items-center gap-2 py-2 cursor-pointer"
+              onClick={() => ocrInputRef.current?.click()}
+            >
+              <ScanLine className="w-8 h-8 text-neutral-400" />
+              <p className="text-sm text-neutral-600 font-medium">Cadastro Inteligente</p>
+              <p className="text-xs text-neutral-400">Anexe foto do RG, CNH ou CPF e os dados serão preenchidos automaticamente</p>
+            </div>
+          )}
+        </div>
+      )}
+
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-6">
         <div className="flex items-start gap-6">
           <div className="shrink-0">
