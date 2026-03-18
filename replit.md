@@ -49,14 +49,14 @@ Institutional landing page and internal management system for Torres Vigilância
   - `clients.tsx` - Client registration/management
   - `employees.tsx` - Employee management
   - `vehicles.tsx` - Vehicle fleet management with avg consumption
-  - `service-orders.tsx` - Service orders (OS) with workflow
+  - `service-orders.tsx` - Service orders (OS) with workflow (priorities: imediata/agendada/reaproveitamento)
   - `trips.tsx` - Trip control linked to OS
   - `fueling.tsx` - Vehicle fueling records
   - `maintenance.tsx` - Vehicle maintenance control
   - `timesheets.tsx` - Employee timesheet/punch clock
   - `tracker.tsx` - Vehicle tracker (API placeholder)
   - `mission.tsx` - Armed escort mission workflow
-  - `operational-grid.tsx` - Real-time operational monitoring
+  - `operational-grid.tsx` - Real-time operational monitoring with professional status display (Saída da Base → Chegada na Origem → Início de Missão → Chegada no Destino → Término de Missão)
   - `guia-missao.tsx` - Mission step guide
   - `weapons.tsx` - Weapon registration, PDF upload, agent linking/unlinking with audit history
   - `users.tsx` - User management (admin/diretoria only)

@@ -12,24 +12,45 @@ import { Plus, X, Pencil, Trash2, Play } from "lucide-react";
 import type { ServiceOrder, Client, Employee, Vehicle } from "@shared/schema";
 
 const MISSION_STATUS_LABELS: Record<string, string> = {
-  aguardando: "Aguardando",
-  km_saida: "KM Saída",
-  checklist_saida: "Checklist Saída",
-  em_transito_origem: "Em Trânsito (Origem)",
-  km_chegada_origem: "KM Chegada Origem",
-  fotos_cliente: "Fotos Cliente",
-  em_transito_destino: "Em Trânsito (Destino)",
-  km_chegada_destino: "KM Chegada Destino",
-  checklist_retorno: "Checklist Retorno",
+  aguardando: "Saída da Base",
+  checkout_armamento: "Saída da Base",
+  checkout_viatura: "Saída da Base",
+  checkout_km_saida: "Saída da Base",
+  em_transito_origem: "Chegada na Origem",
+  checkin_chegada_km: "Chegada na Origem",
+  checkin_veiculo_escoltado: "Chegada na Origem",
+  checkin_dados_motorista: "Chegada na Origem",
+  iniciar_missao: "Início de Missão",
+  em_transito_destino: "Chegada no Destino",
+  checkout_km_final: "Término de Missão",
+  checkout_viatura_retorno: "Término de Missão",
   finalizada: "Finalizada",
 };
 
 function getMissionStatusColor(status: string | null) {
   if (!status) return "bg-neutral-100 text-neutral-600";
   switch (status) {
-    case "aguardando": return "bg-slate-100 text-slate-700";
-    case "finalizada": return "bg-green-100 text-green-700";
-    default: return "bg-cyan-100 text-cyan-700";
+    case "aguardando":
+    case "checkout_armamento":
+    case "checkout_viatura":
+    case "checkout_km_saida":
+      return "bg-amber-100 text-amber-700";
+    case "em_transito_origem":
+    case "checkin_chegada_km":
+    case "checkin_veiculo_escoltado":
+    case "checkin_dados_motorista":
+      return "bg-cyan-100 text-cyan-700";
+    case "iniciar_missao":
+      return "bg-indigo-100 text-indigo-700";
+    case "em_transito_destino":
+      return "bg-violet-100 text-violet-700";
+    case "checkout_km_final":
+    case "checkout_viatura_retorno":
+      return "bg-emerald-100 text-emerald-700";
+    case "finalizada":
+      return "bg-green-100 text-green-700";
+    default:
+      return "bg-slate-100 text-slate-700";
   }
 }
 
@@ -43,7 +64,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose }: {
     type: order?.type || "escolta",
     description: order?.description || "",
     status: order?.status || "aberta",
-    priority: order?.priority || "normal",
+    priority: order?.priority || "agendada",
     scheduledDate: order?.scheduledDate ? new Date(order.scheduledDate).toISOString().slice(0, 16) : "",
     completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
     assignedEmployeeId: order?.assignedEmployeeId || null,
@@ -110,10 +131,9 @@ function OrderForm({ order, clients, employees, vehicles, onClose }: {
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Prioridade</label>
           <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-priority">
-            <option value="baixa">Baixa</option>
-            <option value="normal">Normal</option>
-            <option value="alta">Alta</option>
-            <option value="urgente">Urgente</option>
+            <option value="imediata">Imediata</option>
+            <option value="agendada">Agendada</option>
+            <option value="reaproveitamento">Reaproveitamento</option>
           </select>
         </div>
         <div>
@@ -252,10 +272,10 @@ export default function ServiceOrdersPage() {
                     <td className="p-3 text-neutral-600">{o.type}</td>
                     <td className="p-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        o.priority === "urgente" ? "bg-red-100 text-red-700" :
-                        o.priority === "alta" ? "bg-amber-100 text-amber-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{o.priority}</span>
+                        o.priority === "imediata" ? "bg-red-100 text-red-700" :
+                        o.priority === "reaproveitamento" ? "bg-emerald-100 text-emerald-700" :
+                        "bg-blue-100 text-blue-700"
+                      }`}>{o.priority === "imediata" ? "Imediata" : o.priority === "reaproveitamento" ? "Reaproveitamento" : "Agendada"}</span>
                     </td>
                     <td className="p-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${

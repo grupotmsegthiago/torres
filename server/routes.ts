@@ -881,6 +881,7 @@ Para CPF, formate como 000.000.000-00.`
           osNumber: o.osNumber,
           scheduledDate: o.scheduledDate,
           status: o.status,
+          priority: o.priority || "agendada",
           missionStatus: o.missionStatus,
           clientName: client?.name || "—",
           employee1: emp1 ? {

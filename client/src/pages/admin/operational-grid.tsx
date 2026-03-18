@@ -6,7 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   MapPin, Pencil, Key, Satellite, RefreshCw, Radio,
-  ExternalLink, MessageCircle
+  ExternalLink, MessageCircle,
+  Zap, CalendarClock, Recycle,
+  Building2, Navigation, Play, Flag, CircleCheckBig,
+  Clock, Truck, CircleDot, Pause, AlertTriangle,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { useLocation } from "wouter";
@@ -31,6 +34,7 @@ interface GridItem {
   osNumber: string;
   scheduledDate: string | null;
   status: string;
+  priority: string;
   missionStatus: string;
   clientName: string;
   employee1: GridEmployee | null;
@@ -147,18 +151,202 @@ function EmployeeCell({ emp }: { emp: GridEmployee | null }) {
   );
 }
 
-const MISSION_STATUS_LABELS: Record<string, string> = {
-  aguardando: "Aguardando",
-  km_saida: "KM Saída",
-  checklist_saida: "Checklist Saída",
-  em_transito_origem: "Em Trânsito",
-  km_chegada_origem: "KM Chegada",
-  fotos_cliente: "Fotos Cliente",
-  em_transito_destino: "Retornando",
-  km_chegada_destino: "KM Destino",
-  checklist_retorno: "Checklist Retorno",
-  finalizada: "Finalizada",
-};
+function getPriorityDisplay(priority: string) {
+  switch (priority) {
+    case "imediata":
+      return {
+        label: "Imediata",
+        icon: Zap,
+        className: "bg-red-50 text-red-700 border-red-200",
+      };
+    case "agendada":
+      return {
+        label: "Agendada",
+        icon: CalendarClock,
+        className: "bg-blue-50 text-blue-700 border-blue-200",
+      };
+    case "reaproveitamento":
+      return {
+        label: "Reaproveitamento",
+        icon: Recycle,
+        className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    default:
+      return {
+        label: priority,
+        icon: CalendarClock,
+        className: "bg-neutral-50 text-neutral-600 border-neutral-200",
+      };
+  }
+}
+
+function getStatusDisplay(missionStatus: string, osStatus: string) {
+  if (osStatus === "aberta") {
+    return {
+      label: "Aguardando Despacho",
+      icon: Clock,
+      className: "bg-slate-50 text-slate-600 border-slate-200",
+    };
+  }
+
+  switch (missionStatus) {
+    case "aguardando":
+      return {
+        label: "Saída da Base",
+        icon: Building2,
+        className: "bg-slate-100 text-slate-700 border-slate-300",
+      };
+    case "checkout_armamento":
+    case "checkout_viatura":
+    case "checkout_km_saida":
+      return {
+        label: "Saída da Base",
+        icon: Building2,
+        className: "bg-amber-50 text-amber-700 border-amber-200",
+      };
+    case "em_transito_origem":
+      return {
+        label: "Chegada na Origem",
+        icon: Navigation,
+        className: "bg-blue-50 text-blue-700 border-blue-200",
+      };
+    case "checkin_chegada_km":
+    case "checkin_veiculo_escoltado":
+    case "checkin_dados_motorista":
+      return {
+        label: "Chegada na Origem",
+        icon: Navigation,
+        className: "bg-cyan-50 text-cyan-700 border-cyan-200",
+      };
+    case "iniciar_missao":
+      return {
+        label: "Início de Missão",
+        icon: Play,
+        className: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      };
+    case "em_transito_destino":
+      return {
+        label: "Chegada no Destino",
+        icon: Flag,
+        className: "bg-violet-50 text-violet-700 border-violet-200",
+      };
+    case "checkout_km_final":
+    case "checkout_viatura_retorno":
+      return {
+        label: "Término de Missão",
+        icon: CircleCheckBig,
+        className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    case "finalizada":
+      return {
+        label: "Término de Missão",
+        icon: CircleCheckBig,
+        className: "bg-green-50 text-green-700 border-green-200",
+      };
+    default:
+      return {
+        label: missionStatus || "—",
+        icon: CircleDot,
+        className: "bg-neutral-50 text-neutral-600 border-neutral-200",
+      };
+  }
+}
+
+function getMissionDisplay(missionStatus: string, tracker?: GridTracker | null) {
+  const isMoving = tracker?.ignition && (tracker?.speed ?? 0) > 5;
+  const isStopped = tracker?.ignition === false;
+  const hasTracker = tracker !== null && tracker !== undefined;
+
+  switch (missionStatus) {
+    case "aguardando":
+      return {
+        label: "Aguardando",
+        icon: Clock,
+        className: "text-slate-600 bg-slate-50 border-slate-200",
+      };
+    case "checkout_armamento":
+    case "checkout_viatura":
+    case "checkout_km_saida":
+      return {
+        label: "Preparando Saída",
+        icon: Building2,
+        className: "text-amber-700 bg-amber-50 border-amber-200",
+      };
+    case "em_transito_origem":
+      if (hasTracker && isMoving) {
+        return {
+          label: "Em Trânsito",
+          icon: Truck,
+          className: "text-blue-700 bg-blue-50 border-blue-200",
+        };
+      }
+      if (hasTracker && isStopped) {
+        return {
+          label: "Parado",
+          icon: Pause,
+          className: "text-amber-700 bg-amber-50 border-amber-200",
+        };
+      }
+      return {
+        label: "Em Trânsito",
+        icon: Truck,
+        className: "text-blue-700 bg-blue-50 border-blue-200",
+      };
+    case "checkin_chegada_km":
+    case "checkin_veiculo_escoltado":
+    case "checkin_dados_motorista":
+      return {
+        label: "No Cliente",
+        icon: MapPin,
+        className: "text-cyan-700 bg-cyan-50 border-cyan-200",
+      };
+    case "iniciar_missao":
+      return {
+        label: "Em Escolta",
+        icon: Truck,
+        className: "text-indigo-700 bg-indigo-50 border-indigo-200",
+      };
+    case "em_transito_destino":
+      if (hasTracker && isMoving) {
+        return {
+          label: "Em Trânsito",
+          icon: Truck,
+          className: "text-violet-700 bg-violet-50 border-violet-200",
+        };
+      }
+      if (hasTracker && isStopped) {
+        return {
+          label: "Parado",
+          icon: Pause,
+          className: "text-amber-700 bg-amber-50 border-amber-200",
+        };
+      }
+      return {
+        label: "Em Trânsito",
+        icon: Truck,
+        className: "text-violet-700 bg-violet-50 border-violet-200",
+      };
+    case "checkout_km_final":
+    case "checkout_viatura_retorno":
+      return {
+        label: "Finalizando",
+        icon: CircleCheckBig,
+        className: "text-emerald-700 bg-emerald-50 border-emerald-200",
+      };
+    case "finalizada":
+      return {
+        label: "Concluída",
+        icon: CircleCheckBig,
+        className: "text-green-700 bg-green-50 border-green-200",
+      };
+    default:
+      return {
+        label: missionStatus || "—",
+        icon: CircleDot,
+        className: "text-neutral-600 bg-neutral-50 border-neutral-200",
+      };
+  }
+}
 
 export default function OperationalGridPage() {
   const [, setLocation] = useLocation();
@@ -239,6 +427,8 @@ export default function OperationalGridPage() {
                     <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Agendamento</th>
                     <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Cliente</th>
                     <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Agentes</th>
+                    <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Prioridade</th>
+                    <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Status</th>
                     <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Missão</th>
                     <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
                     <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Ignição</th>
@@ -254,6 +444,15 @@ export default function OperationalGridPage() {
                     const mapsUrl = hasLocation
                       ? `https://www.google.com/maps?q=${item.tracker!.latitude},${item.tracker!.longitude}`
                       : null;
+
+                    const priorityInfo = getPriorityDisplay(item.priority);
+                    const PriorityIcon = priorityInfo.icon;
+
+                    const statusInfo = getStatusDisplay(item.missionStatus, item.status);
+                    const StatusIcon = statusInfo.icon;
+
+                    const missionInfo = getMissionDisplay(item.missionStatus, item.tracker);
+                    const MissionIcon = missionInfo.icon;
 
                     return (
                       <tr
@@ -302,20 +501,28 @@ export default function OperationalGridPage() {
                           </div>
                         </td>
 
+                        <td className="p-3 whitespace-nowrap" data-testid={`cell-priority-${item.id}`}>
+                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${priorityInfo.className}`}>
+                            <PriorityIcon className="w-3.5 h-3.5" />
+                            {priorityInfo.label}
+                          </span>
+                        </td>
+
+                        <td className="p-3 whitespace-nowrap" data-testid={`cell-status-${item.id}`}>
+                          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border ${statusInfo.className}`}>
+                            <StatusIcon className="w-3.5 h-3.5" />
+                            {statusInfo.label}
+                          </span>
+                        </td>
+
                         <td className="p-3 whitespace-nowrap">
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${
-                              item.missionStatus === "finalizada"
-                                ? "bg-green-50 text-green-700 border-green-200"
-                                : item.status === "em_andamento"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                : "bg-neutral-50 text-neutral-600 border-neutral-200"
-                            }`}
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border ${missionInfo.className}`}
                             data-testid={`badge-mission-${item.id}`}
                           >
-                            {MISSION_STATUS_LABELS[item.missionStatus] || item.missionStatus}
-                          </Badge>
+                            <MissionIcon className="w-3.5 h-3.5" />
+                            {missionInfo.label}
+                          </span>
                         </td>
 
                         <td className="p-3 text-center">

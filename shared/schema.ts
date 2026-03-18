@@ -131,7 +131,7 @@ export const serviceOrders = pgTable("service_orders", {
   type: text("type").notNull(),
   description: text("description"),
   status: text("status").notNull().default("aberta"),
-  priority: text("priority").notNull().default("normal"),
+  priority: text("priority").notNull().default("agendada"),
   scheduledDate: timestamp("scheduled_date"),
   completedDate: timestamp("completed_date"),
   assignedEmployeeId: integer("assigned_employee_id"),

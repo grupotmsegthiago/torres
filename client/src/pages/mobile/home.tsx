@@ -61,7 +61,18 @@ export default function MobileHomePage() {
                     <Shield className="w-3 h-3 text-neutral-400" />
                     <span className="text-[10px] font-bold text-neutral-400 uppercase">Status</span>
                   </div>
-                  <p className="text-xs font-bold text-neutral-700 capitalize">{mission.missionStatus?.replace(/_/g, " ") || "Aguardando"}</p>
+                  <p className="text-xs font-bold text-neutral-700 capitalize">{
+                    (() => {
+                      const s = mission.missionStatus;
+                      if (!s || s === "aguardando" || s === "checkout_armamento" || s === "checkout_viatura" || s === "checkout_km_saida") return "Saída da Base";
+                      if (s === "em_transito_origem" || s === "checkin_chegada_km" || s === "checkin_veiculo_escoltado" || s === "checkin_dados_motorista") return "Chegada na Origem";
+                      if (s === "iniciar_missao") return "Início de Missão";
+                      if (s === "em_transito_destino") return "Chegada no Destino";
+                      if (s === "checkout_km_final" || s === "checkout_viatura_retorno") return "Término de Missão";
+                      if (s === "finalizada") return "Finalizada";
+                      return s.replace(/_/g, " ");
+                    })()
+                  }</p>
                 </div>
               </div>
 
