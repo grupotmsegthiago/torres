@@ -19,7 +19,7 @@ import TimesheetsPage from "@/pages/admin/timesheets";
 import TrackerPage from "@/pages/admin/tracker";
 import MissionPage from "@/pages/admin/mission";
 import OperationalGridPage from "@/pages/admin/operational-grid";
-import ConsultasPage from "@/pages/admin/consultas";
+
 import GuiaMissaoPage from "@/pages/admin/guia-missao";
 import UsersPage from "@/pages/admin/users";
 import ProfilePage from "@/pages/admin/profile";
@@ -87,7 +87,6 @@ function Router() {
       <Route path="/admin/tracker">{() => <ProtectedRoute component={TrackerPage} />}</Route>
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
-      <Route path="/admin/consultas">{() => <ProtectedRoute component={ConsultasPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>

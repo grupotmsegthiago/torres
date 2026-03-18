@@ -4,16 +4,39 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Search, Crown, BookOpen, Smartphone
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const menuItems = [
+type MenuItem = {
+  path?: string;
+  label: string;
+  icon: any;
+  adminOnly?: boolean;
+  children?: MenuItem[];
+};
+
+const menuItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
-  { path: "/admin/operational-grid", label: "Grid Operacional", icon: Radio },
   { path: "/admin/clients", label: "Clientes", icon: Building2 },
-  { path: "/admin/employees", label: "Funcionários", icon: Users },
   { path: "/admin/service-orders", label: "Ordens de Serviço", icon: FileText },
+  {
+    label: "Funcionários",
+    icon: Users,
+    children: [
+      { path: "/admin/employees", label: "Cadastro", icon: Users },
+      { path: "/admin/timesheets", label: "Folha de Ponto", icon: Clock },
+      { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Grid Operacional",
+    icon: Radio,
+    children: [
+      { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio },
+      { path: "/admin/mission", label: "Missão Ativa", icon: Target },
+    ],
+  },
   {
     label: "Frota",
     icon: Car,
@@ -25,19 +48,25 @@ const menuItems = [
       { path: "/admin/tracker", label: "Rastreador", icon: MapPin },
     ],
   },
-  { path: "/admin/timesheets", label: "Folha de Ponto", icon: Clock },
-  { path: "/admin/consultas", label: "Consultas", icon: Search },
-  { path: "/admin/mission", label: "Missão Ativa", icon: Target },
-  { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
-  { path: "/mobile", label: "Mobile (Agente)", icon: Smartphone },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [flotaOpen, setFlotaOpen] = useState(true);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true });
   const { user, logout } = useAuth();
   const [location] = useLocation();
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
+
+  const filteredItems = menuItems.filter((item) => {
+    if (item.adminOnly) {
+      return user?.role === "admin" || user?.role === "diretoria";
+    }
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-neutral-100 flex" data-testid="admin-layout">
@@ -57,35 +86,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
-          {menuItems.filter((item) => {
-            if ("adminOnly" in item && item.adminOnly) {
-              return user?.role === "admin" || user?.role === "diretoria";
-            }
-            return true;
-          }).map((item, i) => {
-            if ("children" in item) {
+          {filteredItems.map((item, i) => {
+            if (item.children) {
+              const isOpen = openGroups[item.label] ?? false;
+              const isChildActive = item.children.some(c => location === c.path);
               return (
                 <div key={i}>
                   <button
-                    onClick={() => setFlotaOpen(!flotaOpen)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-white/60 hover:text-white hover:bg-white/5 transition-colors"
-                    data-testid="button-fleet-menu"
+                    onClick={() => toggleGroup(item.label)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+                      isChildActive ? "text-white bg-white/5" : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                    data-testid={`button-menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}
                   >
                     <item.icon className="w-4 h-4" />
                     <span className="flex-1 text-left">{item.label}</span>
-                    {flotaOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
-                  {flotaOpen && (
+                  {isOpen && (
                     <div className="ml-4 space-y-1 mt-1">
                       {item.children.map((child) => (
-                        <Link key={child.path} href={child.path}>
+                        <Link key={child.path} href={child.path!}>
                           <span
                             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm cursor-pointer transition-colors ${
                               location === child.path
                                 ? "bg-white/10 text-white"
                                 : "text-white/40 hover:text-white hover:bg-white/5"
                             }`}
-                            data-testid={`link-${child.path.split("/").pop()}`}
+                            data-testid={`link-${child.path!.split("/").pop()}`}
                           >
                             <child.icon className="w-4 h-4" />
                             {child.label}
