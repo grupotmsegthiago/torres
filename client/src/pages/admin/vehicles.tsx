@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2 } from "lucide-react";
-import type { Vehicle, VehicleFueling } from "@shared/schema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History } from "lucide-react";
+import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
   const { toast } = useToast();
@@ -194,9 +195,129 @@ function calcAverage(fuelings: VehicleFueling[], vehicleId: number): string {
   return (totalKm / totalLiters).toFixed(2) + " km/l";
 }
 
+function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }), enabled: open });
+  const { data: history = [], isLoading: histLoading } = useQuery<VehicleAssignment[]>({
+    queryKey: ["/api/vehicle-assignments", vehicle.id],
+    queryFn: async () => {
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/vehicle-assignments/${vehicle.id}`);
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [kmAtAction, setKmAtAction] = useState(String(vehicle.km || 0));
+  const [notes, setNotes] = useState("");
+
+  const latestAction = history.length > 0 ? history[0] : null;
+  const isCurrentlyAssigned = latestAction?.action === "vincular";
+  const currentEmployee = isCurrentlyAssigned ? employees.find(e => e.id === latestAction!.employeeId) : null;
+
+  const assignMutation = useMutation({
+    mutationFn: async (action: "vincular" | "desvincular") => {
+      const empId = action === "vincular" ? parseInt(selectedEmployee) : latestAction!.employeeId;
+      await apiRequest("POST", "/api/vehicle-assignments", {
+        vehicleId: vehicle.id,
+        employeeId: empId,
+        action,
+        kmAtAction: parseInt(kmAtAction) || undefined,
+        notes: notes || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-assignments", vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      setSelectedEmployee("");
+      setNotes("");
+      toast({ title: "Operação registrada" });
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const activeEmployees = employees.filter(e => e.status === "ativo");
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Viatura {vehicle.plate} - Vinculação</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {isCurrentlyAssigned && currentEmployee ? (
+            <div className="bg-neutral-50 rounded-lg p-3 border">
+              <p className="text-sm text-neutral-600 mb-2">
+                Vinculado a: <strong className="text-neutral-900">{currentEmployee.name}</strong>
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" value={kmAtAction} onChange={(e) => setKmAtAction(e.target.value)} placeholder="KM atual" data-testid="input-unlink-km" />
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Motivo" data-testid="input-unlink-vehicle-notes" />
+              </div>
+              <Button variant="destructive" size="sm" className="mt-2" onClick={() => assignMutation.mutate("desvincular")} disabled={assignMutation.isPending} data-testid="button-unlink-vehicle">
+                <Unlink className="w-4 h-4 mr-1" /> Desvincular
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-neutral-500 mb-1 block">Selecione o Agente *</label>
+                <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-assign-vehicle-employee">
+                  <option value="">Selecione...</option>
+                  {activeEmployees.map(e => <option key={e.id} value={e.id}>{e.matricula} - {e.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" value={kmAtAction} onChange={(e) => setKmAtAction(e.target.value)} placeholder="KM atual" data-testid="input-link-vehicle-km" />
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Observações" data-testid="input-link-vehicle-notes" />
+              </div>
+              <Button onClick={() => assignMutation.mutate("vincular")} disabled={assignMutation.isPending || !selectedEmployee} data-testid="button-link-vehicle">
+                <Link2 className="w-4 h-4 mr-1" /> Vincular ao Agente
+              </Button>
+            </div>
+          )}
+
+          <div className="border-t pt-3">
+            <h4 className="text-sm font-medium text-neutral-700 mb-2 flex items-center gap-1">
+              <History className="w-4 h-4" /> Histórico de Vinculações
+            </h4>
+            {histLoading ? (
+              <p className="text-xs text-neutral-400 text-center py-4">Carregando...</p>
+            ) : history.length === 0 ? (
+              <p className="text-xs text-neutral-400 text-center py-4">Nenhum registro</p>
+            ) : (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-vehicle-history-${h.id}`}>
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${h.action === "vincular" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        {h.action === "vincular" ? "Vinculado" : "Desvinculado"}
+                      </span>
+                      <span className="text-xs text-neutral-600 ml-2">
+                        {employees.find(e => e.id === h.employeeId)?.name || `ID ${h.employeeId}`}
+                      </span>
+                      {h.kmAtAction && <span className="text-xs text-neutral-400 ml-2">{h.kmAtAction.toLocaleString()} km</span>}
+                      {h.notes && <span className="text-xs text-neutral-400 ml-1">- {h.notes}</span>}
+                    </div>
+                    <span className="text-[10px] text-neutral-400 shrink-0">
+                      {h.createdAt ? new Date(h.createdAt).toLocaleDateString("pt-BR") + " " + new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function VehiclesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Vehicle | undefined>();
+  const [assignVehicle, setAssignVehicle] = useState<Vehicle | null>(null);
   const { toast } = useToast();
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: fuelings = [] } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -219,6 +340,10 @@ export default function VehiclesPage() {
       </div>
 
       {showForm && <VehicleForm vehicle={editItem} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
+
+      {assignVehicle && (
+        <VehicleAssignmentModal vehicle={assignVehicle} open={!!assignVehicle} onClose={() => setAssignVehicle(null)} />
+      )}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
@@ -259,8 +384,13 @@ export default function VehiclesPage() {
                       }`}>{v.status}</span>
                     </td>
                     <td className="p-3 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => { setEditItem(v); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(v.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setAssignVehicle(v)} title="Vincular/Desvincular Agente" data-testid={`button-assign-vehicle-${v.id}`}>
+                          <Link2 className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(v); setShowForm(true); }} data-testid={`button-edit-vehicle-${v.id}`}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(v.id)} data-testid={`button-delete-vehicle-${v.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

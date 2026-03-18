@@ -36,7 +36,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - `client/index.html` - SEO meta tags
 
 ### Internal System (Área Interna)
-- `shared/schema.ts` - Database schema (users, perfis_acesso, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, employee_salaries)
+- `shared/schema.ts` - Database schema (users, perfis_acesso, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, employee_salaries, employee_documents, weapons, weapon_assignments, vehicle_assignments)
 - `server/db.ts` - Database connection (Supabase PostgreSQL via pg driver with SSL)
 - `server/db-init.ts` - Schema migrations and seed data on startup
 - `server/storage.ts` - DatabaseStorage with full CRUD operations
@@ -57,8 +57,8 @@ Institutional landing page and internal management system for Torres Vigilância
   - `tracker.tsx` - Vehicle tracker (API placeholder)
   - `mission.tsx` - Armed escort mission workflow
   - `operational-grid.tsx` - Real-time operational monitoring
-  - `consultas.tsx` - API Brasil consultation module
   - `guia-missao.tsx` - Mission step guide
+  - `weapons.tsx` - Weapon registration, PDF upload, agent linking/unlinking with audit history
   - `users.tsx` - User management (admin/diretoria only)
 
 ## Environment Variables
@@ -70,7 +70,22 @@ Institutional landing page and internal management system for Torres Vigilância
 - `APIBRASIL_DEVICE_*` - API Brasil device tokens for each service
 
 ## Database Tables
-users, perfis_acesso, clients, employees, employee_salaries, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs
+users, perfis_acesso, clients, employees, employee_salaries, employee_documents, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, weapons, weapon_assignments, vehicle_assignments
+
+## Employee Documents (CNH/CNV)
+- `employee_documents` table: type (CNH/CNV/Certificado/Atestado), file_data (base64), expiry_date, issue_date, document_number
+- Expiry tracking: expired (red), warning <30 days (amber), ok (green)
+- Contract generation: HTML template with employee data, opens in new tab for printing
+
+## Armamento Module
+- `weapons` table: type, brand, model, caliber, serial_number (unique), registration_number, registration_expiry, registration_file_data (PDF base64)
+- `weapon_assignments` table: weapon_id, employee_id, action (vincular/desvincular), service_order_id, notes
+- Linking updates weapon.assigned_employee_id and status; unlinking clears them
+- Registration expiry alerts shown on page
+
+## Vehicle Assignments
+- `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes
+- Full audit trail for multas/fines traceability
 
 ## Users Table Schema
 - `id` (serial PK), `supabase_uid` (text, unique - links to Supabase Auth), `email` (text, unique), `username` (text, nullable - legacy), `password` (text, nullable - legacy), `name` (text), `role` (text), `employee_id` (int), `must_change_password` (int, legacy), `avatar_url` (text), `created_at` (timestamp)

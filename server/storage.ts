@@ -3,7 +3,7 @@ import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
-  perfisAcesso,
+  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -17,6 +17,10 @@ import {
   type ApiLog, type InsertApiLog,
   type EmployeeSalary, type InsertEmployeeSalary,
   type PerfilAcesso,
+  type EmployeeDocument, type InsertEmployeeDocument,
+  type Weapon, type InsertWeapon,
+  type WeaponAssignment, type InsertWeaponAssignment,
+  type VehicleAssignment, type InsertVehicleAssignment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -92,6 +96,22 @@ export interface IStorage {
   createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary>;
   deleteEmployeeSalary(id: number): Promise<void>;
   getNextMatricula(): Promise<string>;
+
+  getEmployeeDocuments(employeeId: number): Promise<EmployeeDocument[]>;
+  createEmployeeDocument(doc: InsertEmployeeDocument): Promise<EmployeeDocument>;
+  updateEmployeeDocument(id: number, doc: Partial<InsertEmployeeDocument>): Promise<EmployeeDocument | undefined>;
+  deleteEmployeeDocument(id: number): Promise<void>;
+
+  getWeapons(): Promise<Weapon[]>;
+  getWeapon(id: number): Promise<Weapon | undefined>;
+  createWeapon(weapon: InsertWeapon): Promise<Weapon>;
+  updateWeapon(id: number, weapon: Partial<InsertWeapon>): Promise<Weapon | undefined>;
+  deleteWeapon(id: number): Promise<void>;
+  getWeaponAssignments(weaponId: number): Promise<WeaponAssignment[]>;
+  createWeaponAssignment(a: InsertWeaponAssignment): Promise<WeaponAssignment>;
+
+  getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]>;
+  createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -400,6 +420,71 @@ export class DatabaseStorage implements IStorage {
     const result = await db.select().from(employees).orderBy(desc(employees.id)).limit(1);
     const nextId = result.length > 0 ? result[0].id + 1 : 1;
     return "TVP-" + String(nextId).padStart(4, "0");
+  }
+
+  async getEmployeeDocuments(employeeId: number): Promise<EmployeeDocument[]> {
+    return db.select().from(employeeDocuments)
+      .where(eq(employeeDocuments.employeeId, employeeId))
+      .orderBy(desc(employeeDocuments.createdAt));
+  }
+
+  async createEmployeeDocument(doc: InsertEmployeeDocument): Promise<EmployeeDocument> {
+    const [created] = await db.insert(employeeDocuments).values(doc).returning();
+    return created;
+  }
+
+  async updateEmployeeDocument(id: number, doc: Partial<InsertEmployeeDocument>): Promise<EmployeeDocument | undefined> {
+    const [updated] = await db.update(employeeDocuments).set(doc).where(eq(employeeDocuments.id, id)).returning();
+    return updated;
+  }
+
+  async deleteEmployeeDocument(id: number): Promise<void> {
+    await db.delete(employeeDocuments).where(eq(employeeDocuments.id, id));
+  }
+
+  async getWeapons(): Promise<Weapon[]> {
+    return db.select().from(weapons).orderBy(desc(weapons.createdAt));
+  }
+
+  async getWeapon(id: number): Promise<Weapon | undefined> {
+    const [w] = await db.select().from(weapons).where(eq(weapons.id, id));
+    return w;
+  }
+
+  async createWeapon(weapon: InsertWeapon): Promise<Weapon> {
+    const [created] = await db.insert(weapons).values(weapon).returning();
+    return created;
+  }
+
+  async updateWeapon(id: number, weapon: Partial<InsertWeapon>): Promise<Weapon | undefined> {
+    const [updated] = await db.update(weapons).set(weapon).where(eq(weapons.id, id)).returning();
+    return updated;
+  }
+
+  async deleteWeapon(id: number): Promise<void> {
+    await db.delete(weapons).where(eq(weapons.id, id));
+  }
+
+  async getWeaponAssignments(weaponId: number): Promise<WeaponAssignment[]> {
+    return db.select().from(weaponAssignments)
+      .where(eq(weaponAssignments.weaponId, weaponId))
+      .orderBy(desc(weaponAssignments.createdAt));
+  }
+
+  async createWeaponAssignment(a: InsertWeaponAssignment): Promise<WeaponAssignment> {
+    const [created] = await db.insert(weaponAssignments).values(a).returning();
+    return created;
+  }
+
+  async getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]> {
+    return db.select().from(vehicleAssignments)
+      .where(eq(vehicleAssignments.vehicleId, vehicleId))
+      .orderBy(desc(vehicleAssignments.createdAt));
+  }
+
+  async createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment> {
+    const [created] = await db.insert(vehicleAssignments).values(a).returning();
+    return created;
   }
 }
 

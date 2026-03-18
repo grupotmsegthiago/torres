@@ -243,6 +243,72 @@ export const insertMissionPhotoSchema = createInsertSchema(missionPhotos).omit({
 export type InsertMissionPhoto = z.infer<typeof insertMissionPhotoSchema>;
 export type MissionPhoto = typeof missionPhotos.$inferSelect;
 
+export const employeeDocuments = pgTable("employee_documents", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  type: text("type").notNull(),
+  fileData: text("file_data"),
+  fileName: text("file_name"),
+  expiryDate: date("expiry_date"),
+  issueDate: date("issue_date"),
+  documentNumber: text("document_number"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeDocumentSchema = createInsertSchema(employeeDocuments).omit({ id: true, createdAt: true });
+export type InsertEmployeeDocument = z.infer<typeof insertEmployeeDocumentSchema>;
+export type EmployeeDocument = typeof employeeDocuments.$inferSelect;
+
+export const weapons = pgTable("weapons", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  brand: text("brand").notNull(),
+  model: text("model").notNull(),
+  caliber: text("caliber").notNull(),
+  serialNumber: text("serial_number").notNull().unique(),
+  registrationNumber: text("registration_number"),
+  registrationExpiry: date("registration_expiry"),
+  registrationFileData: text("registration_file_data"),
+  status: text("status").notNull().default("disponível"),
+  assignedEmployeeId: integer("assigned_employee_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWeaponSchema = createInsertSchema(weapons).omit({ id: true, createdAt: true });
+export type InsertWeapon = z.infer<typeof insertWeaponSchema>;
+export type Weapon = typeof weapons.$inferSelect;
+
+export const weaponAssignments = pgTable("weapon_assignments", {
+  id: serial("id").primaryKey(),
+  weaponId: integer("weapon_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  action: text("action").notNull(),
+  serviceOrderId: integer("service_order_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWeaponAssignmentSchema = createInsertSchema(weaponAssignments).omit({ id: true, createdAt: true });
+export type InsertWeaponAssignment = z.infer<typeof insertWeaponAssignmentSchema>;
+export type WeaponAssignment = typeof weaponAssignments.$inferSelect;
+
+export const vehicleAssignments = pgTable("vehicle_assignments", {
+  id: serial("id").primaryKey(),
+  vehicleId: integer("vehicle_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  action: text("action").notNull(),
+  serviceOrderId: integer("service_order_id"),
+  kmAtAction: integer("km_at_action"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignments).omit({ id: true, createdAt: true });
+export type InsertVehicleAssignment = z.infer<typeof insertVehicleAssignmentSchema>;
+export type VehicleAssignment = typeof vehicleAssignments.$inferSelect;
+
 export const apiLogs = pgTable("api_logs", {
   id: serial("id").primaryKey(),
   endpoint: text("endpoint").notNull(),

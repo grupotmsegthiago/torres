@@ -21,6 +21,7 @@ import MissionPage from "@/pages/admin/mission";
 import OperationalGridPage from "@/pages/admin/operational-grid";
 
 import GuiaMissaoPage from "@/pages/admin/guia-missao";
+import WeaponsPage from "@/pages/admin/weapons";
 import UsersPage from "@/pages/admin/users";
 import ProfilePage from "@/pages/admin/profile";
 import MobileHomePage from "@/pages/mobile/home";
@@ -88,6 +89,7 @@ function Router() {
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
+      <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>

@@ -8,6 +8,8 @@ import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
   insertVehicleFuelingSchema, insertTimesheetSchema, insertMissionPhotoSchema,
+  insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
+  insertVehicleAssignmentSchema,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 
@@ -1297,6 +1299,116 @@ export async function registerRoutes(
     }
 
     res.status(201).json({ ...toSafeUser(user), tempPassword });
+  });
+
+  // ===== EMPLOYEE DOCUMENTS =====
+  app.get("/api/employee-documents/:employeeId", requireAuth, async (req, res) => {
+    const docs = await storage.getEmployeeDocuments(parseInt(req.params.employeeId));
+    res.json(docs);
+  });
+
+  app.post("/api/employee-documents", requireAdminRole, async (req, res) => {
+    const parsed = insertEmployeeDocumentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const emp = await storage.getEmployee(parsed.data.employeeId);
+    if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+    const doc = await storage.createEmployeeDocument(parsed.data);
+    res.status(201).json(doc);
+  });
+
+  app.patch("/api/employee-documents/:id", requireAdminRole, async (req, res) => {
+    const parsed = insertEmployeeDocumentSchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const doc = await storage.updateEmployeeDocument(parseInt(req.params.id), parsed.data);
+    if (!doc) return res.status(404).json({ message: "Documento não encontrado" });
+    res.json(doc);
+  });
+
+  app.delete("/api/employee-documents/:id", requireAdminRole, async (req, res) => {
+    await storage.deleteEmployeeDocument(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // ===== WEAPONS =====
+  app.get("/api/weapons", requireAdminRole, async (_req, res) => {
+    const list = await storage.getWeapons();
+    res.json(list);
+  });
+
+  app.get("/api/weapons/:id", requireAdminRole, async (req, res) => {
+    const w = await storage.getWeapon(parseInt(req.params.id));
+    if (!w) return res.status(404).json({ message: "Arma não encontrada" });
+    res.json(w);
+  });
+
+  app.post("/api/weapons", requireAdminRole, async (req, res) => {
+    const parsed = insertWeaponSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const w = await storage.createWeapon(parsed.data);
+    res.status(201).json(w);
+  });
+
+  app.patch("/api/weapons/:id", requireAdminRole, async (req, res) => {
+    const parsed = insertWeaponSchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const w = await storage.updateWeapon(parseInt(req.params.id), parsed.data);
+    if (!w) return res.status(404).json({ message: "Arma não encontrada" });
+    res.json(w);
+  });
+
+  app.delete("/api/weapons/:id", requireAdminRole, async (req, res) => {
+    await storage.deleteWeapon(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  app.get("/api/weapon-assignments/:weaponId", requireAdminRole, async (req, res) => {
+    const list = await storage.getWeaponAssignments(parseInt(req.params.weaponId));
+    res.json(list);
+  });
+
+  app.post("/api/weapon-assignments", requireAdminRole, async (req, res) => {
+    const parsed = insertWeaponAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (parsed.data.action !== "vincular" && parsed.data.action !== "desvincular") {
+      return res.status(400).json({ message: "Ação inválida. Use 'vincular' ou 'desvincular'." });
+    }
+    const weapon = await storage.getWeapon(parsed.data.weaponId);
+    if (!weapon) return res.status(404).json({ message: "Arma não encontrada" });
+    const emp = await storage.getEmployee(parsed.data.employeeId);
+    if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+    const a = await storage.createWeaponAssignment(parsed.data);
+    if (parsed.data.action === "vincular") {
+      await storage.updateWeapon(parsed.data.weaponId, {
+        assignedEmployeeId: parsed.data.employeeId,
+        status: "em uso",
+      });
+    } else {
+      await storage.updateWeapon(parsed.data.weaponId, {
+        assignedEmployeeId: null,
+        status: "disponível",
+      });
+    }
+    res.status(201).json(a);
+  });
+
+  // ===== VEHICLE ASSIGNMENTS =====
+  app.get("/api/vehicle-assignments/:vehicleId", requireAdminRole, async (req, res) => {
+    const list = await storage.getVehicleAssignments(parseInt(req.params.vehicleId));
+    res.json(list);
+  });
+
+  app.post("/api/vehicle-assignments", requireAdminRole, async (req, res) => {
+    const parsed = insertVehicleAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (parsed.data.action !== "vincular" && parsed.data.action !== "desvincular") {
+      return res.status(400).json({ message: "Ação inválida. Use 'vincular' ou 'desvincular'." });
+    }
+    const vehicle = await storage.getVehicle(parsed.data.vehicleId);
+    if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+    const emp = await storage.getEmployee(parsed.data.employeeId);
+    if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+    const a = await storage.createVehicleAssignment(parsed.data);
+    res.status(201).json(a);
   });
 
   return httpServer;
