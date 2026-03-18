@@ -28,8 +28,16 @@ const steps = [
     subtitle: "Status: Aguardando",
     phase: "preparacao",
     icon: Shield,
-    description: "O agente visualiza todos os dados da missão antes de iniciar: equipe, viatura, cliente e informações da OS.",
+    description: "O agente visualiza todos os dados da missão antes de iniciar: equipe, viatura e informações da OS.",
+    descriptionFull: "O agente visualiza todos os dados da missão antes de iniciar: equipe, viatura, cliente e informações da OS.",
     details: [
+      "Foto e nome dos 2 agentes (Agente 1 e Agente 2)",
+      "Placa e modelo da viatura designada",
+      "Número da OS, agendamento",
+      "Descrição do serviço a ser executado",
+      "Relógio em tempo real",
+    ],
+    detailsFull: [
       "Foto e nome dos 2 agentes (Agente 1 e Agente 2)",
       "Placa e modelo da viatura designada",
       "Nome do cliente, número da OS, agendamento",
@@ -549,11 +557,11 @@ export default function GuiaMissaoPage() {
                   <div className="grid md:grid-cols-[1fr,260px] gap-6 items-start">
                     <div>
                       <p className="text-sm text-neutral-600 leading-relaxed mb-4">
-                        {isVigilante ? step.description.replace(/,?\s*cliente/gi, '').replace(/cliente,?\s*/gi, '') : step.description}
+                        {isVigilante ? step.description : (step.descriptionFull || step.description)}
                       </p>
 
                       <div className="space-y-1.5">
-                        {step.details.filter(d => !isVigilante || !d.toLowerCase().includes("cliente")).map((detail, i) => (
+                        {(isVigilante ? step.details : (step.detailsFull || step.details)).map((detail, i) => (
                           <div key={i} className="flex items-start gap-2">
                             <ChevronRight className="w-3 h-3 text-neutral-300 mt-0.5 shrink-0" />
                             <p className="text-xs text-neutral-500 leading-relaxed">{detail}</p>
