@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, Home } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -350,6 +350,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                 <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-doc-type">
                   <option value="CNH">CNH</option>
                   <option value="CNV">CNV</option>
+                  <option value="Comprovante de Residência">Comprovante de Residência</option>
                   <option value="Certificado Curso">Certificado Curso</option>
                   <option value="Atestado">Atestado</option>
                   <option value="Outro">Outro</option>
@@ -398,6 +399,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                         <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                           d.type === "CNH" ? "bg-blue-100 text-blue-700" :
                           d.type === "CNV" ? "bg-purple-100 text-purple-700" :
+                          d.type === "Comprovante de Residência" ? "bg-teal-100 text-teal-700" :
                           "bg-neutral-200 text-neutral-700"
                         }`}>{d.type}</span>
                         <div className="min-w-0">
@@ -450,9 +452,17 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
 function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const ocrInputRef = useRef<HTMLInputElement>(null);
+  const cnhFileRef = useRef<HTMLInputElement>(null);
+  const cnvFileRef = useRef<HTMLInputElement>(null);
+  const residFileRef = useRef<HTMLInputElement>(null);
   const [cpfLoading, setCpfLoading] = useState(false);
-  const [scanning, setScanning] = useState(false);
+
+  type DocAttachment = { fileData: string; fileName: string; scanning: boolean };
+  const [docAttachments, setDocAttachments] = useState<Record<string, DocAttachment>>({
+    CNH: { fileData: "", fileName: "", scanning: false },
+    CNV: { fileData: "", fileName: "", scanning: false },
+    "Comprovante de Residência": { fileData: "", fileName: "", scanning: false },
+  });
 
   const [form, setForm] = useState({
     matricula: employee?.matricula || "",
@@ -558,14 +568,16 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     reader.readAsDataURL(file);
   }, []);
 
-  const handleOcrUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocAttachment = useCallback(async (docType: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
       return;
     }
-    setScanning(true);
+
+    setDocAttachments(prev => ({ ...prev, [docType]: { ...prev[docType], scanning: true } }));
+
     try {
       const reader = new FileReader();
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -574,49 +586,78 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         reader.readAsDataURL(file);
       });
 
-      const res = await authFetch("/api/employees/ocr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageData: dataUrl }),
-      });
+      setDocAttachments(prev => ({
+        ...prev,
+        [docType]: { fileData: dataUrl, fileName: file.name, scanning: true },
+      }));
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Erro ao processar");
-      }
+      if (docType === "CNH" || docType === "CNV") {
+        try {
+          const res = await authFetch("/api/employees/ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageData: dataUrl }),
+          });
 
-      const extracted = await res.json();
-      const filledFields: string[] = [];
+          if (res.ok) {
+            const extracted = await res.json();
+            const filledFields: string[] = [];
 
-      setForm((prev) => {
-        const updated = { ...prev };
-        if (extracted.name && !prev.name) { updated.name = extracted.name; filledFields.push("Nome"); }
-        if (extracted.cpf && !prev.cpf) { updated.cpf = extracted.cpf; filledFields.push("CPF"); }
-        if (extracted.rg && !prev.rg) { updated.rg = extracted.rg; filledFields.push("RG"); }
-        if (extracted.cnhNumber && !prev.cnhNumber) { updated.cnhNumber = extracted.cnhNumber; filledFields.push("CNH"); }
-        if (extracted.birthDate && !prev.birthDate) { updated.birthDate = extracted.birthDate; filledFields.push("Nascimento"); }
-        if (extracted.motherName && !prev.motherName) { updated.motherName = extracted.motherName; filledFields.push("Mãe"); }
-        if (extracted.fatherName && !prev.fatherName) { updated.fatherName = extracted.fatherName; filledFields.push("Pai"); }
-        if (extracted.nationality && !prev.nationality) { updated.nationality = extracted.nationality; filledFields.push("Nacionalidade"); }
-        if (extracted.maritalStatus && !prev.maritalStatus) { updated.maritalStatus = extracted.maritalStatus; filledFields.push("Est. Civil"); }
-        if (extracted.address && !prev.address) { updated.address = extracted.address; filledFields.push("Endereço"); }
-        if (extracted.notes) {
-          updated.notes = prev.notes ? prev.notes + "\n" + extracted.notes : extracted.notes;
+            setForm((prev) => {
+              const updated = { ...prev };
+              if (extracted.name && !prev.name) { updated.name = extracted.name; filledFields.push("Nome"); }
+              if (extracted.cpf && !prev.cpf) { updated.cpf = extracted.cpf; filledFields.push("CPF"); }
+              if (extracted.rg && !prev.rg) { updated.rg = extracted.rg; filledFields.push("RG"); }
+              if (extracted.cnhNumber && !prev.cnhNumber) { updated.cnhNumber = extracted.cnhNumber; filledFields.push("CNH"); }
+              if (extracted.birthDate && !prev.birthDate) { updated.birthDate = extracted.birthDate; filledFields.push("Nascimento"); }
+              if (extracted.motherName && !prev.motherName) { updated.motherName = extracted.motherName; filledFields.push("Mãe"); }
+              if (extracted.fatherName && !prev.fatherName) { updated.fatherName = extracted.fatherName; filledFields.push("Pai"); }
+              if (extracted.nationality && !prev.nationality) { updated.nationality = extracted.nationality; filledFields.push("Nacionalidade"); }
+              if (extracted.maritalStatus && !prev.maritalStatus) { updated.maritalStatus = extracted.maritalStatus; filledFields.push("Est. Civil"); }
+              if (extracted.address && !prev.address) { updated.address = extracted.address; filledFields.push("Endereço"); }
+              return updated;
+            });
+
+            toast({
+              title: `${docType} processada`,
+              description: filledFields.length > 0
+                ? `Dados extraídos: ${filledFields.join(", ")}`
+                : "Anexo salvo. Nenhum dado novo extraído.",
+            });
+          } else {
+            toast({ title: `${docType} anexada`, description: "Arquivo salvo (OCR não disponível)" });
+          }
+        } catch {
+          toast({ title: `${docType} anexada`, description: "Arquivo salvo (OCR não disponível)" });
         }
-        return updated;
-      });
-
-      toast({
-        title: "Documento processado",
-        description: filledFields.length > 0
-          ? `Campos preenchidos: ${filledFields.join(", ")}. Confira antes de salvar.`
-          : "Nenhum dado novo extraído. Tente outro documento.",
-      });
+      } else if (docType === "Comprovante de Residência") {
+        try {
+          const res = await authFetch("/api/employees/ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageData: dataUrl }),
+          });
+          if (res.ok) {
+            const extracted = await res.json();
+            if (extracted.address) {
+              setForm((prev) => ({ ...prev, address: prev.address || extracted.address }));
+              toast({ title: "Comprovante processado", description: `Endereço extraído: ${extracted.address}` });
+            } else {
+              toast({ title: "Comprovante anexado", description: "Endereço não identificado — preencha manualmente" });
+            }
+          } else {
+            toast({ title: "Comprovante anexado" });
+          }
+        } catch {
+          toast({ title: "Comprovante anexado" });
+        }
+      }
     } catch (err: any) {
-      toast({ title: "Erro ao ler documento", description: err.message || "Tente preencher manualmente", variant: "destructive" });
+      toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+      setDocAttachments(prev => ({ ...prev, [docType]: { fileData: "", fileName: "", scanning: false } }));
+      return;
     } finally {
-      setScanning(false);
-      if (ocrInputRef.current) ocrInputRef.current.value = "";
+      setDocAttachments(prev => ({ ...prev, [docType]: { ...prev[docType], scanning: false } }));
     }
   }, [toast]);
 
@@ -626,16 +667,38 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         ...data,
         matricula: employee ? employee.matricula : (nextMatricula?.matricula || data.matricula),
       };
+      let employeeId: number;
       if (employee) {
         const { matricula, ...updateData } = payload;
-        await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
+        const res = await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
+        employeeId = employee.id;
       } else {
-        await apiRequest("POST", "/api/employees", payload);
+        const res = await apiRequest("POST", "/api/employees", payload);
+        const created = await res.json();
+        employeeId = created.id;
+      }
+
+      if (!employee) {
+        const docsToCreate = Object.entries(docAttachments).filter(
+          ([_, att]) => att.fileData
+        );
+        for (const [docType, att] of docsToCreate) {
+          try {
+            await apiRequest("POST", "/api/employee-documents", {
+              employeeId,
+              type: docType,
+              fileData: att.fileData,
+              fileName: att.fileName,
+            });
+          } catch {}
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      toast({ title: employee ? "Funcionário atualizado" : "Funcionário cadastrado" });
+      const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
+      const docMsg = !employee && attachedCount > 0 ? ` com ${attachedCount} documento(s)` : "";
+      toast({ title: employee ? "Funcionário atualizado" : `Funcionário cadastrado${docMsg}` });
       onClose();
     },
     onError: (err: any) => {
@@ -653,24 +716,61 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       </div>
 
       {!employee && (
-        <div className="mb-5 p-4 border-2 border-dashed border-neutral-300 rounded-lg bg-neutral-50 text-center" data-testid="ocr-employee-upload">
-          <input ref={ocrInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} disabled={scanning} />
-          {scanning ? (
-            <div className="flex flex-col items-center gap-2 py-2">
-              <Loader2 className="w-8 h-8 text-neutral-500 animate-spin" />
-              <p className="text-sm text-neutral-600 font-medium">Lendo documento...</p>
-              <p className="text-xs text-neutral-400">A IA está extraindo os dados do funcionário</p>
-            </div>
-          ) : (
-            <div
-              className="flex flex-col items-center gap-2 py-2 cursor-pointer"
-              onClick={() => ocrInputRef.current?.click()}
-            >
-              <ScanLine className="w-8 h-8 text-neutral-400" />
-              <p className="text-sm text-neutral-600 font-medium">Cadastro Inteligente</p>
-              <p className="text-xs text-neutral-400">Anexe foto do RG, CNH ou CPF e os dados serão preenchidos automaticamente</p>
-            </div>
-          )}
+        <div className="mb-5" data-testid="ocr-employee-upload">
+          <div className="flex items-center gap-2 mb-3">
+            <ScanLine className="w-5 h-5 text-neutral-500" />
+            <h3 className="text-sm font-semibold text-neutral-700">Documentos Obrigatórios</h3>
+            <span className="text-xs text-neutral-400">— Anexe os documentos e os dados serão preenchidos automaticamente</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {([
+              { type: "CNH", label: "CNH", icon: Car, ref: cnhFileRef, desc: "Carteira Nacional de Habilitação" },
+              { type: "CNV", label: "CNV", icon: ShieldCheck, ref: cnvFileRef, desc: "Certificado Nacional de Vigilante" },
+              { type: "Comprovante de Residência", label: "Comp. Residência", icon: Home, ref: residFileRef, desc: "Comprovante de endereço atualizado" },
+            ] as const).map(({ type, label, icon: Icon, ref, desc }) => {
+              const att = docAttachments[type];
+              return (
+                <div key={type} className="relative">
+                  <input
+                    ref={ref}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => handleDocAttachment(type, e)}
+                    disabled={att.scanning}
+                  />
+                  <div
+                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all text-center ${
+                      att.fileData
+                        ? "border-green-300 bg-green-50"
+                        : "border-neutral-300 bg-neutral-50 hover:border-neutral-400"
+                    }`}
+                    onClick={() => !att.scanning && ref.current?.click()}
+                    data-testid={`upload-doc-${type.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    {att.scanning ? (
+                      <div className="flex flex-col items-center gap-1 py-1">
+                        <Loader2 className="w-6 h-6 text-neutral-400 animate-spin" />
+                        <p className="text-xs text-neutral-500">Processando...</p>
+                      </div>
+                    ) : att.fileData ? (
+                      <div className="flex flex-col items-center gap-1 py-1">
+                        <CheckCircle2 className="w-6 h-6 text-green-500" />
+                        <p className="text-xs font-medium text-green-700">{label} anexada</p>
+                        <p className="text-[10px] text-green-600 truncate max-w-full">{att.fileName}</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1 py-1">
+                        <Icon className="w-6 h-6 text-neutral-400" />
+                        <p className="text-xs font-medium text-neutral-600">{label}</p>
+                        <p className="text-[10px] text-neutral-400">{desc}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

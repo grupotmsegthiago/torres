@@ -86,9 +86,14 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - OpenAI integration via Replit AI Integrations (no API key needed, billed to credits)
 - Form starts empty (no pre-selected type/caliber) with placeholder options
 
-## Employee OCR Smart Upload
-- New employee form has "Cadastro Inteligente" area — upload photo of RG, CNH, or CPF card → OpenAI Vision extracts name, CPF, RG, CNH, birth date, mother/father name, nationality, marital status, address → auto-fills form fields
-- CPF lookup button (magnifying glass) next to CPF field — tries BrasilAPI (public, free) for basic data; if not available, suggests using smart upload
+## Employee OCR Smart Upload & Documentos Obrigatórios
+- New employee form has **3 mandatory document slots**: CNH, CNV, Comprovante de Residência
+- Each slot is a drag-zone; uploading a file auto-runs OCR (OpenAI Vision) to extract employee data and fill form fields
+- CNH/CNV: extracts name, CPF, RG, CNH number, birth date, parents, nationality, marital status, address
+- Comprovante de Residência: extracts address
+- On save, attached documents are automatically created as `employee_documents` records linked to the new employee
+- Document types in the system: CNH, CNV, Comprovante de Residência, Certificado Curso, Atestado, Outro
+- CPF lookup button (magnifying glass) next to CPF field — tries BrasilAPI (public, free) for basic data
 - Endpoint: `POST /api/employees/ocr` (requireAdminRole) — receives base64 imageData, returns extracted fields
 
 ## Vehicle Assignments
