@@ -568,6 +568,92 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     reader.readAsDataURL(file);
   }, []);
 
+  const compressImage = useCallback((dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      if (dataUrl.startsWith("data:application/pdf")) {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1600;
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = (maxDim * h) / w; w = maxDim; }
+          else { w = (maxDim * w) / h; h = maxDim; }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }, []);
+
+  const runOcrAndFillForm = useCallback(async (dataUrl: string, docType: string) => {
+    try {
+      const res = await authFetch("/api/employees/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+        console.error("OCR error response:", errBody);
+        return null;
+      }
+
+      const extracted = await res.json();
+      console.log("OCR extracted:", extracted);
+      return extracted;
+    } catch (err) {
+      console.error("OCR fetch error:", err);
+      return null;
+    }
+  }, []);
+
+  const applyOcrToForm = useCallback((extracted: any, docType: string) => {
+    if (!extracted) return;
+    const filledFields: string[] = [];
+    const val = (v: any) => typeof v === "string" && v.trim().length > 0 ? v.trim() : "";
+
+    setForm((prev) => {
+      const updated = { ...prev };
+      const n = val(extracted.name);
+      const cpf = val(extracted.cpf);
+      const rg = val(extracted.rg);
+      const cnh = val(extracted.cnhNumber);
+      const birth = val(extracted.birthDate);
+      const mother = val(extracted.motherName);
+      const father = val(extracted.fatherName);
+      const nat = val(extracted.nationality);
+      const marital = val(extracted.maritalStatus);
+      const addr = val(extracted.address);
+
+      if (n && !prev.name) { updated.name = n; filledFields.push("Nome"); }
+      if (cpf && !prev.cpf) { updated.cpf = cpf; filledFields.push("CPF"); }
+      if (rg && !prev.rg) { updated.rg = rg; filledFields.push("RG"); }
+      if (cnh && !prev.cnhNumber) { updated.cnhNumber = cnh; filledFields.push("CNH"); }
+      if (birth && !prev.birthDate) { updated.birthDate = birth; filledFields.push("Nascimento"); }
+      if (mother && !prev.motherName) { updated.motherName = mother; filledFields.push("Mãe"); }
+      if (father && !prev.fatherName) { updated.fatherName = father; filledFields.push("Pai"); }
+      if (nat && !prev.nationality) { updated.nationality = nat; filledFields.push("Nacionalidade"); }
+      if (marital && !prev.maritalStatus) { updated.maritalStatus = marital; filledFields.push("Est. Civil"); }
+      if (addr && !prev.address) { updated.address = addr; filledFields.push("Endereço"); }
+      return updated;
+    });
+
+    if (filledFields.length > 0) {
+      toast({ title: `${docType} processada`, description: `Dados extraídos: ${filledFields.join(", ")}` });
+    } else {
+      toast({ title: `${docType} anexada`, description: "Nenhum dado novo extraído do documento" });
+    }
+  }, [toast]);
+
   const handleDocAttachment = useCallback(async (docType: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -591,75 +677,33 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         [docType]: { fileData: dataUrl, fileName: file.name, scanning: true },
       }));
 
-      if (docType === "CNH" || docType === "CNV") {
-        try {
-          const res = await authFetch("/api/employees/ocr", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageData: dataUrl }),
-          });
+      const compressedUrl = await compressImage(dataUrl);
+      const extracted = await runOcrAndFillForm(compressedUrl, docType);
 
-          if (res.ok) {
-            const extracted = await res.json();
-            const filledFields: string[] = [];
-
-            setForm((prev) => {
-              const updated = { ...prev };
-              if (extracted.name && !prev.name) { updated.name = extracted.name; filledFields.push("Nome"); }
-              if (extracted.cpf && !prev.cpf) { updated.cpf = extracted.cpf; filledFields.push("CPF"); }
-              if (extracted.rg && !prev.rg) { updated.rg = extracted.rg; filledFields.push("RG"); }
-              if (extracted.cnhNumber && !prev.cnhNumber) { updated.cnhNumber = extracted.cnhNumber; filledFields.push("CNH"); }
-              if (extracted.birthDate && !prev.birthDate) { updated.birthDate = extracted.birthDate; filledFields.push("Nascimento"); }
-              if (extracted.motherName && !prev.motherName) { updated.motherName = extracted.motherName; filledFields.push("Mãe"); }
-              if (extracted.fatherName && !prev.fatherName) { updated.fatherName = extracted.fatherName; filledFields.push("Pai"); }
-              if (extracted.nationality && !prev.nationality) { updated.nationality = extracted.nationality; filledFields.push("Nacionalidade"); }
-              if (extracted.maritalStatus && !prev.maritalStatus) { updated.maritalStatus = extracted.maritalStatus; filledFields.push("Est. Civil"); }
-              if (extracted.address && !prev.address) { updated.address = extracted.address; filledFields.push("Endereço"); }
-              return updated;
-            });
-
-            toast({
-              title: `${docType} processada`,
-              description: filledFields.length > 0
-                ? `Dados extraídos: ${filledFields.join(", ")}`
-                : "Anexo salvo. Nenhum dado novo extraído.",
-            });
+      if (extracted) {
+        if (docType === "Comprovante de Residência") {
+          const addr = typeof extracted.address === "string" && extracted.address.trim() ? extracted.address.trim() : "";
+          if (addr) {
+            setForm((prev) => ({ ...prev, address: prev.address || addr }));
+            toast({ title: "Comprovante processado", description: `Endereço extraído: ${addr}` });
           } else {
-            toast({ title: `${docType} anexada`, description: "Arquivo salvo (OCR não disponível)" });
+            toast({ title: "Comprovante anexado", description: "Endereço não identificado — preencha manualmente" });
           }
-        } catch {
-          toast({ title: `${docType} anexada`, description: "Arquivo salvo (OCR não disponível)" });
+        } else {
+          applyOcrToForm(extracted, docType);
         }
-      } else if (docType === "Comprovante de Residência") {
-        try {
-          const res = await authFetch("/api/employees/ocr", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageData: dataUrl }),
-          });
-          if (res.ok) {
-            const extracted = await res.json();
-            if (extracted.address) {
-              setForm((prev) => ({ ...prev, address: prev.address || extracted.address }));
-              toast({ title: "Comprovante processado", description: `Endereço extraído: ${extracted.address}` });
-            } else {
-              toast({ title: "Comprovante anexado", description: "Endereço não identificado — preencha manualmente" });
-            }
-          } else {
-            toast({ title: "Comprovante anexado" });
-          }
-        } catch {
-          toast({ title: "Comprovante anexado" });
-        }
+      } else {
+        toast({ title: `${docType} anexada`, description: "Documento salvo. Leitura automática indisponível." });
       }
     } catch (err: any) {
-      toast({ title: "Erro ao anexar", description: err.message, variant: "destructive" });
+      console.error("Doc attachment error:", err);
+      toast({ title: "Erro ao anexar", description: err.message || "Tente novamente", variant: "destructive" });
       setDocAttachments(prev => ({ ...prev, [docType]: { fileData: "", fileName: "", scanning: false } }));
       return;
     } finally {
       setDocAttachments(prev => ({ ...prev, [docType]: { ...prev[docType], scanning: false } }));
     }
-  }, [toast]);
+  }, [toast, runOcrAndFillForm, applyOcrToForm, compressImage]);
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {

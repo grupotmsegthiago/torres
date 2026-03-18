@@ -275,17 +275,25 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Envie imageData (base64 data URL da imagem)" });
       }
 
-      const openai = new OpenAI({
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-      });
+      console.log(`[ocr] Employee OCR request received, imageData length: ${imageData.length}, user: ${req.user?.email}`);
 
+      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+
+      if (!apiKey) {
+        console.error("[ocr] AI_INTEGRATIONS_OPENAI_API_KEY not set");
+        return res.status(500).json({ message: "Chave de API de IA não configurada" });
+      }
+
+      const openai = new OpenAI({ apiKey, baseURL });
+
+      console.log("[ocr] Sending to OpenAI...");
       const response = await openai.chat.completions.create({
         model: "gpt-5-mini",
         messages: [
           {
             role: "system",
-            content: `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CTPS, Certificado de Reservista, etc).
+            content: `Você é um sistema especializado em extrair dados de documentos brasileiros de identificação pessoal (RG, CNH, CPF, CNV, CTPS, Certificado de Reservista, comprovantes de residência, etc).
 Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem markdown, sem texto extra):
 {
   "name": "nome completo da pessoa",
@@ -297,7 +305,7 @@ Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem m
   "fatherName": "nome do pai",
   "nationality": "nacionalidade (ex: Brasileira)",
   "maritalStatus": "estado civil se visível",
-  "address": "endereço se visível no documento",
+  "address": "endereço completo se visível no documento",
   "notes": "tipo do documento identificado e informações adicionais relevantes"
 }
 Se um campo não for encontrado no documento, retorne string vazia "". Nunca invente dados.
@@ -315,11 +323,13 @@ Para CPF, formate como 000.000.000-00.`
       });
 
       const text = response.choices?.[0]?.message?.content || "";
+      console.log("[ocr] OpenAI raw response:", text.substring(0, 500));
       const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleaned);
+      console.log("[ocr] Parsed result:", JSON.stringify(parsed));
       res.json(parsed);
     } catch (err: any) {
-      console.error("OCR employee error:", err);
+      console.error("[ocr] Employee OCR error:", err.message || err);
       res.status(500).json({ message: "Erro ao processar documento: " + (err.message || "Erro desconhecido") });
     }
   });
