@@ -495,23 +495,40 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 
   const fetchCpfData = useCallback(async (cpf: string) => {
     const clean = cpf.replace(/\D/g, "");
-    if (clean.length !== 11) return;
+    if (clean.length !== 11) {
+      toast({ title: "CPF incompleto", description: "Digite os 11 dígitos do CPF", variant: "destructive" });
+      return;
+    }
     setCpfLoading(true);
     try {
       const { authFetch } = await import("@/lib/queryClient");
       const res = await authFetch(`/api/cpf-lookup/${clean}`);
       if (res.ok) {
         const data = await res.json();
-        setForm((prev) => ({
-          ...prev,
-          name: data.nome || prev.name,
-          birthDate: data.data_nascimento || prev.birthDate,
-          motherName: data.nome_mae || prev.motherName,
-        }));
-        toast({ title: "Dados do CPF preenchidos" });
+        const filledFields: string[] = [];
+        setForm((prev) => {
+          const updated = { ...prev };
+          if (data.nome && !prev.name) { updated.name = data.nome; filledFields.push("Nome"); }
+          if (data.data_nascimento && !prev.birthDate) { updated.birthDate = data.data_nascimento; filledFields.push("Nascimento"); }
+          if (data.nome_mae && !prev.motherName) { updated.motherName = data.nome_mae; filledFields.push("Mãe"); }
+          if (data.nome_pai && !prev.fatherName) { updated.fatherName = data.nome_pai; filledFields.push("Pai"); }
+          if (data.sexo && !prev.nationality) {
+            updated.nationality = "Brasileira";
+            filledFields.push("Nacionalidade");
+          }
+          return updated;
+        });
+        if (filledFields.length > 0) {
+          toast({ title: "Dados preenchidos via CPF", description: filledFields.join(", ") });
+        } else {
+          toast({ title: "CPF consultado", description: "Nenhum dado novo encontrado ou campos já preenchidos" });
+        }
+      } else {
+        const err = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+        toast({ title: "Erro na consulta", description: err.message || "CPF não encontrado", variant: "destructive" });
       }
     } catch {
-      // silently fail
+      toast({ title: "Erro de conexão", description: "Não foi possível consultar o CPF", variant: "destructive" });
     } finally {
       setCpfLoading(false);
     }

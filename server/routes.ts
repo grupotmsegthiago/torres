@@ -251,13 +251,98 @@ export async function registerRoutes(
   app.get("/api/cpf-lookup/:cpf", requireAuth, async (req, res) => {
     const cpf = String(req.params.cpf).replace(/\D/g, "");
     if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+
+    const token = process.env.APIBRASIL_TOKEN;
+    const deviceToken = process.env.APIBRASIL_DEVICE_CPF || process.env.APIBRASIL_DEVICE_TOKEN;
+
+    if (!token) {
+      try {
+        const response = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
+        if (!response.ok) return res.status(response.status).json({ message: "CPF não encontrado" });
+        const data = await response.json();
+        return res.json(data);
+      } catch {
+        return res.status(500).json({ message: "Erro ao consultar CPF" });
+      }
+    }
+
     try {
-      const response = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
-      if (!response.ok) return res.status(response.status).json({ message: "CPF não encontrado" });
-      const data = await response.json();
-      res.json(data);
-    } catch {
-      res.status(500).json({ message: "Erro ao consultar CPF" });
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      };
+      if (deviceToken) {
+        headers["DeviceToken"] = deviceToken;
+      }
+
+      const response = await fetch("https://gateway.apibrasil.io/api/v2/dados/cpf", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ cpf }),
+      });
+
+      const raw = await response.json().catch(() => null);
+
+      await storage.createApiLog({
+        endpoint: "/dados/cpf",
+        method: "POST",
+        requestData: JSON.stringify({ cpf }),
+        responseStatus: response.status,
+        responseData: JSON.stringify(raw).substring(0, 5000),
+        userId: req.user?.id ?? null,
+        source: "cpf_lookup",
+      });
+
+      if (!response.ok || !raw) {
+        try {
+          const fallback = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
+          if (fallback.ok) {
+            const data = await fallback.json();
+            return res.json(data);
+          }
+        } catch {}
+        return res.status(response.status || 500).json({ message: "CPF não encontrado" });
+      }
+
+      const data = raw?.response || raw;
+
+      const normalized: Record<string, string> = {};
+      if (data.nome || data.name || data.nomeCompleto) {
+        normalized.nome = data.nome || data.name || data.nomeCompleto || "";
+      }
+      if (data.data_nascimento || data.dataNascimento || data.nascimento || data.birth_date) {
+        let rawDate = data.data_nascimento || data.dataNascimento || data.nascimento || data.birth_date || "";
+        if (rawDate.includes("/")) {
+          const parts = rawDate.split("/");
+          if (parts.length === 3) {
+            rawDate = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+          }
+        }
+        normalized.data_nascimento = rawDate;
+      }
+      if (data.nome_mae || data.nomeMae || data.mae || data.mother_name) {
+        normalized.nome_mae = data.nome_mae || data.nomeMae || data.mae || data.mother_name || "";
+      }
+      if (data.nome_pai || data.nomePai || data.pai || data.father_name) {
+        normalized.nome_pai = data.nome_pai || data.nomePai || data.pai || data.father_name || "";
+      }
+      if (data.sexo || data.genero || data.gender) {
+        normalized.sexo = data.sexo || data.genero || data.gender || "";
+      }
+      if (data.situacao || data.situacaoCadastral || data.status) {
+        normalized.situacao = data.situacao || data.situacaoCadastral || data.status || "";
+      }
+
+      res.json(normalized);
+    } catch (err: any) {
+      try {
+        const fallback = await fetch(`https://brasilapi.com.br/api/cpf/v1/${cpf}`);
+        if (fallback.ok) {
+          const data = await fallback.json();
+          return res.json(data);
+        }
+      } catch {}
+      res.status(500).json({ message: "Erro ao consultar CPF: " + (err.message || "") });
     }
   });
 
