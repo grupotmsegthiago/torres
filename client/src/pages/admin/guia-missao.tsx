@@ -246,127 +246,113 @@ const steps = [
   },
 ];
 
-const phaseConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  acesso: { label: "Acesso", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  preparacao: { label: "Preparação", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  checkout: { label: "Check-out", color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-  transito: { label: "Em Trânsito", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
-  checkin: { label: "Check-in", color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/20" },
-  execucao: { label: "Execução", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" },
-  finalizacao: { label: "Finalização", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  concluida: { label: "Concluída", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20" },
-};
-
 function PhoneMockup({ step }: { step: typeof steps[0] }) {
   const { user } = useAuth();
   const isVigilante = user?.role === "funcionario";
-  const phase = phaseConfig[step.phase];
 
   return (
-    <div className="w-full max-w-[280px] mx-auto" data-testid={`mockup-step-${step.number}`}>
-      <div className="rounded-[2rem] border-2 border-neutral-700 bg-neutral-950 overflow-hidden shadow-2xl shadow-black/40">
-        <div className="bg-neutral-950 pt-2 pb-0 px-6">
-          <div className="w-20 h-1 bg-neutral-700 rounded-full mx-auto" />
+    <div className="w-full max-w-[260px] mx-auto" data-testid={`mockup-step-${step.number}`}>
+      <div className="rounded-[2rem] border-2 border-neutral-300 bg-white overflow-hidden shadow-lg">
+        <div className="bg-white pt-2 pb-0 px-6">
+          <div className="w-16 h-1 bg-neutral-300 rounded-full mx-auto" />
         </div>
 
-        <div className="bg-neutral-900 mx-1 mt-2 rounded-t-2xl overflow-hidden">
-          <div className="bg-white px-3 py-2 flex items-center justify-between">
+        <div className="bg-neutral-50 mx-1 mt-1.5 rounded-t-2xl overflow-hidden border border-neutral-200">
+          <div className="bg-neutral-900 px-3 py-1.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <img src={logoSrc} alt="" className="w-4 h-4 object-contain rounded-sm" />
-              <span className="text-[9px] font-black text-neutral-900 uppercase tracking-widest">Torres</span>
+              <img src={logoSrc} alt="" className="w-3.5 h-3.5 object-contain rounded-sm invert" />
+              <span className="text-[9px] font-black text-white uppercase tracking-widest">Torres</span>
             </div>
-            <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${phase.bg} ${phase.color}`}>
-              {phase.label}
-            </span>
+            <span className="text-[8px] font-semibold text-neutral-400 uppercase">{step.subtitle.split("·")[0].trim()}</span>
           </div>
 
-          <div className="p-3 min-h-[260px] flex flex-col justify-center bg-neutral-900">
+          <div className="p-3 min-h-[240px] flex flex-col justify-center bg-white">
             {step.mockup === "login" && (
-              <div className="text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center mx-auto">
+              <div className="text-center space-y-2.5">
+                <div className="w-11 h-11 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto">
                   <Lock className="w-5 h-5 text-neutral-400" />
                 </div>
                 <p className="text-[10px] text-neutral-500 font-medium">Acesse sua conta</p>
-                <div className="space-y-2 px-2">
-                  <div className="h-8 bg-neutral-800 rounded-lg border border-neutral-700 flex items-center px-2.5">
-                    <span className="text-[9px] text-neutral-500">E-mail</span>
+                <div className="space-y-1.5 px-1">
+                  <div className="h-7 bg-neutral-50 rounded border border-neutral-200 flex items-center px-2">
+                    <span className="text-[9px] text-neutral-400">E-mail</span>
                   </div>
-                  <div className="h-8 bg-neutral-800 rounded-lg border border-neutral-700 flex items-center px-2.5">
-                    <span className="text-[9px] text-neutral-500">Senha</span>
+                  <div className="h-7 bg-neutral-50 rounded border border-neutral-200 flex items-center px-2">
+                    <span className="text-[9px] text-neutral-400">Senha</span>
                   </div>
                 </div>
-                <div className="h-8 bg-white rounded-lg mx-2 flex items-center justify-center">
-                  <span className="text-[9px] font-black text-neutral-900 uppercase tracking-wider">Entrar</span>
+                <div className="h-7 bg-neutral-900 rounded mx-1 flex items-center justify-center">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Entrar</span>
                 </div>
               </div>
             )}
 
             {step.mockup === "aguardando" && (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-center gap-3">
                   <div className="text-center">
-                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center mx-auto mb-0.5">
-                      <Users className="w-4 h-4 text-neutral-900" />
+                    <div className="w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-0.5">
+                      <Users className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <p className="text-[8px] font-bold text-white">Carlos S.</p>
-                    <p className="text-[7px] text-neutral-500">Agente 1</p>
+                    <p className="text-[9px] font-bold text-neutral-800">Carlos S.</p>
+                    <p className="text-[8px] text-neutral-400">Agente 1</p>
                   </div>
-                  <span className="text-neutral-600 text-[10px]">+</span>
+                  <span className="text-neutral-300 text-xs font-bold">+</span>
                   <div className="text-center">
-                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center mx-auto mb-0.5">
-                      <Users className="w-4 h-4 text-neutral-900" />
+                    <div className="w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-0.5">
+                      <Users className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <p className="text-[8px] font-bold text-white">Roberto S.</p>
-                    <p className="text-[7px] text-neutral-500">Agente 2</p>
+                    <p className="text-[9px] font-bold text-neutral-800">Roberto S.</p>
+                    <p className="text-[8px] text-neutral-400">Agente 2</p>
                   </div>
                 </div>
-                <div className="bg-neutral-800/80 rounded-lg border border-neutral-700/50 p-2 text-[9px] space-y-0.5 text-neutral-400">
-                  {!isVigilante && <p><span className="text-white font-semibold">Cliente:</span> Torres Vigilância</p>}
-                  <p><span className="text-white font-semibold">OS:</span> OS-2026-001</p>
-                  <p><span className="text-white font-semibold">Viatura:</span> RIO2A34 · Hilux SW4</p>
+                <div className="bg-neutral-50 rounded border border-neutral-200 p-2 text-[9px] space-y-0.5 text-neutral-500">
+                  {!isVigilante && <p><span className="text-neutral-800 font-semibold">Cliente:</span> Torres Vigilância</p>}
+                  <p><span className="text-neutral-800 font-semibold">OS:</span> OS-2026-001</p>
+                  <p><span className="text-neutral-800 font-semibold">Viatura:</span> RIO2A34 · Hilux SW4</p>
                 </div>
-                <div className="h-8 bg-white rounded-lg flex items-center justify-center gap-1.5">
-                  <span className="text-[9px] font-black text-neutral-900 uppercase tracking-wider">Iniciar Check-Out</span>
-                  <ArrowRight className="w-3 h-3 text-neutral-900" />
+                <div className="h-7 bg-neutral-900 rounded flex items-center justify-center gap-1">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Iniciar Check-Out</span>
+                  <ArrowRight className="w-2.5 h-2.5 text-white" />
                 </div>
               </div>
             )}
 
             {step.mockup === "armamento" && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="text-center mb-1">
-                  <Crosshair className="w-5 h-5 text-neutral-500 mx-auto" />
-                  <p className="text-[9px] text-neutral-500 mt-1">Fotografe o armamento</p>
+                  <Crosshair className="w-5 h-5 text-neutral-400 mx-auto" />
+                  <p className="text-[9px] text-neutral-500 mt-0.5">Fotografe o armamento</p>
                 </div>
                 {["Pistola 1", "Pistola 2", "Espingarda 12"].map((label, i) => (
-                  <div key={i} className={`h-8 rounded-lg border flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-wide transition-all ${i === 0 ? "border-green-500/50 bg-green-500/10 text-green-400" : "border-neutral-700 bg-neutral-800 text-neutral-400"}`}>
+                  <div key={i} className={`h-7 rounded border flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-wide ${i === 0 ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 bg-white text-neutral-600"}`}>
                     {i === 0 ? <CheckCircle2 className="w-3 h-3" /> : <Camera className="w-3 h-3" />}
                     {label}
                   </div>
                 ))}
-                <div className="h-8 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center justify-center mt-1">
-                  <span className="text-[9px] font-bold text-neutral-500 uppercase">Confirmar Armamento</span>
+                <div className="h-7 bg-neutral-100 border border-neutral-200 rounded flex items-center justify-center mt-1">
+                  <span className="text-[9px] font-bold text-neutral-400 uppercase">Confirmar Armamento</span>
                 </div>
               </div>
             )}
 
             {(step.mockup === "viatura" || step.mockup === "viatura_retorno") && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="text-center mb-1">
-                  <Car className="w-5 h-5 text-neutral-500 mx-auto" />
-                  <p className="text-[9px] text-neutral-500 mt-1">
+                  <Car className="w-5 h-5 text-neutral-400 mx-auto" />
+                  <p className="text-[9px] text-neutral-500 mt-0.5">
                     {step.mockup === "viatura" ? "Fotografe a viatura" : "Viatura no retorno"}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {["Dianteira", "Lat. Esq.", "Lat. Dir.", "Traseira"].map((label, i) => (
-                    <div key={i} className="h-8 rounded-lg border border-neutral-700 bg-neutral-800 flex items-center justify-center gap-1 text-[8px] font-bold text-neutral-400 uppercase">
+                    <div key={i} className="h-7 rounded border border-neutral-300 bg-white flex items-center justify-center gap-1 text-[8px] font-bold text-neutral-600 uppercase">
                       <Camera className="w-2.5 h-2.5" /> {label}
                     </div>
                   ))}
                 </div>
-                <div className="h-8 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center justify-center mt-1">
-                  <span className="text-[9px] font-bold text-neutral-500 uppercase">
+                <div className="h-7 bg-neutral-100 border border-neutral-200 rounded flex items-center justify-center mt-1">
+                  <span className="text-[9px] font-bold text-neutral-400 uppercase">
                     {step.mockup === "viatura" ? "Confirmar Viatura" : "Confirmar Retorno"}
                   </span>
                 </div>
@@ -374,20 +360,20 @@ function PhoneMockup({ step }: { step: typeof steps[0] }) {
             )}
 
             {step.mockup === "km" && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="text-center mb-1">
-                  <Gauge className="w-5 h-5 text-neutral-500 mx-auto" />
-                  <p className="text-[9px] text-neutral-500 mt-1">Registre o hodômetro</p>
+                  <Gauge className="w-5 h-5 text-neutral-400 mx-auto" />
+                  <p className="text-[9px] text-neutral-500 mt-0.5">Registre o hodômetro</p>
                 </div>
-                <div className="h-10 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center justify-center">
-                  <span className="text-base font-mono font-bold text-white tracking-widest">45.230</span>
-                  <span className="text-[8px] text-neutral-500 ml-1.5">km</span>
+                <div className="h-9 bg-neutral-50 border border-neutral-300 rounded flex items-center justify-center">
+                  <span className="text-sm font-mono font-bold text-neutral-900 tracking-widest">45.230</span>
+                  <span className="text-[8px] text-neutral-400 ml-1">km</span>
                 </div>
-                <div className="h-8 rounded-lg border border-neutral-700 bg-neutral-800 flex items-center justify-center gap-1.5 text-[9px] font-bold text-neutral-400 uppercase">
+                <div className="h-7 rounded border border-neutral-300 bg-white flex items-center justify-center gap-1.5 text-[9px] font-bold text-neutral-600 uppercase">
                   <Camera className="w-3 h-3" /> Foto do Hodômetro
                 </div>
-                <div className="h-8 bg-white rounded-lg flex items-center justify-center">
-                  <span className="text-[9px] font-black text-neutral-900 uppercase tracking-wider">
+                <div className="h-7 bg-neutral-900 rounded flex items-center justify-center">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">
                     {step.number === 5 ? "Liberar Viagem" : "Confirmar"}
                   </span>
                 </div>
@@ -395,112 +381,104 @@ function PhoneMockup({ step }: { step: typeof steps[0] }) {
             )}
 
             {step.mockup === "transito" && (
-              <div className="text-center space-y-3 py-2">
-                <div className="w-12 h-12 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center mx-auto animate-pulse">
-                  <Car className="w-6 h-6 text-white" />
+              <div className="text-center space-y-2.5 py-2">
+                <div className="w-11 h-11 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto animate-pulse">
+                  <Car className="w-5 h-5 text-neutral-700" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-white uppercase tracking-wider">Em deslocamento</p>
-                  <p className="text-[8px] text-neutral-500 mt-0.5">Confirmem a chegada ao destino</p>
+                  <p className="text-[10px] font-bold text-neutral-800 uppercase tracking-wider">Em deslocamento</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Confirmem a chegada ao destino</p>
                 </div>
-                <div className="bg-neutral-800 border border-neutral-700 rounded-lg py-1.5 px-4 inline-block">
-                  <p className="font-mono text-sm font-bold text-white tracking-wider">00:42:15</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded py-1 px-4 inline-block">
+                  <p className="font-mono text-sm font-bold text-neutral-900 tracking-wider">00:42:15</p>
                 </div>
-                <div className="h-8 bg-white rounded-lg flex items-center justify-center mx-2">
-                  <span className="text-[9px] font-black text-neutral-900 uppercase tracking-wider">Confirmar Chegada</span>
+                <div className="h-7 bg-neutral-900 rounded flex items-center justify-center mx-1">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Confirmar Chegada</span>
                 </div>
               </div>
             )}
 
             {step.mockup === "escoltado" && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="text-center mb-1">
-                  <Truck className="w-5 h-5 text-neutral-500 mx-auto" />
-                  <p className="text-[9px] text-neutral-500 mt-1">Fotografe o veículo escoltado</p>
+                  <Truck className="w-5 h-5 text-neutral-400 mx-auto" />
+                  <p className="text-[9px] text-neutral-500 mt-0.5">Fotografe o veículo escoltado</p>
                 </div>
                 {["Frente do Caminhão", "Traseira do Caminhão"].map((label, i) => (
-                  <div key={i} className="h-8 rounded-lg border border-neutral-700 bg-neutral-800 flex items-center justify-center gap-1.5 text-[9px] font-bold text-neutral-400 uppercase">
+                  <div key={i} className="h-7 rounded border border-neutral-300 bg-white flex items-center justify-center gap-1.5 text-[9px] font-bold text-neutral-600 uppercase">
                     <Camera className="w-3 h-3" /> {label}
                   </div>
                 ))}
-                <div className="h-8 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center justify-center mt-1">
-                  <span className="text-[9px] font-bold text-neutral-500 uppercase">Confirmar Veículo</span>
+                <div className="h-7 bg-neutral-100 border border-neutral-200 rounded flex items-center justify-center mt-1">
+                  <span className="text-[9px] font-bold text-neutral-400 uppercase">Confirmar Veículo</span>
                 </div>
               </div>
             )}
 
             {step.mockup === "motorista" && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="text-center mb-1">
-                  <User className="w-5 h-5 text-neutral-500 mx-auto" />
+                  <User className="w-5 h-5 text-neutral-400 mx-auto" />
                 </div>
                 <div>
-                  <p className="text-[8px] font-bold text-neutral-500 uppercase mb-1 tracking-wider">Nome do Motorista</p>
-                  <div className="h-8 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center px-2.5">
+                  <p className="text-[8px] font-bold text-neutral-500 uppercase mb-0.5 tracking-wider">Nome do Motorista</p>
+                  <div className="h-7 bg-neutral-50 border border-neutral-200 rounded flex items-center px-2">
                     <span className="text-[9px] text-neutral-500">José da Silva</span>
                   </div>
                 </div>
                 <div>
-                  <p className="text-[8px] font-bold text-neutral-500 uppercase mb-1 tracking-wider">Placa do Veículo</p>
-                  <div className="h-8 bg-neutral-800 border border-neutral-700 rounded-lg flex items-center justify-center">
-                    <span className="text-[10px] font-mono font-bold text-white tracking-widest">ABC1D23</span>
+                  <p className="text-[8px] font-bold text-neutral-500 uppercase mb-0.5 tracking-wider">Placa do Veículo</p>
+                  <div className="h-7 bg-neutral-50 border border-neutral-200 rounded flex items-center justify-center">
+                    <span className="text-[10px] font-mono font-bold text-neutral-900 tracking-widest">ABC1D23</span>
                   </div>
                 </div>
-                <div className="h-8 bg-white rounded-lg flex items-center justify-center">
-                  <span className="text-[9px] font-black text-neutral-900 uppercase tracking-wider">Salvar e Avançar</span>
+                <div className="h-7 bg-neutral-900 rounded flex items-center justify-center">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Salvar e Avançar</span>
                 </div>
               </div>
             )}
 
             {step.mockup === "iniciar" && (
-              <div className="text-center space-y-3 py-2">
-                <div className="w-14 h-14 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center mx-auto">
-                  <Siren className="w-7 h-7 text-red-400" />
+              <div className="text-center space-y-2.5 py-1">
+                <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center mx-auto">
+                  <Siren className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-xs font-black text-white uppercase tracking-wider">Pronto para iniciar?</p>
-                  <p className="text-[8px] text-neutral-500 mt-0.5">O sistema registrará o horário exato</p>
+                  <p className="text-xs font-black text-neutral-900 uppercase tracking-wider">Pronto para iniciar?</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">O sistema registrará o horário exato</p>
                 </div>
-                <div className="bg-neutral-800/80 rounded-lg border border-neutral-700/50 p-2 text-[9px] space-y-0.5 text-left text-neutral-400">
-                  <p><span className="text-white font-semibold">Motorista:</span> José da Silva</p>
-                  <p><span className="text-white font-semibold">Placa:</span> XYZ4H56</p>
+                <div className="bg-neutral-50 rounded border border-neutral-200 p-2 text-[9px] space-y-0.5 text-left text-neutral-500">
+                  <p><span className="text-neutral-800 font-semibold">Motorista:</span> José da Silva</p>
+                  <p><span className="text-neutral-800 font-semibold">Placa:</span> XYZ4H56</p>
                 </div>
-                <div className="h-8 bg-red-500 rounded-lg flex items-center justify-center mx-2">
-                  <span className="text-[9px] font-black text-white uppercase tracking-wider">Iniciar Missão</span>
+                <div className="h-7 bg-neutral-900 rounded flex items-center justify-center mx-1">
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider">Iniciar Missão</span>
                 </div>
               </div>
             )}
 
             {step.mockup === "finalizada" && (
-              <div className="text-center space-y-3 py-2">
-                <div className="w-14 h-14 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-7 h-7 text-green-400" />
+              <div className="text-center space-y-2.5 py-2">
+                <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-black text-white uppercase tracking-wider">Missão Finalizada</p>
-                  <p className="text-[8px] text-neutral-500 mt-0.5">Todas as etapas concluídas</p>
+                  <p className="text-sm font-black text-neutral-900 uppercase tracking-wider">Missão Finalizada</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Todas as etapas concluídas</p>
                 </div>
-                <div className="bg-neutral-800 border border-neutral-700 rounded-lg py-2 px-4">
-                  <p className="text-[8px] text-neutral-500 uppercase mb-0.5">Tempo de Missão</p>
-                  <p className="font-mono text-base font-bold text-white tracking-wider">02:34:12</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded py-1.5 px-4">
+                  <p className="text-[8px] text-neutral-400 uppercase mb-0.5">Tempo de Missão</p>
+                  <p className="font-mono text-sm font-bold text-neutral-900 tracking-wider">02:34:12</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        <div className="bg-neutral-950 py-2 px-6">
-          <div className="w-24 h-1 bg-neutral-700 rounded-full mx-auto" />
+        <div className="bg-white py-1.5 px-6">
+          <div className="w-20 h-1 bg-neutral-300 rounded-full mx-auto" />
         </div>
       </div>
-    </div>
-  );
-}
-
-function TimelineConnector() {
-  return (
-    <div className="flex justify-center py-1">
-      <div className="w-px h-8 bg-gradient-to-b from-neutral-700 to-neutral-800" />
     </div>
   );
 }
@@ -511,101 +489,95 @@ export default function GuiaMissaoPage() {
   return (
     <AdminLayout>
       <div className="max-w-5xl mx-auto pb-20 px-4" data-testid="guia-missao-page">
-        <div className="text-center mb-12 pt-6">
-          <div className="inline-flex items-center gap-3 mb-5">
-            <img src={logoSrc} alt="Torres" className="w-10 h-10 object-contain rounded" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-[0.2em] mb-2" data-testid="text-guia-title">
+        <div className="text-center mb-10 pt-6">
+          <img src={logoSrc} alt="Torres" className="w-12 h-12 object-contain mx-auto mb-4 rounded" />
+          <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 uppercase tracking-[0.15em] mb-1" data-testid="text-guia-title">
             Guia Operacional
           </h1>
-          <p className="text-sm font-semibold text-neutral-500 uppercase tracking-[0.15em]">
+          <p className="text-sm font-semibold text-neutral-400 uppercase tracking-[0.1em]">
             Fluxo Digital — Escolta Armada
           </p>
-          <p className="text-xs text-neutral-600 mt-3 max-w-md mx-auto leading-relaxed">
+          <p className="text-xs text-neutral-400 mt-3 max-w-md mx-auto leading-relaxed">
             Passo a passo completo do sistema de gestão de missões para os vigilantes da Torres Vigilância Patrimonial.
           </p>
         </div>
 
-        <div className="mb-12 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="mb-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { value: "14", label: "Etapas", icon: Shield },
             { value: "18", label: "Fotos Totais", icon: Camera },
             { value: "3", label: "Leituras KM", icon: Gauge },
             { value: "GPS", label: "Em Cada Foto", icon: MapPin },
           ].map((stat) => (
-            <div key={stat.label} className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-center" data-testid={`stat-${stat.label.toLowerCase().replace(/\s/g, '-')}`}>
-              <stat.icon className="w-4 h-4 text-neutral-600 mx-auto mb-2" />
-              <p className="text-xl font-black text-white">{stat.value}</p>
-              <p className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">{stat.label}</p>
+            <div key={stat.label} className="bg-white border border-neutral-200 rounded-xl p-4 text-center shadow-sm" data-testid={`stat-${stat.label.toLowerCase().replace(/\s/g, '-')}`}>
+              <stat.icon className="w-4 h-4 text-neutral-300 mx-auto mb-2" />
+              <p className="text-2xl font-black text-neutral-900">{stat.value}</p>
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mt-0.5">{stat.label}</p>
             </div>
           ))}
         </div>
 
-        <div className="mb-12 bg-neutral-900/50 border border-neutral-800 rounded-xl p-4 flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-            <Smartphone className="w-4 h-4 text-cyan-400" />
+        <div className="mb-10 bg-white border border-neutral-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+          <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center shrink-0">
+            <Smartphone className="w-4 h-4 text-neutral-500" />
           </div>
           <div>
-            <p className="text-xs font-bold text-white mb-0.5">Sincronização em Tempo Real</p>
+            <p className="text-xs font-bold text-neutral-800 mb-0.5">Sincronização em Tempo Real</p>
             <p className="text-[11px] text-neutral-500 leading-relaxed">
               Ambos os agentes veem o mesmo estado da missão em tempo real. Qualquer alteração feita por um agente aparece no celular do outro em até 5 segundos.
             </p>
           </div>
         </div>
 
-        <div className="space-y-0">
-          {steps.map((step, idx) => {
+        <div className="space-y-4">
+          {steps.map((step) => {
             const Icon = step.icon;
-            const phase = phaseConfig[step.phase];
             return (
-              <div key={step.number} data-testid={`guia-step-${step.number}`}>
-                {idx > 0 && <TimelineConnector />}
-                <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-                  <div className="flex items-center gap-3 px-5 py-3 border-b border-neutral-800">
-                    <div className={`w-7 h-7 rounded-lg ${phase.bg} ${phase.border} border flex items-center justify-center shrink-0`}>
-                      <span className={`text-xs font-black ${phase.color}`}>{step.number}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-xs font-black text-white uppercase tracking-wider truncate">{step.title}</h3>
-                      <p className="text-[10px] text-neutral-500">{step.subtitle}</p>
-                    </div>
-                    <Icon className="w-4 h-4 text-neutral-600 shrink-0" />
+              <div key={step.number} className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm" data-testid={`guia-step-${step.number}`}>
+                <div className="flex items-center gap-3 px-5 py-3 border-b border-neutral-100 bg-neutral-50">
+                  <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-black text-white">{step.number}</span>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xs font-black text-neutral-900 uppercase tracking-wider">{step.title}</h3>
+                    <p className="text-[11px] text-neutral-400">{step.subtitle}</p>
+                  </div>
+                  <Icon className="w-4 h-4 text-neutral-300 shrink-0" />
+                </div>
 
-                  <div className="p-5">
-                    <div className="grid md:grid-cols-[1fr,280px] gap-6 items-start">
-                      <div>
-                        <p className="text-[13px] text-neutral-300 leading-relaxed mb-4">
-                          {isVigilante ? step.description.replace(/,?\s*cliente/gi, '').replace(/cliente,?\s*/gi, '') : step.description}
-                        </p>
+                <div className="p-5">
+                  <div className="grid md:grid-cols-[1fr,260px] gap-6 items-start">
+                    <div>
+                      <p className="text-sm text-neutral-600 leading-relaxed mb-4">
+                        {isVigilante ? step.description.replace(/,?\s*cliente/gi, '').replace(/cliente,?\s*/gi, '') : step.description}
+                      </p>
 
-                        <div className="space-y-1.5">
-                          {step.details.filter(d => !isVigilante || !d.toLowerCase().includes("cliente")).map((detail, i) => (
-                            <div key={i} className="flex items-start gap-2">
-                              <ChevronRight className="w-3 h-3 text-neutral-600 mt-0.5 shrink-0" />
-                              <p className="text-[11px] text-neutral-500 leading-relaxed">{detail}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 mt-4">
-                          {step.mandatory && (
-                            <div className={`inline-flex items-center gap-1.5 ${phase.bg} ${phase.border} border rounded-md px-2.5 py-1`}>
-                              <Lock className="w-2.5 h-2.5" />
-                              <span className={`text-[9px] font-bold uppercase tracking-wider ${phase.color}`}>{step.mandatory}</span>
-                            </div>
-                          )}
-                          {step.action && (
-                            <div className="inline-flex items-center gap-1.5 bg-white/5 border border-neutral-700 rounded-md px-2.5 py-1">
-                              <ArrowRight className="w-2.5 h-2.5 text-neutral-400" />
-                              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">{step.action}</span>
-                            </div>
-                          )}
-                        </div>
+                      <div className="space-y-1.5">
+                        {step.details.filter(d => !isVigilante || !d.toLowerCase().includes("cliente")).map((detail, i) => (
+                          <div key={i} className="flex items-start gap-2">
+                            <ChevronRight className="w-3 h-3 text-neutral-300 mt-0.5 shrink-0" />
+                            <p className="text-xs text-neutral-500 leading-relaxed">{detail}</p>
+                          </div>
+                        ))}
                       </div>
 
-                      <PhoneMockup step={step} />
+                      <div className="flex flex-wrap items-center gap-2 mt-4">
+                        {step.mandatory && (
+                          <div className="inline-flex items-center gap-1.5 bg-neutral-100 border border-neutral-200 rounded-md px-2.5 py-1">
+                            <Lock className="w-2.5 h-2.5 text-neutral-500" />
+                            <span className="text-[10px] font-bold text-neutral-600 uppercase tracking-wider">{step.mandatory}</span>
+                          </div>
+                        )}
+                        {step.action && (
+                          <div className="inline-flex items-center gap-1.5 bg-neutral-900 rounded-md px-2.5 py-1">
+                            <ArrowRight className="w-2.5 h-2.5 text-white" />
+                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">{step.action}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    <PhoneMockup step={step} />
                   </div>
                 </div>
               </div>
@@ -613,12 +585,12 @@ export default function GuiaMissaoPage() {
           })}
         </div>
 
-        <div className="mt-16 border border-neutral-800 rounded-xl p-8 text-center bg-neutral-900/50">
-          <img src={logoSrc} alt="Torres" className="w-10 h-10 object-contain mx-auto mb-4 rounded" />
-          <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-1">
+        <div className="mt-14 border border-neutral-200 rounded-xl p-8 text-center bg-white shadow-sm">
+          <img src={logoSrc} alt="Torres" className="w-10 h-10 object-contain mx-auto mb-3 rounded" />
+          <h3 className="text-sm font-black text-neutral-900 uppercase tracking-[0.15em] mb-1">
             Torres Vigilância Patrimonial
           </h3>
-          <p className="text-[10px] text-neutral-600 uppercase tracking-wider mb-4">
+          <p className="text-[10px] text-neutral-400 uppercase tracking-wider mb-3">
             CNPJ 36.982.392/0001-89
           </p>
           <p className="text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
