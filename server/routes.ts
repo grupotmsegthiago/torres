@@ -905,6 +905,65 @@ Para CPF, formate como 000.000.000-00.`
     res.json(enriched);
   });
 
+  app.get("/api/vehicle-tracking", requireAuth, async (_req, res) => {
+    const allVehicles = await storage.getVehicles();
+    const orders = await storage.getServiceOrders();
+    const activeOrders = orders.filter(
+      (o) => o.status === "em_andamento" || o.status === "aberta"
+    );
+
+    const tracked = await Promise.all(
+      allVehicles.map(async (v) => {
+        let trackerData: {
+          latitude?: number;
+          longitude?: number;
+          ignition?: boolean;
+          lastPositionTime?: string;
+          gpsSignal?: boolean;
+          speed?: number;
+          address?: string;
+        } | null = null;
+
+        const hasTracker = !!(v.trackerId && v.trackerApiUrl);
+
+        if (hasTracker) {
+          try {
+            const resp = await fetch(v.trackerApiUrl!);
+            if (resp.ok) {
+              trackerData = await resp.json();
+            }
+          } catch (_e) {
+            trackerData = null;
+          }
+        }
+
+        const linkedOrder = activeOrders.find((o) => o.vehicleId === v.id);
+
+        return {
+          id: v.id,
+          plate: v.plate,
+          model: v.model,
+          brand: v.brand,
+          color: v.color,
+          status: v.status,
+          hasTracker,
+          trackerId: v.trackerId,
+          tracker: trackerData,
+          activeOs: linkedOrder
+            ? {
+                id: linkedOrder.id,
+                osNumber: linkedOrder.osNumber,
+                missionStatus: linkedOrder.missionStatus,
+                clientName: (await storage.getClient(linkedOrder.clientId))?.name || "—",
+              }
+            : null,
+        };
+      })
+    );
+
+    res.json(tracked);
+  });
+
   // ====================== MISSION ROUTES ======================
 
   app.get("/api/mission/active", requireAuth, async (req, res) => {
