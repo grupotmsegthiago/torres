@@ -82,6 +82,9 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - `weapon_assignments` table: weapon_id, employee_id, action (vincular/desvincular), service_order_id, notes
 - Linking updates weapon.assigned_employee_id and status; unlinking clears them
 - Registration expiry alerts shown on page
+- **OCR Smart Upload**: New weapon form has "Cadastro Inteligente" area — upload photo/PDF of weapon registration → OpenAI Vision extracts type, brand, model, caliber, serial, registration number, expiry → auto-fills form fields
+- OpenAI integration via Replit AI Integrations (no API key needed, billed to credits)
+- Form starts empty (no pre-selected type/caliber) with placeholder options
 
 ## Vehicle Assignments
 - `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes

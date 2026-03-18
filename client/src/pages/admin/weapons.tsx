@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2 } from "lucide-react";
 import type { Weapon, WeaponAssignment, Employee } from "@shared/schema";
 
 const WEAPON_TYPES = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
@@ -27,11 +27,13 @@ function isExpiringSoon(dateStr: string | null): "expired" | "warning" | "ok" {
 function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ocrInputRef = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
   const [form, setForm] = useState({
-    type: weapon?.type || "Pistola",
+    type: weapon?.type || "",
     brand: weapon?.brand || "",
     model: weapon?.model || "",
-    caliber: weapon?.caliber || "9mm",
+    caliber: weapon?.caliber || "",
     serialNumber: weapon?.serialNumber || "",
     registrationNumber: weapon?.registrationNumber || "",
     registrationExpiry: weapon?.registrationExpiry || "",
@@ -53,6 +55,59 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
       toast({ title: "Arquivo anexado" });
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+      return;
+    }
+
+    setScanning(true);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = (ev) => resolve(ev.target!.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      setForm(prev => ({ ...prev, registrationFileData: dataUrl }));
+
+      const res = await authFetch("/api/weapons/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erro ao processar");
+      }
+
+      const extracted = await res.json();
+
+      setForm(prev => ({
+        ...prev,
+        type: extracted.type && WEAPON_TYPES.includes(extracted.type) ? extracted.type : prev.type,
+        brand: extracted.brand || prev.brand,
+        model: extracted.model || prev.model,
+        caliber: extracted.caliber && CALIBERS.includes(extracted.caliber) ? extracted.caliber : prev.caliber,
+        serialNumber: extracted.serialNumber || prev.serialNumber,
+        registrationNumber: extracted.registrationNumber || prev.registrationNumber,
+        registrationExpiry: extracted.registrationExpiry || prev.registrationExpiry,
+        notes: extracted.notes ? (prev.notes ? prev.notes + "\n" + extracted.notes : extracted.notes) : prev.notes,
+      }));
+
+      toast({ title: "Documento processado", description: "Campos preenchidos automaticamente. Confira os dados antes de salvar." });
+    } catch (err: any) {
+      toast({ title: "Erro ao ler documento", description: err.message || "Tente preencher manualmente", variant: "destructive" });
+    } finally {
+      setScanning(false);
+      if (ocrInputRef.current) ocrInputRef.current.value = "";
+    }
   };
 
   const mutation = useMutation({
@@ -77,11 +132,35 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
         <h2 className="text-lg font-semibold">{weapon ? "Editar Arma" : "Nova Arma"}</h2>
         <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
       </div>
+
+      {!weapon && (
+        <div className="mb-5 p-4 border-2 border-dashed border-neutral-300 rounded-lg bg-neutral-50 text-center" data-testid="ocr-upload-area">
+          <input ref={ocrInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} disabled={scanning} />
+          {scanning ? (
+            <div className="flex flex-col items-center gap-2 py-2">
+              <Loader2 className="w-8 h-8 text-neutral-500 animate-spin" />
+              <p className="text-sm text-neutral-600 font-medium">Lendo documento...</p>
+              <p className="text-xs text-neutral-400">A IA está extraindo os dados da arma</p>
+            </div>
+          ) : (
+            <div
+              className="flex flex-col items-center gap-2 py-2 cursor-pointer"
+              onClick={() => ocrInputRef.current?.click()}
+            >
+              <ScanLine className="w-8 h-8 text-neutral-400" />
+              <p className="text-sm text-neutral-600 font-medium">Cadastro Inteligente</p>
+              <p className="text-xs text-neutral-400">Anexe a foto ou PDF do registro e os campos serão preenchidos automaticamente</p>
+            </div>
+          )}
+        </div>
+      )}
+
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">Tipo *</label>
             <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-weapon-type">
+              <option value="" disabled>Selecione o tipo...</option>
               {WEAPON_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
@@ -96,6 +175,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">Calibre *</label>
             <select value={form.caliber} onChange={(e) => setForm({ ...form, caliber: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-weapon-caliber">
+              <option value="" disabled>Selecione o calibre...</option>
               {CALIBERS.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>

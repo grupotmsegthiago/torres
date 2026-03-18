@@ -12,6 +12,7 @@ import {
   insertVehicleAssignmentSchema,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
+import OpenAI from "openai";
 
 const MISSION_STEPS = [
   "aguardando",
@@ -1409,6 +1410,57 @@ export async function registerRoutes(
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
     const a = await storage.createVehicleAssignment(parsed.data);
     res.status(201).json(a);
+  });
+
+  app.post("/api/weapons/ocr", requireAdminRole, async (req, res) => {
+    try {
+      const { imageData } = req.body;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ message: "Envie imageData (base64 data URL da imagem/PDF)" });
+      }
+
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um sistema especializado em extrair dados de documentos de registro de armas de fogo brasileiros (Certificado de Registro - CR, CRAF, Guia de Tráfego, Porte de Arma, etc).
+Extraia os seguintes campos do documento e retorne APENAS um JSON válido (sem markdown, sem texto extra):
+{
+  "type": "tipo da arma (Revólver, Pistola, Espingarda, Carabina, Fuzil ou Outro)",
+  "brand": "marca/fabricante",
+  "model": "modelo",
+  "caliber": "calibre (use exatamente um destes: .38, .380 ACP, 9mm, .40 S&W, .45 ACP, 12 GA, 5.56x45mm, .308 Win, ou Outro)",
+  "serialNumber": "número de série",
+  "registrationNumber": "número do registro (CR, CRAF, SINARM, etc)",
+  "registrationExpiry": "data de validade no formato YYYY-MM-DD ou vazio se não encontrada",
+  "notes": "informações adicionais relevantes encontradas no documento"
+}
+Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extraia os dados de arma de fogo deste documento:" },
+              { type: "image_url", image_url: { url: imageData } },
+            ],
+          },
+        ],
+      });
+
+      const text = response.choices?.[0]?.message?.content || "";
+      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+      res.json(parsed);
+    } catch (err: any) {
+      console.error("OCR weapon error:", err);
+      res.status(500).json({ message: "Erro ao processar documento: " + (err.message || "Erro desconhecido") });
+    }
   });
 
   return httpServer;
