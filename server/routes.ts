@@ -169,8 +169,12 @@ export async function registerRoutes(
     res.json({ message: "Cliente removido" });
   });
 
-  app.get("/api/employees", requireAuth, async (_req, res) => {
+  app.get("/api/employees", requireAuth, async (req, res) => {
     const data = await storage.getEmployees();
+    if (req.user!.role !== "diretoria") {
+      const sanitized = data.map((e: any) => ({ ...e, blockType: null, blockReason: null }));
+      return res.json(sanitized);
+    }
     res.json(data);
   });
 
@@ -182,6 +186,10 @@ export async function registerRoutes(
   app.get("/api/employees/:id", requireAuth, async (req, res) => {
     const data = await storage.getEmployee(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
+    if (req.user!.role !== "diretoria") {
+      const { blockType, blockReason, ...safe } = data as any;
+      return res.json(safe);
+    }
     res.json(data);
   });
 

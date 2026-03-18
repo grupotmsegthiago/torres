@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, Home } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, Home, Ban } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -492,6 +493,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     pixKey: employee?.pixKey || "",
     photoUrl: employee?.photoUrl || "",
     status: employee?.status || "ativo",
+    blockType: employee?.blockType || "",
+    blockReason: employee?.blockReason || "",
     notes: employee?.notes || "",
   });
 
@@ -818,7 +821,25 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </div>
       )}
 
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-6">
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (form.status === "bloqueado_definitivo") {
+          if (!form.blockType) {
+            toast({ title: "Campo obrigatório", description: "Selecione o tipo de bloqueio (Criminal, Processo ou Ambos)", variant: "destructive" });
+            return;
+          }
+          if (!form.blockReason.trim()) {
+            toast({ title: "Campo obrigatório", description: "O motivo do bloqueio é obrigatório", variant: "destructive" });
+            return;
+          }
+        }
+        const submitData = { ...form };
+        if (submitData.status !== "bloqueado_definitivo") {
+          submitData.blockType = "";
+          submitData.blockReason = "";
+        }
+        mutation.mutate(submitData);
+      }} className="space-y-6">
         <div className="flex items-start gap-6">
           <div className="shrink-0">
             <div
@@ -842,11 +863,15 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-status">
+              <select value={form.status} onChange={(e) => {
+                const newStatus = e.target.value;
+                setForm({ ...form, status: newStatus, blockType: newStatus !== "bloqueado_definitivo" ? "" : form.blockType, blockReason: newStatus !== "bloqueado_definitivo" ? "" : form.blockReason });
+              }} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-status">
                 <option value="ativo">Ativo</option>
                 <option value="inativo">Inativo</option>
                 <option value="férias">Férias</option>
                 <option value="afastado">Afastado</option>
+                <option value="bloqueado_definitivo">Bloqueado Definitivo</option>
               </select>
             </div>
             <div>
@@ -857,6 +882,42 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
           </div>
         </div>
+
+        {form.status === "bloqueado_definitivo" && (
+          <fieldset className="border-2 border-red-300 rounded-lg p-4 bg-red-50/50">
+            <legend className="text-xs font-semibold text-red-700 px-2 flex items-center gap-1">
+              <Ban className="w-3.5 h-3.5" />
+              Bloqueio Definitivo
+            </legend>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-red-600 mb-1 block font-medium">Tipo de Bloqueio *</label>
+                <select
+                  value={form.blockType}
+                  onChange={(e) => setForm({ ...form, blockType: e.target.value })}
+                  className="w-full border border-red-200 rounded-md px-3 py-2 text-sm bg-white"
+                  data-testid="select-employee-block-type"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="criminal">Criminal</option>
+                  <option value="processo">Processo</option>
+                  <option value="ambos">Ambos (Criminal + Processo)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-red-600 mb-1 block font-medium">Motivo do Bloqueio *</label>
+                <Textarea
+                  value={form.blockReason}
+                  onChange={(e) => setForm({ ...form, blockReason: e.target.value })}
+                  placeholder="Descreva o motivo do bloqueio..."
+                  rows={2}
+                  className="border-red-200 bg-white"
+                  data-testid="input-employee-block-reason"
+                />
+              </div>
+            </div>
+          </fieldset>
+        )}
 
         <fieldset className="border border-neutral-200 rounded-lg p-4">
           <legend className="text-xs font-semibold text-neutral-600 px-2">Dados Pessoais</legend>
@@ -1018,6 +1079,8 @@ export default function EmployeesPage() {
   const [salaryEmployee, setSalaryEmployee] = useState<Employee | null>(null);
   const [docEmployee, setDocEmployee] = useState<Employee | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
@@ -1093,11 +1156,19 @@ export default function EmployeesPage() {
                     <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
                     <td className="p-3 text-neutral-600">{e.phone || "-"}</td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        e.status === "ativo" ? "bg-green-100 text-green-700" :
-                        e.status === "férias" ? "bg-blue-100 text-blue-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{e.status}</span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium inline-block w-fit ${
+                          e.status === "ativo" ? "bg-green-100 text-green-700" :
+                          e.status === "férias" ? "bg-blue-100 text-blue-700" :
+                          e.status === "bloqueado_definitivo" ? "bg-red-100 text-red-700" :
+                          "bg-neutral-100 text-neutral-600"
+                        }`}>{e.status === "bloqueado_definitivo" ? "Bloqueado" : e.status}</span>
+                        {e.status === "bloqueado_definitivo" && isDiretoria && e.blockType && (
+                          <span className="text-[10px] text-red-500 font-medium" title={e.blockReason || ""}>
+                            {e.blockType === "criminal" ? "Criminal" : e.blockType === "processo" ? "Processo" : e.blockType === "ambos" ? "Criminal + Processo" : e.blockType}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1 flex-wrap">

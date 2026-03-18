@@ -81,6 +81,8 @@ export const employees = pgTable("employees", {
   pixKey: text("pix_key"),
   photoUrl: text("photo_url"),
   status: text("status").notNull().default("ativo"),
+  blockType: text("block_type"),
+  blockReason: text("block_reason"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

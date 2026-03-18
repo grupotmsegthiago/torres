@@ -97,6 +97,13 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      ALTER TABLE employees ADD COLUMN IF NOT EXISTS block_type TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE employees ADD COLUMN IF NOT EXISTS block_reason TEXT
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
