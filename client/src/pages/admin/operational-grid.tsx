@@ -953,14 +953,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Key className="w-4 h-4 mx-auto text-amber-400" />
+                            <Key className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.ignition === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Key className="w-4 h-4 mx-auto text-amber-400" />
+                            <Key className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de ignição</TooltipContent>
                         </Tooltip>
@@ -978,14 +978,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className="w-4 h-4 mx-auto text-amber-400" />
+                            <Satellite className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.gpsSignal === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className="w-4 h-4 mx-auto text-amber-400" />
+                            <Satellite className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de GPS</TooltipContent>
                         </Tooltip>
