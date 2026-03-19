@@ -68,8 +68,8 @@ function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
   return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
 }
 
-function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null;
+function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean;
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -77,7 +77,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     clientId: order?.clientId || 0,
     type: order?.type || "escolta",
     description: order?.description || "",
-    status: order?.status || "aberta",
+    status: order?.status || (prefilledScheduled ? "agendada" : "aberta"),
     priority: order?.priority || "agendada",
     scheduledDate: order?.scheduledDate ? new Date(order.scheduledDate).toISOString().slice(0, 16) : "",
     completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
@@ -236,6 +236,7 @@ export default function ServiceOrdersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
   const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
+  const [prefilledScheduled, setPrefilledScheduled] = useState(false);
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -278,6 +279,7 @@ export default function ServiceOrdersPage() {
       }
     } else if (newOs === "1" && !showForm) {
       if (vehicleId) setPrefilledVehicleId(Number(vehicleId));
+      if (params.get("scheduled") === "1") setPrefilledScheduled(true);
       setEditItem(undefined);
       setShowForm(true);
       window.history.replaceState({}, "", window.location.pathname);
@@ -302,7 +304,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); }} />}
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} />}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (

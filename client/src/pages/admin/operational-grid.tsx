@@ -800,6 +800,18 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
       <Tooltip>
         <TooltipTrigger asChild>
           <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-800 transition-colors"
+            onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}&scheduled=1`)}
+            data-testid={`btn-schedule-os-${v.id}`}
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Agendar OS</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
             className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-500 hover:text-blue-700 transition-colors"
             onClick={() => navigate(`/admin/vehicles?id=${v.id}`)}
             data-testid={`btn-docs-vtr-${v.id}`}
