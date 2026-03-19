@@ -951,30 +951,50 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
 
                     <td className="px-3 py-3 text-center">
                       {!v.hasTracker ? (
-                        <Key className="w-4 h-4 mx-auto text-neutral-200" />
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Key className="w-4 h-4 mx-auto text-amber-400" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem integração / rastreador</TooltipContent>
+                        </Tooltip>
                       ) : v.tracker?.ignition === undefined ? (
-                        <Key className="w-4 h-4 mx-auto text-neutral-300" />
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Key className="w-4 h-4 mx-auto text-amber-400" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem informação de ignição</TooltipContent>
+                        </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
                             <Key className={`w-4 h-4 mx-auto ${v.tracker.ignition ? "text-green-500" : "text-red-500"}`} />
                           </TooltipTrigger>
-                          <TooltipContent>{v.tracker.ignition ? "Ligada" : "Desligada"}</TooltipContent>
+                          <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
                         </Tooltip>
                       )}
                     </td>
 
                     <td className="px-3 py-3 text-center">
                       {!v.hasTracker ? (
-                        <Satellite className="w-4 h-4 mx-auto text-neutral-200" />
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Satellite className="w-4 h-4 mx-auto text-amber-400" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem integração / rastreador</TooltipContent>
+                        </Tooltip>
                       ) : v.tracker?.gpsSignal === undefined ? (
-                        <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Satellite className="w-4 h-4 mx-auto text-amber-400" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem informação de GPS</TooltipContent>
+                        </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
                             <Satellite className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
                           </TooltipTrigger>
-                          <TooltipContent>{v.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
+                          <TooltipContent>{v.tracker.gpsSignal ? "GPS OK" : "GPS sem sinal"}</TooltipContent>
                         </Tooltip>
                       )}
                     </td>
