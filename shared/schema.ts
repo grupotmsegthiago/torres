@@ -165,7 +165,10 @@ export const serviceOrders = pgTable("service_orders", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-const coerceDate = z.union([z.coerce.date(), z.null()]).optional();
+const coerceDate = z.preprocess(
+  (val) => (val === null || val === undefined || val === "" ? null : val),
+  z.union([z.coerce.date(), z.null()])
+).optional();
 export const insertServiceOrderSchema = createInsertSchema(serviceOrders).omit({ id: true, createdAt: true }).extend({
   scheduledDate: coerceDate,
   completedDate: coerceDate,
