@@ -291,16 +291,18 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <FieldLabel>Status</FieldLabel>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={selectClass} data-testid="select-os-status">
-                  <option value="agendada">Agendada</option>
-                  <option value="aberta">Aberta</option>
-                  <option value="em_andamento">Em Andamento</option>
-                  <option value="concluída">Concluída</option>
-                  <option value="cancelada">Cancelada</option>
-                </select>
-              </div>
+              {order && (
+                <div>
+                  <FieldLabel>Status</FieldLabel>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={selectClass} data-testid="select-os-status">
+                    <option value="agendada">Agendada</option>
+                    <option value="aberta">Aberta</option>
+                    <option value="em_andamento">Em Andamento</option>
+                    <option value="concluída">Concluída</option>
+                    <option value="cancelada">Cancelada</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <FieldLabel>Data/Hora Início</FieldLabel>
                 <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
