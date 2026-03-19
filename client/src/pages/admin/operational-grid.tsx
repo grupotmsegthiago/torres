@@ -1374,14 +1374,11 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Cliente</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Prioridade</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {gridData.map((item, index) => {
-                const priorityInfo = getPriorityDisplay(item.priority);
-                const PriorityIcon = priorityInfo.icon;
                 const statusInfo = getStatusDisplay(item.missionStatus, item.status);
                 const StatusIcon = statusInfo.icon;
 
@@ -1424,12 +1421,6 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
                       ) : (
                         <span className="text-neutral-300 text-[11px]">—</span>
                       )}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded font-bold border ${priorityInfo.className}`}>
-                        <PriorityIcon className="w-3 h-3" />
-                        {priorityInfo.label}
-                      </span>
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded font-bold border ${statusInfo.className}`}>
