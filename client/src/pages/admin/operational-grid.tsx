@@ -257,8 +257,17 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const carImageRef = useRef<HTMLImageElement | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = "/polo-icon.webp";
+    img.onload = () => { carImageRef.current = img; };
+    carImageRef.current = img;
+  }, []);
 
   const loadGoogleMaps = useCallback(() => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -328,33 +337,59 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
 
       const isSpy = v.deviceType === "spy";
 
-      const buildCarIcon = (statusColor: string, plate: string, speed?: number) => {
-        const w = 44;
-        const h = 72;
-        const bodyColor = "#1a1a1a";
-        const windshieldColor = "#4a5568";
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-          <defs>
-            <filter id="sh" x="-20%" y="-10%" width="140%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/></filter>
-          </defs>
-          <g filter="url(#sh)">
-            <rect x="6" y="8" width="32" height="56" rx="10" ry="12" fill="${bodyColor}" stroke="${statusColor}" stroke-width="2.5"/>
-            <rect x="10" y="14" width="24" height="10" rx="4" fill="${windshieldColor}" opacity="0.7"/>
-            <rect x="10" y="48" width="24" height="8" rx="3" fill="${windshieldColor}" opacity="0.6"/>
-            <rect x="4" y="18" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
-            <rect x="36" y="18" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
-            <rect x="4" y="42" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
-            <rect x="36" y="42" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
-            <circle cx="14" cy="11" r="2.5" fill="${statusColor}" opacity="0.9"/>
-            <circle cx="30" cy="11" r="2.5" fill="${statusColor}" opacity="0.9"/>
-            <circle cx="14" cy="59" r="2" fill="#ef4444" opacity="0.8"/>
-            <circle cx="30" cy="59" r="2" fill="#ef4444" opacity="0.8"/>
-            <rect x="12" y="28" width="20" height="16" rx="2" fill="#2d2d2d" opacity="0.5"/>
-          </g>
-          <rect x="8" y="${h - 5}" width="28" height="5" rx="2" fill="${statusColor}"/>
-          <text x="22" y="${h - 0.5}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="4" fill="#fff">${plate}</text>
-        </svg>`;
-        return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+      const buildCarIcon = (statusColor: string, plate: string) => {
+        const canvas = document.createElement("canvas");
+        const size = 56;
+        const labelH = 16;
+        canvas.width = size;
+        canvas.height = size + labelH;
+        const ctx = canvas.getContext("2d")!;
+
+        ctx.shadowColor = "rgba(0,0,0,0.4)";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+
+        const cx = size / 2;
+        const cy = size / 2;
+        const r = size / 2 - 3;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = statusColor;
+        ctx.stroke();
+
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        const img = carImageRef.current;
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(cx, cy, r - 2, 0, Math.PI * 2);
+          ctx.clip();
+          const imgSize = (r - 2) * 2;
+          ctx.drawImage(img, cx - imgSize / 2, cy - imgSize / 2, imgSize, imgSize);
+          ctx.restore();
+        }
+
+        ctx.font = "bold 9px Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const bx = cx;
+        const by = size + labelH / 2;
+        const pw = Math.max(ctx.measureText(plate).width + 10, 38);
+        ctx.beginPath();
+        ctx.roundRect(bx - pw / 2, size + 1, pw, labelH - 2, 3);
+        ctx.fillStyle = statusColor;
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(plate, bx, by);
+
+        return canvas.toDataURL("image/png");
       };
 
       const buildSpyIcon = (coupled: boolean) => {
@@ -385,9 +420,9 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
         const statusColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
         markerIcon = {
-          url: buildCarIcon(statusColor, v.plate, v.tracker.speed),
-          scaledSize: new window.google.maps.Size(36, 58),
-          anchor: new window.google.maps.Point(18, 50),
+          url: buildCarIcon(statusColor, v.plate),
+          scaledSize: new window.google.maps.Size(48, 62),
+          anchor: new window.google.maps.Point(24, 48),
         };
       }
 
@@ -1024,6 +1059,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const rodizio = isRodizioSP(v.plate);
                 const idleTime = getIdleTime(v);
                 const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
+                const isIgnOn = v.tracker?.ignition === true;
+                const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
+                const statusColor = isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
 
                 return (
                   <tr
@@ -1043,6 +1081,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
                     <td className="px-3 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: statusColor }}>
+                          <img src="/polo-icon.webp" alt="VTR" className="w-full h-full object-cover" />
+                        </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className={`font-extrabold text-[13px] tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
