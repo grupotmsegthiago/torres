@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play, Package } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Truck, Satellite, Camera, Shield } from "lucide-react";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
@@ -194,30 +194,71 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           const trackerLabel = sv.trackerType === "truckscontrol" ? "TrucksControl" : sv.trackerType === "custom" ? "OnixSat" : null;
           const trackerId = sv.truckscontrolIdentifier || sv.trackerId || sv.plate;
           return (
-            <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50" data-testid="section-vehicle-info">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
-                <span className="font-extrabold text-[15px] text-neutral-900 tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                  {sv.plate}
-                </span>
-                <span className="text-sm text-neutral-600 font-medium">{sv.brand} {sv.model}</span>
-                {sv.color && <span className="text-sm text-neutral-400">· {sv.color}</span>}
-                {sv.year && <span className="text-sm text-neutral-400">· {sv.year}</span>}
+            <div className="md:col-span-3 border border-neutral-200 rounded-lg overflow-hidden bg-white" data-testid="section-vehicle-info">
+              <div className="bg-neutral-900 px-5 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Car className="w-5 h-5 text-white/70" />
+                  <span className="font-bold text-[17px] text-white tracking-[0.15em] uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                    {sv.plate}
+                  </span>
+                </div>
                 {trackerLabel && (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-bold border border-blue-200">
-                    {trackerLabel} — ID: {trackerId}
+                  <span className="inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded bg-white/10 text-white/90 font-semibold border border-white/20">
+                    <Satellite className="w-3 h-3" />
+                    {trackerLabel} · {trackerId}
                   </span>
                 )}
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+                <div className="px-4 py-3 border-r border-neutral-100">
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</span>
+                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.brand || "—"}</span>
+                </div>
+                <div className="px-4 py-3 border-r border-neutral-100">
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Modelo</span>
+                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.model || "—"}</span>
+                </div>
+                <div className="px-4 py-3 border-r border-neutral-100">
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Cor</span>
+                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.color || "—"}</span>
+                </div>
+                <div className="px-4 py-3">
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Ano</span>
+                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.year || "—"}</span>
+                </div>
+              </div>
+              {(sv.chassi || sv.renavam || sv.km) && (
+                <div className="grid grid-cols-3 border-b border-neutral-100">
+                  <div className="px-4 py-3 border-r border-neutral-100">
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Chassi</span>
+                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.chassi || "—"}</span>
+                  </div>
+                  <div className="px-4 py-3 border-r border-neutral-100">
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Renavam</span>
+                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.renavam || "—"}</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>KM Atual</span>
+                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.km ? sv.km.toLocaleString("pt-BR") : "—"}</span>
+                  </div>
+                </div>
+              )}
               {photos.length > 0 && (
-                <div className="flex justify-center gap-3 flex-wrap">
-                  {photos.map((p, i) => (
-                    <div key={i} className="flex flex-col items-center gap-1" style={{ width: `min(${100 / photos.length}% - 12px, 220px)` }}>
-                      <div className="w-full aspect-[4/3] rounded-lg overflow-hidden border border-neutral-200 bg-white">
-                        <img src={p.src!} alt={p.label} className="w-full h-full object-cover" />
+                <div className="p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Camera className="w-3.5 h-3.5 text-neutral-400" />
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Registro Fotográfico</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {photos.map((p, i) => (
+                      <div key={i} className="group relative">
+                        <div className="aspect-[4/3] rounded-md overflow-hidden border border-neutral-200 bg-neutral-50">
+                          <img src={p.src!} alt={p.label} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                        </div>
+                        <span className="block text-center text-[9px] text-neutral-400 font-semibold uppercase tracking-wider mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>{p.label}</span>
                       </div>
-                      <span className="text-[10px] text-neutral-400 font-medium">{p.label}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -231,18 +272,42 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas)</option>
             ))}
           </select>
-          {form.kitId && (() => {
-            const selectedKit = kits.find(k => k.id === form.kitId);
-            if (!selectedKit) return null;
-            return (
-              <div className="mt-1.5 bg-neutral-50 rounded p-2 text-xs text-neutral-600">
-                {selectedKit.items.map(item => item.weapon ? (
-                  <div key={item.id}>{item.weapon.type} {item.weapon.brand} {item.weapon.caliber} — Nº {item.weapon.serialNumber}</div>
-                ) : null)}
-              </div>
-            );
-          })()}
         </div>
+        {form.kitId && (() => {
+          const selectedKit = kits.find(k => k.id === form.kitId);
+          if (!selectedKit) return null;
+          return (
+            <div className="md:col-span-3 border border-neutral-200 rounded-lg overflow-hidden bg-white" data-testid="section-kit-info">
+              <div className="bg-neutral-800 px-5 py-2.5 flex items-center gap-2.5">
+                <Shield className="w-4 h-4 text-white/70" />
+                <span className="font-bold text-[13px] text-white tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  {selectedKit.name}
+                </span>
+                <span className="text-[10px] text-white/50 font-medium ml-1">{selectedKit.items.length} arma(s)</span>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-neutral-50 border-b border-neutral-100">
+                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Tipo</th>
+                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</th>
+                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Calibre</th>
+                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Nº Série</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-50">
+                  {selectedKit.items.map(item => item.weapon ? (
+                    <tr key={item.id} className="hover:bg-neutral-50/50">
+                      <td className="px-4 py-2 font-medium text-neutral-900">{item.weapon.type}</td>
+                      <td className="px-4 py-2 text-neutral-600">{item.weapon.brand}</td>
+                      <td className="px-4 py-2 text-neutral-600 font-mono">{item.weapon.caliber}</td>
+                      <td className="px-4 py-2 text-neutral-600 font-mono font-semibold">{item.weapon.serialNumber}</td>
+                    </tr>
+                  ) : null)}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
         {form.status === "concluída" && (
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">Data de Conclusão</label>
