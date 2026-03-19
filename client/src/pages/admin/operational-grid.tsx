@@ -1594,35 +1594,82 @@ export default function OperationalGridPage() {
   return (
     <AdminLayout>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title">
-                Grid Operacional
-              </h1>
-              <TrucksControlStatus />
+        <div className="rounded-xl overflow-hidden shadow-lg" style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #2C3E50 100%)" }}>
+          <div className="px-6 py-5">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                  <Radio className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-white tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid="text-grid-title">
+                    Grid Operacional
+                  </h1>
+                  <p className="text-xs text-neutral-400 mt-0.5" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    Monitoramento em tempo real
+                  </p>
+                </div>
+                <TrucksControlStatus />
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-xs text-neutral-300 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2" data-testid="countdown-timer">
+                  <Timer className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Próxima <span className="font-bold text-white">{countdown.display}</span></span>
+                  <span className="text-neutral-500">|</span>
+                  <span>Última <span className="font-medium text-neutral-200">{lastRefreshStr}</span></span>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isFetching}
+                  className="bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-lg gap-2 font-semibold shadow-none"
+                  data-testid="button-refresh-grid"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+                  Atualizar
+                </Button>
+              </div>
             </div>
-            <p className="text-sm text-neutral-500 mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Monitoramento em tempo real · {onlyVehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""}{spyDevices.length > 0 ? ` · ${spyDevices.length} SPY` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5" data-testid="countdown-timer">
-              <Timer className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Próxima: <span className="font-semibold text-neutral-700">{countdown.display}</span></span>
-              <span className="text-neutral-300">|</span>
-              <span>Última: {lastRefreshStr}</span>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 mt-5">
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Truck className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
+                </div>
+                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{onlyVehicles.length}</p>
+              </div>
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Satellite className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
+                </div>
+                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
+              </div>
+              {spyDevices.length > 0 && (
+                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Radio className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">SPY</span>
+                  </div>
+                  <p className="text-2xl font-bold text-violet-300" style={{ fontFamily: "'Montserrat', sans-serif" }}>{spyDevices.length}</p>
+                </div>
+              )}
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
+                </div>
+                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{withPositionCount}</p>
+              </div>
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Navigation className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>
+                </div>
+                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{activeOsCount}</p>
+              </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isFetching}
-              data-testid="button-refresh-grid"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-              Atualizar
-            </Button>
           </div>
         </div>
 
