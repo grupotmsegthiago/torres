@@ -1093,11 +1093,11 @@ Para CPF, formate como 000.000.000-00.`
 
       const data = await response.json();
 
-      if (data.error) {
-        return res.status(400).json({ message: data.mensagemRetorno || "Veículo não encontrado" });
+      if (data.error || data.ERRO || data.codigoRetorno === "0" || data.mensagemRetorno?.toLowerCase().includes("não encontr")) {
+        return res.status(404).json({ message: data.mensagemRetorno || data.ERRO || "Veículo não encontrado na base de dados" });
       }
 
-      res.json({
+      const result = {
         plate: data.placa || plate,
         brand: data.MARCA || data.marca || "",
         model: data.MODELO || data.modelo || "",
@@ -1108,7 +1108,14 @@ Para CPF, formate como 000.000.000-00.`
         type: data.tipo || "",
         city: data.municipio || "",
         state: data.uf || "",
-      });
+      };
+
+      const hasData = result.brand?.trim() || result.model?.trim() || result.year || result.color?.trim() || result.chassi?.trim();
+      if (!hasData) {
+        return res.status(404).json({ message: "Placa não encontrada ou sem dados disponíveis na base" });
+      }
+
+      res.json(result);
     } catch (err: any) {
       if (err.name === "AbortError") {
         return res.status(504).json({ message: "Tempo limite excedido na consulta" });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -12,7 +12,7 @@ import {
   Search, Loader2, Scale, Car, ChevronDown, ChevronRight,
   Calendar, Building2, Gavel, FileText, MapPin, ShieldAlert,
   CreditCard, AlertTriangle, Receipt, ScrollText, IdCard, Vote,
-  Activity, Clock, Zap, CheckCircle2, XCircle
+  Activity, Clock, Zap, CheckCircle2, XCircle, X
 } from "lucide-react";
 
 function formatCnpjInput(value: string): string {
@@ -235,38 +235,79 @@ function PlacaTab() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
+  const [notFound, setNotFound] = useState(false);
+  const plateInputRef = useRef<HTMLInputElement>(null);
+
   const handleSearch = useCallback(async () => {
     const clean = plate.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    if (clean.length < 7) { toast({ title: "Placa inválida", variant: "destructive" }); return; }
-    setLoading(true); setResult(null);
+    if (clean.length < 7) { toast({ title: "Placa inválida", description: "Digite a placa no formato ABC1D23 (7 caracteres)", variant: "destructive" }); return; }
+    setLoading(true); setResult(null); setNotFound(false);
     try {
       const { authFetch } = await import("@/lib/queryClient");
       const res = await authFetch(`/api/plate-lookup/${clean}`);
-      if (!res.ok) { const err = await res.json(); toast({ title: "Erro", description: err.message, variant: "destructive" }); return; }
+      if (!res.ok) {
+        const err = await res.json();
+        if (res.status === 404) {
+          setNotFound(true);
+          toast({ title: "Placa não encontrada", description: err.message, variant: "destructive" });
+        } else {
+          toast({ title: "Erro", description: err.message, variant: "destructive" });
+        }
+        return;
+      }
       setResult(await res.json());
       toast({ title: "Veículo encontrado" });
     } catch { toast({ title: "Erro ao consultar", variant: "destructive" }); }
     finally { setLoading(false); }
   }, [plate, toast]);
 
+  const handleClear = useCallback(() => {
+    setPlate("");
+    setResult(null);
+    setNotFound(false);
+    setTimeout(() => plateInputRef.current?.focus(), 100);
+  }, []);
+
   return (
     <div className="space-y-4">
       <Card className="p-5 bg-white border-neutral-200">
         <div className="flex items-center gap-2 mb-4"><Car className="w-5 h-5 text-neutral-700" /><h3 className="font-semibold text-neutral-900">Consulta de Placa</h3></div>
-        <p className="text-xs text-neutral-500 mb-4">Consulta dados do veículo pela placa via API Brasil.</p>
+        <p className="text-xs text-neutral-500 mb-4">Consulta dados do veículo pela placa (WD API).</p>
         <div className="flex gap-3">
-          <Input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} placeholder="ABC1D23" maxLength={8} className="font-mono font-bold tracking-wider uppercase max-w-xs" data-testid="input-consulta-placa" onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
+          <Input ref={plateInputRef} value={plate} onChange={(e) => { setPlate(e.target.value.toUpperCase()); if (notFound) setNotFound(false); }} placeholder="ABC1D23" maxLength={8} className="font-mono font-bold tracking-wider uppercase max-w-xs" data-testid="input-consulta-placa" onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
           <Button onClick={handleSearch} disabled={loading || plate.replace(/[^a-zA-Z0-9]/g, "").length < 7} data-testid="button-consulta-placa">
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />} Consultar
           </Button>
+          {(result || notFound) && (
+            <Button variant="outline" onClick={handleClear} data-testid="button-limpar-placa">
+              <X className="w-4 h-4 mr-2" /> Limpar
+            </Button>
+          )}
         </div>
       </Card>
       {loading && <Card className="p-8 bg-white border-neutral-200 text-center"><Loader2 className="w-8 h-8 animate-spin text-neutral-400 mx-auto" /></Card>}
+      {notFound && !loading && (
+        <Card className="p-6 bg-white border-neutral-200 text-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center"><X className="w-6 h-6 text-red-500" /></div>
+            <p className="font-semibold text-neutral-900">Placa não encontrada</p>
+            <p className="text-sm text-neutral-500">Nenhum dado disponível para a placa <span className="font-mono font-bold">{plate}</span>. Verifique se a placa está correta.</p>
+            <Button variant="outline" size="sm" onClick={handleClear} className="mt-2" data-testid="button-tentar-outra">
+              Consultar outra placa
+            </Button>
+          </div>
+        </Card>
+      )}
       {result && !loading && (
         <Card className="bg-white border-neutral-200 overflow-hidden">
-          <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center gap-3">
-            <div className="bg-neutral-900 text-white px-4 py-2 rounded-md font-mono font-bold text-lg tracking-widest" data-testid="text-result-plate">{result.plate}</div>
-            <div><p className="font-semibold text-neutral-900">{result.brand} {result.model}</p><p className="text-xs text-neutral-500">{result.year || "-"}</p></div>
+          <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-neutral-900 text-white px-4 py-2 rounded-md font-mono font-bold text-lg tracking-widest" data-testid="text-result-plate">{result.plate}</div>
+              <div><p className="font-semibold text-neutral-900">{result.brand} {result.model}</p><p className="text-xs text-neutral-500">{result.year || "-"}</p></div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleClear} data-testid="button-nova-consulta">
+              <Search className="w-4 h-4 mr-1.5" /> Nova consulta
+            </Button>
           </div>
           <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
             <InfoField label="Marca" value={result.brand} testId="text-result-brand" />
