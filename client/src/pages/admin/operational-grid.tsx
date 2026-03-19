@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  MapPin, Key, Satellite, RefreshCw, Radio,
+  MapPin, Key, Satellite, Signal, RefreshCw, Radio,
   ExternalLink, Zap, CalendarClock, Recycle,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
@@ -978,21 +978,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Signal className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.gpsSignal === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Signal className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de GPS</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                            <Signal className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.gpsSignal ? "GPS OK" : "GPS sem sinal"}</TooltipContent>
                         </Tooltip>
@@ -1174,11 +1174,11 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
                       </td>
                       <td className="px-3 py-3 text-center">
                         {s.tracker?.gpsSignal === undefined ? (
-                          <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
+                          <Signal className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
                         ) : (
                           <Tooltip>
                             <TooltipTrigger>
-                              <Satellite className={`w-4 h-4 mx-auto ${s.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                              <Signal className={`w-4 h-4 mx-auto ${s.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
                             </TooltipTrigger>
                             <TooltipContent>{s.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
                           </Tooltip>
