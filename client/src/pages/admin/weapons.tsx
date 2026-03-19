@@ -860,6 +860,25 @@ export default function WeaponsPage() {
         </Card>
       )}
 
+      {weapons.length > 0 && (
+        <div className="flex items-center gap-4 mb-4 flex-wrap" data-testid="weapons-type-summary">
+          {typeOrder.map(type => {
+            const count = weapons.filter(w => w.type === type).length;
+            if (count === 0) return null;
+            return (
+              <div key={type} className="flex items-center gap-1.5 bg-white border border-neutral-200 rounded-lg px-3 py-2">
+                <span className="text-sm text-neutral-600">{type}:</span>
+                <span className="text-sm font-bold text-neutral-900">{count}</span>
+              </div>
+            );
+          })}
+          <div className="flex items-center gap-1.5 bg-neutral-900 text-white rounded-lg px-3 py-2">
+            <span className="text-sm">Total:</span>
+            <span className="text-sm font-bold">{weapons.length}</span>
+          </div>
+        </div>
+      )}
+
       <BatchImportDialog open={showBatchImport} onClose={() => setShowBatchImport(false)} />
       <PhotoViewerModal weapon={photoViewer} open={!!photoViewer} onClose={() => setPhotoViewer(null)} />
 
