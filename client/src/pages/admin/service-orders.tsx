@@ -661,19 +661,20 @@ export default function ServiceOrdersPage() {
                     <td className="p-3 text-neutral-600">{getClientName(o.clientId)}</td>
                     <td className="p-3 text-neutral-600">{o.type}</td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        o.priority === "imediata" ? "bg-red-100 text-red-700" :
-                        o.priority === "reaproveitamento" ? "bg-emerald-100 text-emerald-700" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>{o.priority === "imediata" ? "Imediata" : o.priority === "reaproveitamento" ? "Reaproveitamento" : "Agendada"}</span>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                        o.priority === "imediata" ? "bg-red-50 text-red-700 border border-red-200" :
+                        o.priority === "reaproveitamento" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                        "bg-blue-50 text-blue-700 border border-blue-200"
+                      }`}>{o.priority === "imediata" ? "IMEDIATA" : o.priority === "reaproveitamento" ? "REAPROV." : "AGENDADA"}</span>
                     </td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        o.status === "aberta" ? "bg-blue-100 text-blue-700" :
-                        o.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
-                        o.status === "concluída" || o.status === "concluida" ? "bg-green-100 text-green-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{o.status}</span>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                        o.status === "aberta" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                        o.status === "em_andamento" ? "bg-neutral-900 text-white" :
+                        o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                        o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
+                        "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                      }`}>{o.status === "aberta" ? "ABERTA" : o.status === "em_andamento" ? "EM ANDAMENTO" : o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" : o.status === "cancelada" ? "CANCELADA" : o.status?.toUpperCase()}</span>
                     </td>
                     <td className="p-3">
                       {o.kitId ? (

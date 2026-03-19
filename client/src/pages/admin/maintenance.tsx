@@ -188,11 +188,11 @@ export default function MaintenancePage() {
                     <td className="p-3 text-neutral-600">{m.cost ? `R$ ${Number(m.cost).toFixed(2)}` : "-"}</td>
                     <td className="p-3 text-neutral-600">{m.km?.toLocaleString() || "-"}</td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        m.status === "realizada" ? "bg-green-100 text-green-700" :
-                        m.status === "agendada" ? "bg-blue-100 text-blue-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{m.status}</span>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                        m.status === "realizada" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                        m.status === "agendada" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                        "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                      }`}>{m.status === "realizada" ? "REALIZADA" : m.status === "agendada" ? "AGENDADA" : m.status?.toUpperCase()}</span>
                     </td>
                     <td className="p-3 text-right">
                       <Button variant="ghost" size="icon" onClick={() => { setEditItem(m); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>

@@ -408,8 +408,8 @@ function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; 
                 {history.map((h) => (
                   <div key={h.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-vehicle-history-${h.id}`}>
                     <div className="flex-1 min-w-0">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${h.action === "vincular" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                        {h.action === "vincular" ? "Vinculado" : "Desvinculado"}
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${h.action === "vincular" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                        {h.action === "vincular" ? "VINCULADO" : "DESVINCULADO"}
                       </span>
                       <span className="text-xs text-neutral-600 ml-2">
                         {employees.find(e => e.id === h.employeeId)?.name || `ID ${h.employeeId}`}
@@ -506,12 +506,12 @@ export default function VehiclesPage() {
                       </span>
                     </td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        v.status === "disponível" ? "bg-green-100 text-green-700" :
-                        v.status === "em_uso" ? "bg-amber-100 text-amber-700" :
-                        v.status === "manutenção" ? "bg-red-100 text-red-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{v.status}</span>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                        v.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                        v.status === "em_uso" ? "bg-neutral-900 text-white" :
+                        v.status === "manutenção" ? "bg-red-50 text-red-700 border border-red-200" :
+                        "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                      }`}>{v.status === "em_uso" ? "EM USO" : v.status === "disponível" ? "DISPONÍVEL" : v.status === "manutenção" ? "MANUTENÇÃO" : v.status}</span>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">

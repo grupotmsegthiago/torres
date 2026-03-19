@@ -189,12 +189,12 @@ export default function TripsPage() {
                     <td className="p-3 text-neutral-600">{t.destination}</td>
                     <td className="p-3 text-neutral-600">{t.kmEnd && t.kmStart ? (t.kmEnd - t.kmStart).toLocaleString() : "-"}</td>
                     <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        t.status === "planejada" ? "bg-blue-100 text-blue-700" :
-                        t.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
-                        t.status === "concluída" ? "bg-green-100 text-green-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{t.status}</span>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                        t.status === "planejada" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                        t.status === "em_andamento" ? "bg-neutral-900 text-white" :
+                        t.status === "concluída" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                        "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                      }`}>{t.status === "planejada" ? "PLANEJADA" : t.status === "em_andamento" ? "EM ANDAMENTO" : t.status === "concluída" ? "CONCLUÍDA" : t.status?.toUpperCase()}</span>
                     </td>
                     <td className="p-3 text-right">
                       <Button variant="ghost" size="icon" onClick={() => { setEditItem(t); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>

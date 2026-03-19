@@ -284,10 +284,10 @@ export default function UsersPage() {
                           <Mail className="w-3 h-3" />
                           {u.email}
                         </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          u.role === "diretoria" ? "bg-amber-50 text-amber-700" :
-                          u.role === "admin" ? "bg-blue-50 text-blue-700" :
-                          "bg-neutral-100 text-neutral-600"
+                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                          u.role === "diretoria" ? "bg-neutral-900 text-white" :
+                          u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`} data-testid={`text-user-role-${u.id}`}>
                           {roleInfo.label}
                         </span>

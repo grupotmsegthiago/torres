@@ -397,11 +397,11 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                   return (
                     <div key={d.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-doc-${d.id}`}>
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                          d.type === "CNH" ? "bg-blue-100 text-blue-700" :
-                          d.type === "CNV" ? "bg-purple-100 text-purple-700" :
-                          d.type === "Comprovante de Residência" ? "bg-teal-100 text-teal-700" :
-                          "bg-neutral-200 text-neutral-700"
+                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                          d.type === "CNH" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                          d.type === "CNV" ? "bg-violet-50 text-violet-700 border border-violet-200" :
+                          d.type === "Comprovante de Residência" ? "bg-teal-50 text-teal-700 border border-teal-200" :
+                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`}>{d.type}</span>
                         <div className="min-w-0">
                           {d.documentNumber && <span className="text-xs text-neutral-600 font-mono">{d.documentNumber}</span>}
@@ -1169,12 +1169,12 @@ export default function EmployeesPage() {
                     <td className="p-3 text-neutral-600">{e.phone || "-"}</td>
                     <td className="p-3">
                       <div className="flex flex-col gap-1">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium inline-block w-fit ${
-                          e.status === "ativo" ? "bg-green-100 text-green-700" :
-                          e.status === "férias" ? "bg-blue-100 text-blue-700" :
-                          e.status === "bloqueado_definitivo" ? "bg-red-100 text-red-700" :
-                          "bg-neutral-100 text-neutral-600"
-                        }`}>{e.status === "bloqueado_definitivo" ? "Bloqueado" : e.status}</span>
+                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide inline-block w-fit ${
+                          e.status === "ativo" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                          e.status === "férias" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                          e.status === "bloqueado_definitivo" ? "bg-red-50 text-red-700 border border-red-200" :
+                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                        }`}>{e.status === "bloqueado_definitivo" ? "BLOQUEADO" : e.status === "ativo" ? "ATIVO" : e.status === "férias" ? "FÉRIAS" : e.status?.toUpperCase()}</span>
                         {e.status === "bloqueado_definitivo" && isDiretoria && e.blockType && (
                           <span className="text-xs text-red-500 font-medium" title={e.blockReason || ""}>
                             {e.blockType === "criminal" ? "Criminal" : e.blockType === "processo" ? "Processo" : e.blockType === "ambos" ? "Criminal + Processo" : e.blockType}

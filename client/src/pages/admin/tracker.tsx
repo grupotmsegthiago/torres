@@ -68,11 +68,11 @@ export default function TrackerPage() {
                 </div>
                 <div className="flex justify-between text-xs mt-1">
                   <span className="text-neutral-500">Status</span>
-                  <span className={`font-medium ${
-                    vehicle.status === "disponível" ? "text-green-600" :
-                    vehicle.status === "em_uso" ? "text-amber-600" :
-                    "text-red-600"
-                  }`}>{vehicle.status}</span>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                    vehicle.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                    vehicle.status === "em_uso" ? "bg-neutral-900 text-white" :
+                    "bg-red-50 text-red-700 border border-red-200"
+                  }`}>{vehicle.status === "em_uso" ? "EM USO" : vehicle.status === "disponível" ? "DISPONÍVEL" : "MANUTENÇÃO"}</span>
                 </div>
               </div>
             </Card>

@@ -186,12 +186,12 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-neutral-900">{order.osNumber}</p>
                     <p className="text-xs text-neutral-500">{order.type}</p>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    order.status === "aberta" ? "bg-blue-100 text-blue-700" :
-                    order.status === "em_andamento" ? "bg-amber-100 text-amber-700" :
-                    order.status === "concluída" || order.status === "concluida" ? "bg-green-100 text-green-700" :
-                    "bg-neutral-100 text-neutral-600"
-                  }`}>{order.status}</span>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                    order.status === "aberta" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                    order.status === "em_andamento" ? "bg-neutral-900 text-white" :
+                    order.status === "concluída" || order.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                    "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                  }`}>{order.status === "aberta" ? "ABERTA" : order.status === "em_andamento" ? "EM ANDAMENTO" : order.status === "concluída" || order.status === "concluida" ? "CONCLUÍDA" : order.status?.toUpperCase()}</span>
                 </div>
               ))}
             </div>
@@ -210,11 +210,11 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-neutral-900">{vehicle.plate}</p>
                     <p className="text-xs text-neutral-500">{vehicle.brand} {vehicle.model}</p>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    vehicle.status === "disponível" ? "bg-green-100 text-green-700" :
-                    vehicle.status === "em_uso" ? "bg-amber-100 text-amber-700" :
-                    "bg-red-100 text-red-700"
-                  }`}>{vehicle.status}</span>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                    vehicle.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                    vehicle.status === "em_uso" ? "bg-neutral-900 text-white" :
+                    "bg-red-50 text-red-700 border border-red-200"
+                  }`}>{vehicle.status === "em_uso" ? "EM USO" : vehicle.status === "disponível" ? "DISPONÍVEL" : "MANUTENÇÃO"}</span>
                 </div>
               ))}
             </div>

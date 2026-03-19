@@ -657,8 +657,8 @@ function AssignWeaponModal({ weapon, open, onClose }: { weapon: Weapon; open: bo
                 {history.map((h) => (
                   <div key={h.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-weapon-history-${h.id}`}>
                     <div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${h.action === "vincular" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                        {h.action === "vincular" ? "Vinculado" : "Desvinculado"}
+                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${h.action === "vincular" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                        {h.action === "vincular" ? "VINCULADO" : "DESVINCULADO"}
                       </span>
                       <span className="text-xs text-neutral-600 ml-2">
                         {employees.find(e => e.id === h.employeeId)?.name || `ID ${h.employeeId}`}
@@ -757,10 +757,10 @@ function WeaponGroupTable({
                 <td className="p-3 text-xs text-neutral-600">{w.registrationNumber || "-"}</td>
                 <td className="p-3">
                   {w.registrationExpiry ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      regStatus === "expired" ? "bg-red-100 text-red-700" :
-                      regStatus === "warning" ? "bg-amber-100 text-amber-700" :
-                      "bg-green-100 text-green-700"
+                    <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold ${
+                      regStatus === "expired" ? "bg-red-50 text-red-700 border border-red-200" :
+                      regStatus === "warning" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                      "bg-emerald-50 text-emerald-700 border border-emerald-200"
                     }`}>
                       {new Date(w.registrationExpiry).toLocaleDateString("pt-BR")}
                     </span>
@@ -780,12 +780,12 @@ function WeaponGroupTable({
                   {assignedEmp ? assignedEmp.name : <span className="text-neutral-400">-</span>}
                 </td>
                 <td className="p-3">
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    w.status === "disponível" ? "bg-green-100 text-green-700" :
-                    w.status === "em uso" ? "bg-blue-100 text-blue-700" :
-                    w.status === "manutenção" ? "bg-amber-100 text-amber-700" :
-                    "bg-neutral-100 text-neutral-600"
-                  }`}>{w.status}</span>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                    w.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                    w.status === "em uso" ? "bg-neutral-900 text-white" :
+                    w.status === "manutenção" ? "bg-red-50 text-red-700 border border-red-200" :
+                    "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                  }`}>{w.status === "em uso" ? "EM USO" : w.status === "disponível" ? "DISPONÍVEL" : w.status === "manutenção" ? "MANUTENÇÃO" : w.status}</span>
                 </td>
                 <td className="p-3 text-right">
                   <div className="flex items-center justify-end gap-1 flex-wrap">
@@ -893,7 +893,7 @@ function KitFormDialog({ open, onClose, kit, weapons, allKits }: { open: boolean
                     <div className="text-sm font-semibold text-neutral-900">{w.type} {w.brand} {w.model}</div>
                     <div className="text-xs text-neutral-500">Cal. {w.caliber} · Nº {w.serialNumber}</div>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${w.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{w.status}</span>
+                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wide ${w.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-neutral-900 text-white"}`}>{w.status === "disponível" ? "DISPONÍVEL" : "EM USO"}</span>
                 </label>
               ))}
             </div>
@@ -1090,8 +1090,8 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
   });
 
   const getKitStatusColor = (kit: EnrichedKit) => {
-    if (kit.status === "em_uso") return "bg-amber-100 text-amber-700 border-amber-200";
-    return "bg-green-100 text-green-700 border-green-200";
+    if (kit.status === "em_uso") return "bg-neutral-900 text-white";
+    return "bg-emerald-50 text-emerald-700 border border-emerald-200";
   };
 
   const getKitStatusLabel = (kit: EnrichedKit) => {
@@ -1190,7 +1190,7 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
                           <td className="px-4 py-2 text-neutral-700">{item.weapon.brand} {item.weapon.model}</td>
                           <td className="px-4 py-2 text-neutral-700">{item.weapon.caliber}</td>
                           <td className="px-4 py-2 font-mono text-neutral-600 text-xs">{item.weapon.serialNumber}</td>
-                          <td className="px-4 py-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${item.weapon.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{item.weapon.status}</span></td>
+                          <td className="px-4 py-2"><span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wide ${item.weapon.status === "disponível" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-neutral-900 text-white"}`}>{item.weapon.status === "disponível" ? "DISPONÍVEL" : "EM USO"}</span></td>
                         </tr>
                       ) : null)}
                     </tbody>
