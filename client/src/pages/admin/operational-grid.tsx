@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   MapPin, Key, Satellite, Signal, RefreshCw, Radio,
-  ExternalLink, Zap, CalendarClock, Recycle,
+  ExternalLink, Zap, CalendarClock, Recycle, Car, X,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
@@ -253,7 +253,7 @@ function getIdleTime(v: TrackedVehicle): string | null {
   return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
 }
 
-function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
+function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; focusVehicleId?: number | null }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -320,7 +320,7 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
     let hasPositions = false;
 
     vehicles.forEach((v) => {
-      if (!v.tracker?.latitude || !v.tracker?.longitude) return;
+      if (v.tracker?.latitude == null || v.tracker?.longitude == null) return;
 
       hasPositions = true;
       const position = { lat: v.tracker.latitude, lng: v.tracker.longitude };
@@ -328,14 +328,13 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
 
       const isSpy = v.deviceType === "spy";
 
-      let markerColor: string;
       let svgIcon: any;
+      const carPath = "M17.402 0H5.643C2.526 0 0 3.467 0 6.584v34.804c0 3.116 2.526 5.644 5.643 5.644h11.759c3.116 0 5.644-2.527 5.644-5.644V6.584C23.044 3.467 20.518 0 17.402 0zM22 38.894c0 .016 0 .03-.002.047l-1.448-.024c-.078.332-.496.582-.984.582H3.479c-.488 0-.906-.25-.984-.582l-1.493.024C1 38.922 1 38.91 1 38.894V9.106c0-.016 0-.03.002-.047l1.493.024c.078-.332.496-.582.984-.582h16.087c.488 0 .906.25.984.582l1.448-.024c.002.018.002.03.002.047V38.894zM11.522 42.396c-1.48 0-2.682 1.076-2.682 2.404 0 1.328 1.202 2.404 2.682 2.404 1.48 0 2.682-1.076 2.682-2.404C14.204 43.472 13.002 42.396 11.522 42.396z";
 
       if (isSpy) {
-        markerColor = v.coupled ? "#8b5cf6" : "#a855f7";
         svgIcon = {
           path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: markerColor,
+          fillColor: v.coupled ? "#8b5cf6" : "#a855f7",
           fillOpacity: 1,
           strokeColor: "#ffffff",
           strokeWeight: 2,
@@ -344,15 +343,15 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
       } else {
         const isIgnitionOn = v.tracker.ignition === true;
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
-        markerColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+        const borderColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
         svgIcon = {
-          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          fillColor: markerColor,
+          path: carPath,
+          fillColor: "#ffffff",
           fillOpacity: 1,
-          strokeColor: "#ffffff",
+          strokeColor: borderColor,
           strokeWeight: 2,
-          scale: 6,
-          rotation: 0,
+          scale: 0.6,
+          anchor: new window.google.maps.Point(12, 24),
         };
       }
 
@@ -394,6 +393,7 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
         setSelectedVehicle(v);
       });
 
+      (marker as any)._vehicleId = v.id;
       markersRef.current.push(marker);
     });
 
@@ -404,6 +404,24 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
       }
     }
   }, [mapReady, vehicles]);
+
+  const pendingFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusVehicleId || !mapInstanceRef.current || !mapReady) {
+      if (focusVehicleId) pendingFocusRef.current = focusVehicleId;
+      return;
+    }
+    const doFocus = (id: number) => {
+      const marker = markersRef.current.find((m: any) => m._vehicleId === id);
+      if (marker) {
+        mapInstanceRef.current.panTo(marker.getPosition());
+        mapInstanceRef.current.setZoom(15);
+        window.google.maps.event.trigger(marker, "click");
+      }
+    };
+    doFocus(focusVehicleId);
+    pendingFocusRef.current = null;
+  }, [focusVehicleId, mapReady, vehicles]);
 
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -421,19 +439,25 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
 
   return (
     <div className="relative rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
-      <div ref={mapRef} className="w-full h-[450px]" data-testid="map-container" />
+      <div ref={mapRef} id="map-container" className="w-full h-[450px]" data-testid="map-container" />
       <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-md border border-neutral-200">
         <div className="flex items-center gap-3 text-xs flex-wrap">
           <span className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#22c55e" }} />
+            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#22c55e" }}>
+              <Car className="w-2.5 h-2.5" style={{ color: "#22c55e" }} />
+            </div>
             Em movimento
           </span>
           <span className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#f59e0b" }} />
+            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#f59e0b" }}>
+              <Car className="w-2.5 h-2.5" style={{ color: "#f59e0b" }} />
+            </div>
             Parado (ligado)
           </span>
           <span className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#ef4444" }} />
+            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#ef4444" }}>
+              <Car className="w-2.5 h-2.5" style={{ color: "#ef4444" }} />
+            </div>
             Desligado
           </span>
           <span className="flex items-center gap-1.5">
@@ -907,7 +931,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   );
 }
 
-function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[] }) {
+function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void }) {
   const [expanded, setExpanded] = useState(true);
 
   const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
@@ -955,7 +979,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
             <tbody className="divide-y divide-neutral-100">
               {onlyVehicles.map((v, index) => {
                 const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
-                const hasLocation = v.tracker?.latitude && v.tracker?.longitude;
+                const hasLocation = v.tracker?.latitude != null && v.tracker?.longitude != null;
                 const mapsUrl = hasLocation
                   ? `https://www.google.com/maps?q=${v.tracker!.latitude},${v.tracker!.longitude}`
                   : null;
@@ -1065,30 +1089,27 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
 
                     <td className="px-3 py-3 max-w-[240px]">
                       {v.tracker?.address ? (
-                        <a
-                          href={mapsUrl || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`inline-flex items-start gap-1.5 group ${mapsUrl ? "" : "pointer-events-none"}`}
+                        <button
+                          type="button"
+                          onClick={() => { if (hasLocation && onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
+                          className={`inline-flex items-start gap-1.5 group text-left ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
                           data-testid={`link-map-${v.id}`}
                         >
-                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${mapsUrl ? "text-blue-500 group-hover:text-blue-700" : "text-neutral-300"}`} />
-                          <span className={`text-[11px] font-medium leading-tight truncate ${mapsUrl ? "text-blue-600 group-hover:text-blue-800 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
+                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-blue-500 group-hover:text-blue-700" : "text-neutral-300"}`} />
+                          <span className={`text-[11px] font-medium leading-tight truncate ${hasLocation ? "text-blue-600 group-hover:text-blue-800 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
                             {v.tracker.address}
                           </span>
-                        </a>
+                        </button>
                       ) : hasLocation ? (
-                        <a
-                          href={mapsUrl!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 text-[11px] font-medium"
+                        <button
+                          type="button"
+                          onClick={() => { if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
+                          className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 text-[11px] font-medium cursor-pointer"
                           data-testid={`link-map-${v.id}`}
                         >
                           <MapPin className="w-3.5 h-3.5" />
-                          <ExternalLink className="w-3 h-3" />
                           Ver no mapa
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-neutral-300 text-[11px]">—</span>
                       )}
@@ -1165,6 +1186,24 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                             <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid={`link-os-vehicle-${v.id}`}>
                               {v.activeOs.osNumber}
                             </Link>
+                            {hasLocation && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                                      if (onSelectOsVehicle) onSelectOsVehicle(v.id);
+                                    }}
+                                    className="p-0.5 rounded hover:bg-blue-50 transition-colors"
+                                    data-testid={`button-nearby-${v.id}`}
+                                  >
+                                    <Navigation className="w-3 h-3 text-blue-500 hover:text-blue-700" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Ver veículos próximos</TooltipContent>
+                              </Tooltip>
+                            )}
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
                               getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
                             }`}>
@@ -1265,7 +1304,7 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
               <tbody className="divide-y divide-neutral-100">
                 {spyDevices.map((s, index) => {
                   const posInfo = getLastPositionInfo(s.tracker?.lastPositionTime);
-                  const hasLocation = s.tracker?.latitude && s.tracker?.longitude;
+                  const hasLocation = s.tracker?.latitude != null && s.tracker?.longitude != null;
                   const mapsUrl = hasLocation
                     ? `https://www.google.com/maps?q=${s.tracker!.latitude},${s.tracker!.longitude}`
                     : null;
@@ -1439,8 +1478,79 @@ function useCountdown(intervalMs: number, lastFetchTime: number) {
   return { remaining, display: `${minutes}:${String(seconds).padStart(2, "0")}` };
 }
 
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehicle }: { vehicles: TrackedVehicle[]; selectedVehicleId: number; onClose: () => void; onFocusVehicle: (id: number) => void }) {
+  const selected = vehicles.find(v => v.id === selectedVehicleId);
+  if (!selected || !selected.tracker?.latitude || !selected.tracker?.longitude) return null;
+
+  const lat = selected.tracker.latitude;
+  const lon = selected.tracker.longitude;
+
+  const nearby = vehicles
+    .filter(v => v.id !== selectedVehicleId && v.deviceType !== "spy" && v.tracker?.latitude != null && v.tracker?.longitude != null)
+    .map(v => ({
+      ...v,
+      distance: haversineDistance(lat, lon, v.tracker!.latitude!, v.tracker!.longitude!),
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 10);
+
+  return (
+    <Card className="border border-blue-200 bg-blue-50/30">
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Navigation className="w-4 h-4 text-blue-600" />
+            <h3 className="text-sm font-bold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              Veículos Próximos — {selected.plate}
+            </h3>
+            {selected.activeOs && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-neutral-900 text-white">
+                {selected.activeOs.osNumber}
+              </span>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-7 w-7 p-0" data-testid="button-close-nearby">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+        {nearby.length === 0 ? (
+          <p className="text-xs text-neutral-400">Nenhum veículo com posição disponível.</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {nearby.map(v => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                className="flex items-center gap-2 bg-white border border-neutral-200 rounded-lg px-3 py-2 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+                data-testid={`nearby-vehicle-${v.id}`}
+              >
+                <Car className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-neutral-900 truncate" style={{ fontFamily: "'Montserrat', sans-serif" }}>{v.plate}</p>
+                  <p className="text-[10px] text-neutral-500 font-medium">{v.distance < 1 ? `${Math.round(v.distance * 1000)}m` : `${v.distance.toFixed(1)}km`}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
+  const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
 
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
@@ -1475,7 +1585,7 @@ export default function OperationalGridPage() {
   const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
   const spyDevices = vehicles.filter((v) => v.deviceType === "spy");
   const trackedCount = onlyVehicles.filter((v) => v.hasTracker).length;
-  const withPositionCount = vehicles.filter((v) => v.tracker?.latitude).length;
+  const withPositionCount = vehicles.filter((v) => v.tracker?.latitude != null).length;
   const tcCount = onlyVehicles.filter((v) => v.trackerType === "truckscontrol").length;
   const activeOsCount = gridData.length;
 
@@ -1523,8 +1633,16 @@ export default function OperationalGridPage() {
         ) : (
           <>
             <SpeedAlert vehicles={vehicles} />
-            <VehicleMap vehicles={vehicles} />
-            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} />
+            <VehicleMap vehicles={vehicles} focusVehicleId={focusVehicleId} />
+            {selectedOsVehicleId && (
+              <NearbyVehiclesPanel
+                vehicles={vehicles}
+                selectedVehicleId={selectedOsVehicleId}
+                onClose={() => setSelectedOsVehicleId(null)}
+                onFocusVehicle={(id) => setFocusVehicleId(id)}
+              />
+            )}
+            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} />
             <SpyTable spyDevices={spyDevices} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 5 minutos (limite API TrucksControl)
