@@ -1,4 +1,28 @@
-interface TrucksControlPosition {
+import AdmZip from "adm-zip";
+
+interface TrucksControlVehicle {
+  veiID: number;
+  placa: string;
+  ident: string;
+  eqp: number;
+  prop: string;
+}
+
+interface TrucksControlMessage {
+  mId: number;
+  veiID: number;
+  dt: string;
+  lat: number;
+  lon: number;
+  mun: string;
+  uf: string;
+  rod: string;
+  rua: string;
+  vel: number;
+  evt4: number;
+}
+
+export interface TrucksControlPosition {
   latitude: number;
   longitude: number;
   speed: number;
@@ -11,6 +35,9 @@ interface TrucksControlPosition {
   plate: string;
   identifier: string;
   voltage: number;
+  veiID: number;
+  municipality: string;
+  state: string;
 }
 
 interface TrucksControlConfig {
@@ -19,7 +46,13 @@ interface TrucksControlConfig {
 }
 
 let lastError: string | null = null;
+let lastMid: number = 1;
+let vehicleCache: TrucksControlVehicle[] = [];
+let vehicleCacheTimestamp = 0;
+let messagesByVehicle: Map<number, TrucksControlMessage> = new Map();
+
 const BASE_URL = "https://webservice.newrastreamentoonline.com.br/";
+const VEHICLE_CACHE_TTL = 5 * 60 * 1000;
 
 function getConfig(): TrucksControlConfig | null {
   const login = process.env.TRUCKSCONTROL_CHAVE;
@@ -34,18 +67,12 @@ function parseXmlValue(xml: string, tag: string): string {
   return match ? match[1].trim() : "";
 }
 
-function parseCdataValue(xml: string, tag: string): string {
-  const regex = new RegExp(`<${tag}><!\\[CDATA\\[([^\\]]*?)\\]\\]></${tag}>`, "i");
-  const match = xml.match(regex);
-  if (match) return match[1].trim();
-  return parseXmlValue(xml, tag);
-}
-
 async function postXml(xmlBody: string): Promise<string> {
+  const fullXml = `<?xml version="1.0" encoding="utf-8"?>${xmlBody}`;
   const resp = await fetch(BASE_URL, {
     method: "POST",
     headers: { "Content-Type": "text/xml; charset=utf-8" },
-    body: `<?xml version="1.0" encoding="utf-8"?>${xmlBody}`,
+    body: fullXml,
     signal: AbortSignal.timeout(15000),
   });
 
@@ -53,184 +80,233 @@ async function postXml(xmlBody: string): Promise<string> {
     throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
   }
 
-  return resp.text();
-}
+  const raw = Buffer.from(await resp.arrayBuffer());
 
-function parsePositionBlock(block: string): TrucksControlPosition | null {
-  try {
-    const lat = parseFloat(parseXmlValue(block, "Latitude") || parseXmlValue(block, "latitude") || parseXmlValue(block, "lat") || "0");
-    const lng = parseFloat(parseXmlValue(block, "Longitude") || parseXmlValue(block, "longitude") || parseXmlValue(block, "lng") || parseXmlValue(block, "lon") || "0");
-    if (lat === 0 && lng === 0) return null;
-
-    const speed = parseFloat(parseXmlValue(block, "Velocidade") || parseXmlValue(block, "velocidade") || parseXmlValue(block, "Speed") || "0");
-    const ignStr = (parseXmlValue(block, "Ignicao") || parseXmlValue(block, "ignicao") || parseXmlValue(block, "Ignition") || "").toLowerCase();
-    const ignition = ignStr === "true" || ignStr === "1" || ignStr === "ligada" || ignStr === "sim" || ignStr === "on";
-    const dateStr = parseXmlValue(block, "DataHora") || parseXmlValue(block, "datahora") || parseXmlValue(block, "Data") || parseXmlValue(block, "DateTime") || "";
-    const gpsStr = (parseXmlValue(block, "GPS") || parseXmlValue(block, "gps") || parseXmlValue(block, "GpsValido") || "").toLowerCase();
-    const gpsSignal = gpsStr !== "false" && gpsStr !== "0" && gpsStr !== "invalido" && gpsStr !== "nao";
-    const address = parseCdataValue(block, "Endereco") || parseCdataValue(block, "endereco") || parseXmlValue(block, "Endereco") || parseXmlValue(block, "Address") || "";
-    const direction = parseFloat(parseXmlValue(block, "Direcao") || parseXmlValue(block, "direcao") || parseXmlValue(block, "Direction") || "0");
-    const odometer = parseFloat(parseXmlValue(block, "Odometro") || parseXmlValue(block, "odometro") || parseXmlValue(block, "Hodometro") || "0");
-    const plate = parseXmlValue(block, "Placa") || parseXmlValue(block, "placa") || parseXmlValue(block, "Plate") || "";
-    const identifier = parseCdataValue(block, "Identificador") || parseCdataValue(block, "identificador") || parseXmlValue(block, "Identificador") || parseXmlValue(block, "Id") || "";
-    const voltage = parseFloat(parseXmlValue(block, "Voltagem") || parseXmlValue(block, "voltagem") || parseXmlValue(block, "TensaoBateria") || "0");
-
-    return { latitude: lat, longitude: lng, speed, ignition, lastPositionTime: dateStr, gpsSignal, address, direction, odometer, plate, identifier, voltage };
-  } catch {
-    return null;
+  if (raw[0] === 0x50 && raw[1] === 0x4B) {
+    const zip = new AdmZip(raw);
+    const entries = zip.getEntries();
+    if (entries.length > 0) {
+      return entries[0].getData().toString("utf-8");
+    }
+    return "";
   }
+
+  return raw.toString("utf-8");
 }
 
-function parseAllPositions(xml: string): TrucksControlPosition[] {
-  const positions: TrucksControlPosition[] = [];
+function parseVehicles(xml: string): TrucksControlVehicle[] {
+  const vehicles: TrucksControlVehicle[] = [];
+  const regex = /<Veiculo>([\s\S]*?)<\/Veiculo>/gi;
   let match;
-
-  const vehicleRegex = /<Veiculo>([\s\S]*?)<\/Veiculo>/gi;
-  while ((match = vehicleRegex.exec(xml)) !== null) {
-    const pos = parsePositionBlock(match[1]);
-    if (pos) positions.push(pos);
+  while ((match = regex.exec(xml)) !== null) {
+    const block = match[1];
+    vehicles.push({
+      veiID: parseInt(parseXmlValue(block, "veiID") || "0"),
+      placa: parseXmlValue(block, "placa") || "",
+      ident: parseXmlValue(block, "ident") || "",
+      eqp: parseInt(parseXmlValue(block, "eqp") || "0"),
+      prop: parseXmlValue(block, "prop") || "",
+    });
   }
-
-  if (positions.length === 0) {
-    const posRegex = /<Posicao>([\s\S]*?)<\/Posicao>/gi;
-    while ((match = posRegex.exec(xml)) !== null) {
-      const pos = parsePositionBlock(match[1]);
-      if (pos) positions.push(pos);
-    }
-  }
-
-  if (positions.length === 0) {
-    const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
-    while ((match = itemRegex.exec(xml)) !== null) {
-      const pos = parsePositionBlock(match[1]);
-      if (pos) positions.push(pos);
-    }
-  }
-
-  if (positions.length === 0) {
-    const pos = parsePositionBlock(xml);
-    if (pos) positions.push(pos);
-  }
-
-  return positions;
+  return vehicles;
 }
 
-async function doLogin(): Promise<{ success: boolean; rawResponse: string }> {
-  const config = getConfig();
-  if (!config) return { success: false, rawResponse: "Credenciais não configuradas" };
+function parseMessages(xml: string): TrucksControlMessage[] {
+  const messages: TrucksControlMessage[] = [];
+  const regex = /<MensagemCB>([\s\S]*?)<\/MensagemCB>/gi;
+  let match;
+  while ((match = regex.exec(xml)) !== null) {
+    const block = match[1];
+    const latStr = parseXmlValue(block, "lat").replace(",", ".");
+    const lonStr = parseXmlValue(block, "lon").replace(",", ".");
+    const lat = parseFloat(latStr);
+    const lon = parseFloat(lonStr);
+    if (isNaN(lat) || isNaN(lon)) continue;
+
+    messages.push({
+      mId: parseInt(parseXmlValue(block, "mId") || "0"),
+      veiID: parseInt(parseXmlValue(block, "veiID") || "0"),
+      dt: parseXmlValue(block, "dt") || "",
+      lat,
+      lon,
+      mun: parseXmlValue(block, "mun") || "",
+      uf: parseXmlValue(block, "uf") || "",
+      rod: parseXmlValue(block, "rod") || "",
+      rua: parseXmlValue(block, "rua") || "",
+      vel: parseInt(parseXmlValue(block, "vel") || "0"),
+      evt4: parseInt(parseXmlValue(block, "evt4") || "0"),
+    });
+  }
+  return messages;
+}
+
+async function fetchVehicles(config: TrucksControlConfig): Promise<TrucksControlVehicle[]> {
+  if (vehicleCache.length > 0 && Date.now() - vehicleCacheTimestamp < VEHICLE_CACHE_TTL) {
+    return vehicleCache;
+  }
 
   try {
-    const xml = `<Login><login>${config.login}</login><senha>${config.senha}</senha></Login>`;
+    const xml = `<RequestVeiculo><login>${config.login}</login><senha>${config.senha}</senha></RequestVeiculo>`;
     const response = await postXml(xml);
-    const loginResult = parseXmlValue(response, "login").toLowerCase();
-    return { success: loginResult === "true", rawResponse: response };
+
+    if (response.includes("<erro>")) {
+      const erroMsg = parseXmlValue(response, "erro");
+      if (erroMsg.includes("tempo minimo")) {
+        return vehicleCache;
+      }
+      console.log(`[truckscontrol] Erro RequestVeiculo: ${erroMsg}`);
+      return vehicleCache;
+    }
+
+    const vehicles = parseVehicles(response);
+    if (vehicles.length > 0) {
+      vehicleCache = vehicles;
+      vehicleCacheTimestamp = Date.now();
+      console.log(`[truckscontrol] ${vehicles.length} veículo(s) carregados`);
+    }
+    return vehicleCache;
   } catch (err: any) {
-    return { success: false, rawResponse: err.message };
+    console.log(`[truckscontrol] Erro ao buscar veículos: ${err.message}`);
+    return vehicleCache;
+  }
+}
+
+async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControlMessage[]> {
+  try {
+    const xml = `<RequestMensagemCB><login>${config.login}</login><senha>${config.senha}</senha><mId>${lastMid}</mId></RequestMensagemCB>`;
+    const response = await postXml(xml);
+
+    if (response.includes("<erro>")) {
+      const erroMsg = parseXmlValue(response, "erro");
+      if (!erroMsg.includes("tempo minimo")) {
+        console.log(`[truckscontrol] Erro RequestMensagemCB: ${erroMsg}`);
+      }
+      return [];
+    }
+
+    const messages = parseMessages(response);
+    for (const msg of messages) {
+      const existing = messagesByVehicle.get(msg.veiID);
+      if (!existing || msg.mId > existing.mId) {
+        messagesByVehicle.set(msg.veiID, msg);
+      }
+      if (msg.mId > lastMid) {
+        lastMid = msg.mId;
+      }
+    }
+
+    if (messages.length > 0) {
+      console.log(`[truckscontrol] ${messages.length} mensagem(ns) novas, lastMid=${lastMid}`);
+    }
+
+    return messages;
+  } catch (err: any) {
+    console.log(`[truckscontrol] Erro ao buscar mensagens: ${err.message}`);
+    return [];
   }
 }
 
 export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
   const config = getConfig();
   if (!config) {
-    console.log("[truckscontrol] Login/Senha não configurados");
+    lastError = "TRUCKSCONTROL_CHAVE e TRUCKSCONTROL_SENHA não configurados";
     return [];
   }
 
   try {
-    const loginCheck = await doLogin();
-    if (!loginCheck.success) {
-      const erroMatch = loginCheck.rawResponse.match(/<erro>([^<]*)<\/erro>/i);
-      const loginVal = parseXmlValue(loginCheck.rawResponse, "login");
-      if (loginVal.toLowerCase() === "false") {
-        lastError = "Login inválido — credenciais de integração não autorizadas. Solicite credenciais de integração ao suporte TrucksControl.";
-      } else if (erroMatch) {
-        lastError = erroMatch[1];
+    const vehicles = await fetchVehicles(config);
+    await fetchMessages(config);
+
+    const positions: TrucksControlPosition[] = [];
+    for (const veh of vehicles) {
+      const msg = messagesByVehicle.get(veh.veiID);
+      if (msg) {
+        const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
+        positions.push({
+          latitude: msg.lat,
+          longitude: msg.lon,
+          speed: msg.vel >= 0 ? msg.vel : 0,
+          ignition: msg.evt4 === 1,
+          lastPositionTime: msg.dt,
+          gpsSignal: true,
+          address,
+          direction: 0,
+          odometer: 0,
+          plate: veh.placa,
+          identifier: veh.ident || String(veh.veiID),
+          voltage: 0,
+          veiID: veh.veiID,
+          municipality: msg.mun,
+          state: msg.uf,
+        });
       } else {
-        lastError = "Falha no login ao webservice";
+        positions.push({
+          latitude: 0,
+          longitude: 0,
+          speed: 0,
+          ignition: false,
+          lastPositionTime: "",
+          gpsSignal: false,
+          address: "",
+          direction: 0,
+          odometer: 0,
+          plate: veh.placa,
+          identifier: veh.ident || String(veh.veiID),
+          voltage: 0,
+          veiID: veh.veiID,
+          municipality: "",
+          state: "",
+        });
       }
-      console.log(`[truckscontrol] ${lastError}`);
-      return [];
-    }
-
-    const xmlBody = `<Posicoes><login>${config.login}</login><senha>${config.senha}</senha></Posicoes>`;
-    const response = await postXml(xmlBody);
-
-    if (response.includes("<erro>")) {
-      const erroMatch = response.match(/<erro>([^<]*)<\/erro>/i);
-      if (erroMatch && erroMatch[1].includes("Tag xml invalida")) {
-        console.log("[truckscontrol] Login OK mas tag Posicoes não reconhecida. Usando login apenas como teste de autenticação.");
-        lastError = null;
-        return [];
-      }
-      lastError = erroMatch ? erroMatch[1] : "Erro desconhecido";
-      console.log(`[truckscontrol] Erro: ${lastError}`);
-      return [];
     }
 
     lastError = null;
-    return parseAllPositions(response);
+    return positions;
   } catch (err: any) {
-    console.log(`[truckscontrol] Erro ao buscar posições: ${err.message}`);
     lastError = err.message;
+    console.log(`[truckscontrol] Erro geral: ${err.message}`);
     return [];
   }
 }
 
 export async function fetchPositionByPlate(plate: string): Promise<TrucksControlPosition | null> {
-  const config = getConfig();
-  if (!config) return null;
-
-  try {
-    const xml = `<Posicao><login>${config.login}</login><senha>${config.senha}</senha><placa>${plate.replace(/[^A-Za-z0-9]/g, "")}</placa></Posicao>`;
-    const response = await postXml(xml);
-    if (response.includes("<erro>")) return null;
-    const positions = parseAllPositions(response);
-    return positions[0] || null;
-  } catch {
-    return null;
-  }
+  const positions = await fetchAllPositions();
+  const cleanPlate = plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return positions.find(p => p.plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase() === cleanPlate) || null;
 }
 
-export async function testConnection(): Promise<{ success: boolean; message: string; vehicleCount?: number; rawLoginResponse?: string }> {
+export async function testConnection(): Promise<{ success: boolean; message: string; vehicleCount?: number; rawResponse?: string }> {
   const config = getConfig();
   if (!config) {
     return { success: false, message: "TRUCKSCONTROL_CHAVE e TRUCKSCONTROL_SENHA não estão configurados nas variáveis de ambiente." };
   }
 
   try {
-    const loginResult = await doLogin();
+    const xml = `<RequestVeiculo><login>${config.login}</login><senha>${config.senha}</senha></RequestVeiculo>`;
+    const response = await postXml(xml);
 
-    if (!loginResult.success) {
-      const loginVal = parseXmlValue(loginResult.rawResponse, "login");
-      const storkVal = parseXmlValue(loginResult.rawResponse, "stork");
-      const clienteVal = parseXmlValue(loginResult.rawResponse, "cliente");
-
-      if (loginVal.toLowerCase() === "false") {
+    if (response.includes("<erro>")) {
+      const erroMsg = parseXmlValue(response, "erro");
+      if (erroMsg.includes("tempo minimo")) {
         return {
-          success: false,
-          message: `Login falhou (login=${loginVal}, stork=${storkVal}, cliente=${clienteVal || "vazio"}). As credenciais podem ser do portal web, não da API de integração. Solicite credenciais específicas de integração ao suporte TrucksControl: WhatsApp (43) 99914-0020.`,
-          rawLoginResponse: loginResult.rawResponse,
+          success: true,
+          message: `Conexão OK — Credenciais autorizadas. ${vehicleCache.length} veículo(s) em cache. (Aguardando intervalo mínimo para nova requisição)`,
+          vehicleCount: vehicleCache.length,
         };
       }
-
-      return {
-        success: false,
-        message: `Erro de login: ${loginResult.rawResponse}`,
-        rawLoginResponse: loginResult.rawResponse,
-      };
+      return { success: false, message: `Erro: ${erroMsg}`, rawResponse: response };
     }
 
-    const positions = await fetchAllPositions();
-    if (lastError) {
-      return { success: false, message: `Login OK mas erro ao buscar posições: ${lastError}` };
+    const vehicles = parseVehicles(response);
+    if (vehicles.length > 0) {
+      vehicleCache = vehicles;
+      vehicleCacheTimestamp = Date.now();
     }
 
     return {
       success: true,
-      message: positions.length > 0
-        ? `Conexão OK — Login autorizado, ${positions.length} veículo(s) encontrado(s).`
-        : "Conexão OK — Login autorizado. Nenhuma posição retornada ainda.",
-      vehicleCount: positions.length,
+      message: `Conexão OK — ${vehicles.length} veículo(s) encontrado(s): ${vehicles.map(v => v.placa).join(", ")}`,
+      vehicleCount: vehicles.length,
     };
   } catch (err: any) {
     return { success: false, message: `Erro de conexão: ${err.message}` };
@@ -247,43 +323,36 @@ export async function debugLogin(): Promise<{
   }>;
 }> {
   const config = getConfig();
-  const attempts: Array<{
-    label: string;
-    xmlEnviado: string;
-    xmlRetorno: string;
-    loginResult: string;
-    success: boolean;
-  }> = [];
-
   if (!config) {
-    return { attempts: [{ label: "Sem credenciais", xmlEnviado: "", xmlRetorno: "", loginResult: "TRUCKSCONTROL_CHAVE e TRUCKSCONTROL_SENHA não configurados", success: false }] };
+    return { attempts: [{ label: "Sem credenciais", xmlEnviado: "", xmlRetorno: "", loginResult: "não configurado", success: false }] };
   }
 
-  const tryLogin = async (label: string, login: string, senha: string) => {
-    const xmlEnviado = `<?xml version="1.0" encoding="utf-8"?><Login><login>${login}</login><senha>${senha}</senha></Login>`;
-    try {
-      const resp = await fetch(BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/xml; charset=utf-8" },
-        body: xmlEnviado,
-        signal: AbortSignal.timeout(15000),
-      });
-      const xmlRetorno = await resp.text();
-      const loginVal = parseXmlValue(xmlRetorno, "login").toLowerCase();
-      attempts.push({ label, xmlEnviado, xmlRetorno, loginResult: loginVal, success: loginVal === "true" });
-    } catch (err: any) {
-      attempts.push({ label, xmlEnviado, xmlRetorno: `ERRO: ${err.message}`, loginResult: "erro", success: false });
-    }
-  };
+  const attempts: Array<{ label: string; xmlEnviado: string; xmlRetorno: string; loginResult: string; success: boolean; }> = [];
 
-  await tryLogin("Credenciais configuradas (CHAVE/SENHA)", config.login, config.senha);
+  const xml = `<RequestVeiculo><login>${config.login}</login><senha>${config.senha}</senha></RequestVeiculo>`;
+  const fullXml = `<?xml version="1.0" encoding="utf-8"?>${xml}`;
 
-  if (config.login !== "36982392000189") {
-    await tryLogin("Tentativa com CNPJ como login", "36982392000189", config.senha);
-  }
+  try {
+    const response = await postXml(xml);
+    const hasError = response.includes("<erro>");
+    const erroMsg = hasError ? parseXmlValue(response, "erro") : "";
+    const isRateLimit = erroMsg.includes("tempo minimo");
 
-  if (config.login !== "123400") {
-    await tryLogin("Tentativa com Nº Identificação 123400", "123400", config.senha);
+    attempts.push({
+      label: "RequestVeiculo (formato correto da API TC)",
+      xmlEnviado: fullXml,
+      xmlRetorno: response.substring(0, 2000),
+      loginResult: hasError ? (isRateLimit ? "OK (rate limit)" : "erro") : "OK",
+      success: !hasError || isRateLimit,
+    });
+  } catch (err: any) {
+    attempts.push({
+      label: "RequestVeiculo",
+      xmlEnviado: fullXml,
+      xmlRetorno: `ERRO: ${err.message}`,
+      loginResult: "erro",
+      success: false,
+    });
   }
 
   return { attempts };
@@ -298,9 +367,7 @@ export async function getCachedPositions(): Promise<TrucksControlPosition[]> {
   }
 
   const data = await fetchAllPositions();
-  if (data.length > 0 || !lastError) {
-    positionCache = { data, timestamp: Date.now() };
-  }
+  positionCache = { data, timestamp: Date.now() };
   return data;
 }
 
