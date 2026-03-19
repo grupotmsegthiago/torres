@@ -328,37 +328,73 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
 
       const isSpy = v.deviceType === "spy";
 
-      let svgIcon: any;
-      const carPath = "M17.402 0H5.643C2.526 0 0 3.467 0 6.584v34.804c0 3.116 2.526 5.644 5.643 5.644h11.759c3.116 0 5.644-2.527 5.644-5.644V6.584C23.044 3.467 20.518 0 17.402 0zM22 38.894c0 .016 0 .03-.002.047l-1.448-.024c-.078.332-.496.582-.984.582H3.479c-.488 0-.906-.25-.984-.582l-1.493.024C1 38.922 1 38.91 1 38.894V9.106c0-.016 0-.03.002-.047l1.493.024c.078-.332.496-.582.984-.582h16.087c.488 0 .906.25.984.582l1.448-.024c.002.018.002.03.002.047V38.894zM11.522 42.396c-1.48 0-2.682 1.076-2.682 2.404 0 1.328 1.202 2.404 2.682 2.404 1.48 0 2.682-1.076 2.682-2.404C14.204 43.472 13.002 42.396 11.522 42.396z";
+      const buildCarIcon = (statusColor: string, plate: string, speed?: number) => {
+        const w = 44;
+        const h = 72;
+        const bodyColor = "#1a1a1a";
+        const windshieldColor = "#4a5568";
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+          <defs>
+            <filter id="sh" x="-20%" y="-10%" width="140%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/></filter>
+          </defs>
+          <g filter="url(#sh)">
+            <rect x="6" y="8" width="32" height="56" rx="10" ry="12" fill="${bodyColor}" stroke="${statusColor}" stroke-width="2.5"/>
+            <rect x="10" y="14" width="24" height="10" rx="4" fill="${windshieldColor}" opacity="0.7"/>
+            <rect x="10" y="48" width="24" height="8" rx="3" fill="${windshieldColor}" opacity="0.6"/>
+            <rect x="4" y="18" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
+            <rect x="36" y="18" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
+            <rect x="4" y="42" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
+            <rect x="36" y="42" width="4" height="12" rx="2" fill="${bodyColor}" stroke="${statusColor}" stroke-width="1"/>
+            <circle cx="14" cy="11" r="2.5" fill="${statusColor}" opacity="0.9"/>
+            <circle cx="30" cy="11" r="2.5" fill="${statusColor}" opacity="0.9"/>
+            <circle cx="14" cy="59" r="2" fill="#ef4444" opacity="0.8"/>
+            <circle cx="30" cy="59" r="2" fill="#ef4444" opacity="0.8"/>
+            <rect x="12" y="28" width="20" height="16" rx="2" fill="#2d2d2d" opacity="0.5"/>
+          </g>
+          <rect x="8" y="${h - 5}" width="28" height="5" rx="2" fill="${statusColor}"/>
+          <text x="22" y="${h - 0.5}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="4" fill="#fff">${plate}</text>
+        </svg>`;
+        return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+      };
+
+      const buildSpyIcon = (coupled: boolean) => {
+        const c = coupled ? "#7c3aed" : "#a855f7";
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+          <defs><filter id="sh2" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000" flood-opacity="0.3"/></filter></defs>
+          <circle cx="14" cy="14" r="11" fill="${c}" stroke="#fff" stroke-width="2.5" filter="url(#sh2)"/>
+          <circle cx="14" cy="14" r="4" fill="none" stroke="#fff" stroke-width="1.5" opacity="0.8"/>
+          <circle cx="14" cy="14" r="1.5" fill="#fff"/>
+          <line x1="14" y1="3" x2="14" y2="8" stroke="#fff" stroke-width="1" opacity="0.6"/>
+          <line x1="14" y1="20" x2="14" y2="25" stroke="#fff" stroke-width="1" opacity="0.6"/>
+          <line x1="3" y1="14" x2="8" y2="14" stroke="#fff" stroke-width="1" opacity="0.6"/>
+          <line x1="20" y1="14" x2="25" y2="14" stroke="#fff" stroke-width="1" opacity="0.6"/>
+        </svg>`;
+        return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+      };
+
+      let markerIcon: any;
 
       if (isSpy) {
-        svgIcon = {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: v.coupled ? "#8b5cf6" : "#a855f7",
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-          scale: 7,
+        markerIcon = {
+          url: buildSpyIcon(v.coupled || false),
+          scaledSize: new window.google.maps.Size(28, 28),
+          anchor: new window.google.maps.Point(14, 14),
         };
       } else {
         const isIgnitionOn = v.tracker.ignition === true;
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
-        const borderColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
-        svgIcon = {
-          path: carPath,
-          fillColor: "#ffffff",
-          fillOpacity: 1,
-          strokeColor: borderColor,
-          strokeWeight: 2,
-          scale: 0.6,
-          anchor: new window.google.maps.Point(12, 24),
+        const statusColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+        markerIcon = {
+          url: buildCarIcon(statusColor, v.plate, v.tracker.speed),
+          scaledSize: new window.google.maps.Size(36, 58),
+          anchor: new window.google.maps.Point(18, 50),
         };
       }
 
       const marker = new window.google.maps.Marker({
         position,
         map: mapInstanceRef.current,
-        icon: svgIcon,
+        icon: markerIcon,
         title: isSpy ? `SPY: ${v.model}` : `${v.plate} - ${v.model}`,
       });
 
@@ -440,28 +476,30 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
   return (
     <div className="relative rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
       <div ref={mapRef} id="map-container" className="w-full h-[450px]" data-testid="map-container" />
-      <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-md border border-neutral-200">
-        <div className="flex items-center gap-3 text-xs flex-wrap">
-          <span className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#22c55e" }}>
-              <Car className="w-2.5 h-2.5" style={{ color: "#22c55e" }} />
+      <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2.5 shadow-lg border border-neutral-200/80">
+        <div className="flex items-center gap-4 text-xs font-medium text-neutral-700">
+          <span className="flex items-center gap-2">
+            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#22c55e", background: "#1a1a1a" }}>
+              <Car className="w-3 h-3" style={{ color: "#22c55e" }} />
             </div>
             Em movimento
           </span>
-          <span className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#f59e0b" }}>
-              <Car className="w-2.5 h-2.5" style={{ color: "#f59e0b" }} />
+          <span className="flex items-center gap-2">
+            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#f59e0b", background: "#1a1a1a" }}>
+              <Car className="w-3 h-3" style={{ color: "#f59e0b" }} />
             </div>
             Parado (ligado)
           </span>
-          <span className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded border-2 bg-white flex items-center justify-center" style={{ borderColor: "#ef4444" }}>
-              <Car className="w-2.5 h-2.5" style={{ color: "#ef4444" }} />
+          <span className="flex items-center gap-2">
+            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#ef4444", background: "#1a1a1a" }}>
+              <Car className="w-3 h-3" style={{ color: "#ef4444" }} />
             </div>
             Desligado
           </span>
-          <span className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#8b5cf6" }} />
+          <span className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "#8b5cf6", border: "2px solid #fff", boxShadow: "0 0 0 1px #8b5cf6" }}>
+              <Radio className="w-2 h-2 text-white" />
+            </div>
             SPY Tracker
           </span>
         </div>
