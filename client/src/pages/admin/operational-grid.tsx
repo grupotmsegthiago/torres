@@ -934,31 +934,17 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
 
   return (
     <div className="flex items-center gap-1">
-      {!v.activeOs && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800 transition-colors"
-              onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`)}
-              data-testid={`btn-new-os-${v.id}`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Gerar OS</TooltipContent>
-        </Tooltip>
-      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-800 transition-colors"
-            onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}&scheduled=1`)}
-            data-testid={`btn-schedule-os-${v.id}`}
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800 transition-colors"
+            onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`)}
+            data-testid={`btn-new-os-${v.id}`}
           >
-            <CalendarClock className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent>Agendar OS</TooltipContent>
+        <TooltipContent>Nova OS</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
