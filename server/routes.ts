@@ -944,7 +944,10 @@ Para CPF, formate como 000.000.000-00.`
     const allVehicles = await storage.getVehicles();
     const orders = await storage.getServiceOrders();
     const activeOrders = orders.filter(
-      (o) => o.status === "em_andamento" || o.status === "aberta"
+      (o) => o.status === "em_andamento"
+    );
+    const scheduledOrders = orders.filter(
+      (o) => o.status === "aberta"
     );
 
     const tcPositions = await truckscontrol.getCachedPositions();
@@ -1028,11 +1031,15 @@ Para CPF, formate como 000.000.000-00.`
                   missionStatus: linkedOrder.missionStatus,
                   clientName: client?.name || "—",
                   priority: linkedOrder.priority || "agendada",
-                  employee1: emp1 ? { name: emp1.name, phone: emp1.phone || null } : null,
-                  employee2: emp2 ? { name: emp2.name, phone: emp2.phone || null } : null,
+                  employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null } : null,
+                  employee2: emp2 ? { id: emp2.id, name: emp2.name, phone: emp2.phone || null } : null,
                 };
               })()
             : null,
+          scheduledOs: (() => {
+            const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id);
+            return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate } : null;
+          })(),
         };
       })
     );

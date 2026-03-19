@@ -66,8 +66,8 @@ function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
   return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
 }
 
-function OrderForm({ order, clients, employees, vehicles, onClose, allOrders }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void; allOrders: ServiceOrder[];
+function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, prefilledVehicleId }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null;
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -81,7 +81,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders }: 
     completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
     assignedEmployeeId: order?.assignedEmployeeId || null,
     assignedEmployee2Id: order?.assignedEmployee2Id || null,
-    vehicleId: order?.vehicleId || null,
+    vehicleId: order?.vehicleId || prefilledVehicleId || null,
     notes: order?.notes || "",
   });
 
@@ -210,6 +210,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders }: 
 export default function ServiceOrdersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
+  const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -240,6 +241,8 @@ export default function ServiceOrdersPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const osId = params.get("os");
+    const newOs = params.get("newOs");
+    const vehicleId = params.get("vehicleId");
     if (osId && orders.length > 0) {
       const found = orders.find((o) => o.id === Number(osId));
       if (found && !editItem) {
@@ -247,6 +250,11 @@ export default function ServiceOrdersPage() {
         setShowForm(true);
         window.history.replaceState({}, "", window.location.pathname);
       }
+    } else if (newOs === "1" && !showForm) {
+      if (vehicleId) setPrefilledVehicleId(Number(vehicleId));
+      setEditItem(undefined);
+      setShowForm(true);
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }, [orders]);
 
@@ -268,7 +276,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} allOrders={orders || []} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); }} />}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (

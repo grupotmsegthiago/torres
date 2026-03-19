@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -383,6 +383,19 @@ export default function VehiclesPage() {
   const { toast } = useToast();
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: fuelings = [] } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const vId = params.get("id");
+    if (vId && vehicles.length > 0 && !editItem) {
+      const found = vehicles.find((v) => v.id === Number(vId));
+      if (found) {
+        setEditItem(found);
+        setShowForm(true);
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [vehicles]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/vehicles/${id}`); },

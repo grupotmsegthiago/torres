@@ -16,7 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -61,8 +61,13 @@ interface TrackedVehicle {
     missionStatus: string;
     clientName: string;
     priority: string;
-    employee1: { name: string; phone: string | null } | null;
-    employee2: { name: string; phone: string | null } | null;
+    employee1: { id: number; name: string; phone: string | null } | null;
+    employee2: { id: number; name: string; phone: string | null } | null;
+  } | null;
+  scheduledOs: {
+    id: number;
+    osNumber: string;
+    scheduledDate: string | null;
   } | null;
 }
 
@@ -152,6 +157,20 @@ function getMissionLabel(status: string | null) {
     default:
       return status;
   }
+}
+
+function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
+  if (v.activeOs) {
+    const ms = v.activeOs.missionStatus;
+    if (ms === "finalizada" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno") {
+      return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    }
+    return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
+  }
+  if (v.scheduledOs) {
+    return { label: "COM AGENDAMENTO", icon: CalendarClock, className: "bg-amber-50 text-amber-700 border-amber-200" };
+  }
+  return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
 
 function getPriorityDisplay(priority: string) {
@@ -737,6 +756,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   const { toast } = useToast();
   const [mirrorOpen, setMirrorOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [, navigate] = useLocation();
 
   const mirrorMutation = useMutation({
     mutationFn: async (gerenciadoraId: number) => {
@@ -763,6 +783,32 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
 
   return (
     <div className="flex items-center gap-1">
+      {!v.activeOs && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800 transition-colors"
+              onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`)}
+              data-testid={`btn-new-os-${v.id}`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Gerar OS</TooltipContent>
+        </Tooltip>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-500 hover:text-blue-700 transition-colors"
+            onClick={() => navigate(`/admin/vehicles?id=${v.id}`)}
+            data-testid={`btn-docs-vtr-${v.id}`}
+          >
+            <FileText className="w-3 h-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Docs VTR</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -890,7 +936,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                 <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Prioridade</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Viatura</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -1063,23 +1109,29 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       {v.activeOs ? (
                         <div className="flex flex-col gap-0.5">
                           {v.activeOs.employee1 && (
-                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-neutral-700">
+                            <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                               {v.activeOs.employee1.name}
                               {v.activeOs.employee1.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
                                   <SiWhatsapp className="w-3.5 h-3.5" />
                                 </a>
                               )}
+                              <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent1-${v.id}`}>
+                                <FileText className="w-3.5 h-3.5" />
+                              </Link>
                             </span>
                           )}
                           {v.activeOs.employee2 && (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-400">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-400" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                               {v.activeOs.employee2.name}
                               {v.activeOs.employee2.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
                                   <SiWhatsapp className="w-3.5 h-3.5" />
                                 </a>
                               )}
+                              <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent2-${v.id}`}>
+                                <FileText className="w-3.5 h-3.5" />
+                              </Link>
                             </span>
                           )}
                           {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-[11px]">Sem agente</span>}
@@ -1106,24 +1158,38 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                             {v.activeOs.clientName}
                           </p>
                         </div>
+                      ) : v.scheduledOs ? (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid={`link-os-scheduled-${v.id}`}>
+                              {v.scheduledOs.osNumber}
+                            </Link>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold border bg-slate-50 text-slate-600 border-slate-200">
+                              Agendada
+                            </span>
+                          </div>
+                          {v.scheduledOs.scheduledDate && (
+                            <p className="text-[10px] text-neutral-400 font-medium">
+                              {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-neutral-300 text-[11px]">—</span>
                       )}
                     </td>
 
                     <td className="px-3 py-3 text-center whitespace-nowrap">
-                      {v.activeOs ? (() => {
-                        const pInfo = getPriorityDisplay(v.activeOs!.priority);
-                        const PIcon = pInfo.icon;
+                      {(() => {
+                        const vStatus = getViaturaStatus(v);
+                        const VIcon = vStatus.icon;
                         return (
-                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${pInfo.className}`}>
-                            <PIcon className="w-3 h-3" />
-                            {pInfo.label}
+                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${vStatus.className}`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                            <VIcon className="w-3 h-3" />
+                            {vStatus.label}
                           </span>
                         );
-                      })() : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
-                      )}
+                      })()}
                     </td>
 
                     <td className="px-3 py-3 text-center">
@@ -1330,7 +1396,7 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-0.5">
                         {item.employee1 && (
-                          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-neutral-700">
+                          <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                             {item.employee1.name}
                             {item.employee1.phone && (
                               <a href={`https://wa.me/${formatPhone(item.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600">
@@ -1340,7 +1406,7 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
                           </span>
                         )}
                         {item.employee2 && (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-400">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-400" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                             {item.employee2.name}
                             {item.employee2.phone && (
                               <a href={`https://wa.me/${formatPhone(item.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600">

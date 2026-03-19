@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -1082,6 +1082,18 @@ export default function EmployeesPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const { data: employees = [], isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const empId = params.get("id");
+    if (empId && employees.length > 0 && !docEmployee) {
+      const found = employees.find((e) => e.id === Number(empId));
+      if (found) {
+        setDocEmployee(found);
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [employees]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employees/${id}`); },
