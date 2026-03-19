@@ -257,16 +257,18 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  const carImageRef = useRef<HTMLImageElement | null>(null);
+  const carImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const [mapReady, setMapReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
 
   useEffect(() => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = "/polo-icon.webp";
-    img.onload = () => { carImageRef.current = img; };
-    carImageRef.current = img;
+    const sources: Record<string, string> = { polo: "/polo-icon.webp", kwid: "/kwid-icon.png" };
+    Object.entries(sources).forEach(([key, src]) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = src;
+      carImagesRef.current[key] = img;
+    });
   }, []);
 
   const loadGoogleMaps = useCallback(() => {
@@ -337,7 +339,14 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
 
       const isSpy = v.deviceType === "spy";
 
-      const buildCarIcon = (statusColor: string, plate: string) => {
+      const getCarImageKey = (model?: string) => {
+        if (!model) return "polo";
+        const m = model.toLowerCase();
+        if (m.includes("kwid")) return "kwid";
+        return "polo";
+      };
+
+      const buildCarIcon = (statusColor: string, plate: string, model?: string) => {
         const canvas = document.createElement("canvas");
         const size = 56;
         const labelH = 16;
@@ -365,7 +374,8 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
 
-        const img = carImageRef.current;
+        const imgKey = getCarImageKey(model);
+        const img = carImagesRef.current[imgKey];
         if (img && img.complete && img.naturalWidth > 0) {
           ctx.save();
           ctx.beginPath();
@@ -420,7 +430,7 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
         const statusColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
         markerIcon = {
-          url: buildCarIcon(statusColor, v.plate),
+          url: buildCarIcon(statusColor, v.plate, v.model),
           scaledSize: new window.google.maps.Size(48, 62),
           anchor: new window.google.maps.Point(24, 48),
         };
@@ -1082,7 +1092,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     <td className="px-3 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: statusColor }}>
-                          <img src="/polo-icon.webp" alt="VTR" className="w-full h-full object-cover" />
+                          <img src={v.model?.toLowerCase().includes("kwid") ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
