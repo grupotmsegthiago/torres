@@ -114,6 +114,18 @@ export async function ensureDbSchema() {
       ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
     `);
 
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS frota TEXT`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS route TEXT`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_number TEXT`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_brand TEXT`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_protection TEXT`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS gerenciadoras (
         id SERIAL PRIMARY KEY,
