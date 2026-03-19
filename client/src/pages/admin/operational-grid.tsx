@@ -9,6 +9,7 @@ import {
   ExternalLink, Zap, CalendarClock, Recycle,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
+  AlertTriangle, CheckCircle2, XCircle, Loader2,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
@@ -603,6 +604,64 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
   );
 }
 
+function TrucksControlStatus() {
+  const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  const checkStatus = async () => {
+    setLoading(true);
+    try {
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch("/api/truckscontrol/test");
+      const data = await res.json();
+      setStatus(data);
+    } catch {
+      setStatus({ success: false, message: "Erro de conexão" });
+    } finally {
+      setLoading(false);
+      setChecked(true);
+    }
+  };
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  if (!checked && !loading) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      {loading ? (
+        <span className="inline-flex items-center gap-1.5 text-xs text-neutral-400">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          TrucksControl...
+        </span>
+      ) : status?.success ? (
+        <Tooltip>
+          <TooltipTrigger>
+            <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full" data-testid="badge-tc-status">
+              <CheckCircle2 className="w-3 h-3" />
+              TC Online
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-xs">{status.message}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger>
+            <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full" data-testid="badge-tc-status">
+              <AlertTriangle className="w-3 h-3" />
+              TC Offline
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[350px] text-xs whitespace-normal">{status?.message || "Não conectado"}</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 export default function OperationalGridPage() {
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
@@ -632,9 +691,12 @@ export default function OperationalGridPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title">
-              Grid Operacional
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title">
+                Grid Operacional
+              </h1>
+              <TrucksControlStatus />
+            </div>
             <p className="text-sm text-neutral-500 mt-1">
               Monitoramento em tempo real · {vehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
             </p>
