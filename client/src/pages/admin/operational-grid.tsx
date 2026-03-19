@@ -321,7 +321,7 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
 
     window.initGridMap = () => setMapReady(true);
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&callback=initGridMap`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=initGridMap`;
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
@@ -1682,7 +1682,41 @@ function ProximitySearchTool({ vehicles, onResult, onClear }: {
   const [radiusKm, setRadiusKm] = useState(10);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedCoords, setResolvedCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const autocompleteInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<any>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!open || !autocompleteInputRef.current || !window.google?.maps?.places) return;
+    if (autocompleteRef.current) return;
+
+    const ac = new window.google.maps.places.Autocomplete(autocompleteInputRef.current, {
+      types: [],
+      componentRestrictions: { country: "br" },
+      fields: ["geometry", "formatted_address", "name"],
+    });
+
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      if (place?.geometry?.location) {
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const label = place.formatted_address || place.name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        setSearchInput(label);
+        setResolvedCoords({ lat, lng, label });
+        setError(null);
+      }
+    });
+
+    autocompleteRef.current = ac;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      autocompleteRef.current = null;
+    }
+  }, [open]);
 
   const resolveAndSearch = async () => {
     setError(null);
@@ -1692,6 +1726,14 @@ function ProximitySearchTool({ vehicles, onResult, onClear }: {
     const coords = parseGoogleMapsLink(trimmed);
     if (coords) {
       onResult({ lat: coords.lat, lng: coords.lng, radiusKm, label: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` });
+      setResolvedCoords(null);
+      setOpen(false);
+      return;
+    }
+
+    if (resolvedCoords) {
+      onResult({ lat: resolvedCoords.lat, lng: resolvedCoords.lng, radiusKm, label: resolvedCoords.label });
+      setResolvedCoords(null);
       setOpen(false);
       return;
     }
@@ -1706,6 +1748,7 @@ function ProximitySearchTool({ vehicles, onResult, onClear }: {
         const loc = data.results[0].geometry.location;
         const addr = data.results[0].formatted_address || trimmed;
         onResult({ lat: loc.lat, lng: loc.lng, radiusKm, label: addr });
+        setResolvedCoords(null);
         setOpen(false);
       } else {
         setError("Endereço não encontrado. Tente ser mais específico.");
@@ -1719,6 +1762,7 @@ function ProximitySearchTool({ vehicles, onResult, onClear }: {
 
   const handleClear = () => {
     setSearchInput("");
+    setResolvedCoords(null);
     setError(null);
     onClear();
     setOpen(false);
@@ -1757,17 +1801,25 @@ function ProximitySearchTool({ vehicles, onResult, onClear }: {
             <div>
               <Label className="text-sm font-semibold text-neutral-700">Local de referência</Label>
               <div className="mt-1.5 relative">
-                <Input
+                <input
+                  ref={autocompleteInputRef}
+                  type="text"
                   placeholder="Ex: Av. Paulista, SP  ou  -23.5505, -46.6333  ou  link Google Maps"
                   value={searchInput}
-                  onChange={(e) => { setSearchInput(e.target.value); setError(null); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") resolveAndSearch(); }}
-                  className="h-11 pr-10 rounded-lg border-neutral-300 shadow-sm"
+                  onChange={(e) => { setSearchInput(e.target.value); setResolvedCoords(null); setError(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); resolveAndSearch(); } }}
+                  className="flex h-11 w-full rounded-lg border border-neutral-300 bg-background px-3 py-2 pr-10 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   data-testid="input-proximity-location"
                 />
-                <Search className="w-4 h-4 text-neutral-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-neutral-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
               {error && <p className="text-xs text-red-500 font-medium mt-1.5">{error}</p>}
+              {resolvedCoords && (
+                <p className="text-[11px] text-green-600 font-medium mt-1.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Local encontrado: {resolvedCoords.lat.toFixed(4)}, {resolvedCoords.lng.toFixed(4)}
+                </p>
+              )}
               <p className="text-[11px] text-neutral-400 mt-1.5">
                 Aceita: endereço, cidade, coordenadas (lat, lng) ou link do Google Maps
               </p>
