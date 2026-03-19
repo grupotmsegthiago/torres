@@ -120,6 +120,10 @@ export const vehicles = pgTable("vehicles", {
   trackerType: text("tracker_type"),
   truckscontrolIdentifier: text("truckscontrol_identifier"),
   km: integer("km").default(0),
+  photoFront: text("photo_front"),
+  photoLeft: text("photo_left"),
+  photoRear: text("photo_rear"),
+  photoRight: text("photo_right"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon } from "lucide-react";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
@@ -31,6 +31,10 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     trackerType: (vehicle as any)?.trackerType || "none",
     truckscontrolIdentifier: (vehicle as any)?.truckscontrolIdentifier || "",
     km: vehicle?.km || 0,
+    photoFront: vehicle?.photoFront || "",
+    photoLeft: vehicle?.photoLeft || "",
+    photoRear: vehicle?.photoRear || "",
+    photoRight: vehicle?.photoRight || "",
     notes: vehicle?.notes || "",
   });
 
@@ -231,6 +235,57 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
                 </div>
               </>
             )}
+          </div>
+        </div>
+        <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50">
+          <div className="flex items-center gap-2 mb-3">
+            <Camera className="w-4 h-4 text-neutral-600" />
+            <span className="text-sm font-medium text-neutral-800">Fotos do Veículo</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {(["photoFront", "photoLeft", "photoRear", "photoRight"] as const).map((key, i) => {
+              const labels = ["Dianteira", "Lateral Esq.", "Traseira", "Lateral Dir."];
+              return (
+                <div key={key} className="flex flex-col items-center gap-2">
+                  <label className="text-xs text-neutral-500 font-medium">{labels[i]}</label>
+                  {form[key] ? (
+                    <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden border border-neutral-200 bg-white group">
+                      <img src={form[key]} alt={labels[i]} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, [key]: "" })}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        data-testid={`btn-remove-${key}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="w-full aspect-[4/3] rounded-lg border-2 border-dashed border-neutral-300 bg-white flex flex-col items-center justify-center cursor-pointer hover:border-neutral-400 hover:bg-neutral-50 transition-colors">
+                      <ImageIcon className="w-6 h-6 text-neutral-300 mb-1" />
+                      <span className="text-[10px] text-neutral-400">Clique para enviar</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" });
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => setForm(prev => ({ ...prev, [key]: reader.result as string }));
+                          reader.readAsDataURL(file);
+                        }}
+                        data-testid={`input-${key}`}
+                      />
+                    </label>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="md:col-span-3">

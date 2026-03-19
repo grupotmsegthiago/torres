@@ -187,6 +187,37 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
+        {form.vehicleId && (() => {
+          const selectedVehicle = vehicles.find(v => v.id === form.vehicleId);
+          if (!selectedVehicle) return null;
+          const photos = [
+            { label: "Dianteira", src: selectedVehicle.photoFront },
+            { label: "Lateral Esq.", src: selectedVehicle.photoLeft },
+            { label: "Traseira", src: selectedVehicle.photoRear },
+            { label: "Lateral Dir.", src: selectedVehicle.photoRight },
+          ].filter(p => p.src);
+          if (photos.length === 0) return null;
+          return (
+            <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50" data-testid="section-vehicle-photos">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="font-bold text-[13px] text-neutral-900 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  {selectedVehicle.plate}
+                </span>
+                <span className="text-xs text-neutral-500">{selectedVehicle.brand} {selectedVehicle.model} {selectedVehicle.color ? `· ${selectedVehicle.color}` : ""}</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {photos.map((p, i) => (
+                  <div key={i} className="flex flex-col items-center gap-1">
+                    <div className="w-full aspect-[4/3] rounded-lg overflow-hidden border border-neutral-200 bg-white">
+                      <img src={p.src!} alt={p.label} className="w-full h-full object-cover" />
+                    </div>
+                    <span className="text-[10px] text-neutral-400 font-medium">{p.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         <div>
           <label className="text-xs text-neutral-500 mb-1 flex items-center gap-1"><Package className="w-3 h-3" /> Kit de Armamento</label>
           <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-kit">
