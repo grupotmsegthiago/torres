@@ -391,7 +391,15 @@ Para CPF, formate como 000.000.000-00.`
   app.post("/api/service-orders", requireAuth, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (parsed.data.kitId) {
+      const kit = await storage.getWeaponKit(parsed.data.kitId);
+      if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
+      if (kit.status === "em_uso") return res.status(400).json({ message: "Kit já está em uso em outra OS" });
+    }
     const data = await storage.createServiceOrder(parsed.data);
+    if (data.kitId) {
+      await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
+    }
     res.status(201).json(data);
   });
 
@@ -406,12 +414,33 @@ Para CPF, formate como 000.000.000-00.`
       }
     }
 
+    const existing = await storage.getServiceOrder(Number(req.params.id));
+    if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
+      const kit = await storage.getWeaponKit(parsed.data.kitId);
+      if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
+      if (kit.status === "em_uso") return res.status(400).json({ message: "Kit já está em uso em outra OS" });
+    }
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
+
+    if (existing && existing.kitId && existing.kitId !== data.kitId) {
+      await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
+    }
+    if (data.kitId && (!existing || existing.kitId !== data.kitId)) {
+      await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
+    }
+    if (data.kitId && (data.missionStatus === "finalizada" || data.status === "concluída" || data.status === "cancelada")) {
+      await storage.updateWeaponKit(data.kitId, { status: "disponível" });
+    }
+
     res.json(data);
   });
 
   app.delete("/api/service-orders/:id", requireAuth, async (req, res) => {
+    const existing = await storage.getServiceOrder(Number(req.params.id));
+    if (existing?.kitId) {
+      await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
+    }
     await storage.deleteServiceOrder(Number(req.params.id));
     res.json({ message: "OS removida" });
   });
@@ -1432,6 +1461,11 @@ Para CPF, formate como 000.000.000-00.`
     }
 
     const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+    if (nextStep === "finalizada" && so.kitId) {
+      await storage.updateWeaponKit(so.kitId, { status: "disponível" });
+    }
+
     res.json(updated);
   });
 
@@ -1766,6 +1800,90 @@ Para CPF, formate como 000.000.000-00.`
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
     const a = await storage.createVehicleAssignment(parsed.data);
     res.status(201).json(a);
+  });
+
+  // ===== WEAPON KITS =====
+  app.get("/api/weapon-kits", requireAdminRole, async (_req, res) => {
+    const kits = await storage.getWeaponKits();
+    const enriched = await Promise.all(kits.map(async (kit) => {
+      const items = await storage.getWeaponKitItems(kit.id);
+      const weaponDetails = await Promise.all(items.map(async (item) => {
+        const weapon = await storage.getWeapon(item.weaponId);
+        return { ...item, weapon };
+      }));
+      return { ...kit, items: weaponDetails };
+    }));
+    res.json(enriched);
+  });
+
+  app.get("/api/weapon-kits/:id", requireAdminRole, async (req, res) => {
+    const kit = await storage.getWeaponKit(parseInt(req.params.id));
+    if (!kit) return res.status(404).json({ message: "Kit não encontrado" });
+    const items = await storage.getWeaponKitItems(kit.id);
+    const weaponDetails = await Promise.all(items.map(async (item) => {
+      const weapon = await storage.getWeapon(item.weaponId);
+      return { ...item, weapon };
+    }));
+    res.json({ ...kit, items: weaponDetails });
+  });
+
+  app.post("/api/weapon-kits", requireAdminRole, async (req, res) => {
+    try {
+      const { name, description, weaponIds } = req.body;
+      if (!name || typeof name !== "string") return res.status(400).json({ message: "Nome do kit é obrigatório" });
+      if (!weaponIds || !Array.isArray(weaponIds) || weaponIds.length === 0) {
+        return res.status(400).json({ message: "Selecione ao menos uma arma para o kit" });
+      }
+      const uniqueIds = [...new Set(weaponIds.map(Number))];
+      for (const wid of uniqueIds) {
+        const w = await storage.getWeapon(wid);
+        if (!w) return res.status(400).json({ message: `Arma ID ${wid} não encontrada` });
+      }
+      const kit = await storage.createWeaponKit({ name, description: description || null, status: "disponível" });
+      for (const weaponId of uniqueIds) {
+        await storage.createWeaponKitItem({ kitId: kit.id, weaponId });
+      }
+      res.status(201).json(kit);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/weapon-kits/:id", requireAdminRole, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, description, status, weaponIds } = req.body;
+      const existing = await storage.getWeaponKit(id);
+      if (!existing) return res.status(404).json({ message: "Kit não encontrado" });
+      const updated = await storage.updateWeaponKit(id, {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(status !== undefined && { status }),
+      });
+      if (!updated) return res.status(404).json({ message: "Kit não encontrado" });
+      if (weaponIds && Array.isArray(weaponIds)) {
+        const uniqueIds = [...new Set(weaponIds.map(Number))];
+        for (const wid of uniqueIds) {
+          const w = await storage.getWeapon(wid);
+          if (!w) return res.status(400).json({ message: `Arma ID ${wid} não encontrada` });
+        }
+        await storage.deleteWeaponKitItemsByKit(id);
+        for (const weaponId of uniqueIds) {
+          await storage.createWeaponKitItem({ kitId: id, weaponId });
+        }
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/weapon-kits/:id", requireAdminRole, async (req, res) => {
+    const kit = await storage.getWeaponKit(parseInt(req.params.id));
+    if (!kit) return res.status(404).json({ message: "Kit não encontrado" });
+    if (kit.status === "em_uso") return res.status(400).json({ message: "Não é possível excluir um kit em uso" });
+    await storage.deleteWeaponKit(parseInt(req.params.id));
+    res.json({ message: "Kit excluído" });
   });
 
   app.post("/api/weapons/ocr", requireAdminRole, async (req, res) => {

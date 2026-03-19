@@ -3,7 +3,7 @@ import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
-  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, gerenciadoras,
+  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, weaponKits, weaponKitItems, gerenciadoras,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -21,6 +21,8 @@ import {
   type Weapon, type InsertWeapon,
   type WeaponAssignment, type InsertWeaponAssignment,
   type VehicleAssignment, type InsertVehicleAssignment,
+  type WeaponKit, type InsertWeaponKit,
+  type WeaponKitItem, type InsertWeaponKitItem,
   type Gerenciadora, type InsertGerenciadora,
 } from "@shared/schema";
 
@@ -113,6 +115,16 @@ export interface IStorage {
 
   getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]>;
   createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment>;
+
+  getWeaponKits(): Promise<WeaponKit[]>;
+  getWeaponKit(id: number): Promise<WeaponKit | undefined>;
+  createWeaponKit(kit: InsertWeaponKit): Promise<WeaponKit>;
+  updateWeaponKit(id: number, kit: Partial<InsertWeaponKit>): Promise<WeaponKit | undefined>;
+  deleteWeaponKit(id: number): Promise<void>;
+  getWeaponKitItems(kitId: number): Promise<WeaponKitItem[]>;
+  createWeaponKitItem(item: InsertWeaponKitItem): Promise<WeaponKitItem>;
+  deleteWeaponKitItem(id: number): Promise<void>;
+  deleteWeaponKitItemsByKit(kitId: number): Promise<void>;
 
   getGerenciadoras(): Promise<Gerenciadora[]>;
   getGerenciadora(id: number): Promise<Gerenciadora | undefined>;
@@ -515,6 +527,47 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGerenciadora(id: number): Promise<void> {
     await db.delete(gerenciadoras).where(eq(gerenciadoras.id, id));
+  }
+
+  async getWeaponKits(): Promise<WeaponKit[]> {
+    return db.select().from(weaponKits).orderBy(weaponKits.name);
+  }
+
+  async getWeaponKit(id: number): Promise<WeaponKit | undefined> {
+    const [k] = await db.select().from(weaponKits).where(eq(weaponKits.id, id));
+    return k;
+  }
+
+  async createWeaponKit(kit: InsertWeaponKit): Promise<WeaponKit> {
+    const [created] = await db.insert(weaponKits).values(kit).returning();
+    return created;
+  }
+
+  async updateWeaponKit(id: number, kit: Partial<InsertWeaponKit>): Promise<WeaponKit | undefined> {
+    const [updated] = await db.update(weaponKits).set(kit).where(eq(weaponKits.id, id)).returning();
+    return updated;
+  }
+
+  async deleteWeaponKit(id: number): Promise<void> {
+    await db.delete(weaponKitItems).where(eq(weaponKitItems.kitId, id));
+    await db.delete(weaponKits).where(eq(weaponKits.id, id));
+  }
+
+  async getWeaponKitItems(kitId: number): Promise<WeaponKitItem[]> {
+    return db.select().from(weaponKitItems).where(eq(weaponKitItems.kitId, kitId));
+  }
+
+  async createWeaponKitItem(item: InsertWeaponKitItem): Promise<WeaponKitItem> {
+    const [created] = await db.insert(weaponKitItems).values(item).returning();
+    return created;
+  }
+
+  async deleteWeaponKitItem(id: number): Promise<void> {
+    await db.delete(weaponKitItems).where(eq(weaponKitItems.id, id));
+  }
+
+  async deleteWeaponKitItemsByKit(kitId: number): Promise<void> {
+    await db.delete(weaponKitItems).where(eq(weaponKitItems.kitId, kitId));
   }
 }
 

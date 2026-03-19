@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye } from "lucide-react";
-import type { Weapon, WeaponAssignment, Employee } from "@shared/schema";
+import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye, Package, Check } from "lucide-react";
+import type { Weapon, WeaponAssignment, Employee, WeaponKit, WeaponKitItem } from "@shared/schema";
 
 const WEAPON_TYPES = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
 const CALIBERS = [".38", ".380 ACP", "9mm", ".40 S&W", ".45 ACP", "12 GA", "5.56x45mm", ".308 Win", "Outro"];
@@ -802,6 +802,243 @@ function WeaponGroupTable({
   );
 }
 
+type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
+
+function KitFormDialog({ open, onClose, kit, weapons }: { open: boolean; onClose: () => void; kit?: EnrichedKit; weapons: Weapon[] }) {
+  const { toast } = useToast();
+  const [name, setName] = useState(kit?.name || "");
+  const [description, setDescription] = useState(kit?.description || "");
+  const [selectedWeaponIds, setSelectedWeaponIds] = useState<number[]>(kit?.items.map(i => i.weaponId) || []);
+  const [weaponSearch, setWeaponSearch] = useState("");
+
+  const toggleWeapon = (id: number) => {
+    setSelectedWeaponIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const availableWeapons = weapons.filter(w => {
+    const term = weaponSearch.toLowerCase();
+    return (!term || w.brand.toLowerCase().includes(term) || w.model.toLowerCase().includes(term) || w.serialNumber.toLowerCase().includes(term) || w.caliber.toLowerCase().includes(term) || w.type.toLowerCase().includes(term));
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!name.trim()) throw new Error("Nome obrigatório");
+      if (selectedWeaponIds.length === 0) throw new Error("Selecione ao menos uma arma");
+      if (kit) {
+        await apiRequest("PATCH", `/api/weapon-kits/${kit.id}`, { name, description, weaponIds: selectedWeaponIds });
+      } else {
+        await apiRequest("POST", "/api/weapon-kits", { name, description, weaponIds: selectedWeaponIds });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+      toast({ title: kit ? "Kit atualizado" : "Kit criado com sucesso" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle style={{ fontFamily: "'Montserrat', sans-serif" }}>{kit ? "Editar Kit" : "Novo Kit de Armamento"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Nome do Kit *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Kit Operacional 01" data-testid="input-kit-name" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Descrição</label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional" data-testid="input-kit-description" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">Armas do Kit ({selectedWeaponIds.length} selecionada{selectedWeaponIds.length !== 1 ? "s" : ""})</label>
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <Input value={weaponSearch} onChange={(e) => setWeaponSearch(e.target.value)} placeholder="Buscar arma..." className="pl-9" data-testid="input-kit-weapon-search" />
+            </div>
+            <div className="border rounded-lg max-h-60 overflow-y-auto divide-y divide-neutral-100">
+              {availableWeapons.length === 0 ? (
+                <div className="p-4 text-center text-neutral-400 text-sm">Nenhuma arma encontrada</div>
+              ) : availableWeapons.map(w => (
+                <label key={w.id} className={`flex items-center gap-3 p-2.5 cursor-pointer transition-colors hover:bg-neutral-50 ${selectedWeaponIds.includes(w.id) ? "bg-blue-50" : ""}`}>
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${selectedWeaponIds.includes(w.id) ? "bg-blue-600 border-blue-600" : "border-neutral-300"}`} onClick={() => toggleWeapon(w.id)}>
+                    {selectedWeaponIds.includes(w.id) && <Check className="w-3.5 h-3.5 text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0" onClick={() => toggleWeapon(w.id)}>
+                    <div className="text-sm font-semibold text-neutral-900">{w.type} {w.brand} {w.model}</div>
+                    <div className="text-xs text-neutral-500">Cal. {w.caliber} · Nº {w.serialNumber}</div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${w.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{w.status}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          {selectedWeaponIds.length > 0 && (
+            <div className="bg-neutral-50 rounded-lg p-3">
+              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Composição do Kit</div>
+              <div className="space-y-1">
+                {selectedWeaponIds.map(id => {
+                  const w = weapons.find(x => x.id === id);
+                  return w ? (
+                    <div key={id} className="flex items-center justify-between text-sm">
+                      <span className="text-neutral-700">{w.type} {w.brand} {w.model} — Cal. {w.caliber}</span>
+                      <button onClick={() => toggleWeapon(id)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-kit">
+              {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {kit ? "Salvar" : "Criar Kit"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function KitsTab({ weapons }: { weapons: Weapon[] }) {
+  const { toast } = useToast();
+  const [showKitForm, setShowKitForm] = useState(false);
+  const [editKit, setEditKit] = useState<EnrichedKit | undefined>();
+  const [expandedKit, setExpandedKit] = useState<number | null>(null);
+
+  const { data: kits = [], isLoading } = useQuery<EnrichedKit[]>({
+    queryKey: ["/api/weapon-kits"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/weapon-kits/${id}`); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+      toast({ title: "Kit excluído" });
+    },
+  });
+
+  const getKitStatusColor = (kit: EnrichedKit) => {
+    if (kit.status === "em_uso") return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-green-100 text-green-700 border-green-200";
+  };
+
+  const getKitStatusLabel = (kit: EnrichedKit) => {
+    if (kit.status === "em_uso") return "EM USO";
+    return "DISPONÍVEL";
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-sm text-neutral-500">{kits.length} kit(s) cadastrado(s)</p>
+        </div>
+        <Button onClick={() => { setEditKit(undefined); setShowKitForm(true); }} data-testid="button-new-kit">
+          <Plus className="w-4 h-4 mr-2" /> Novo Kit
+        </Button>
+      </div>
+
+      {showKitForm && (
+        <KitFormDialog open={showKitForm} onClose={() => { setShowKitForm(false); setEditKit(undefined); }} kit={editKit} weapons={weapons} />
+      )}
+
+      {isLoading ? (
+        <div className="p-8 text-center text-neutral-400">Carregando...</div>
+      ) : kits.length === 0 ? (
+        <Card className="p-8 text-center bg-white border-neutral-200">
+          <Package className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+          <p className="text-neutral-500">Nenhum kit cadastrado</p>
+          <p className="text-sm text-neutral-400 mt-1">Crie kits com composição padrão (ex: 2x .38 + 1x 12 GA)</p>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {kits.map(kit => (
+            <Card key={kit.id} className="bg-white border-neutral-200 overflow-hidden" data-testid={`card-kit-${kit.id}`}>
+              <div className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
+                      <Package className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{kit.name}</h3>
+                      {kit.description && <p className="text-xs text-neutral-500">{kit.description}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getKitStatusColor(kit)}`}>{getKitStatusLabel(kit)}</span>
+                    <Button variant="ghost" size="icon" onClick={() => setExpandedKit(expandedKit === kit.id ? null : kit.id)} data-testid={`button-expand-kit-${kit.id}`}>
+                      {expandedKit === kit.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => { setEditKit(kit); setShowKitForm(true); }} data-testid={`button-edit-kit-${kit.id}`}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => { if (confirm("Excluir este kit?")) deleteMutation.mutate(kit.id); }} data-testid={`button-delete-kit-${kit.id}`}>
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-3">
+                  {(() => {
+                    const summary: Record<string, number> = {};
+                    kit.items.forEach(item => {
+                      if (item.weapon) {
+                        const key = `${item.weapon.type} ${item.weapon.caliber}`;
+                        summary[key] = (summary[key] || 0) + 1;
+                      }
+                    });
+                    return Object.entries(summary).map(([key, count]) => (
+                      <span key={key} className="inline-flex items-center gap-1 text-xs bg-neutral-100 text-neutral-600 rounded px-2 py-1 font-medium">
+                        {count}x {key}
+                      </span>
+                    ));
+                  })()}
+                  <span className="text-xs text-neutral-400">{kit.items.length} arma(s)</span>
+                </div>
+              </div>
+              {expandedKit === kit.id && (
+                <div className="border-t border-neutral-100 bg-neutral-50/50">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-neutral-100">
+                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Marca/Modelo</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Calibre</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Nº Série</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {kit.items.map(item => item.weapon ? (
+                        <tr key={item.id} className="hover:bg-white/60">
+                          <td className="px-4 py-2 text-neutral-900 font-medium">{item.weapon.type}</td>
+                          <td className="px-4 py-2 text-neutral-700">{item.weapon.brand} {item.weapon.model}</td>
+                          <td className="px-4 py-2 text-neutral-700">{item.weapon.caliber}</td>
+                          <td className="px-4 py-2 font-mono text-neutral-600 text-xs">{item.weapon.serialNumber}</td>
+                          <td className="px-4 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.weapon.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{item.weapon.status}</span></td>
+                        </tr>
+                      ) : null)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WeaponsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Weapon | undefined>();
@@ -809,6 +1046,7 @@ export default function WeaponsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showBatchImport, setShowBatchImport] = useState(false);
   const [photoViewer, setPhotoViewer] = useState<Weapon | null>(null);
+  const [activeTab, setActiveTab] = useState<"armas" | "kits">("armas");
   const { toast } = useToast();
   const { data: weapons = [], isLoading } = useQuery<Weapon[]>({ queryKey: ["/api/weapons"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -837,18 +1075,43 @@ export default function WeaponsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-weapons-title">Armamento</h1>
-          <p className="text-sm text-neutral-500 mt-1">Cadastro e controle de armas · {weapons.length} arma(s)</p>
+          <p className="text-sm text-neutral-500 mt-1">Cadastro e controle de armas e kits operacionais</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setShowBatchImport(true)} data-testid="button-batch-import">
-            <Sparkles className="w-4 h-4 mr-2" /> Importar com IA
-          </Button>
-          <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-weapon">
-            <Plus className="w-4 h-4 mr-2" /> Nova Arma
-          </Button>
-        </div>
+        {activeTab === "armas" && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowBatchImport(true)} data-testid="button-batch-import">
+              <Sparkles className="w-4 h-4 mr-2" /> Importar com IA
+            </Button>
+            <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-weapon">
+              <Plus className="w-4 h-4 mr-2" /> Nova Arma
+            </Button>
+          </div>
+        )}
       </div>
 
+      <div className="flex gap-1 mb-6 border-b border-neutral-200">
+        <button
+          className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 ${activeTab === "armas" ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
+          onClick={() => setActiveTab("armas")}
+          style={{ fontFamily: "'Montserrat', sans-serif" }}
+          data-testid="tab-armas"
+        >
+          Armas ({weapons.length})
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${activeTab === "kits" ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
+          onClick={() => setActiveTab("kits")}
+          style={{ fontFamily: "'Montserrat', sans-serif" }}
+          data-testid="tab-kits"
+        >
+          <Package className="w-4 h-4" /> Kits
+        </button>
+      </div>
+
+      {activeTab === "kits" ? (
+        <KitsTab weapons={weapons} />
+      ) : (
+      <>
       {expiringWeapons.length > 0 && (
         <Card className="p-4 mb-4 bg-amber-50 border-amber-200">
           <div className="flex items-center gap-2 text-amber-800">
@@ -922,6 +1185,8 @@ export default function WeaponsPage() {
           </div>
         )}
       </Card>
+      </>
+      )}
     </AdminLayout>
   );
 }

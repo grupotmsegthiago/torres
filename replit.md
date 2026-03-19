@@ -36,7 +36,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - `client/index.html` - SEO meta tags
 
 ### Internal System (Área Interna)
-- `shared/schema.ts` - Database schema (users, perfis_acesso, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, employee_salaries, employee_documents, weapons, weapon_assignments, vehicle_assignments)
+- `shared/schema.ts` - Database schema (users, perfis_acesso, clients, employees, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, employee_salaries, employee_documents, weapons, weapon_assignments, vehicle_assignments, weapon_kits, weapon_kit_items, gerenciadoras)
 - `server/db.ts` - Database connection (Supabase PostgreSQL via pg driver with SSL)
 - `server/db-init.ts` - Schema migrations and seed data on startup
 - `server/storage.ts` - DatabaseStorage with full CRUD operations
@@ -58,7 +58,7 @@ Institutional landing page and internal management system for Torres Vigilância
   - `mission.tsx` - Armed escort mission workflow
   - `operational-grid.tsx` - Real-time operational grid with numbered vehicles, info tooltip (full vehicle data + tracker ID), SP rodízio detection (red highlight), speed alert >110 km/h, ignition, GPS, map link, idle time tracking, OS/status/client display, gerenciadora mirroring button
   - `guia-missao.tsx` - Mission step guide
-  - `weapons.tsx` - Weapon registration, PDF upload, agent linking/unlinking with audit history
+  - `weapons.tsx` - Weapon registration, PDF upload, agent linking/unlinking with audit history, weapon kits management (Armas/Kits tabs)
   - `users.tsx` - User management (admin/diretoria only)
 
 ## Environment Variables
@@ -70,7 +70,17 @@ Institutional landing page and internal management system for Torres Vigilância
 - `APIBRASIL_DEVICE_*` - API Brasil device tokens for each service
 
 ## Database Tables
-users, perfis_acesso, clients, employees, employee_salaries, employee_documents, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, weapons, weapon_assignments, vehicle_assignments, gerenciadoras
+users, perfis_acesso, clients, employees, employee_salaries, employee_documents, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, weapons, weapon_assignments, vehicle_assignments, weapon_kits, weapon_kit_items, gerenciadoras
+
+## Weapon Kits (Kits de Armamento)
+- `weapon_kits` table: id, name, description, status (disponível/em_uso), created_at
+- `weapon_kit_items` table: id, kit_id, weapon_id, created_at
+- Standard kit composition: 2x Revólver .38 + 1x Espingarda 12 GA
+- Kit status lifecycle: created as "disponível" → "em_uso" when assigned to OS → "disponível" when OS finalized/cancelled/deleted
+- Service orders have `kit_id` column linking to a weapon kit
+- Kit status is managed automatically via OS create/update/delete/mission-advance
+- Validation: can't assign kit already "em_uso", can't delete kit "em_uso"
+- UI: weapons.tsx has Armas/Kits tabs; service-orders.tsx has kit selector showing available kits
 
 ## Employee Documents (CNH/CNV)
 - `employee_documents` table: type (CNH/CNV/Certificado/Atestado), file_data (base64), expiry_date, issue_date, document_number

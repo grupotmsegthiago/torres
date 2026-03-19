@@ -142,6 +142,7 @@ export const serviceOrders = pgTable("service_orders", {
   assignedEmployee2Id: integer("assigned_employee_2_id"),
   vehicleId: integer("vehicle_id"),
   missionStatus: text("mission_status").default("aguardando"),
+  kitId: integer("kit_id"),
   escortedDriverName: text("escorted_driver_name"),
   escortedVehiclePlate: text("escorted_vehicle_plate"),
   missionStartedAt: timestamp("mission_started_at"),
@@ -313,6 +314,29 @@ export const vehicleAssignments = pgTable("vehicle_assignments", {
 export const insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignments).omit({ id: true, createdAt: true });
 export type InsertVehicleAssignment = z.infer<typeof insertVehicleAssignmentSchema>;
 export type VehicleAssignment = typeof vehicleAssignments.$inferSelect;
+
+export const weaponKits = pgTable("weapon_kits", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("disponível"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWeaponKitSchema = createInsertSchema(weaponKits).omit({ id: true, createdAt: true });
+export type InsertWeaponKit = z.infer<typeof insertWeaponKitSchema>;
+export type WeaponKit = typeof weaponKits.$inferSelect;
+
+export const weaponKitItems = pgTable("weapon_kit_items", {
+  id: serial("id").primaryKey(),
+  kitId: integer("kit_id").notNull(),
+  weaponId: integer("weapon_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWeaponKitItemSchema = createInsertSchema(weaponKitItems).omit({ id: true, createdAt: true });
+export type InsertWeaponKitItem = z.infer<typeof insertWeaponKitItemSchema>;
+export type WeaponKitItem = typeof weaponKitItems.$inferSelect;
 
 export const gerenciadoras = pgTable("gerenciadoras", {
   id: serial("id").primaryKey(),

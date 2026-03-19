@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play } from "lucide-react";
-import type { ServiceOrder, Client, Employee, Vehicle } from "@shared/schema";
+import { Plus, X, Pencil, Trash2, Play, Package } from "lucide-react";
+import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
+
+type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
 const MISSION_STATUS_LABELS: Record<string, string> = {
   aguardando: "Saída da Base",
@@ -66,8 +68,8 @@ function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
   return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
 }
 
-function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, prefilledVehicleId }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null;
+function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null;
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -82,6 +84,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, pr
     assignedEmployeeId: order?.assignedEmployeeId || null,
     assignedEmployee2Id: order?.assignedEmployee2Id || null,
     vehicleId: order?.vehicleId || prefilledVehicleId || null,
+    kitId: order?.kitId || null,
     notes: order?.notes || "",
   });
 
@@ -93,6 +96,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, pr
         assignedEmployeeId: data.assignedEmployeeId ? Number(data.assignedEmployeeId) : null,
         assignedEmployee2Id: data.assignedEmployee2Id ? Number(data.assignedEmployee2Id) : null,
         vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
+        kitId: data.kitId ? Number(data.kitId) : null,
         scheduledDate: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
         completedDate: data.completedDate ? new Date(data.completedDate).toISOString() : null,
       };
@@ -104,6 +108,7 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, pr
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
       toast({ title: order ? "OS atualizada" : "OS criada" });
       onClose();
     },
@@ -182,6 +187,26 @@ function OrderForm({ order, clients, employees, vehicles, onClose, allOrders, pr
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
+        <div>
+          <label className="text-xs text-neutral-500 mb-1 flex items-center gap-1"><Package className="w-3 h-3" /> Kit de Armamento</label>
+          <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-kit">
+            <option value="">Sem kit</option>
+            {kits.filter(k => k.status === "disponível" || (order?.kitId && k.id === order.kitId)).map((k) => (
+              <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas)</option>
+            ))}
+          </select>
+          {form.kitId && (() => {
+            const selectedKit = kits.find(k => k.id === form.kitId);
+            if (!selectedKit) return null;
+            return (
+              <div className="mt-1.5 bg-neutral-50 rounded p-2 text-xs text-neutral-600">
+                {selectedKit.items.map(item => item.weapon ? (
+                  <div key={item.id}>{item.weapon.type} {item.weapon.brand} {item.weapon.caliber} — Nº {item.weapon.serialNumber}</div>
+                ) : null)}
+              </div>
+            );
+          })()}
+        </div>
         {form.status === "concluída" && (
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">Data de Conclusão</label>
@@ -216,10 +241,11 @@ export default function ServiceOrdersPage() {
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); toast({ title: "OS removida" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] }); toast({ title: "OS removida" }); },
   });
 
   const startMissionMutation = useMutation({
@@ -276,7 +302,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); }} />}
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); }} />}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
@@ -293,6 +319,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
                   <th className="text-left p-3 font-medium text-neutral-600">Prioridade</th>
                   <th className="text-left p-3 font-medium text-neutral-600">Status</th>
+                  <th className="text-left p-3 font-medium text-neutral-600">Kit</th>
                   <th className="text-left p-3 font-medium text-neutral-600">Missão</th>
                   <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
                 </tr>
@@ -317,6 +344,16 @@ export default function ServiceOrdersPage() {
                         o.status === "concluída" || o.status === "concluida" ? "bg-green-100 text-green-700" :
                         "bg-neutral-100 text-neutral-600"
                       }`}>{o.status}</span>
+                    </td>
+                    <td className="p-3">
+                      {o.kitId ? (
+                        <span className="inline-flex items-center gap-1 text-xs bg-neutral-100 text-neutral-700 rounded px-2 py-0.5 font-medium">
+                          <Package className="w-3 h-3" />
+                          {kits.find(k => k.id === o.kitId)?.name || `Kit #${o.kitId}`}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-neutral-400">—</span>
+                      )}
                     </td>
                     <td className="p-3">
                       {o.missionStatus ? (
