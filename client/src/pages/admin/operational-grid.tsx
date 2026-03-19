@@ -363,8 +363,6 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
 function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
   const [expanded, setExpanded] = useState(true);
 
-  if (spyDevices.length === 0) return null;
-
   return (
     <Card className="overflow-hidden">
       <div
@@ -381,112 +379,118 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
       </div>
 
       {expanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="table-spy-tracking">
-            <thead>
-              <tr className="border-b bg-neutral-50/50">
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Série</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Descrição</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Bateria</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Acoplado</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Km/h</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">GPS</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Última Pos.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {spyDevices.map((s) => {
-                const posInfo = getLastPositionInfo(s.tracker?.lastPositionTime);
-                const hasLocation = s.tracker?.latitude && s.tracker?.longitude;
-                const mapsUrl = hasLocation
-                  ? `https://www.google.com/maps?q=${s.tracker!.latitude},${s.tracker!.longitude}`
-                  : null;
+        spyDevices.length === 0 ? (
+          <div className="px-4 py-6 text-center text-neutral-400 text-sm" data-testid="text-spy-empty">
+            Nenhum dispositivo SPY encontrado na conta TrucksControl
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-spy-tracking">
+              <thead>
+                <tr className="border-b bg-neutral-50/50">
+                  <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Série</th>
+                  <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Descrição</th>
+                  <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Bateria</th>
+                  <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Acoplado</th>
+                  <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Km/h</th>
+                  <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">GPS</th>
+                  <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
+                  <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Última Pos.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spyDevices.map((s) => {
+                  const posInfo = getLastPositionInfo(s.tracker?.lastPositionTime);
+                  const hasLocation = s.tracker?.latitude && s.tracker?.longitude;
+                  const mapsUrl = hasLocation
+                    ? `https://www.google.com/maps?q=${s.tracker!.latitude},${s.tracker!.longitude}`
+                    : null;
 
-                return (
-                  <tr key={s.id} className="border-b last:border-0 hover:bg-neutral-50 transition-colors" data-testid={`row-spy-${s.id}`}>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-violet-700">{s.plate}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 bg-violet-50 text-violet-600 border border-violet-200 rounded font-medium">SPY</span>
-                      </div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap text-neutral-800">{s.model}</td>
-                    <td className="p-3 text-center whitespace-nowrap">
-                      {s.batteryLevel !== undefined && s.batteryLevel >= 0 ? (
-                        <span className={`font-mono font-bold ${
-                          s.batteryLevel > 50 ? "text-green-600" :
-                          s.batteryLevel > 20 ? "text-amber-600" : "text-red-600"
-                        }`}>
-                          {s.batteryLevel}%
-                        </span>
-                      ) : (
-                        <span className="text-neutral-300">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <div className={`w-3 h-3 rounded-full mx-auto ${s.coupled ? "bg-green-500" : "bg-neutral-300"}`} />
-                        </TooltipTrigger>
-                        <TooltipContent>{s.coupled ? "Acoplado" : "Desacoplado"}</TooltipContent>
-                      </Tooltip>
-                    </td>
-                    <td className="p-3 text-center whitespace-nowrap">
-                      {s.tracker?.speed !== undefined ? (
-                        <span className={`font-mono font-bold ${(s.tracker.speed ?? 0) > 0 ? "text-blue-700" : "text-neutral-400"}`}>
-                          {s.tracker.speed}
-                        </span>
-                      ) : (
-                        <span className="text-neutral-300">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {s.tracker?.gpsSignal === undefined ? (
-                        <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
-                      ) : (
+                  return (
+                    <tr key={s.id} className="border-b last:border-0 hover:bg-neutral-50 transition-colors" data-testid={`row-spy-${s.id}`}>
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-violet-700">{s.plate}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 bg-violet-50 text-violet-600 border border-violet-200 rounded font-medium">SPY</span>
+                        </div>
+                      </td>
+                      <td className="p-3 whitespace-nowrap text-neutral-800">{s.model}</td>
+                      <td className="p-3 text-center whitespace-nowrap">
+                        {s.batteryLevel !== undefined && s.batteryLevel >= 0 ? (
+                          <span className={`font-mono font-bold ${
+                            s.batteryLevel > 50 ? "text-green-600" :
+                            s.batteryLevel > 20 ? "text-amber-600" : "text-red-600"
+                          }`}>
+                            {s.batteryLevel}%
+                          </span>
+                        ) : (
+                          <span className="text-neutral-300">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
                         <Tooltip>
                           <TooltipTrigger>
-                            <Satellite className={`w-4 h-4 mx-auto ${s.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                            <div className={`w-3 h-3 rounded-full mx-auto ${s.coupled ? "bg-green-500" : "bg-neutral-300"}`} />
                           </TooltipTrigger>
-                          <TooltipContent>{s.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
+                          <TooltipContent>{s.coupled ? "Acoplado" : "Desacoplado"}</TooltipContent>
                         </Tooltip>
-                      )}
-                    </td>
-                    <td className="p-3 max-w-[250px]">
-                      {s.tracker?.address ? (
-                        <div className="flex items-start gap-1.5">
-                          {mapsUrl ? (
-                            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800 flex-shrink-0 mt-0.5">
-                              <MapPin className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <MapPin className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0 mt-0.5" />
-                          )}
-                          <span className="text-xs text-neutral-600 truncate" title={s.tracker.address}>{s.tracker.address}</span>
+                      </td>
+                      <td className="p-3 text-center whitespace-nowrap">
+                        {s.tracker?.speed !== undefined ? (
+                          <span className={`font-mono font-bold ${(s.tracker.speed ?? 0) > 0 ? "text-blue-700" : "text-neutral-400"}`}>
+                            {s.tracker.speed}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-300">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        {s.tracker?.gpsSignal === undefined ? (
+                          <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Satellite className={`w-4 h-4 mx-auto ${s.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                            </TooltipTrigger>
+                            <TooltipContent>{s.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </td>
+                      <td className="p-3 max-w-[250px]">
+                        {s.tracker?.address ? (
+                          <div className="flex items-start gap-1.5">
+                            {mapsUrl ? (
+                              <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800 flex-shrink-0 mt-0.5">
+                                <MapPin className="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              <MapPin className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0 mt-0.5" />
+                            )}
+                            <span className="text-xs text-neutral-600 truncate" title={s.tracker.address}>{s.tracker.address}</span>
+                          </div>
+                        ) : hasLocation ? (
+                          <a href={mapsUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 text-xs">
+                            <MapPin className="w-3.5 h-3.5" />
+                            <ExternalLink className="w-3 h-3" />
+                            Ver no mapa
+                          </a>
+                        ) : (
+                          <span className="text-neutral-300 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
+                          <span className={`text-xs font-medium ${posInfo.color}`}>{posInfo.text}</span>
                         </div>
-                      ) : hasLocation ? (
-                        <a href={mapsUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 text-xs">
-                          <MapPin className="w-3.5 h-3.5" />
-                          <ExternalLink className="w-3 h-3" />
-                          Ver no mapa
-                        </a>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
-                        <span className={`text-xs font-medium ${posInfo.color}`}>{posInfo.text}</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
     </Card>
   );
