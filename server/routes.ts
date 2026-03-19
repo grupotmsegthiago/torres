@@ -448,6 +448,10 @@ Para CPF, formate como 000.000.000-00.`
   app.get("/api/service-orders/:id/pdf", requireAuth, async (req, res) => {
     try {
       const PDFDocument = (await import("pdfkit")).default;
+      const QRCode = (await import("qrcode")).default;
+      const path = await import("path");
+      const fs = await import("fs");
+
       const os = await storage.getServiceOrder(Number(req.params.id));
       if (!os) return res.status(404).json({ message: "OS não encontrada" });
 
@@ -464,133 +468,202 @@ Para CPF, formate como 000.000.000-00.`
         }));
       }
 
-      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      const qrData = `TORRES|OS:${os.osNumber}|${new Date().toISOString().slice(0, 10)}`;
+      const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
+
+      const logoPath = path.resolve("attached_assets/image_1772056652908.png");
+      const hasLogo = fs.existsSync(logoPath);
+
+      const doc = new PDFDocument({ size: "A4", margin: 30 });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=OS_${os.osNumber}.pdf`);
       doc.pipe(res);
 
-      const W = 515;
-      const LM = 40;
-      let y = 40;
+      const W = 535;
+      const LM = 30;
+      let y = 30;
 
+      const gradientRect = (x: number, yy: number, w: number, h: number) => {
+        const grad = doc.linearGradient(x, yy, x + w, yy);
+        grad.stop(0, "#000000").stop(1, "#2C3E50");
+        doc.save().rect(x, yy, w, h).fill(grad).restore();
+      };
       const drawRect = (x: number, yy: number, w: number, h: number, fill: string) => {
         doc.save().rect(x, yy, w, h).fill(fill).restore();
       };
-      const drawBorderedRect = (x: number, yy: number, w: number, h: number) => {
-        doc.save().rect(x, yy, w, h).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
+      const cardBorder = (x: number, yy: number, w: number, h: number) => {
+        doc.save().rect(x, yy, w, h).lineWidth(0.8).strokeColor("#1a1a1a").stroke().restore();
       };
-      const cellLabel = (x: number, yy: number, label: string) => {
-        doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(label.toUpperCase(), x + 4, yy + 3, { width: 120 });
+      const thinBorder = (x: number, yy: number, w: number, h: number) => {
+        doc.save().rect(x, yy, w, h).lineWidth(0.4).strokeColor("#d4d4d4").stroke().restore();
+      };
+      const cellLabel = (x: number, yy: number, label: string, w?: number) => {
+        doc.font("Helvetica").fontSize(6.5).fillColor("#737373").text(label.toUpperCase(), x + 5, yy + 3, { width: (w || 120) - 10 });
       };
       const cellValue = (x: number, yy: number, val: string, w?: number) => {
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#171717").text(val || "—", x + 4, yy + 14, { width: (w || 120) - 8 });
+        doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#0a0a0a").text(val || "—", x + 5, yy + 13, { width: (w || 120) - 10 });
       };
 
-      drawRect(LM, y, W, 50, "#171717");
-      doc.font("Helvetica-Bold").fontSize(18).fillColor("#ffffff").text("ORDEM DE SERVIÇO", LM + 15, y + 8, { width: W - 30 });
-      doc.font("Helvetica").fontSize(9).fillColor("#ffffff").text(os.osNumber, LM + W - 100, y + 10, { width: 85, align: "right" });
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#ffffff").text("ESCOLTA ARMADA", LM + 15, y + 32, { width: 200 });
-      if (os.route) {
-        doc.font("Helvetica").fontSize(8).fillColor("#d4d4d4").text(os.route, LM + 200, y + 34, { width: W - 215, align: "right" });
+      const parseDataUri = (dataUri: string): Buffer | null => {
+        try {
+          if (!dataUri || !dataUri.startsWith("data:")) return null;
+          const base64 = dataUri.split(",")[1];
+          if (!base64) return null;
+          return Buffer.from(base64, "base64");
+        } catch { return null; }
+      };
+
+      gradientRect(LM, y, W, 60);
+
+      if (hasLogo) {
+        try { doc.image(logoPath, LM + 12, y + 8, { height: 44 }); } catch {}
       }
-      y += 55;
 
-      drawRect(LM, y, W, 28, "#f5f5f5");
-      drawBorderedRect(LM, y, W, 28);
+      doc.font("Helvetica-Bold").fontSize(20).fillColor("#ffffff").text("ORDEM DE SERVIÇO", LM + 80, y + 10, { width: W - 200 });
+      doc.font("Helvetica").fontSize(9).fillColor("#ffffff").text("ESCOLTA ARMADA", LM + 80, y + 34, { width: 200 });
+
+      doc.font("Helvetica-Bold").fontSize(14).fillColor("#ffffff").text(os.osNumber, LM + W - 130, y + 12, { width: 115, align: "right" });
+      const dateStr = os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "";
+      if (dateStr) {
+        doc.font("Helvetica").fontSize(8).fillColor("#d4d4d4").text(dateStr, LM + W - 130, y + 32, { width: 115, align: "right" });
+      }
+
+      y += 60;
+
+      if (os.route) {
+        drawRect(LM, y, W, 20, "#f0f0f0");
+        thinBorder(LM, y, W, 20);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#333333").text("⬤  ROTA: ", LM + 8, y + 5, { width: 60, continued: true });
+        doc.font("Helvetica").fontSize(8).fillColor("#333333").text(os.route, { width: W - 80 });
+        y += 20;
+      }
+
+      drawRect(LM, y, W, 30, "#fafafa");
+      thinBorder(LM, y, W, 30);
       const halfW = W / 2;
-      cellLabel(LM, y, "EMPRESA CONTRATANTE");
+      thinBorder(LM, y, halfW, 30);
+      cellLabel(LM, y, "EMPRESA CONTRATANTE", halfW);
       cellValue(LM, y, client?.name || "—", halfW);
-      drawBorderedRect(LM + halfW, y, halfW, 28);
-      cellLabel(LM + halfW, y, "SOLICITANTE");
+      cellLabel(LM + halfW, y, "SOLICITANTE", halfW);
       cellValue(LM + halfW, y, os.requesterName || "—", halfW);
-      y += 28;
+      y += 30;
 
-      const thirdW = W / 3;
-      drawRect(LM, y, W, 28, "#fafafa");
-      drawBorderedRect(LM, y, thirdW, 28);
-      cellLabel(LM, y, "DATA INÍCIO");
-      cellValue(LM, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "—", thirdW);
-      drawBorderedRect(LM + thirdW, y, thirdW, 28);
-      cellLabel(LM + thirdW, y, "HORA INÍCIO");
-      cellValue(LM + thirdW, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", thirdW);
-      drawBorderedRect(LM + thirdW * 2, y, thirdW, 28);
-      cellLabel(LM + thirdW * 2, y, "PRIORIDADE");
-      cellValue(LM + thirdW * 2, y, (os.priority || "").toUpperCase(), thirdW);
-      y += 33;
+      const col3 = W / 3;
+      thinBorder(LM, y, col3, 30);
+      thinBorder(LM + col3, y, col3, 30);
+      thinBorder(LM + col3 * 2, y, col3, 30);
+      cellLabel(LM, y, "DATA INÍCIO", col3);
+      cellValue(LM, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "—", col3);
+      cellLabel(LM + col3, y, "HORA INÍCIO", col3);
+      cellValue(LM + col3, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", col3);
+      cellLabel(LM + col3 * 2, y, "PRIORIDADE", col3);
+      cellValue(LM + col3 * 2, y, (os.priority || "").toUpperCase(), col3);
+      y += 35;
 
-      const renderAgent = (emp: any, label: string, weapons: any[]) => {
-        drawRect(LM, y, W, 22, "#171717");
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`IDENTIFICAÇÃO DO AGENTE: ${label}`, LM + 10, y + 6, { width: W - 20 });
-        y += 22;
+      const renderAgent = (emp: any, agentLabel: string, weapons: any[]) => {
+        gradientRect(LM, y, W, 24);
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`AGENTE DE ESCOLTA — ${agentLabel}`, LM + 12, y + 7, { width: W - 24 });
+        y += 24;
 
-        const col4 = W / 4;
-        const rows = [
-          [
-            { l: "NOME", v: emp?.name || "—" },
-            { l: "CPF", v: emp?.cpf || "—" },
-            { l: "RG", v: emp?.rg || "—" },
-            { l: "CONTATO", v: emp?.phone || "—" },
-          ],
-          [
-            { l: "CNH", v: emp?.cnhNumber || "—" },
-            { l: "VAL CNH", v: emp?.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "—" },
-            { l: "CNV", v: emp?.cnvNumber || "—" },
-            { l: "VAL CNV", v: emp?.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "—" },
-          ],
-        ];
-        for (const row of rows) {
-          for (let i = 0; i < row.length; i++) {
-            drawBorderedRect(LM + i * col4, y, col4, 28);
-            cellLabel(LM + i * col4, y, row[i].l);
-            cellValue(LM + i * col4, y, row[i].v, col4);
+        cardBorder(LM, y, W, 0);
+
+        const photoSize = 72;
+        const photoX = LM + 8;
+        const photoY = y + 8;
+        const hasPhoto = emp?.photoUrl && emp.photoUrl.startsWith("data:");
+        const photoBuffer = hasPhoto ? parseDataUri(emp.photoUrl) : null;
+
+        if (photoBuffer) {
+          try {
+            doc.save()
+              .roundedRect(photoX, photoY, photoSize, photoSize, 6).clip()
+              .image(photoBuffer, photoX, photoY, { width: photoSize, height: photoSize })
+              .restore();
+
+            doc.save().roundedRect(photoX, photoY, photoSize, photoSize, 6).lineWidth(1.5).strokeColor("#1a1a1a").stroke().restore();
+          } catch {
+            drawRect(photoX, photoY, photoSize, photoSize, "#e5e5e5");
+            doc.save().roundedRect(photoX, photoY, photoSize, photoSize, 6).lineWidth(1.5).strokeColor("#1a1a1a").stroke().restore();
+            doc.font("Helvetica").fontSize(7).fillColor("#999").text("SEM FOTO", photoX + 12, photoY + 32);
           }
-          y += 28;
+        } else {
+          drawRect(photoX, photoY, photoSize, photoSize, "#f0f0f0");
+          doc.save().roundedRect(photoX, photoY, photoSize, photoSize, 6).lineWidth(1.5).strokeColor("#1a1a1a").stroke().restore();
+          doc.font("Helvetica").fontSize(7).fillColor("#999").text("SEM FOTO", photoX + 12, photoY + 32);
+        }
+
+        const dataX = LM + photoSize + 22;
+        const dataW = W - photoSize - 30;
+
+        doc.font("Helvetica-Bold").fontSize(11).fillColor("#0a0a0a").text((emp?.name || "—").toUpperCase(), dataX, y + 10, { width: dataW });
+
+        const infoY = y + 26;
+        const col2W = dataW / 2;
+        const infoFields = [
+          [{ l: "CPF", v: emp?.cpf || "—" }, { l: "RG", v: emp?.rg || "—" }],
+          [{ l: "CONTATO", v: emp?.phone || "—" }, { l: "MATRÍCULA", v: emp?.matricula || "—" }],
+          [{ l: "CNH", v: emp?.cnhNumber || "—" }, { l: "VAL. CNH", v: emp?.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "—" }],
+          [{ l: "CNV", v: emp?.cnvNumber || "—" }, { l: "VAL. CNV", v: emp?.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "—" }],
+        ];
+
+        let iy = infoY;
+        for (const row of infoFields) {
+          for (let i = 0; i < row.length; i++) {
+            doc.font("Helvetica").fontSize(6).fillColor("#737373").text(row[i].l, dataX + i * col2W, iy, { width: col2W });
+            doc.font("Helvetica-Bold").fontSize(8).fillColor("#0a0a0a").text(row[i].v, dataX + i * col2W, iy + 8, { width: col2W });
+          }
+          iy += 16;
+        }
+
+        const cardH = Math.max(photoSize + 16, iy - y + 4);
+        cardBorder(LM, y, W, cardH);
+        y += cardH;
+
+        if (emp?.vestNumber) {
+          drawRect(LM, y, W, 22, "#f5f5f5");
+          thinBorder(LM, y, W, 22);
+          const col4 = W / 4;
+          doc.font("Helvetica").fontSize(6).fillColor("#737373");
+          doc.text("COLETE Nº", LM + 6, y + 3, { width: col4 });
+          doc.text("MARCA", LM + col4 + 6, y + 3, { width: col4 });
+          doc.text("PROTEÇÃO", LM + col4 * 2 + 6, y + 3, { width: col4 });
+          doc.text("VALIDADE", LM + col4 * 3 + 6, y + 3, { width: col4 });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor("#0a0a0a");
+          doc.text(emp.vestNumber, LM + 6, y + 11, { width: col4 });
+          doc.text(emp.vestBrand || "—", LM + col4 + 6, y + 11, { width: col4 });
+          doc.text(emp.vestProtection || "—", LM + col4 * 2 + 6, y + 11, { width: col4 });
+          doc.text(emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "—", LM + col4 * 3 + 6, y + 11, { width: col4 });
+          y += 22;
         }
 
         if (weapons.length > 0) {
-          drawRect(LM, y, W, 18, "#f5f5f5");
-          drawBorderedRect(LM, y, W, 18);
-          doc.font("Helvetica-Bold").fontSize(7).fillColor("#737373").text("ARMAMENTO", LM + 10, y + 5, { width: 100 });
-          doc.text("CALIBRE", LM + col4, y + 5, { width: 100 });
-          doc.text("NUMERAÇÃO", LM + col4 * 2, y + 5, { width: 100 });
-          doc.text("MUNIÇÃO", LM + col4 * 3, y + 5, { width: 100 });
+          drawRect(LM, y, W, 18, "#1a1a1a");
+          doc.font("Helvetica-Bold").fontSize(7).fillColor("#ffffff").text("🔫  ARMAMENTO DESIGNADO", LM + 10, y + 5, { width: W - 20 });
           y += 18;
+
+          const col4 = W / 4;
+          drawRect(LM, y, W, 14, "#e8e8e8");
+          doc.font("Helvetica-Bold").fontSize(6.5).fillColor("#555");
+          doc.text("TIPO / MODELO", LM + 6, y + 4, { width: col4 });
+          doc.text("CALIBRE", LM + col4 + 6, y + 4, { width: col4 });
+          doc.text("Nº SÉRIE", LM + col4 * 2 + 6, y + 4, { width: col4 });
+          doc.text("MUNIÇÃO", LM + col4 * 3 + 6, y + 4, { width: col4 });
+          y += 14;
+
           for (const w of weapons) {
-            drawBorderedRect(LM, y, col4, 22);
-            drawBorderedRect(LM + col4, y, col4, 22);
-            drawBorderedRect(LM + col4 * 2, y, col4, 22);
-            drawBorderedRect(LM + col4 * 3, y, col4, 22);
-            doc.font("Helvetica-Bold").fontSize(8).fillColor("#171717");
-            doc.text(w.weapon?.type || "—", LM + 4, y + 6, { width: col4 - 8 });
-            doc.font("Helvetica").fontSize(8);
-            doc.text(w.weapon?.caliber || "—", LM + col4 + 4, y + 6, { width: col4 - 8 });
-            doc.text(w.weapon?.serialNumber || "—", LM + col4 * 2 + 4, y + 6, { width: col4 - 8 });
-            doc.text(String(emp?.ammoCount || 12), LM + col4 * 3 + 4, y + 6, { width: col4 - 8 });
-            y += 22;
+            thinBorder(LM, y, W, 20);
+            doc.font("Helvetica-Bold").fontSize(8).fillColor("#0a0a0a");
+            doc.text(`${w.weapon?.type || "—"} ${w.weapon?.model || ""}`.trim(), LM + 6, y + 5, { width: col4 - 8 });
+            doc.font("Helvetica").fontSize(8).fillColor("#333");
+            doc.text(w.weapon?.caliber || "—", LM + col4 + 6, y + 5, { width: col4 - 8 });
+            doc.text(w.weapon?.serialNumber || "—", LM + col4 * 2 + 6, y + 5, { width: col4 - 8 });
+            doc.font("Helvetica-Bold").fontSize(8).fillColor("#0a0a0a");
+            doc.text(String(emp?.ammoCount || 12) + " proj.", LM + col4 * 3 + 6, y + 5, { width: col4 - 8 });
+            y += 20;
           }
         }
 
-        if (emp?.vestNumber) {
-          drawRect(LM, y, W, 18, "#f5f5f5");
-          drawBorderedRect(LM, y, W, 18);
-          doc.font("Helvetica-Bold").fontSize(7).fillColor("#737373").text("COLETE", LM + 10, y + 5, { width: 100 });
-          doc.text("MARCA", LM + col4, y + 5, { width: 100 });
-          doc.text("PROTEÇÃO", LM + col4 * 2, y + 5, { width: 100 });
-          doc.text("VALIDADE", LM + col4 * 3, y + 5, { width: 100 });
-          y += 18;
-          drawBorderedRect(LM, y, col4, 22);
-          drawBorderedRect(LM + col4, y, col4, 22);
-          drawBorderedRect(LM + col4 * 2, y, col4, 22);
-          drawBorderedRect(LM + col4 * 3, y, col4, 22);
-          doc.font("Helvetica-Bold").fontSize(8).fillColor("#171717");
-          doc.text(emp.vestNumber, LM + 4, y + 6, { width: col4 - 8 });
-          doc.font("Helvetica").fontSize(8);
-          doc.text(emp.vestBrand || "—", LM + col4 + 4, y + 6, { width: col4 - 8 });
-          doc.text(emp.vestProtection || "—", LM + col4 * 2 + 4, y + 6, { width: col4 - 8 });
-          doc.text(emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "—", LM + col4 * 3 + 4, y + 6, { width: col4 - 8 });
-          y += 22;
-        }
-        y += 5;
+        y += 8;
       };
 
       let emp1Weapons: any[] = [];
@@ -608,50 +681,132 @@ Para CPF, formate como 000.000.000-00.`
       if (emp2) renderAgent(emp2, emp2.name.split(" ")[0].toUpperCase(), emp2Weapons);
 
       if (vehicle) {
-        drawRect(LM, y, W, 22, "#171717");
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text("VIATURA", LM + 10, y + 6, { width: W - 20 });
-        y += 22;
-        const col5 = W / 5;
-        const vehFields = [
-          { l: "MODELO", v: `${vehicle.brand || ""} ${vehicle.model || ""}`.trim() },
-          { l: "COR", v: vehicle.color || "—" },
-          { l: "FROTA", v: (vehicle as any).frota || "—" },
-          { l: "PLACA", v: vehicle.plate },
-          { l: "ANO", v: vehicle.year ? String(vehicle.year) : "—" },
-        ];
-        for (let i = 0; i < vehFields.length; i++) {
-          drawBorderedRect(LM + i * col5, y, col5, 28);
-          cellLabel(LM + i * col5, y, vehFields[i].l);
-          cellValue(LM + i * col5, y, vehFields[i].v, col5);
-        }
-        y += 28;
+        gradientRect(LM, y, W, 24);
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text("VIATURA OPERACIONAL", LM + 12, y + 7, { width: W - 24 });
+        y += 24;
 
-        const trackerLabel = vehicle.trackerType === "truckscontrol" ? "TrucksControl" : vehicle.trackerType === "custom" ? "OnixSat" : null;
-        if (trackerLabel) {
-          drawRect(LM, y, W, 22, "#f5f5f5");
-          drawBorderedRect(LM, y, W, 22);
-          doc.font("Helvetica-Bold").fontSize(8).fillColor("#737373").text("TECNOLOGIA DE RASTREAMENTO", LM + 10, y + 3, { width: W - 20 });
-          doc.font("Helvetica-Bold").fontSize(9).fillColor("#171717").text(`${trackerLabel} — ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, LM + 10, y + 12, { width: W - 20, align: "center" });
-          y += 22;
+        const vehPhotoBuffer = vehicle.photoFront ? parseDataUri(vehicle.photoFront) : null;
+        const vehCardStart = y;
+
+        if (vehPhotoBuffer) {
+          try {
+            const vPhotoW = 120;
+            const vPhotoH = 80;
+            doc.save()
+              .roundedRect(LM + 8, y + 8, vPhotoW, vPhotoH, 6).clip()
+              .image(vehPhotoBuffer, LM + 8, y + 8, { width: vPhotoW, height: vPhotoH })
+              .restore();
+            doc.save().roundedRect(LM + 8, y + 8, vPhotoW, vPhotoH, 6).lineWidth(1.5).strokeColor("#1a1a1a").stroke().restore();
+
+            const vDataX = LM + 140;
+            const vDataW = W - 148;
+            const col3V = vDataW / 3;
+
+            const vRows = [
+              [{ l: "MODELO", v: `${vehicle.brand || ""} ${vehicle.model || ""}`.trim() }, { l: "PLACA", v: vehicle.plate }, { l: "FROTA", v: (vehicle as any).frota || "—" }],
+              [{ l: "COR", v: vehicle.color || "—" }, { l: "ANO", v: vehicle.year ? String(vehicle.year) : "—" }, { l: "KM", v: vehicle.km ? String(vehicle.km) : "—" }],
+            ];
+
+            let vy = y + 10;
+            for (const row of vRows) {
+              for (let i = 0; i < row.length; i++) {
+                doc.font("Helvetica").fontSize(6).fillColor("#737373").text(row[i].l, vDataX + i * col3V, vy, { width: col3V });
+                doc.font("Helvetica-Bold").fontSize(9).fillColor("#0a0a0a").text(row[i].v, vDataX + i * col3V, vy + 9, { width: col3V });
+              }
+              vy += 26;
+            }
+
+            const trackerType = vehicle.trackerType === "truckscontrol" ? "TrucksControl" : vehicle.trackerType === "custom" ? "OnixSat" : null;
+            if (trackerType) {
+              doc.font("Helvetica").fontSize(6).fillColor("#737373").text("RASTREAMENTO", vDataX, vy, { width: vDataW });
+              doc.font("Helvetica-Bold").fontSize(9).fillColor("#0a0a0a").text(`${trackerType} — ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, vDataX, vy + 9, { width: vDataW });
+              vy += 26;
+            }
+
+            const vCardH = Math.max(96, vy - vehCardStart + 4);
+            cardBorder(LM, vehCardStart, W, vCardH);
+            y = vehCardStart + vCardH + 8;
+          } catch {
+            const col5 = W / 5;
+            const vehFields = [
+              { l: "MODELO", v: `${vehicle.brand || ""} ${vehicle.model || ""}`.trim() },
+              { l: "COR", v: vehicle.color || "—" },
+              { l: "FROTA", v: (vehicle as any).frota || "—" },
+              { l: "PLACA", v: vehicle.plate },
+              { l: "ANO", v: vehicle.year ? String(vehicle.year) : "—" },
+            ];
+            for (let i = 0; i < vehFields.length; i++) {
+              thinBorder(LM + i * col5, y, col5, 30);
+              cellLabel(LM + i * col5, y, vehFields[i].l, col5);
+              cellValue(LM + i * col5, y, vehFields[i].v, col5);
+            }
+            y += 38;
+          }
+        } else {
+          const col5 = W / 5;
+          const vehFields = [
+            { l: "MODELO", v: `${vehicle.brand || ""} ${vehicle.model || ""}`.trim() },
+            { l: "COR", v: vehicle.color || "—" },
+            { l: "FROTA", v: (vehicle as any).frota || "—" },
+            { l: "PLACA", v: vehicle.plate },
+            { l: "ANO", v: vehicle.year ? String(vehicle.year) : "—" },
+          ];
+          for (let i = 0; i < vehFields.length; i++) {
+            thinBorder(LM + i * col5, y, col5, 30);
+            cellLabel(LM + i * col5, y, vehFields[i].l, col5);
+            cellValue(LM + i * col5, y, vehFields[i].v, col5);
+          }
+          y += 30;
+
+          const trackerType = vehicle.trackerType === "truckscontrol" ? "TrucksControl" : vehicle.trackerType === "custom" ? "OnixSat" : null;
+          if (trackerType) {
+            drawRect(LM, y, W, 22, "#f0f0f0");
+            thinBorder(LM, y, W, 22);
+            doc.font("Helvetica").fontSize(6.5).fillColor("#737373").text("TECNOLOGIA DE RASTREAMENTO", LM + 8, y + 3, { width: W - 16 });
+            doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#0a0a0a").text(`${trackerType} — ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, LM + 8, y + 12, { width: W - 16 });
+            y += 22;
+          }
+          y += 8;
         }
-        y += 5;
       }
 
       if (os.description || os.notes) {
-        drawRect(LM, y, W, 18, "#171717");
-        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("INFORMAÇÕES COMPLEMENTARES", LM + 10, y + 5, { width: W - 20 });
-        y += 18;
-        drawBorderedRect(LM, y, W, 50);
-        doc.font("Helvetica").fontSize(8).fillColor("#171717");
+        gradientRect(LM, y, W, 20);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("INFORMAÇÕES COMPLEMENTARES", LM + 12, y + 6, { width: W - 24 });
+        y += 20;
+        thinBorder(LM, y, W, 45);
+        doc.font("Helvetica").fontSize(8).fillColor("#333333");
         const infoText = [os.description, os.notes].filter(Boolean).join("\n");
-        doc.text(infoText || "—", LM + 6, y + 5, { width: W - 12 });
-        y += 55;
+        doc.text(infoText || "—", LM + 8, y + 6, { width: W - 16 });
+        y += 50;
       }
 
-      y += 15;
-      doc.font("Helvetica").fontSize(8).fillColor("#737373").text("ATENCIOSAMENTE DEPARTAMENTO DE ESCOLTA ARMADA", LM, y, { width: W, align: "center" });
-      y += 14;
-      doc.font("Helvetica").fontSize(7).fillColor("#a3a3a3").text("TORRES VIGILÂNCIA PATRIMONIAL LTDA — CNPJ 36.982.392/0001-89", LM, y, { width: W, align: "center" });
+      const footerY = Math.max(y + 20, 720);
+
+      doc.save()
+        .moveTo(LM, footerY).lineTo(LM + W, footerY)
+        .lineWidth(0.5).strokeColor("#d4d4d4").stroke()
+        .restore();
+
+      const qrSize = 60;
+      doc.image(qrBuffer, LM + W - qrSize - 5, footerY + 8, { width: qrSize });
+
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#1a1a1a").text(
+        "TORRES VIGILÂNCIA PATRIMONIAL LTDA",
+        LM, footerY + 10, { width: W - qrSize - 20 }
+      );
+      doc.font("Helvetica").fontSize(7).fillColor("#737373").text(
+        "CNPJ 36.982.392/0001-89",
+        LM, footerY + 22, { width: W - qrSize - 20 }
+      );
+      doc.font("Helvetica-Bold").fontSize(7).fillColor("#2C3E50").text(
+        "\"Segurança inteligente, proteção de excelência.\"",
+        LM, footerY + 36, { width: W - qrSize - 20 }
+      );
+      doc.font("Helvetica").fontSize(6).fillColor("#a3a3a3").text(
+        `Documento gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — Código de autenticidade: ${os.osNumber}`,
+        LM, footerY + 52, { width: W - qrSize - 20 }
+      );
 
       doc.end();
     } catch (error: any) {
