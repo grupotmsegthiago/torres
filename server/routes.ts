@@ -1018,12 +1018,20 @@ Para CPF, formate como 000.000.000-00.`
           deviceType: "vehicle" as const,
           tracker: trackerData,
           activeOs: linkedOrder
-            ? {
-                id: linkedOrder.id,
-                osNumber: linkedOrder.osNumber,
-                missionStatus: linkedOrder.missionStatus,
-                clientName: (await storage.getClient(linkedOrder.clientId))?.name || "—",
-              }
+            ? await (async () => {
+                const client = await storage.getClient(linkedOrder.clientId);
+                const emp1 = linkedOrder.assignedEmployeeId ? await storage.getEmployee(linkedOrder.assignedEmployeeId) : null;
+                const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
+                return {
+                  id: linkedOrder.id,
+                  osNumber: linkedOrder.osNumber,
+                  missionStatus: linkedOrder.missionStatus,
+                  clientName: client?.name || "—",
+                  priority: linkedOrder.priority || "agendada",
+                  employee1: emp1 ? { name: emp1.name, phone: emp1.phone || null } : null,
+                  employee2: emp2 ? { name: emp2.name, phone: emp2.phone || null } : null,
+                };
+              })()
             : null,
         };
       })

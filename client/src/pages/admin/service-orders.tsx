@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -236,6 +236,19 @@ export default function ServiceOrdersPage() {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const osId = params.get("os");
+    if (osId && orders.length > 0) {
+      const found = orders.find((o) => o.id === Number(osId));
+      if (found && !editItem) {
+        setEditItem(found);
+        setShowForm(true);
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [orders]);
 
   const getClientName = (id: number) => (clients || []).find((c) => c.id === id)?.name || "-";
   const getEmployeeName = (id: number | null) => {

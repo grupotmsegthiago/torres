@@ -14,8 +14,9 @@ import {
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
-  Info, Send, Plus, Pencil, Trash2, Copy,
+  Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
 } from "lucide-react";
+import { Link } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +60,9 @@ interface TrackedVehicle {
     osNumber: string;
     missionStatus: string;
     clientName: string;
+    priority: string;
+    employee1: { name: string; phone: string | null } | null;
+    employee2: { name: string; phone: string | null } | null;
   } | null;
 }
 
@@ -884,7 +888,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status / Cliente</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Prioridade</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -1053,11 +1059,43 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       )}
                     </td>
 
+                    <td className="px-3 py-3">
+                      {v.activeOs ? (
+                        <div className="flex flex-col gap-0.5">
+                          {v.activeOs.employee1 && (
+                            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-neutral-700">
+                              {v.activeOs.employee1.name}
+                              {v.activeOs.employee1.phone && (
+                                <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
+                                  <SiWhatsapp className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </span>
+                          )}
+                          {v.activeOs.employee2 && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-400">
+                              {v.activeOs.employee2.name}
+                              {v.activeOs.employee2.phone && (
+                                <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
+                                  <SiWhatsapp className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </span>
+                          )}
+                          {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-[11px]">Sem agente</span>}
+                        </div>
+                      ) : (
+                        <span className="text-neutral-300 text-[11px]">—</span>
+                      )}
+                    </td>
+
                     <td className="px-3 py-3 whitespace-nowrap">
                       {v.activeOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-neutral-900 text-[11px]" style={{ fontFamily: "'Montserrat', sans-serif" }}>{v.activeOs.osNumber}</span>
+                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid={`link-os-vehicle-${v.id}`}>
+                              {v.activeOs.osNumber}
+                            </Link>
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
                               getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
                             }`}>
@@ -1069,6 +1107,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                           </p>
                         </div>
                       ) : (
+                        <span className="text-neutral-300 text-[11px]">—</span>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 text-center whitespace-nowrap">
+                      {v.activeOs ? (() => {
+                        const pInfo = getPriorityDisplay(v.activeOs!.priority);
+                        const PIcon = pInfo.icon;
+                        return (
+                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${pInfo.className}`}>
+                            <PIcon className="w-3 h-3" />
+                            {pInfo.label}
+                          </span>
+                        );
+                      })() : (
                         <span className="text-neutral-300 text-[11px]">—</span>
                       )}
                     </td>
@@ -1268,7 +1321,11 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
 
                 return (
                   <tr key={item.id} className={`transition-colors ${index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"}`} data-testid={`row-grid-${item.id}`}>
-                    <td className="px-3 py-3 font-bold text-[12px] text-neutral-900 whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.osNumber}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                      <Link href={`/admin/service-orders?os=${item.id}`} className="font-bold text-[12px] text-neutral-900 hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-grid-${item.id}`}>
+                        {item.osNumber}
+                      </Link>
+                    </td>
                     <td className="px-3 py-3 text-[12px] font-medium text-neutral-700">{item.clientName}</td>
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-0.5">
