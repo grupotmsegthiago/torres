@@ -15,6 +15,7 @@ import {
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
+  Crosshair, Search, Minus, LocateFixed,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -1647,6 +1648,293 @@ function useCountdown(intervalMs: number, lastFetchTime: number) {
   return { remaining, display: `${minutes}:${String(seconds).padStart(2, "0")}` };
 }
 
+function parseGoogleMapsLink(input: string): { lat: number; lng: number } | null {
+  const patterns = [
+    /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /place\/[^/]+\/@(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /maps\?.*ll=(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /dir\/.*\/(-?\d+\.\d+),(-?\d+\.\d+)/,
+  ];
+  for (const p of patterns) {
+    const m = input.match(p);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  }
+  const coordMatch = input.trim().match(/^(-?\d+\.?\d*)\s*[,;\s]\s*(-?\d+\.?\d*)$/);
+  if (coordMatch) return { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
+  return null;
+}
+
+interface ProximityResult {
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  label: string;
+}
+
+function ProximitySearchTool({ vehicles, onResult, onClear }: {
+  vehicles: TrackedVehicle[];
+  onResult: (result: ProximityResult) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [radiusKm, setRadiusKm] = useState(10);
+  const [resolving, setResolving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const resolveAndSearch = async () => {
+    setError(null);
+    const trimmed = searchInput.trim();
+    if (!trimmed) { setError("Informe um endereço, coordenadas ou link do Google Maps"); return; }
+
+    const coords = parseGoogleMapsLink(trimmed);
+    if (coords) {
+      onResult({ lat: coords.lat, lng: coords.lng, radiusKm, label: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` });
+      setOpen(false);
+      return;
+    }
+
+    setResolving(true);
+    try {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) { setError("Google Maps API Key não configurada"); setResolving(false); return; }
+      const resp = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${apiKey}&language=pt-BR`);
+      const data = await resp.json();
+      if (data.status === "OK" && data.results?.length > 0) {
+        const loc = data.results[0].geometry.location;
+        const addr = data.results[0].formatted_address || trimmed;
+        onResult({ lat: loc.lat, lng: loc.lng, radiusKm, label: addr });
+        setOpen(false);
+      } else {
+        setError("Endereço não encontrado. Tente ser mais específico.");
+      }
+    } catch {
+      setError("Erro ao buscar endereço. Verifique a conexão.");
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handleClear = () => {
+    setSearchInput("");
+    setError(null);
+    onClear();
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            onClick={() => setOpen(true)}
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-lg gap-2 font-semibold shadow-none"
+            data-testid="button-proximity-search"
+          >
+            <Crosshair className="w-4 h-4" />
+            Raio
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Busca por proximidade</TooltipContent>
+      </Tooltip>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-proximity-search">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              <Crosshair className="w-5 h-5 text-blue-600" />
+              Busca por Proximidade
+            </DialogTitle>
+            <DialogDescription>
+              Encontre viaturas próximas a um ponto. Cole um link do Google Maps, digite um endereço ou informe coordenadas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label className="text-sm font-semibold text-neutral-700">Local de referência</Label>
+              <div className="mt-1.5 relative">
+                <Input
+                  placeholder="Ex: Av. Paulista, SP  ou  -23.5505, -46.6333  ou  link Google Maps"
+                  value={searchInput}
+                  onChange={(e) => { setSearchInput(e.target.value); setError(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") resolveAndSearch(); }}
+                  className="h-11 pr-10 rounded-lg border-neutral-300 shadow-sm"
+                  data-testid="input-proximity-location"
+                />
+                <Search className="w-4 h-4 text-neutral-400 absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
+              {error && <p className="text-xs text-red-500 font-medium mt-1.5">{error}</p>}
+              <p className="text-[11px] text-neutral-400 mt-1.5">
+                Aceita: endereço, cidade, coordenadas (lat, lng) ou link do Google Maps
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold text-neutral-700">Raio de busca</Label>
+              <div className="flex items-center gap-3 mt-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  onClick={() => setRadiusKm(Math.max(1, radiusKm - (radiusKm > 10 ? 5 : 1)))}
+                  data-testid="button-radius-minus"
+                >
+                  <Minus className="w-4 h-4" />
+                </Button>
+                <div className="flex-1 relative">
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={radiusKm}
+                    onChange={(e) => setRadiusKm(parseInt(e.target.value))}
+                    className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    data-testid="input-radius-slider"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  onClick={() => setRadiusKm(Math.min(100, radiusKm + (radiusKm >= 10 ? 5 : 1)))}
+                  data-testid="button-radius-plus"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+                <div className="w-20 text-center">
+                  <span className="text-xl font-bold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{radiusKm}</span>
+                  <span className="text-xs text-neutral-500 ml-1">km</span>
+                </div>
+              </div>
+              <div className="flex gap-1.5 mt-2">
+                {[5, 10, 25, 50].map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRadiusKm(r)}
+                    className={`text-[11px] px-2.5 py-1 rounded-md font-semibold transition-colors ${radiusKm === r ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}
+                    data-testid={`button-radius-${r}`}
+                  >
+                    {r} km
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-neutral-100">
+            <Button variant="outline" size="sm" onClick={handleClear} className="text-neutral-500" data-testid="button-clear-proximity">
+              Limpar filtro
+            </Button>
+            <Button
+              onClick={resolveAndSearch}
+              disabled={resolving || !searchInput.trim()}
+              className="bg-neutral-900 hover:bg-neutral-800 text-white font-semibold rounded-lg gap-2"
+              data-testid="button-search-proximity"
+            >
+              {resolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
+              Buscar Viaturas
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
+  result: ProximityResult;
+  vehicles: TrackedVehicle[];
+  onClear: () => void;
+  onFocusVehicle: (id: number) => void;
+}) {
+  const nearby = vehicles
+    .filter(v => v.deviceType !== "spy" && v.tracker?.latitude != null && v.tracker?.longitude != null)
+    .map(v => ({
+      ...v,
+      distance: haversineDistance(result.lat, result.lng, v.tracker!.latitude!, v.tracker!.longitude!),
+    }))
+    .filter(v => v.distance <= result.radiusKm)
+    .sort((a, b) => a.distance - b.distance);
+
+  return (
+    <Card className="border-2 border-blue-400 bg-gradient-to-r from-blue-50 to-white shadow-md" data-testid="proximity-results-bar">
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center shadow-sm">
+              <Crosshair className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                Busca por Raio — {result.radiusKm} km
+              </h3>
+              <p className="text-xs text-neutral-500 flex items-center gap-1 mt-0.5">
+                <MapPin className="w-3 h-3" />
+                {result.label}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+              {nearby.length} {nearby.length === 1 ? "viatura" : "viaturas"}
+            </span>
+            <Button variant="ghost" size="sm" onClick={onClear} className="h-8 w-8 p-0 hover:bg-red-50" data-testid="button-clear-proximity-results">
+              <X className="w-4 h-4 text-neutral-400 hover:text-red-500" />
+            </Button>
+          </div>
+        </div>
+
+        {nearby.length === 0 ? (
+          <div className="text-center py-4">
+            <MapPin className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+            <p className="text-sm text-neutral-500 font-medium">Nenhuma viatura encontrada no raio de {result.radiusKm} km</p>
+            <p className="text-xs text-neutral-400 mt-1">Tente aumentar o raio de busca</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+            {nearby.map(v => {
+              const isIgnOn = v.tracker?.ignition === true;
+              const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
+              const dotColor = isMov ? "bg-green-500" : isIgnOn ? "bg-amber-500" : "bg-red-500";
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                  className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-lg px-3 py-2.5 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left group shadow-sm"
+                  data-testid={`proximity-vehicle-${v.id}`}
+                >
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444" }}>
+                    <img src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-extrabold text-neutral-900 tracking-wide">{v.plate}</span>
+                      <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+                    </div>
+                    <p className="text-[10px] text-neutral-500 truncate">{v.brand} {v.model}</p>
+                    <p className="text-xs font-bold text-blue-600 mt-0.5">
+                      {v.distance < 1 ? `${Math.round(v.distance * 1000)} m` : `${v.distance.toFixed(1)} km`}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1720,6 +2008,7 @@ export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
   const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
+  const [proximityResult, setProximityResult] = useState<ProximityResult | null>(null);
 
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
@@ -1788,6 +2077,11 @@ export default function OperationalGridPage() {
                   <span className="text-neutral-500">|</span>
                   <span>Última <span className="font-medium text-neutral-200">{lastRefreshStr}</span></span>
                 </div>
+                <ProximitySearchTool
+                  vehicles={vehicles}
+                  onResult={(r) => setProximityResult(r)}
+                  onClear={() => setProximityResult(null)}
+                />
                 <Button
                   size="sm"
                   onClick={handleRefresh}
@@ -1859,6 +2153,14 @@ export default function OperationalGridPage() {
         ) : (
           <>
             <SpeedAlert vehicles={vehicles} />
+            {proximityResult && (
+              <ProximityResultsBar
+                result={proximityResult}
+                vehicles={vehicles}
+                onClear={() => setProximityResult(null)}
+                onFocusVehicle={(id) => setFocusVehicleId(id)}
+              />
+            )}
             <VehicleMap vehicles={vehicles} focusVehicleId={focusVehicleId} />
             {selectedOsVehicleId && (
               <NearbyVehiclesPanel
