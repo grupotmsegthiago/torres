@@ -1419,10 +1419,14 @@ Para CPF, formate como 000.000.000-00.`
           gpsSignal?: boolean;
           speed?: number;
           address?: string;
+          stoppedSince?: string | null;
+          ignitionOnSince?: string | null;
+          isLiveData?: boolean;
         } | null = null;
 
         const trackerType = v.trackerType || "none";
         let hasTracker = false;
+        let gotLiveData = false;
 
         if (trackerType === "truckscontrol") {
           hasTracker = true;
@@ -1432,6 +1436,7 @@ Para CPF, formate como 000.000.000-00.`
               ? truckscontrol.findPositionByIdentifier(vehiclePositions, v.truckscontrolIdentifier)
               : truckscontrol.findPositionByPlate(vehiclePositions, v.plate);
             if (pos) {
+              gotLiveData = true;
               trackerData = {
                 latitude: pos.latitude,
                 longitude: pos.longitude,
@@ -1440,6 +1445,7 @@ Para CPF, formate como 000.000.000-00.`
                 gpsSignal: pos.gpsSignal,
                 speed: pos.speed,
                 address: pos.address,
+                isLiveData: true,
               };
             }
           }
@@ -1451,11 +1457,71 @@ Para CPF, formate como 000.000.000-00.`
               const resp = await fetch(v.trackerApiUrl, { signal: AbortSignal.timeout(5000) });
               if (resp.ok) {
                 trackerData = await resp.json();
+                if (trackerData) {
+                  gotLiveData = true;
+                  trackerData.isLiveData = true;
+                }
               }
             }
           } catch (_e) {
             trackerData = null;
           }
+        }
+
+        const now = new Date().toISOString();
+        let stoppedSince = v.stoppedSince || null;
+        let ignitionOnSince = v.ignitionOnSince || null;
+
+        if (gotLiveData && trackerData) {
+          const prevIgnition = v.lastIgnition === 1;
+          const prevSpeed = v.lastSpeed ?? 0;
+          const curIgnition = trackerData.ignition === true;
+          const curSpeed = trackerData.speed ?? 0;
+          const isStopped = curSpeed < 2;
+
+          if (isStopped && curIgnition) {
+            if (!stoppedSince) {
+              stoppedSince = trackerData.lastPositionTime || now;
+            }
+          } else if (!isStopped) {
+            stoppedSince = null;
+          }
+
+          if (curIgnition) {
+            if (!prevIgnition || !ignitionOnSince) {
+              ignitionOnSince = ignitionOnSince || trackerData.lastPositionTime || now;
+            }
+          } else {
+            ignitionOnSince = null;
+          }
+
+          trackerData.stoppedSince = stoppedSince;
+          trackerData.ignitionOnSince = ignitionOnSince;
+
+          storage.updateVehicle(v.id, {
+            lastLatitude: String(trackerData.latitude),
+            lastLongitude: String(trackerData.longitude),
+            lastIgnition: trackerData.ignition ? 1 : 0,
+            lastSpeed: trackerData.speed ?? 0,
+            lastGpsSignal: trackerData.gpsSignal ? 1 : 0,
+            lastAddress: trackerData.address || null,
+            lastPositionTime: trackerData.lastPositionTime || null,
+            stoppedSince,
+            ignitionOnSince,
+          } as any).catch(() => {});
+        } else if (hasTracker && !gotLiveData && v.lastLatitude && v.lastLongitude) {
+          trackerData = {
+            latitude: parseFloat(v.lastLatitude),
+            longitude: parseFloat(v.lastLongitude),
+            ignition: v.lastIgnition === 1,
+            lastPositionTime: v.lastPositionTime || undefined,
+            gpsSignal: v.lastGpsSignal === 1,
+            speed: v.lastSpeed ?? 0,
+            address: v.lastAddress || undefined,
+            stoppedSince: v.stoppedSince || null,
+            ignitionOnSince: v.ignitionOnSince || null,
+            isLiveData: false,
+          };
         }
 
         const linkedOrder = activeOrders.find((o) => o.vehicleId === v.id);

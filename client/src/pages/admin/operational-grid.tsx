@@ -55,6 +55,9 @@ interface TrackedVehicle {
     gpsSignal?: boolean;
     speed?: number;
     address?: string;
+    stoppedSince?: string | null;
+    ignitionOnSince?: string | null;
+    isLiveData?: boolean;
   } | null;
   activeOs: {
     id: number;
@@ -242,16 +245,34 @@ function isRodizioSP(plate: string): boolean {
   return (rodizioMap[dayOfWeek] || []).includes(lastDigit);
 }
 
-function getIdleTime(v: TrackedVehicle): string | null {
-  if (!v.tracker || v.tracker.ignition !== true) return null;
-  if ((v.tracker.speed ?? 0) > 0) return null;
-  if (!v.tracker.lastPositionTime) return null;
-
-  const diffMin = Math.floor((Date.now() - new Date(v.tracker.lastPositionTime).getTime()) / 60000);
+function formatTimeDiff(since: string): string {
+  const diffMin = Math.floor((Date.now() - new Date(since).getTime()) / 60000);
   if (diffMin < 1) return "< 1min";
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
   return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+}
+
+function getIdleTime(v: TrackedVehicle): string | null {
+  if (!v.tracker || v.tracker.ignition !== true) return null;
+  if ((v.tracker.speed ?? 0) > 2) return null;
+  if (v.tracker.stoppedSince) return formatTimeDiff(v.tracker.stoppedSince);
+  if (!v.tracker.lastPositionTime) return null;
+  return formatTimeDiff(v.tracker.lastPositionTime);
+}
+
+function getIgnitionOnTime(v: TrackedVehicle): string | null {
+  if (!v.tracker || v.tracker.ignition !== true) return null;
+  if (v.tracker.ignitionOnSince) return formatTimeDiff(v.tracker.ignitionOnSince);
+  return null;
+}
+
+function getStoppedTime(v: TrackedVehicle): string | null {
+  if (!v.tracker) return null;
+  if ((v.tracker.speed ?? 0) > 2) return null;
+  if (v.tracker.stoppedSince) return formatTimeDiff(v.tracker.stoppedSince);
+  if (!v.tracker.lastPositionTime) return null;
+  return formatTimeDiff(v.tracker.lastPositionTime);
 }
 
 function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; focusVehicleId?: number | null }) {
@@ -455,12 +476,20 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
           </div>
         `;
       } else {
+        const _idleT = getIdleTime(v);
+        const _ignT = getIgnitionOnTime(v);
+        const _stopT = getStoppedTime(v);
+        const _isLive = v.tracker.isLiveData !== false;
         infoContent = `
-          <div style="font-family: system-ui; min-width: 200px; padding: 4px;">
+          <div style="font-family: system-ui; min-width: 220px; padding: 4px;">
             <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">${v.plate}</div>
             <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
+            ${!_isLive ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida (sem sinal)</div>` : ""}
             ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
             ${v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
+            ${_idleT ? `<div style="font-size: 12px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
+            ${_stopT && !v.tracker.ignition ? `<div style="font-size: 12px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
+            ${_ignT ? `<div style="font-size: 12px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
             ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
             ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
           </div>
@@ -1051,7 +1080,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Tempo</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Viatura</th>
@@ -1067,10 +1096,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   : null;
                 const rodizio = isRodizioSP(v.plate);
                 const idleTime = getIdleTime(v);
+                const ignitionOnTime = getIgnitionOnTime(v);
+                const stoppedTime = getStoppedTime(v);
                 const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
                 const statusColor = isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
+                const isLive = v.tracker?.isLiveData !== false;
 
                 return (
                   <tr
@@ -1211,19 +1243,45 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
                     <td className="px-3 py-3 text-center whitespace-nowrap">
-                      {idleTime ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
-                              <Pause className="w-3 h-3" />
-                              <span className="text-[11px] font-bold">{idleTime}</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>Motor ligado, veículo parado há {idleTime}</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {idleTime ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
+                                <Pause className="w-3 h-3" />
+                                <span className="text-[11px] font-bold">{idleTime}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Motor ligado, veículo parado há {idleTime}</TooltipContent>
+                          </Tooltip>
+                        ) : stoppedTime && !isIgnOn ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5">
+                                <XCircle className="w-3 h-3" />
+                                <span className="text-[11px] font-bold">{stoppedTime}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Veículo desligado e parado há {stoppedTime}</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-neutral-300 text-[11px]">—</span>
+                        )}
+                        {ignitionOnTime && (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-1.5 py-0.5">
+                                <Key className="w-2.5 h-2.5" />
+                                <span className="text-[10px] font-semibold">{ignitionOnTime}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Motor ligado há {ignitionOnTime}</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {!isLive && v.tracker && (
+                          <span className="text-[9px] text-orange-500 font-semibold">sem sinal</span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-3 py-3">
