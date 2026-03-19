@@ -688,7 +688,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         </div>
       </div>
 
-      <div className="absolute top-3 right-14 flex flex-col gap-2 z-10" data-testid="map-radius-controls">
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-10" data-testid="map-radius-controls">
         <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-neutral-200/80 overflow-hidden" style={{ width: "300px" }}>
           <div className="relative">
             <input
