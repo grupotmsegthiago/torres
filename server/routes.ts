@@ -498,10 +498,10 @@ Para CPF, formate como 000.000.000-00.`
         doc.save().rect(x, yy, w, h).lineWidth(0.4).strokeColor("#d4d4d4").stroke().restore();
       };
       const cellLabel = (x: number, yy: number, label: string, w?: number) => {
-        doc.font("Helvetica").fontSize(6.5).fillColor("#737373").text(label.toUpperCase(), x + 5, yy + 3, { width: (w || 120) - 10 });
+        doc.font("Helvetica").fontSize(7).fillColor("#737373").text(label.toUpperCase(), x + 5, yy + 3, { width: (w || 120) - 10 });
       };
       const cellValue = (x: number, yy: number, val: string, w?: number) => {
-        doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#0a0a0a").text(val || "—", x + 5, yy + 13, { width: (w || 120) - 10 });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#0a0a0a").text(val || "—", x + 5, yy + 14, { width: (w || 120) - 10 });
       };
 
       const parseDataUri = (dataUri: string | null | undefined): Buffer | null => {
@@ -525,8 +525,7 @@ Para CPF, formate como 000.000.000-00.`
         try { doc.image(logoPath, LM + 12, y + 8, { height: 44 }); } catch {}
       }
 
-      doc.font("Helvetica-Bold").fontSize(20).fillColor("#ffffff").text("ORDEM DE SERVIÇO", LM + 80, y + 10, { width: W - 200 });
-      doc.font("Helvetica").fontSize(9).fillColor("#ffffff").text("ESCOLTA ARMADA", LM + 80, y + 34, { width: 200 });
+      doc.font("Helvetica-Bold").fontSize(20).fillColor("#ffffff").text("ORDEM DE SERVIÇO", LM + 80, y + 18, { width: W - 200 });
 
       doc.font("Helvetica-Bold").fontSize(14).fillColor("#ffffff").text(os.osNumber, LM + W - 130, y + 12, { width: 115, align: "right" });
       const dateStr = os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "";
@@ -551,34 +550,35 @@ Para CPF, formate como 000.000.000-00.`
         y += 18;
       }
 
-      drawRect(LM, y, W, 30, "#fafafa");
-      thinBorder(LM, y, W, 30);
+      const rowH = 32;
+      drawRect(LM, y, W, rowH, "#fafafa");
+      thinBorder(LM, y, W, rowH);
       const halfW = W / 2;
-      thinBorder(LM, y, halfW, 30);
+      thinBorder(LM, y, halfW, rowH);
       cellLabel(LM, y, "EMPRESA CONTRATANTE", halfW);
       cellValue(LM, y, client?.name || "—", halfW);
       cellLabel(LM + halfW, y, "SOLICITANTE", halfW);
       cellValue(LM + halfW, y, os.requesterName || "—", halfW);
-      y += 30;
+      y += rowH;
 
       const col3 = W / 3;
-      thinBorder(LM, y, col3, 30);
-      thinBorder(LM + col3, y, col3, 30);
-      thinBorder(LM + col3 * 2, y, col3, 30);
+      thinBorder(LM, y, col3, rowH);
+      thinBorder(LM + col3, y, col3, rowH);
+      thinBorder(LM + col3 * 2, y, col3, rowH);
       cellLabel(LM, y, "DATA INÍCIO", col3);
       cellValue(LM, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "—", col3);
       cellLabel(LM + col3, y, "HORA INÍCIO", col3);
       cellValue(LM + col3, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", col3);
       cellLabel(LM + col3 * 2, y, "PRIORIDADE", col3);
       cellValue(LM + col3 * 2, y, (os.priority || "").toUpperCase(), col3);
-      y += 35;
+      y += rowH + 5;
 
       const inlineField = (x: number, yy: number, label: string, value: string, w: number) => {
         const labelText = label + ": ";
         doc.save();
-        doc.font("Helvetica").fontSize(6.5);
+        doc.font("Helvetica").fontSize(7.5);
         const labelW = doc.widthOfString(labelText);
-        doc.fillColor("#737373").text(labelText, x, yy + 1, { width: labelW + 2, lineBreak: false });
+        doc.fillColor("#737373").text(labelText, x, yy, { width: labelW + 2, lineBreak: false });
         doc.restore();
         doc.save();
         doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#0a0a0a").text(value || "\u2014", x + labelW + 1, yy, { width: Math.max(10, w - labelW - 2), lineBreak: false });
@@ -642,10 +642,10 @@ Para CPF, formate como 000.000.000-00.`
         y += cardH;
 
         if (emp?.vestNumber) {
-          drawRect(LM, y, W, 20, "#f5f5f5");
-          thinBorder(LM, y, W, 20);
+          drawRect(LM, y, W, 22, "#f5f5f5");
+          thinBorder(LM, y, W, 22);
           const col4 = W / 4;
-          const vestY = y + 5;
+          const vestY = y + 6;
           inlineField(LM + 6, vestY, "Colete", emp.vestNumber, col4 - 8);
           inlineField(LM + col4 + 6, vestY, "Marca", emp.vestBrand || "\u2014", col4 - 8);
           inlineField(LM + col4 * 2 + 6, vestY, "Prote\u00e7\u00e3o", emp.vestProtection || "\u2014", col4 - 8);
@@ -667,28 +667,28 @@ Para CPF, formate como 000.000.000-00.`
         y += 22;
 
         const col4 = W / 4;
-        drawRect(LM, y, W, 14, "#e8e8e8");
+        drawRect(LM, y, W, 18, "#e8e8e8");
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(6).fillColor("#555");
-        doc.text("TIPO / MODELO", LM + 6, y + 4, { width: col4 - 8, lineBreak: false });
-        doc.text("CALIBRE", LM + col4 + 6, y + 4, { width: col4 - 8, lineBreak: false });
-        doc.text("N\u00ba S\u00c9RIE", LM + col4 * 2 + 6, y + 4, { width: col4 - 8, lineBreak: false });
-        doc.text("MUNI\u00c7\u00c3O", LM + col4 * 3 + 6, y + 4, { width: col4 - 8, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7).fillColor("#555");
+        doc.text("TIPO / MODELO", LM + 6, y + 5, { width: col4 - 8, lineBreak: false });
+        doc.text("CALIBRE", LM + col4 + 6, y + 5, { width: col4 - 8, lineBreak: false });
+        doc.text("N\u00ba S\u00c9RIE", LM + col4 * 2 + 6, y + 5, { width: col4 - 8, lineBreak: false });
+        doc.text("MUNI\u00c7\u00c3O", LM + col4 * 3 + 6, y + 5, { width: col4 - 8, lineBreak: false });
         doc.restore();
-        y += 14;
+        y += 18;
 
         for (const w of kitItems) {
-          thinBorder(LM, y, W, 18);
+          thinBorder(LM, y, W, 20);
           doc.save();
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#0a0a0a");
-          doc.text(`${w.weapon?.type || "\u2014"} ${w.weapon?.model || ""}`.trim(), LM + 6, y + 5, { width: col4 - 8, lineBreak: false });
+          doc.text(`${w.weapon?.type || "\u2014"} ${w.weapon?.model || ""}`.trim(), LM + 6, y + 6, { width: col4 - 8, lineBreak: false });
           doc.font("Helvetica").fontSize(7.5).fillColor("#333");
-          doc.text(w.weapon?.caliber || "\u2014", LM + col4 + 6, y + 5, { width: col4 - 8, lineBreak: false });
-          doc.text(w.weapon?.serialNumber || "\u2014", LM + col4 * 2 + 6, y + 5, { width: col4 - 8, lineBreak: false });
+          doc.text(w.weapon?.caliber || "\u2014", LM + col4 + 6, y + 6, { width: col4 - 8, lineBreak: false });
+          doc.text(w.weapon?.serialNumber || "\u2014", LM + col4 * 2 + 6, y + 6, { width: col4 - 8, lineBreak: false });
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#0a0a0a");
-          doc.text("12 proj.", LM + col4 * 3 + 6, y + 5, { width: col4 - 8, lineBreak: false });
+          doc.text("12 proj.", LM + col4 * 3 + 6, y + 6, { width: col4 - 8, lineBreak: false });
           doc.restore();
-          y += 18;
+          y += 20;
         }
         y += 6;
       }
@@ -741,29 +741,30 @@ Para CPF, formate como 000.000.000-00.`
         }
 
         const col3V = W / 3;
-        thinBorder(LM, y, col3V, 26);
-        thinBorder(LM + col3V, y, col3V, 26);
-        thinBorder(LM + col3V * 2, y, col3V, 26);
+        const vRowH = 28;
+        thinBorder(LM, y, col3V, vRowH);
+        thinBorder(LM + col3V, y, col3V, vRowH);
+        thinBorder(LM + col3V * 2, y, col3V, vRowH);
         const modelStr = `${vehicle.brand || ""} ${vehicle.model || ""}`.trim();
-        inlineField(LM + 6, y + 4, "Modelo", modelStr, col3V - 10);
-        inlineField(LM + col3V + 6, y + 4, "Placa", vehicle.plate, col3V - 10);
-        inlineField(LM + col3V * 2 + 6, y + 4, "Frota", (vehicle as any).frota || "\u2014", col3V - 10);
-        y += 26;
+        inlineField(LM + 6, y + 8, "Modelo", modelStr, col3V - 10);
+        inlineField(LM + col3V + 6, y + 8, "Placa", vehicle.plate, col3V - 10);
+        inlineField(LM + col3V * 2 + 6, y + 8, "Frota", (vehicle as any).frota || "\u2014", col3V - 10);
+        y += vRowH;
 
-        thinBorder(LM, y, col3V, 26);
-        thinBorder(LM + col3V, y, col3V, 26);
-        thinBorder(LM + col3V * 2, y, col3V, 26);
-        inlineField(LM + 6, y + 4, "Cor", vehicle.color || "\u2014", col3V - 10);
-        inlineField(LM + col3V + 6, y + 4, "Ano", vehicle.year ? String(vehicle.year) : "\u2014", col3V - 10);
-        inlineField(LM + col3V * 2 + 6, y + 4, "KM", vehicle.km ? String(vehicle.km) : "\u2014", col3V - 10);
-        y += 26;
+        thinBorder(LM, y, col3V, vRowH);
+        thinBorder(LM + col3V, y, col3V, vRowH);
+        thinBorder(LM + col3V * 2, y, col3V, vRowH);
+        inlineField(LM + 6, y + 8, "Cor", vehicle.color || "\u2014", col3V - 10);
+        inlineField(LM + col3V + 6, y + 8, "Ano", vehicle.year ? String(vehicle.year) : "\u2014", col3V - 10);
+        inlineField(LM + col3V * 2 + 6, y + 8, "KM", vehicle.km ? String(vehicle.km) : "\u2014", col3V - 10);
+        y += vRowH;
 
         const trackerType = vehicle.trackerType === "truckscontrol" ? "TrucksControl" : vehicle.trackerType === "custom" ? "OnixSat" : null;
         if (trackerType) {
-          drawRect(LM, y, W, 22, "#f0f0f0");
-          thinBorder(LM, y, W, 22);
-          inlineField(LM + 6, y + 6, "Rastreamento", `${trackerType} \u2014 ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, W - 12);
-          y += 22;
+          drawRect(LM, y, W, 24, "#f0f0f0");
+          thinBorder(LM, y, W, 24);
+          inlineField(LM + 6, y + 7, "Rastreamento", `${trackerType} \u2014 ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, W - 12);
+          y += 24;
         }
         y += 8;
       }
@@ -795,19 +796,23 @@ Para CPF, formate como 000.000.000-00.`
 
       doc.font("Helvetica-Bold").fontSize(8).fillColor("#1a1a1a").text(
         "TORRES VIGILÂNCIA PATRIMONIAL LTDA",
-        LM, footerY + 10, { width: W - qrSize - 20 }
+        LM, footerY + 8, { width: W - qrSize - 20 }
       );
       doc.font("Helvetica").fontSize(7).fillColor("#737373").text(
         "CNPJ 36.982.392/0001-89",
-        LM, footerY + 22, { width: W - qrSize - 20 }
+        LM, footerY + 20, { width: W - qrSize - 20 }
+      );
+      doc.font("Helvetica").fontSize(7).fillColor("#737373").text(
+        "Tel: (21) 97063-4379  |  www.torresvigilancia.com.br",
+        LM, footerY + 31, { width: W - qrSize - 20 }
       );
       doc.font("Helvetica-Bold").fontSize(7).fillColor("#2C3E50").text(
         "\"Segurança inteligente, proteção de excelência.\"",
-        LM, footerY + 36, { width: W - qrSize - 20 }
+        LM, footerY + 44, { width: W - qrSize - 20 }
       );
       doc.font("Helvetica").fontSize(6).fillColor("#a3a3a3").text(
         `Documento gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — Código de autenticidade: ${os.osNumber}`,
-        LM, footerY + 52, { width: W - qrSize - 20 }
+        LM, footerY + 58, { width: W - qrSize - 20 }
       );
 
       doc.end();
