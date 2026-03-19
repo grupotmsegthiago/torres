@@ -1667,6 +1667,105 @@ Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.`
     }
   });
 
+  function parseCrafText(text: string): { weapons: any[]; totalFound: number; documentType: string } | null {
+    if (!text.includes("SINARM") && !text.includes("CERTIFICADO DE REGISTRO")) return null;
+
+    const calibreMap: Record<string, string> = {
+      ".38": ".38", "38": ".38",
+      ".380": ".380 ACP", ".380 acp": ".380 ACP", "380 acp": ".380 ACP", "380": ".380 ACP",
+      "9mm": "9mm", "9 mm": "9mm",
+      ".40": ".40 S&W", ".40 s&w": ".40 S&W", "40 s&w": ".40 S&W", "40": ".40 S&W",
+      ".45": ".45 ACP", ".45 acp": ".45 ACP", "45 acp": ".45 ACP",
+      "12": "12 GA", "12 ga": "12 GA", "12ga": "12 GA",
+      "5.56": "5.56x45mm", "5.56x45": "5.56x45mm", "5.56x45mm": "5.56x45mm",
+      ".308": ".308 Win", ".308 win": ".308 Win",
+    };
+    const especieMap: Record<string, string> = {
+      "revolver": "Revólver", "revólver": "Revólver",
+      "pistola": "Pistola",
+      "espingarda": "Espingarda",
+      "carabina": "Carabina",
+      "fuzil": "Fuzil",
+    };
+
+    const sections = text.split(/(?=Nº Cad\. SINARM:)/);
+    const weapons: any[] = [];
+
+    for (const section of sections) {
+      if (!section.includes("Nº Cad. SINARM:")) continue;
+
+      let sinarmNum = "", especie = "", marca = "", modelo = "", serial = "";
+      let calibre = "", registro = "", validade = "";
+
+      const sinarmLine = section.match(/SINARM:\s*(\d{4}\/\S+)/);
+      if (sinarmLine) sinarmNum = sinarmLine[1];
+
+      const regLine = section.match(/Registro:\s*(\d+)/);
+      if (regLine) registro = regLine[1];
+
+      const valMatch = section.match(/Data de Validade:\s*\S*\s*(\d{2}\/\d{2}\/\d{4})/);
+      if (valMatch) validade = valMatch[1];
+
+      const lines = section.split("\n").map(l => l.replace(/\t/g, " ").trim());
+      const nonEmpty = lines.filter(Boolean);
+
+      const valueStartIdx = nonEmpty.findIndex(l => /^\d{4}\/\d+/.test(l));
+      if (valueStartIdx >= 0) {
+        const sinarmEspLine = nonEmpty[valueStartIdx];
+        const sem = sinarmEspLine.match(/^(\d{4}\/\S+)\s+(.+)$/);
+        if (sem) {
+          sinarmNum = sem[1];
+          especie = sem[2].trim();
+        }
+
+        if (valueStartIdx + 1 < nonEmpty.length) marca = nonEmpty[valueStartIdx + 1];
+        if (valueStartIdx + 2 < nonEmpty.length) {
+          const modeloSerialLine = nonEmpty[valueStartIdx + 2];
+          const ms = modeloSerialLine.split(/\s+/);
+          if (ms.length >= 2) {
+            modelo = ms[0];
+            serial = ms[ms.length - 1];
+          } else {
+            modelo = ms[0] || "";
+          }
+        }
+        if (valueStartIdx + 3 < nonEmpty.length) {
+          const calibreLine = nonEmpty[valueStartIdx + 3];
+          const cp = calibreLine.split(/\s+/);
+          calibre = cp[0] || "";
+        }
+      }
+
+      if (!sinarmNum && !serial) continue;
+
+      const rawEspecie = especie.toLowerCase();
+      const type = especieMap[rawEspecie] || "Outro";
+      const cleanBrand = marca.replace(/\s*\(.*\)\s*$/, "").trim();
+      const rawCalibre = calibre.toLowerCase().trim();
+      const mappedCaliber = calibreMap[rawCalibre] || "Outro";
+
+      let registrationExpiry = "";
+      if (validade) {
+        const parts = validade.split("/");
+        if (parts.length === 3) registrationExpiry = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+
+      weapons.push({
+        type,
+        brand: cleanBrand || "",
+        model: modelo || "",
+        caliber: mappedCaliber,
+        serialNumber: serial || "",
+        registrationNumber: registro || "",
+        registrationExpiry,
+        notes: sinarmNum ? `SINARM: ${sinarmNum}` : "",
+      });
+    }
+
+    if (weapons.length === 0) return null;
+    return { weapons, totalFound: weapons.length, documentType: "Certificado de Registro Federal de Arma de Fogo (CRAF)" };
+  }
+
   app.post("/api/weapons/ocr-batch", requireAdminRole, async (req, res) => {
     try {
       const { imageData } = req.body;
@@ -1681,6 +1780,25 @@ Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.`
 
       if (!isImage && !isPdf) {
         return res.status(400).json({ message: "Formato não suportado. Envie uma imagem (JPG, PNG) ou PDF." });
+      }
+
+      if (isPdf) {
+        try {
+          const { PDFParse: PDFParseClass } = await import("pdf-parse");
+          const base64Data = imageData.split(",")[1] || "";
+          const uint8 = new Uint8Array(Buffer.from(base64Data, "base64"));
+          const parser = new PDFParseClass(uint8, { verbosity: 0 });
+          const pdfResult = await parser.getText();
+          const pdfText = typeof pdfResult === "string" ? pdfResult : (pdfResult?.text || "");
+
+          const crafResult = parseCrafText(pdfText);
+          if (crafResult && crafResult.weapons.length > 0) {
+            console.log(`[CRAF Parser] Extraídas ${crafResult.weapons.length} arma(s) do PDF via parser de texto`);
+            return res.json(crafResult);
+          }
+        } catch (pdfErr: any) {
+          console.error("PDF text extraction failed, falling back to AI:", pdfErr.message);
+        }
       }
 
       const openai = new OpenAI({
@@ -1717,25 +1835,17 @@ Regras:
 - NUNCA invente dados. Se um campo não for encontrado, retorne string vazia ""
 - Preste atenção em tabelas, listas e campos repetidos que indicam múltiplas armas`;
 
-      let userContent: any[];
-      if (isPdf) {
-        const base64Data = imageData.split(",")[1] || "";
-        userContent = [
-          { type: "text", text: "Extraia TODAS as armas de fogo encontradas neste documento PDF:" },
-          { type: "file", file: { filename: "documento.pdf", file_data: `data:application/pdf;base64,${base64Data}` } },
-        ];
-      } else {
-        userContent = [
-          { type: "text", text: "Extraia TODAS as armas de fogo encontradas neste documento:" },
-          { type: "image_url", image_url: { url: imageData } },
-        ];
-      }
-
       const response = await openai.chat.completions.create({
         model: "gpt-5-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extraia TODAS as armas de fogo encontradas neste documento:" },
+              { type: "image_url", image_url: { url: imageData } },
+            ],
+          },
         ],
       });
 
