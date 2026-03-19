@@ -75,7 +75,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
-    type: order?.type || "escolta",
+    type: "escolta",
     description: order?.description || "",
     status: order?.status || (prefilledScheduled ? "agendada" : "aberta"),
     priority: order?.priority || "agendada",
@@ -137,13 +137,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Tipo de Serviço *</label>
-          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-type">
-            <option value="escolta">Escolta Armada</option>
-            <option value="vigilancia">Vigilância Patrimonial</option>
-            <option value="monitoramento">Central de Monitoramento</option>
-            <option value="facilities">Facilities</option>
-            <option value="outro">Outro</option>
-          </select>
+          <Input value="Escolta Armada" readOnly className="bg-neutral-50 text-neutral-700 cursor-default" data-testid="input-os-type" />
+          <input type="hidden" name="type" value="escolta" />
         </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Prioridade</label>
@@ -184,37 +179,47 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           <label className="text-xs text-neutral-500 mb-1 block">Veículo</label>
           <select value={form.vehicleId || ""} onChange={(e) => setForm({ ...form, vehicleId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-vehicle">
             <option value="">Selecione...</option>
-            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
+            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}{v.color ? ` · ${v.color}` : ""}</option>)}
           </select>
         </div>
         {form.vehicleId && (() => {
-          const selectedVehicle = vehicles.find(v => v.id === form.vehicleId);
-          if (!selectedVehicle) return null;
+          const sv = vehicles.find(v => v.id === form.vehicleId);
+          if (!sv) return null;
           const photos = [
-            { label: "Dianteira", src: selectedVehicle.photoFront },
-            { label: "Lateral Esq.", src: selectedVehicle.photoLeft },
-            { label: "Traseira", src: selectedVehicle.photoRear },
-            { label: "Lateral Dir.", src: selectedVehicle.photoRight },
+            { label: "Dianteira", src: sv.photoFront },
+            { label: "Lateral Esq.", src: sv.photoLeft },
+            { label: "Traseira", src: sv.photoRear },
+            { label: "Lateral Dir.", src: sv.photoRight },
           ].filter(p => p.src);
-          if (photos.length === 0) return null;
+          const trackerLabel = sv.trackerType === "truckscontrol" ? "TrucksControl" : sv.trackerType === "custom" ? "OnixSat" : null;
+          const trackerId = sv.truckscontrolIdentifier || sv.trackerId || sv.plate;
           return (
-            <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50" data-testid="section-vehicle-photos">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-bold text-[13px] text-neutral-900 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                  {selectedVehicle.plate}
+            <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50" data-testid="section-vehicle-info">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
+                <span className="font-extrabold text-[15px] text-neutral-900 tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  {sv.plate}
                 </span>
-                <span className="text-xs text-neutral-500">{selectedVehicle.brand} {selectedVehicle.model} {selectedVehicle.color ? `· ${selectedVehicle.color}` : ""}</span>
+                <span className="text-sm text-neutral-600 font-medium">{sv.brand} {sv.model}</span>
+                {sv.color && <span className="text-sm text-neutral-400">· {sv.color}</span>}
+                {sv.year && <span className="text-sm text-neutral-400">· {sv.year}</span>}
+                {trackerLabel && (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 font-bold border border-blue-200">
+                    {trackerLabel} — ID: {trackerId}
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {photos.map((p, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1">
-                    <div className="w-full aspect-[4/3] rounded-lg overflow-hidden border border-neutral-200 bg-white">
-                      <img src={p.src!} alt={p.label} className="w-full h-full object-cover" />
+              {photos.length > 0 && (
+                <div className="flex justify-center gap-3 flex-wrap">
+                  {photos.map((p, i) => (
+                    <div key={i} className="flex flex-col items-center gap-1" style={{ width: `min(${100 / photos.length}% - 12px, 220px)` }}>
+                      <div className="w-full aspect-[4/3] rounded-lg overflow-hidden border border-neutral-200 bg-white">
+                        <img src={p.src!} alt={p.label} className="w-full h-full object-cover" />
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-medium">{p.label}</span>
                     </div>
-                    <span className="text-[10px] text-neutral-400 font-medium">{p.label}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
