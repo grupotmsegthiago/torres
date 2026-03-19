@@ -181,7 +181,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
               <label className="text-xs text-neutral-500 mb-1 block">Tipo de Rastreador</label>
               <select value={form.trackerType} onChange={(e) => setForm({ ...form, trackerType: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-tracker-type">
                 <option value="truckscontrol">TrucksControl</option>
-                <option value="custom">API Customizada</option>
+                <option value="custom">OnixSat</option>
                 <option value="none">Sem Rastreador</option>
               </select>
             </div>
