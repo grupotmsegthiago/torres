@@ -52,6 +52,7 @@ interface PlacesAutocompleteProps {
   placeholder?: string;
   className?: string;
   id?: string;
+  theme?: "dark" | "light";
   "aria-label"?: string;
   "data-testid"?: string;
 }
@@ -62,8 +63,10 @@ export function PlacesAutocomplete({
   placeholder,
   className,
   id,
+  theme = "dark",
   ...props
 }: PlacesAutocompleteProps) {
+  const isLight = theme === "light";
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [apiReady, setApiReady] = useState(false);
@@ -101,7 +104,7 @@ export function PlacesAutocomplete({
         input,
         sessionToken: sessionTokenRef.current,
         includedRegionCodes: ["br"],
-        includedPrimaryTypes: ["locality", "administrative_area_level_2"],
+        includedPrimaryTypes: ["locality", "administrative_area_level_2", "sublocality", "route", "street_address", "premise", "point_of_interest", "establishment"],
         language: "pt-BR",
       });
 
@@ -148,25 +151,25 @@ export function PlacesAutocomplete({
         autoComplete="off"
       />
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 rounded-lg border border-white/10 bg-[#171717] shadow-xl overflow-hidden" data-testid="dropdown-suggestions">
+        <div className={`absolute z-50 w-full mt-1 rounded-lg border shadow-xl overflow-hidden ${isLight ? "bg-white border-neutral-200" : "bg-[#171717] border-white/10"}`} data-testid="dropdown-suggestions">
           {suggestions.map((s, i) => (
             <button
               key={s.placeId || i}
               type="button"
-              className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-white/[0.08] transition-colors border-t border-white/5 first:border-t-0"
+              className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors first:border-t-0 ${isLight ? "hover:bg-neutral-50 border-t border-neutral-100" : "hover:bg-white/[0.08] border-t border-white/5"}`}
               onClick={() => handleSelect(s)}
               data-testid={`suggestion-item-${i}`}
             >
-              <MapPin className="w-3.5 h-3.5 text-white/30 shrink-0" />
+              <MapPin className={`w-3.5 h-3.5 shrink-0 ${isLight ? "text-neutral-400" : "text-white/30"}`} />
               <div className="min-w-0">
-                <span className="text-sm text-white font-medium">{s.mainText}</span>
+                <span className={`text-sm font-medium ${isLight ? "text-neutral-900" : "text-white"}`}>{s.mainText}</span>
                 {s.secondaryText && (
-                  <span className="text-sm text-white/40 ml-1">{s.secondaryText}</span>
+                  <span className={`text-sm ml-1 ${isLight ? "text-neutral-400" : "text-white/40"}`}>{s.secondaryText}</span>
                 )}
               </div>
             </button>
           ))}
-          <div className="px-3 py-1.5 text-[10px] text-white/20 text-right">
+          <div className={`px-3 py-1.5 text-[10px] text-right ${isLight ? "text-neutral-300" : "text-white/20"}`}>
             Powered by Google
           </div>
         </div>

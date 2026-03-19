@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation } from "lucide-react";
+import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
@@ -330,9 +331,13 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 ) : showRouteForm ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Input value={routeOrigin} onChange={(e) => setRouteOrigin(e.target.value)} placeholder="Origem (ex: São Paulo, SP)" className="text-sm flex-1" data-testid="input-route-origin" />
-                      <span className="text-neutral-400 text-xs font-bold">→</span>
-                      <Input value={routeDestination} onChange={(e) => setRouteDestination(e.target.value)} placeholder="Destino (ex: Rio de Janeiro, RJ)" className="text-sm flex-1" data-testid="input-route-destination" />
+                      <div className="flex-1">
+                        <PlacesAutocomplete value={routeOrigin} onChange={setRouteOrigin} placeholder="Origem (ex: São Paulo, SP)" className="text-sm" theme="light" data-testid="input-route-origin" />
+                      </div>
+                      <span className="text-neutral-400 text-xs font-bold shrink-0">→</span>
+                      <div className="flex-1">
+                        <PlacesAutocomplete value={routeDestination} onChange={setRouteDestination} placeholder="Destino (ex: Rio de Janeiro, RJ)" className="text-sm" theme="light" data-testid="input-route-destination" />
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <Button type="button" size="sm" onClick={addRoute} className="bg-neutral-900 hover:bg-neutral-800 text-xs h-7">Confirmar</Button>
