@@ -274,6 +274,7 @@ export const weapons = pgTable("weapons", {
   registrationNumber: text("registration_number"),
   registrationExpiry: date("registration_expiry"),
   registrationFileData: text("registration_file_data"),
+  photoData: text("photo_data"),
   status: text("status").notNull().default("disponível"),
   assignedEmployeeId: integer("assigned_employee_id"),
   notes: text("notes"),

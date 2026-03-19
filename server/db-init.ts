@@ -110,6 +110,9 @@ export async function ensureDbSchema() {
     await db.execute(sql`
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS truckscontrol_identifier TEXT
     `);
+    await db.execute(sql`
+      ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
+    `);
 
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {

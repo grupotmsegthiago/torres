@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye } from "lucide-react";
 import type { Weapon, WeaponAssignment, Employee } from "@shared/schema";
 
 const WEAPON_TYPES = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
@@ -332,6 +332,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ocrInputRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     type: weapon?.type || "",
     brand: weapon?.brand || "",
@@ -341,9 +342,29 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
     registrationNumber: weapon?.registrationNumber || "",
     registrationExpiry: weapon?.registrationExpiry || "",
     registrationFileData: weapon?.registrationFileData || "",
+    photoData: weapon?.photoData || "",
     status: weapon?.status || "disponível",
     notes: weapon?.notes || "",
   });
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" });
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Formato inválido", description: "Selecione uma imagem (JPG, PNG, etc.)", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setForm(prev => ({ ...prev, photoData: ev.target!.result as string }));
+      toast({ title: "Foto anexada" });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -513,6 +534,27 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
               <input ref={fileInputRef} type="file" accept=".pdf,image/*" className="hidden" onChange={handleFileUpload} />
             </div>
           </div>
+          <div className="flex items-end">
+            <div className="w-full">
+              <label className="text-xs text-neutral-500 mb-1 block">Foto da Arma</label>
+              {form.photoData ? (
+                <div className="flex items-center gap-2">
+                  <img src={form.photoData} alt="Foto da arma" className="w-10 h-10 rounded object-cover border border-neutral-200" />
+                  <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()} data-testid="button-replace-photo">
+                    <Camera className="w-3.5 h-3.5 mr-1" /> Trocar
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setForm(prev => ({ ...prev, photoData: "" }))} data-testid="button-remove-photo">
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button type="button" variant="outline" className="w-full" onClick={() => photoInputRef.current?.click()} data-testid="button-upload-photo">
+                  <Camera className="w-4 h-4 mr-2" /> Anexar Foto
+                </Button>
+              )}
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </div>
+          </div>
         </div>
         <div>
           <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
@@ -637,12 +679,136 @@ function AssignWeaponModal({ weapon, open, onClose }: { weapon: Weapon; open: bo
   );
 }
 
+function PhotoViewerModal({ weapon, open, onClose }: { weapon: Weapon | null; open: boolean; onClose: () => void }) {
+  if (!weapon?.photoData) return null;
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{weapon.brand} {weapon.model} — {weapon.serialNumber}</DialogTitle>
+        </DialogHeader>
+        <div className="flex justify-center">
+          <img src={weapon.photoData} alt={`${weapon.brand} ${weapon.model}`} className="max-w-full max-h-[60vh] rounded-lg object-contain" />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WeaponGroupTable({
+  title, weapons, employees, onEdit, onDelete, onAssign, onViewPhoto
+}: {
+  title: string;
+  weapons: Weapon[];
+  employees: Employee[];
+  onEdit: (w: Weapon) => void;
+  onDelete: (id: number) => void;
+  onAssign: (w: Weapon) => void;
+  onViewPhoto: (w: Weapon) => void;
+}) {
+  if (weapons.length === 0) return null;
+  return (
+    <div className="mb-6" data-testid={`group-${title.toLowerCase().replace(/[^a-z]/g, "")}`}>
+      <div className="flex items-center gap-2 px-3 py-2 bg-neutral-100 border-b border-neutral-200">
+        <span className="text-sm font-semibold text-neutral-700">{title}</span>
+        <span className="text-xs text-neutral-500 bg-white px-2 py-0.5 rounded-full border border-neutral-200">{weapons.length}</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-neutral-50 border-b border-neutral-200">
+          <tr>
+            <th className="text-left p-3 font-medium text-neutral-600 w-10"></th>
+            <th className="text-left p-3 font-medium text-neutral-600">Marca / Modelo</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Calibre</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Nº Série</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Registro</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Val. Registro</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Agente</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Status</th>
+            <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {weapons.map((w) => {
+            const regStatus = isExpiringSoon(w.registrationExpiry);
+            const assignedEmp = w.assignedEmployeeId ? employees.find(e => e.id === w.assignedEmployeeId) : null;
+            return (
+              <tr key={w.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-weapon-${w.id}`}>
+                <td className="p-2 pl-3">
+                  {w.photoData ? (
+                    <button
+                      onClick={() => onViewPhoto(w)}
+                      className="w-9 h-9 rounded overflow-hidden border border-neutral-200 hover:border-neutral-400 transition-colors cursor-pointer"
+                      data-testid={`button-view-photo-${w.id}`}
+                    >
+                      <img src={w.photoData} alt={`${w.brand} ${w.model}`} className="w-full h-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="w-9 h-9 rounded border border-dashed border-neutral-200 flex items-center justify-center">
+                      <ImageIcon className="w-4 h-4 text-neutral-300" />
+                    </div>
+                  )}
+                </td>
+                <td className="p-3 font-medium text-neutral-900">{w.brand} {w.model}</td>
+                <td className="p-3 text-neutral-600">{w.caliber}</td>
+                <td className="p-3 font-mono text-xs text-neutral-500">{w.serialNumber}</td>
+                <td className="p-3 text-xs text-neutral-600">{w.registrationNumber || "-"}</td>
+                <td className="p-3">
+                  {w.registrationExpiry ? (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      regStatus === "expired" ? "bg-red-100 text-red-700" :
+                      regStatus === "warning" ? "bg-amber-100 text-amber-700" :
+                      "bg-green-100 text-green-700"
+                    }`}>
+                      {new Date(w.registrationExpiry).toLocaleDateString("pt-BR")}
+                    </span>
+                  ) : "-"}
+                </td>
+                <td className="p-3 text-sm text-neutral-700">
+                  {assignedEmp ? assignedEmp.name : <span className="text-neutral-400">-</span>}
+                </td>
+                <td className="p-3">
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    w.status === "disponível" ? "bg-green-100 text-green-700" :
+                    w.status === "em uso" ? "bg-blue-100 text-blue-700" :
+                    w.status === "manutenção" ? "bg-amber-100 text-amber-700" :
+                    "bg-neutral-100 text-neutral-600"
+                  }`}>{w.status}</span>
+                </td>
+                <td className="p-3 text-right">
+                  <div className="flex items-center justify-end gap-1 flex-wrap">
+                    <Button variant="ghost" size="icon" onClick={() => onAssign(w)} title="Vincular/Desvincular" data-testid={`button-assign-weapon-${w.id}`}>
+                      <Link2 className="w-4 h-4 text-blue-600" />
+                    </Button>
+                    {w.registrationFileData && (
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        const link = document.createElement("a");
+                        link.href = w.registrationFileData!;
+                        link.download = `registro_${w.serialNumber}.pdf`;
+                        link.click();
+                      }} title="Baixar Registro" data-testid={`button-download-reg-${w.id}`}>
+                        <FileText className="w-4 h-4 text-green-600" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" onClick={() => onEdit(w)} data-testid={`button-edit-weapon-${w.id}`}><Pencil className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => onDelete(w.id)} data-testid={`button-delete-weapon-${w.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function WeaponsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Weapon | undefined>();
   const [assignWeapon, setAssignWeapon] = useState<Weapon | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showBatchImport, setShowBatchImport] = useState(false);
+  const [photoViewer, setPhotoViewer] = useState<Weapon | null>(null);
   const { toast } = useToast();
   const { data: weapons = [], isLoading } = useQuery<Weapon[]>({ queryKey: ["/api/weapons"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -654,17 +820,24 @@ export default function WeaponsPage() {
 
   const filtered = weapons.filter(w => {
     const term = searchTerm.toLowerCase();
-    return !term || w.brand.toLowerCase().includes(term) || w.model.toLowerCase().includes(term) || w.serialNumber.toLowerCase().includes(term) || w.caliber.toLowerCase().includes(term);
+    return !term || w.brand.toLowerCase().includes(term) || w.model.toLowerCase().includes(term) || w.serialNumber.toLowerCase().includes(term) || w.caliber.toLowerCase().includes(term) || w.type.toLowerCase().includes(term);
   });
 
   const expiringWeapons = weapons.filter(w => isExpiringSoon(w.registrationExpiry) !== "ok");
+
+  const typeOrder = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
+  const grouped = typeOrder
+    .map(type => ({ type, items: filtered.filter(w => w.type === type) }))
+    .filter(g => g.items.length > 0);
+  const ungrouped = filtered.filter(w => !typeOrder.includes(w.type));
+  if (ungrouped.length > 0) grouped.push({ type: "Outros", items: ungrouped });
 
   return (
     <AdminLayout>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-weapons-title">Armamento</h1>
-          <p className="text-sm text-neutral-500 mt-1">Cadastro e controle de armas</p>
+          <p className="text-sm text-neutral-500 mt-1">Cadastro e controle de armas · {weapons.length} arma(s)</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setShowBatchImport(true)} data-testid="button-batch-import">
@@ -688,6 +861,7 @@ export default function WeaponsPage() {
       )}
 
       <BatchImportDialog open={showBatchImport} onClose={() => setShowBatchImport(false)} />
+      <PhotoViewerModal weapon={photoViewer} open={!!photoViewer} onClose={() => setPhotoViewer(null)} />
 
       {showForm && <WeaponForm weapon={editItem} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
 
@@ -714,77 +888,18 @@ export default function WeaponsPage() {
           <div className="p-8 text-center text-neutral-400">Nenhuma arma cadastrada</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-weapons">
-              <thead className="bg-neutral-50 border-b border-neutral-200">
-                <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Marca / Modelo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Calibre</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Nº Série</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Registro</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Val. Registro</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Agente</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((w) => {
-                  const regStatus = isExpiringSoon(w.registrationExpiry);
-                  const assignedEmp = w.assignedEmployeeId ? employees.find(e => e.id === w.assignedEmployeeId) : null;
-                  return (
-                    <tr key={w.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-weapon-${w.id}`}>
-                      <td className="p-3 text-neutral-700">{w.type}</td>
-                      <td className="p-3 font-medium text-neutral-900">{w.brand} {w.model}</td>
-                      <td className="p-3 text-neutral-600">{w.caliber}</td>
-                      <td className="p-3 font-mono text-xs text-neutral-500">{w.serialNumber}</td>
-                      <td className="p-3 text-xs text-neutral-600">{w.registrationNumber || "-"}</td>
-                      <td className="p-3">
-                        {w.registrationExpiry ? (
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            regStatus === "expired" ? "bg-red-100 text-red-700" :
-                            regStatus === "warning" ? "bg-amber-100 text-amber-700" :
-                            "bg-green-100 text-green-700"
-                          }`}>
-                            {new Date(w.registrationExpiry).toLocaleDateString("pt-BR")}
-                          </span>
-                        ) : "-"}
-                      </td>
-                      <td className="p-3 text-sm text-neutral-700">
-                        {assignedEmp ? assignedEmp.name : <span className="text-neutral-400">-</span>}
-                      </td>
-                      <td className="p-3">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                          w.status === "disponível" ? "bg-green-100 text-green-700" :
-                          w.status === "em uso" ? "bg-blue-100 text-blue-700" :
-                          w.status === "manutenção" ? "bg-amber-100 text-amber-700" :
-                          "bg-neutral-100 text-neutral-600"
-                        }`}>{w.status}</span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1 flex-wrap">
-                          <Button variant="ghost" size="icon" onClick={() => setAssignWeapon(w)} title="Vincular/Desvincular" data-testid={`button-assign-weapon-${w.id}`}>
-                            <Link2 className="w-4 h-4 text-blue-600" />
-                          </Button>
-                          {w.registrationFileData && (
-                            <Button variant="ghost" size="icon" onClick={() => {
-                              const link = document.createElement("a");
-                              link.href = w.registrationFileData!;
-                              link.download = `registro_${w.serialNumber}.pdf`;
-                              link.click();
-                            }} title="Baixar Registro" data-testid={`button-download-reg-${w.id}`}>
-                              <FileText className="w-4 h-4 text-green-600" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="icon" onClick={() => { setEditItem(w); setShowForm(true); }} data-testid={`button-edit-weapon-${w.id}`}><Pencil className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(w.id)} data-testid={`button-delete-weapon-${w.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {grouped.map(g => (
+              <WeaponGroupTable
+                key={g.type}
+                title={g.type}
+                weapons={g.items}
+                employees={employees}
+                onEdit={(w) => { setEditItem(w); setShowForm(true); }}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                onAssign={(w) => setAssignWeapon(w)}
+                onViewPhoto={(w) => setPhotoViewer(w)}
+              />
+            ))}
           </div>
         )}
       </Card>
