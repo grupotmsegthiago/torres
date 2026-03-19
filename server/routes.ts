@@ -12,6 +12,7 @@ import {
   insertVehicleAssignmentSchema,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
+import * as truckscontrol from "./truckscontrol";
 import OpenAI from "openai";
 
 const MISSION_STEPS = [
@@ -920,6 +921,8 @@ Para CPF, formate como 000.000.000-00.`
       (o) => o.status === "em_andamento" || o.status === "aberta"
     );
 
+    const tcPositions = await truckscontrol.getCachedPositions();
+
     const tracked = await Promise.all(
       allVehicles.map(async (v) => {
         let trackerData: {
@@ -932,13 +935,36 @@ Para CPF, formate como 000.000.000-00.`
           address?: string;
         } | null = null;
 
-        const hasTracker = !!(v.trackerId && v.trackerApiUrl);
+        const trackerType = v.trackerType || "none";
+        let hasTracker = false;
 
-        if (hasTracker) {
+        if (trackerType === "truckscontrol") {
+          hasTracker = true;
+          if (tcPositions.length > 0) {
+            const pos = v.truckscontrolIdentifier
+              ? truckscontrol.findPositionByIdentifier(tcPositions, v.truckscontrolIdentifier)
+              : truckscontrol.findPositionByPlate(tcPositions, v.plate);
+            if (pos) {
+              trackerData = {
+                latitude: pos.latitude,
+                longitude: pos.longitude,
+                ignition: pos.ignition,
+                lastPositionTime: pos.lastPositionTime,
+                gpsSignal: pos.gpsSignal,
+                speed: pos.speed,
+                address: pos.address,
+              };
+            }
+          }
+        } else if (trackerType === "custom" && v.trackerId && v.trackerApiUrl) {
+          hasTracker = true;
           try {
-            const resp = await fetch(v.trackerApiUrl!);
-            if (resp.ok) {
-              trackerData = await resp.json();
+            const url = new URL(v.trackerApiUrl);
+            if (url.protocol === "https:") {
+              const resp = await fetch(v.trackerApiUrl, { signal: AbortSignal.timeout(5000) });
+              if (resp.ok) {
+                trackerData = await resp.json();
+              }
             }
           } catch (_e) {
             trackerData = null;
@@ -955,7 +981,8 @@ Para CPF, formate como 000.000.000-00.`
           color: v.color,
           status: v.status,
           hasTracker,
-          trackerId: v.trackerId,
+          trackerId: v.trackerId || v.truckscontrolIdentifier,
+          trackerType: v.trackerType || "custom",
           tracker: trackerData,
           activeOs: linkedOrder
             ? {
@@ -970,6 +997,16 @@ Para CPF, formate como 000.000.000-00.`
     );
 
     res.json(tracked);
+  });
+
+  app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
+    const result = await truckscontrol.testConnection();
+    res.json(result);
+  });
+
+  app.get("/api/truckscontrol/positions", requireAuth, requireAdminRole, async (_req, res) => {
+    const positions = await truckscontrol.getCachedPositions();
+    res.json(positions);
   });
 
   // ====================== MISSION ROUTES ======================

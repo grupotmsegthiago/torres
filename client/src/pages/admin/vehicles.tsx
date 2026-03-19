@@ -15,6 +15,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
   const { toast } = useToast();
   const [lookupLoading, setLookupLoading] = useState(false);
   const lookupTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tcTestLoading, setTcTestLoading] = useState(false);
+  const [tcTestResult, setTcTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [form, setForm] = useState({
     plate: vehicle?.plate || "",
     model: vehicle?.model || "",
@@ -26,6 +28,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     status: vehicle?.status || "disponível",
     trackerId: vehicle?.trackerId || "",
     trackerApiUrl: vehicle?.trackerApiUrl || "",
+    trackerType: (vehicle as any)?.trackerType || "none",
+    truckscontrolIdentifier: (vehicle as any)?.truckscontrolIdentifier || "",
     km: vehicle?.km || 0,
     notes: vehicle?.notes || "",
   });
@@ -163,13 +167,71 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             <option value="inativo">Inativo</option>
           </select>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">ID Rastreador</label>
-          <Input value={form.trackerId} onChange={(e) => setForm({ ...form, trackerId: e.target.value })} placeholder="Configurar futuramente" data-testid="input-vehicle-tracker" />
-        </div>
-        <div className="md:col-span-2">
-          <label className="text-xs text-neutral-500 mb-1 block">URL API Rastreador</label>
-          <Input value={form.trackerApiUrl} onChange={(e) => setForm({ ...form, trackerApiUrl: e.target.value })} placeholder="Configurar futuramente" data-testid="input-vehicle-tracker-url" />
+        <div className="md:col-span-3 border border-neutral-200 rounded-lg p-4 bg-neutral-50">
+          <div className="flex items-center gap-2 mb-3">
+            <Link2 className="w-4 h-4 text-neutral-600" />
+            <span className="text-sm font-medium text-neutral-800">Rastreador</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-neutral-500 mb-1 block">Tipo de Rastreador</label>
+              <select value={form.trackerType} onChange={(e) => setForm({ ...form, trackerType: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-tracker-type">
+                <option value="truckscontrol">TrucksControl</option>
+                <option value="custom">API Customizada</option>
+                <option value="none">Sem Rastreador</option>
+              </select>
+            </div>
+            {form.trackerType === "truckscontrol" && (
+              <>
+                <div>
+                  <label className="text-xs text-neutral-500 mb-1 block">Identificador TrucksControl</label>
+                  <Input value={form.truckscontrolIdentifier} onChange={(e) => setForm({ ...form, truckscontrolIdentifier: e.target.value })} placeholder="Usa placa se vazio" data-testid="input-tc-identifier" />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={tcTestLoading}
+                    onClick={async () => {
+                      setTcTestLoading(true);
+                      setTcTestResult(null);
+                      try {
+                        const { authFetch } = await import("@/lib/queryClient");
+                        const res = await authFetch("/api/truckscontrol/test");
+                        const data = await res.json();
+                        setTcTestResult(data);
+                      } catch {
+                        setTcTestResult({ success: false, message: "Erro de conexão" });
+                      } finally {
+                        setTcTestLoading(false);
+                      }
+                    }}
+                    data-testid="button-test-truckscontrol"
+                  >
+                    {tcTestLoading ? <><Loader2 className="w-3 h-3 animate-spin mr-1" /> Testando...</> : "Testar Conexão"}
+                  </Button>
+                </div>
+                {tcTestResult && (
+                  <div className={`md:col-span-3 text-xs px-3 py-2 rounded ${tcTestResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`} data-testid="text-tc-test-result">
+                    {tcTestResult.message}
+                  </div>
+                )}
+              </>
+            )}
+            {form.trackerType === "custom" && (
+              <>
+                <div>
+                  <label className="text-xs text-neutral-500 mb-1 block">ID Rastreador</label>
+                  <Input value={form.trackerId} onChange={(e) => setForm({ ...form, trackerId: e.target.value })} placeholder="ID do dispositivo" data-testid="input-vehicle-tracker" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs text-neutral-500 mb-1 block">URL API Rastreador</label>
+                  <Input value={form.trackerApiUrl} onChange={(e) => setForm({ ...form, trackerApiUrl: e.target.value })} placeholder="https://api.rastreador.com/..." data-testid="input-vehicle-tracker-url" />
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <div className="md:col-span-3">
           <label className="text-xs text-neutral-500 mb-1 block">Observações</label>

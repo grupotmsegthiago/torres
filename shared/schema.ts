@@ -117,6 +117,8 @@ export const vehicles = pgTable("vehicles", {
   status: text("status").notNull().default("disponível"),
   trackerId: text("tracker_id"),
   trackerApiUrl: text("tracker_api_url"),
+  trackerType: text("tracker_type"),
+  truckscontrolIdentifier: text("truckscontrol_identifier"),
   km: integer("km").default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),

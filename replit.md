@@ -96,6 +96,16 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - CPF lookup button (magnifying glass) next to CPF field — tries BrasilAPI (public, free) for basic data
 - Endpoint: `POST /api/employees/ocr` (requireAdminRole) — receives base64 imageData, returns extracted fields
 
+## TrucksControl Integration (Vehicle Tracking)
+- **Service**: TrucksControl / NewRastreamentoOnline SOAP webservice
+- **Base URL**: `https://webservice.newrastreamentoonline.com.br/`
+- **Server module**: `server/truckscontrol.ts` — SOAP XML client with 30s position cache
+- **Env vars**: `TRUCKSCONTROL_CHAVE` (integration key), `TRUCKSCONTROL_SENHA` (password)
+- **Vehicle schema fields**: `tracker_type` (truckscontrol/custom/none), `truckscontrol_identifier` (optional, falls back to plate matching)
+- **API endpoints**: `GET /api/truckscontrol/test` (connection test), `GET /api/truckscontrol/positions` (all positions)
+- **Operational Grid**: `/api/vehicle-tracking` merges TrucksControl positions with vehicle data (lat, lng, speed, ignition, GPS, address)
+- **Vehicle form**: Tracker section with type selector, TrucksControl identifier field, connection test button
+
 ## Vehicle Assignments
 - `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes
 - Full audit trail for multas/fines traceability
