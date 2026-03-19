@@ -1471,19 +1471,21 @@ Para CPF, formate como 000.000.000-00.`
         const now = new Date().toISOString();
         let stoppedSince = v.stoppedSince || null;
         let ignitionOnSince = v.ignitionOnSince || null;
+        let noSignalSince = v.noSignalSince || null;
 
         if (gotLiveData && trackerData) {
+          noSignalSince = null;
+
           const prevIgnition = v.lastIgnition === 1;
-          const prevSpeed = v.lastSpeed ?? 0;
           const curIgnition = trackerData.ignition === true;
           const curSpeed = trackerData.speed ?? 0;
           const isStopped = curSpeed < 2;
 
-          if (isStopped && curIgnition) {
+          if (isStopped) {
             if (!stoppedSince) {
               stoppedSince = trackerData.lastPositionTime || now;
             }
-          } else if (!isStopped) {
+          } else {
             stoppedSince = null;
           }
 
@@ -1508,20 +1510,33 @@ Para CPF, formate como 000.000.000-00.`
             lastPositionTime: trackerData.lastPositionTime || null,
             stoppedSince,
             ignitionOnSince,
+            noSignalSince: null,
           } as any).catch(() => {});
-        } else if (hasTracker && !gotLiveData && v.lastLatitude && v.lastLongitude) {
-          trackerData = {
-            latitude: parseFloat(v.lastLatitude),
-            longitude: parseFloat(v.lastLongitude),
-            ignition: v.lastIgnition === 1,
-            lastPositionTime: v.lastPositionTime || undefined,
-            gpsSignal: v.lastGpsSignal === 1,
-            speed: v.lastSpeed ?? 0,
-            address: v.lastAddress || undefined,
-            stoppedSince: v.stoppedSince || null,
-            ignitionOnSince: v.ignitionOnSince || null,
-            isLiveData: false,
-          };
+        } else if (hasTracker && !gotLiveData) {
+          if (!noSignalSince) {
+            noSignalSince = v.lastPositionTime || now;
+            storage.updateVehicle(v.id, { noSignalSince } as any).catch(() => {});
+          }
+
+          if (v.lastLatitude && v.lastLongitude) {
+            if (!stoppedSince && v.lastPositionTime) {
+              stoppedSince = v.lastPositionTime;
+              storage.updateVehicle(v.id, { stoppedSince, ignitionOnSince: null } as any).catch(() => {});
+            }
+
+            trackerData = {
+              latitude: parseFloat(v.lastLatitude),
+              longitude: parseFloat(v.lastLongitude),
+              ignition: false,
+              lastPositionTime: v.lastPositionTime || undefined,
+              gpsSignal: false,
+              speed: 0,
+              address: v.lastAddress || undefined,
+              stoppedSince: stoppedSince,
+              ignitionOnSince: null,
+              isLiveData: false,
+            };
+          }
         }
 
         const linkedOrder = activeOrders.find((o) => o.vehicleId === v.id);
@@ -1542,6 +1557,7 @@ Para CPF, formate como 000.000.000-00.`
           trackerType: v.trackerType || "none",
           truckscontrolIdentifier: v.truckscontrolIdentifier,
           iconType: v.iconType || "polo",
+          noSignalSince,
           deviceType: "vehicle" as const,
           tracker: trackerData,
           activeOs: linkedOrder

@@ -129,7 +129,15 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - **SP Rodízio detection**: Plates restricted by São Paulo rodízio rules highlighted in red with pulsing "RODÍZIO SP" badge
 - **Speed alert**: Banner alert when any vehicle exceeds 110 km/h with plate, speed, location
 - **Idle time tracking**: Shows duration when vehicle has ignition ON but speed = 0 (amber badge with pause icon)
+- **Stopped time tracking**: Shows duration when vehicle is stopped with ignition OFF (red badge with XCircle icon)
+- **No-signal telemetry**: When TrucksControl API returns no data, system keeps last known position, calculates time without signal (`noSignalSince`), shows gray WifiOff badge with elapsed time. Map marker turns gray (#6b7280). Info window shows "Sem sinal há X — posição mantida". Stat card "Sem Sinal" appears in header when count > 0
+- **Moving indicator**: Shows speed in green badge when vehicle is in motion
 - **OS/Status/Client**: Shows assigned OS number, mission status badge, and client name
+
+## Database Configuration
+- **EXCLUSIVE Supabase**: `server/db.ts` uses only `SUPABASE_DATABASE_URL` (no fallback to Replit DB)
+- **`drizzle.config.ts`**: Also prioritizes `SUPABASE_DATABASE_URL`
+- **Vehicle persistence columns**: `last_latitude`, `last_longitude`, `last_ignition`, `last_speed`, `last_gps_signal`, `last_address`, `last_position_time`, `stopped_since`, `ignition_on_since`, `no_signal_since`
 
 ## Vehicle Assignments
 - `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes

@@ -143,6 +143,7 @@ export const vehicles = pgTable("vehicles", {
   lastPositionTime: text("last_position_time"),
   stoppedSince: text("stopped_since"),
   ignitionOnSince: text("ignition_on_since"),
+  noSignalSince: text("no_signal_since"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

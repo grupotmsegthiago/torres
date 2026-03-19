@@ -13,7 +13,7 @@ import {
   ExternalLink, Zap, CalendarClock, Recycle, Car, X,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
-  AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
+  AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -44,6 +44,7 @@ interface TrackedVehicle {
   trackerType: string;
   truckscontrolIdentifier?: string | null;
   iconType?: string | null;
+  noSignalSince?: string | null;
   deviceType?: "vehicle" | "spy";
   batteryLevel?: number;
   coupled?: boolean;
@@ -275,6 +276,11 @@ function getStoppedTime(v: TrackedVehicle): string | null {
   return formatTimeDiff(v.tracker.lastPositionTime);
 }
 
+function getNoSignalTime(v: TrackedVehicle): string | null {
+  if (!v.noSignalSince) return null;
+  return formatTimeDiff(v.noSignalSince);
+}
+
 function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; focusVehicleId?: number | null }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -448,7 +454,8 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
       } else {
         const isIgnitionOn = v.tracker.ignition === true;
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
-        const statusColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+        const hasNoSignal = v.tracker.isLiveData === false && !!v.noSignalSince;
+        const statusColor = hasNoSignal ? "#6b7280" : isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
         markerIcon = {
           url: buildCarIcon(statusColor, v.plate, v.iconType),
           scaledSize: new window.google.maps.Size(48, 62),
@@ -479,18 +486,21 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
         const _idleT = getIdleTime(v);
         const _ignT = getIgnitionOnTime(v);
         const _stopT = getStoppedTime(v);
+        const _noSigT = getNoSignalTime(v);
         const _isLive = v.tracker.isLiveData !== false;
         infoContent = `
-          <div style="font-family: system-ui; min-width: 220px; padding: 4px;">
+          <div style="font-family: system-ui; min-width: 240px; padding: 4px;">
             <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">${v.plate}</div>
             <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
-            ${!_isLive ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida (sem sinal)</div>` : ""}
-            ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
-            ${v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
+            ${!_isLive && _noSigT ? `<div style="font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT} — posição mantida</div>` : ""}
+            ${!_isLive && !_noSigT ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
+            ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
+            ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
             ${_idleT ? `<div style="font-size: 12px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
             ${_stopT && !v.tracker.ignition ? `<div style="font-size: 12px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
             ${_ignT ? `<div style="font-size: 12px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
-            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
+            ${v.tracker.lastPositionTime ? `<div style="font-size: 11px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
+            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
             ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
           </div>
         `;
@@ -568,6 +578,12 @@ function VehicleMap({ vehicles, focusVehicleId }: { vehicles: TrackedVehicle[]; 
               <Car className="w-3 h-3" style={{ color: "#ef4444" }} />
             </div>
             Desligado
+          </span>
+          <span className="flex items-center gap-2">
+            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#6b7280", background: "#1a1a1a" }}>
+              <WifiOff className="w-3 h-3" style={{ color: "#6b7280" }} />
+            </div>
+            Sem sinal
           </span>
           <span className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "#8b5cf6", border: "2px solid #fff", boxShadow: "0 0 0 1px #8b5cf6" }}>
@@ -1098,10 +1114,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const idleTime = getIdleTime(v);
                 const ignitionOnTime = getIgnitionOnTime(v);
                 const stoppedTime = getStoppedTime(v);
+                const noSignalTime = getNoSignalTime(v);
                 const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
-                const statusColor = isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
+                const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
                 const isLive = v.tracker?.isLiveData !== false;
 
                 return (
@@ -1244,7 +1261,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
                     <td className="px-3 py-3 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-1">
-                        {idleTime ? (
+                        {noSignalTime && !isLive ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-gray-600 bg-gray-100 border border-gray-300 rounded-md px-2 py-0.5">
+                                <WifiOff className="w-3 h-3" />
+                                <span className="text-[11px] font-bold">{noSignalTime}</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Sem sinal há {noSignalTime} — última posição mantida</TooltipContent>
+                          </Tooltip>
+                        ) : idleTime ? (
                           <Tooltip>
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
@@ -1263,6 +1290,16 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Veículo desligado e parado há {stoppedTime}</TooltipContent>
+                          </Tooltip>
+                        ) : isMov ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-0.5">
+                                <Navigation className="w-3 h-3" />
+                                <span className="text-[11px] font-bold">{v.tracker?.speed ?? 0} km/h</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Em movimento a {v.tracker?.speed ?? 0} km/h</TooltipContent>
                           </Tooltip>
                         ) : (
                           <span className="text-neutral-300 text-[11px]">—</span>
@@ -1733,6 +1770,7 @@ export default function OperationalGridPage() {
   const trackedCount = onlyVehicles.filter((v) => v.hasTracker).length;
   const withPositionCount = vehicles.filter((v) => v.tracker?.latitude != null).length;
   const tcCount = onlyVehicles.filter((v) => v.trackerType === "truckscontrol").length;
+  const noSignalCount = onlyVehicles.filter((v) => !!v.noSignalSince && v.tracker?.isLiveData === false).length;
   const activeOsCount = gridData.length;
 
   const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -1808,6 +1846,15 @@ export default function OperationalGridPage() {
                 </div>
                 <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{withPositionCount}</p>
               </div>
+              {noSignalCount > 0 && (
+                <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
+                  </div>
+                  <p className="text-2xl font-bold text-amber-300" style={{ fontFamily: "'Montserrat', sans-serif" }}>{noSignalCount}</p>
+                </div>
+              )}
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Navigation className="w-3.5 h-3.5 text-neutral-400" />
