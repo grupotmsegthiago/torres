@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye, Package, Check } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye, Package, Check, Download, Mail } from "lucide-react";
 import type { Weapon, WeaponAssignment, Employee, WeaponKit, WeaponKitItem } from "@shared/schema";
 
 const WEAPON_TYPES = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
@@ -914,16 +914,159 @@ function KitFormDialog({ open, onClose, kit, weapons, allKits }: { open: boolean
   );
 }
 
+function KitDocsModal({ kit, open, onClose }: { kit: EnrichedKit; open: boolean; onClose: () => void }) {
+  const [emailTo, setEmailTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const { toast } = useToast();
+
+  const weaponsWithDocs = kit.items.filter(i => i.weapon?.registrationFileData).map(i => i.weapon!);
+
+  const handleDownloadAll = () => {
+    weaponsWithDocs.forEach((w, idx) => {
+      setTimeout(() => {
+        const link = document.createElement("a");
+        link.href = w.registrationFileData!;
+        const ext = w.registrationFileData!.startsWith("data:application/pdf") ? "pdf" : "jpg";
+        link.download = `registro_${w.type}_${w.serialNumber}.${ext}`;
+        link.click();
+      }, idx * 300);
+    });
+    toast({ title: `${weaponsWithDocs.length} documento(s) baixado(s)` });
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailTo.trim() || !emailTo.includes("@")) {
+      toast({ title: "E-mail inválido", variant: "destructive" });
+      return;
+    }
+    setSending(true);
+    try {
+      await apiRequest("POST", "/api/weapon-kits/send-docs", {
+        kitId: kit.id,
+        email: emailTo,
+      });
+      toast({ title: "Documentos enviados por e-mail" });
+      setEmailTo("");
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            Documentos — {kit.name}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          {weaponsWithDocs.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+              <p className="text-neutral-500">Nenhuma arma deste kit possui registro anexado</p>
+              <p className="text-sm text-neutral-400 mt-1">Anexe registros na aba "Armas" para visualizá-los aqui</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-500">{weaponsWithDocs.length} documento(s) disponível(is)</span>
+                <Button variant="outline" size="sm" onClick={handleDownloadAll} data-testid="button-download-all-docs">
+                  <Download className="w-4 h-4 mr-2" /> Baixar Todos
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {weaponsWithDocs.map((w, idx) => {
+                  const isPdf = w.registrationFileData!.startsWith("data:application/pdf");
+                  return (
+                    <div key={w.id} className="border border-neutral-200 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 bg-neutral-50 border-b border-neutral-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-neutral-400">#{String(idx + 1).padStart(2, "0")}</span>
+                          <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                            {w.type} {w.brand} {w.model}
+                          </span>
+                          <span className="text-xs text-neutral-500">Cal. {w.caliber} · Nº {w.serialNumber}</span>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          const link = document.createElement("a");
+                          link.href = w.registrationFileData!;
+                          const ext = isPdf ? "pdf" : "jpg";
+                          link.download = `registro_${w.type}_${w.serialNumber}.${ext}`;
+                          link.click();
+                        }} data-testid={`button-download-doc-${w.id}`}>
+                          <Download className="w-4 h-4 mr-1" /> Baixar
+                        </Button>
+                      </div>
+                      <div className="bg-white p-2" style={{ minHeight: 200, maxHeight: 400 }}>
+                        {isPdf ? (
+                          <iframe src={w.registrationFileData!} className="w-full h-[350px] border-0" title={`Registro ${w.serialNumber}`} />
+                        ) : (
+                          <img src={w.registrationFileData!} alt={`Registro ${w.serialNumber}`} className="max-w-full max-h-[350px] mx-auto object-contain" />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="border-t border-neutral-200 pt-4">
+                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2 block">Enviar por E-mail</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    placeholder="email@exemplo.com.br"
+                    type="email"
+                    className="flex-1"
+                    data-testid="input-docs-email"
+                  />
+                  <Button onClick={handleSendEmail} disabled={sending} data-testid="button-send-docs-email">
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
+                    Enviar
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function naturalSort(a: string, b: string): number {
+  const re = /(\d+)/g;
+  const aParts = a.split(re);
+  const bParts = b.split(re);
+  for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+    const ap = aParts[i] || "";
+    const bp = bParts[i] || "";
+    if (/^\d+$/.test(ap) && /^\d+$/.test(bp)) {
+      const diff = parseInt(ap) - parseInt(bp);
+      if (diff !== 0) return diff;
+    } else {
+      const diff = ap.localeCompare(bp);
+      if (diff !== 0) return diff;
+    }
+  }
+  return 0;
+}
+
 function KitsTab({ weapons }: { weapons: Weapon[] }) {
   const { toast } = useToast();
   const [showKitForm, setShowKitForm] = useState(false);
   const [editKit, setEditKit] = useState<EnrichedKit | undefined>();
   const [expandedKit, setExpandedKit] = useState<number | null>(null);
+  const [docsKit, setDocsKit] = useState<EnrichedKit | null>(null);
 
-  const { data: kits = [], isLoading } = useQuery<EnrichedKit[]>({
+  const { data: kitsRaw = [], isLoading } = useQuery<EnrichedKit[]>({
     queryKey: ["/api/weapon-kits"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
+
+  const kits = [...kitsRaw].sort((a, b) => naturalSort(a.name, b.name));
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/weapon-kits/${id}`); },
@@ -968,13 +1111,13 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {kits.map(kit => (
+          {kits.map((kit, idx) => (
             <Card key={kit.id} className="bg-white border-neutral-200 overflow-hidden" data-testid={`card-kit-${kit.id}`}>
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center">
-                      <Package className="w-5 h-5 text-white" />
+                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-white text-xs font-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                      #{String(idx + 1).padStart(2, "0")}
                     </div>
                     <div>
                       <h3 className="font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{kit.name}</h3>
@@ -983,6 +1126,9 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getKitStatusColor(kit)}`}>{getKitStatusLabel(kit)}</span>
+                    <Button variant="ghost" size="icon" onClick={() => setDocsKit(kit)} title="Documentos das Armas" data-testid={`button-docs-kit-${kit.id}`}>
+                      <FileText className="w-4 h-4 text-blue-600" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => setExpandedKit(expandedKit === kit.id ? null : kit.id)} data-testid={`button-expand-kit-${kit.id}`}>
                       {expandedKit === kit.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </Button>
@@ -1041,6 +1187,10 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
             </Card>
           ))}
         </div>
+      )}
+
+      {docsKit && (
+        <KitDocsModal kit={docsKit} open={!!docsKit} onClose={() => setDocsKit(null)} />
       )}
     </div>
   );

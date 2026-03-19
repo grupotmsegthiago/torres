@@ -1893,6 +1893,18 @@ Para CPF, formate como 000.000.000-00.`
     }
   });
 
+  app.post("/api/weapon-kits/send-docs", requireAdminRole, async (req, res) => {
+    try {
+      const { kitId, email } = req.body;
+      if (!kitId || !email) return res.status(400).json({ message: "Kit ID e e-mail são obrigatórios" });
+      const kit = await storage.getWeaponKit(kitId);
+      if (!kit) return res.status(404).json({ message: "Kit não encontrado" });
+      res.status(501).json({ message: "Envio por e-mail será configurado com serviço SMTP. Use o download por enquanto." });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.delete("/api/weapon-kits/:id", requireAdminRole, async (req, res) => {
     const kit = await storage.getWeaponKit(parseInt(req.params.id));
     if (!kit) return res.status(404).json({ message: "Kit não encontrado" });
