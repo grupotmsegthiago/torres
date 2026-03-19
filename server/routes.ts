@@ -1475,6 +1475,7 @@ Para CPF, formate como 000.000.000-00.`
           trackerId: v.trackerId || v.truckscontrolIdentifier,
           trackerType: v.trackerType || "none",
           truckscontrolIdentifier: v.truckscontrolIdentifier,
+          iconType: v.iconType || "polo",
           deviceType: "vehicle" as const,
           tracker: trackerData,
           activeOs: linkedOrder

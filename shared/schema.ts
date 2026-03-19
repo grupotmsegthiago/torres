@@ -133,6 +133,7 @@ export const vehicles = pgTable("vehicles", {
   photoLeft: text("photo_left"),
   photoRear: text("photo_rear"),
   photoRight: text("photo_right"),
+  iconType: text("icon_type").default("polo"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
