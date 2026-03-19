@@ -267,7 +267,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
       {!order && <StepIndicator />}
 
-      <form onSubmit={(e) => { e.preventDefault(); if (order || step === 3) mutation.mutate(form); }} className="p-5 space-y-4">
+      <div className="p-5 space-y-4">
         {(step === 1 || !!order) && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -550,13 +550,13 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="submit" disabled={mutation.isPending} className="bg-neutral-900 hover:bg-neutral-800" data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate(form)} className="bg-neutral-900 hover:bg-neutral-800" data-testid="button-save-order">
                 {mutation.isPending ? "Salvando..." : "Salvar OS"}
               </Button>
             )}
           </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
