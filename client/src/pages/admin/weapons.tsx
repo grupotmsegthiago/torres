@@ -696,11 +696,12 @@ function PhotoViewerModal({ weapon, open, onClose }: { weapon: Weapon | null; op
 }
 
 function WeaponGroupTable({
-  title, weapons, employees, onEdit, onDelete, onAssign, onViewPhoto
+  title, weapons, employees, weaponKitMap, onEdit, onDelete, onAssign, onViewPhoto
 }: {
   title: string;
   weapons: Weapon[];
   employees: Employee[];
+  weaponKitMap: Map<number, string>;
   onEdit: (w: Weapon) => void;
   onDelete: (id: number) => void;
   onAssign: (w: Weapon) => void;
@@ -722,6 +723,7 @@ function WeaponGroupTable({
             <th className="text-left p-3 font-medium text-neutral-600">Nº Série</th>
             <th className="text-left p-3 font-medium text-neutral-600">Registro</th>
             <th className="text-left p-3 font-medium text-neutral-600">Val. Registro</th>
+            <th className="text-left p-3 font-medium text-neutral-600">Kit</th>
             <th className="text-left p-3 font-medium text-neutral-600">Agente</th>
             <th className="text-left p-3 font-medium text-neutral-600">Status</th>
             <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
@@ -731,6 +733,7 @@ function WeaponGroupTable({
           {weapons.map((w) => {
             const regStatus = isExpiringSoon(w.registrationExpiry);
             const assignedEmp = w.assignedEmployeeId ? employees.find(e => e.id === w.assignedEmployeeId) : null;
+            const kitName = weaponKitMap.get(w.id);
             return (
               <tr key={w.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-weapon-${w.id}`}>
                 <td className="p-2 pl-3">
@@ -762,6 +765,16 @@ function WeaponGroupTable({
                       {new Date(w.registrationExpiry).toLocaleDateString("pt-BR")}
                     </span>
                   ) : "-"}
+                </td>
+                <td className="p-3">
+                  {kitName ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-neutral-900 text-white rounded px-2 py-0.5 font-semibold whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                      <Package className="w-3 h-3" />
+                      {kitName}
+                    </span>
+                  ) : (
+                    <span className="text-neutral-300 text-xs">—</span>
+                  )}
                 </td>
                 <td className="p-3 text-sm text-neutral-700">
                   {assignedEmp ? assignedEmp.name : <span className="text-neutral-400">-</span>}
@@ -1207,6 +1220,14 @@ export default function WeaponsPage() {
   const { toast } = useToast();
   const { data: weapons = [], isLoading } = useQuery<Weapon[]>({ queryKey: ["/api/weapons"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: allKits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  const weaponKitMap = new Map<number, string>();
+  allKits.forEach(kit => {
+    kit.items.forEach(item => {
+      weaponKitMap.set(item.weaponId, kit.name);
+    });
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/weapons/${id}`); },
@@ -1333,6 +1354,7 @@ export default function WeaponsPage() {
                 title={g.type}
                 weapons={g.items}
                 employees={employees}
+                weaponKitMap={weaponKitMap}
                 onEdit={(w) => { setEditItem(w); setShowForm(true); }}
                 onDelete={(id) => deleteMutation.mutate(id)}
                 onAssign={(w) => setAssignWeapon(w)}
