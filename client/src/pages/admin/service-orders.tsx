@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, authFetch, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -267,7 +267,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
       {!order && <StepIndicator />}
 
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="p-5 space-y-4">
+      <form onSubmit={(e) => { e.preventDefault(); if (order || step === 3) mutation.mutate(form); }} className="p-5 space-y-4">
         {(step === 1 || !!order) && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -711,7 +711,7 @@ export default function ServiceOrdersPage() {
                         )}
                         <Button variant="ghost" size="icon" onClick={async () => {
                           try {
-                            const res = await fetch(`/api/service-orders/${o.id}/pdf`, { credentials: "include" });
+                            const res = await authFetch(`/api/service-orders/${o.id}/pdf`);
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);

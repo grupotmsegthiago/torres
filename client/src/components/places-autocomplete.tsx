@@ -29,7 +29,7 @@ function loadGoogleMapsScript(callback: () => void) {
 
   window._gmapsLoading = true;
   const s = document.createElement("script");
-  s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
+  s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,routes&loading=async`;
   s.async = true;
   s.onload = () => {
     const check = () => {
@@ -196,34 +196,57 @@ export interface RouteInfo {
   durationSeconds: number;
 }
 
-export function calculateRouteInfo(origin: string, destination: string): Promise<RouteInfo | null> {
-  return new Promise((resolve) => {
-    if (!origin || !destination || !window.google?.maps) {
-      resolve(null);
-      return;
-    }
+export async function calculateRouteInfo(origin: string, destination: string): Promise<RouteInfo | null> {
+  if (!origin || !destination) return null;
 
-    const service = new window.google.maps.DistanceMatrixService();
-    service.getDistanceMatrix(
+  const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!key) return null;
+
+  try {
+    const response = await fetch(
+      `https://routes.googleapis.com/directions/v2:computeRoutes`,
       {
-        origins: [origin],
-        destinations: [destination],
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-      },
-      (response: any, status: string) => {
-        if (status === "OK" && response?.rows?.[0]?.elements?.[0]?.status === "OK") {
-          const el = response.rows[0].elements[0];
-          resolve({
-            distanceText: el.distance.text,
-            durationText: el.duration.text,
-            distanceMeters: el.distance.value,
-            durationSeconds: el.duration.value,
-          });
-        } else {
-          resolve(null);
-        }
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+        },
+        body: JSON.stringify({
+          origin: { address: origin },
+          destination: { address: destination },
+          travelMode: "DRIVE",
+          languageCode: "pt-BR",
+          units: "METRIC",
+        }),
       }
     );
-  });
+
+    if (!response.ok) {
+      console.error("[routes] API error", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const route = data.routes?.[0];
+    if (!route) return null;
+
+    const distanceMeters = route.distanceMeters || 0;
+    const durationStr = route.duration || "0s";
+    const durationSeconds = parseInt(durationStr.replace("s", ""), 10) || 0;
+
+    const distanceKm = distanceMeters / 1000;
+    const distanceText = distanceKm >= 1 ? `${distanceKm.toFixed(0)} km` : `${distanceMeters} m`;
+
+    const hours = Math.floor(durationSeconds / 3600);
+    const minutes = Math.floor((durationSeconds % 3600) / 60);
+    let durationText = "";
+    if (hours > 0) durationText += `${hours} h `;
+    durationText += `${minutes} min`;
+
+    return { distanceText, durationText: durationText.trim(), distanceMeters, durationSeconds };
+  } catch (err) {
+    console.error("[routes] Error calculating route:", err);
+    return null;
+  }
 }
