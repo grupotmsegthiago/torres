@@ -54,12 +54,24 @@ function getMissionStatusColor(status: string | null) {
   }
 }
 
-function OrderForm({ order, clients, employees, vehicles, onClose }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void;
+function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
+  let maxNum = 0;
+  for (const o of existingOrders) {
+    const match = o.osNumber.match(/TOR-(\d+)/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+  return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
+}
+
+function OrderForm({ order, clients, employees, vehicles, onClose, allOrders }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; onClose: () => void; allOrders: ServiceOrder[];
 }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
-    osNumber: order?.osNumber || `OS-${Date.now().toString().slice(-6)}`,
+    osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
     type: order?.type || "escolta",
     description: order?.description || "",
@@ -243,7 +255,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} allOrders={orders || []} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (

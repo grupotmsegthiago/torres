@@ -316,7 +316,7 @@ function PhoneMockup({ step }: { step: typeof steps[0] }) {
                 </div>
                 <div className="bg-neutral-50 rounded border border-neutral-200 p-2 text-[9px] space-y-0.5 text-neutral-500">
                   {!isVigilante && <p><span className="text-neutral-800 font-semibold">Cliente:</span> Torres Vigilância</p>}
-                  <p><span className="text-neutral-800 font-semibold">OS:</span> OS-2026-001</p>
+                  <p><span className="text-neutral-800 font-semibold">OS:</span> TOR-0001</p>
                   <p><span className="text-neutral-800 font-semibold">Viatura:</span> RIO2A34 · Hilux SW4</p>
                 </div>
                 <div className="h-7 bg-neutral-900 rounded flex items-center justify-center gap-1">
