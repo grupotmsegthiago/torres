@@ -1030,6 +1030,11 @@ Para CPF, formate como 000.000.000-00.`
     res.json(result);
   });
 
+  app.get("/api/truckscontrol/debug", requireAuth, requireAdminRole, async (_req, res) => {
+    const result = await truckscontrol.debugLogin();
+    res.json(result);
+  });
+
   app.get("/api/truckscontrol/positions", requireAuth, requireAdminRole, async (_req, res) => {
     const positions = await truckscontrol.getCachedPositions();
     res.json(positions);

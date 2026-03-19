@@ -237,6 +237,58 @@ export async function testConnection(): Promise<{ success: boolean; message: str
   }
 }
 
+export async function debugLogin(): Promise<{
+  attempts: Array<{
+    label: string;
+    xmlEnviado: string;
+    xmlRetorno: string;
+    loginResult: string;
+    success: boolean;
+  }>;
+}> {
+  const config = getConfig();
+  const attempts: Array<{
+    label: string;
+    xmlEnviado: string;
+    xmlRetorno: string;
+    loginResult: string;
+    success: boolean;
+  }> = [];
+
+  if (!config) {
+    return { attempts: [{ label: "Sem credenciais", xmlEnviado: "", xmlRetorno: "", loginResult: "TRUCKSCONTROL_CHAVE e TRUCKSCONTROL_SENHA não configurados", success: false }] };
+  }
+
+  const tryLogin = async (label: string, login: string, senha: string) => {
+    const xmlEnviado = `<?xml version="1.0" encoding="utf-8"?><Login><login>${login}</login><senha>${senha}</senha></Login>`;
+    try {
+      const resp = await fetch(BASE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/xml; charset=utf-8" },
+        body: xmlEnviado,
+        signal: AbortSignal.timeout(15000),
+      });
+      const xmlRetorno = await resp.text();
+      const loginVal = parseXmlValue(xmlRetorno, "login").toLowerCase();
+      attempts.push({ label, xmlEnviado, xmlRetorno, loginResult: loginVal, success: loginVal === "true" });
+    } catch (err: any) {
+      attempts.push({ label, xmlEnviado, xmlRetorno: `ERRO: ${err.message}`, loginResult: "erro", success: false });
+    }
+  };
+
+  await tryLogin("Credenciais configuradas (CHAVE/SENHA)", config.login, config.senha);
+
+  if (config.login !== "36982392000189") {
+    await tryLogin("Tentativa com CNPJ como login", "36982392000189", config.senha);
+  }
+
+  if (config.login !== "123400") {
+    await tryLogin("Tentativa com Nº Identificação 123400", "123400", config.senha);
+  }
+
+  return { attempts };
+}
+
 let positionCache: { data: TrucksControlPosition[]; timestamp: number } | null = null;
 const CACHE_TTL = 30000;
 
