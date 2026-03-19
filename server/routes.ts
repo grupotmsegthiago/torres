@@ -650,41 +650,50 @@ Para CPF, formate como 000.000.000-00.`
 
   app.get("/api/plate-lookup/:plate", requireAuth, async (req, res) => {
     const plate = req.params.plate.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    if (plate.length < 7) return res.status(400).json({ message: "Placa inválida" });
+    if (plate.length !== 7) return res.status(400).json({ message: "Placa inválida. Use formato ABC1D23 ou ABC1234" });
 
-    const token = process.env.APIBRASIL_TOKEN;
-    if (!token) return res.status(503).json({ message: "Token da API Brasil não configurado" });
+    const token = process.env.WDAPI_TOKEN;
+    if (!token) return res.status(503).json({ message: "Token da WD API não configurado" });
 
     try {
-      const response = await fetch("https://gateway.apibrasil.io/api/v2/vehicles/dados", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ placa: plate }),
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(`https://wdapi2.com.br/consulta/${plate}/${token}`, {
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403)
+          return res.status(401).json({ message: "Falha de autenticação na API" });
+        if (response.status === 429)
+          return res.status(429).json({ message: "Limite de consultas excedido" });
+        return res.status(response.status).json({ message: `Servidor indisponível (${response.status})` });
+      }
 
       const data = await response.json();
 
       if (data.error) {
-        return res.status(400).json({ message: data.message || "Erro na consulta" });
+        return res.status(400).json({ message: data.mensagemRetorno || "Veículo não encontrado" });
       }
 
-      const result = data.response || data;
       res.json({
-        plate: result.placa || plate,
-        brand: result.marca || result.MARCA || "",
-        model: result.modelo || result.MODELO || "",
-        year: parseInt(result.ano || result.anoModelo || result.ANO || "0") || null,
-        color: result.cor || result.COR || "",
-        chassi: result.chassi || result.CHASSI || "",
-        fuel: result.combustivel || result.COMBUSTIVEL || "",
-        type: result.tipo || result.TIPO || "",
-        city: result.municipio || result.MUNICIPIO || "",
-        state: result.uf || result.UF || "",
+        plate: data.placa || plate,
+        brand: data.MARCA || data.marca || "",
+        model: data.MODELO || data.modelo || "",
+        year: parseInt(data.anoModelo || data.ano || "0") || null,
+        color: data.cor || "",
+        chassi: data.chassi || "",
+        fuel: data.combustivel || "",
+        type: data.tipo || "",
+        city: data.municipio || "",
+        state: data.uf || "",
       });
     } catch (err: any) {
+      if (err.name === "AbortError") {
+        return res.status(504).json({ message: "Tempo limite excedido na consulta" });
+      }
       res.status(500).json({ message: "Erro ao consultar placa: " + (err.message || "erro desconhecido") });
     }
   });
