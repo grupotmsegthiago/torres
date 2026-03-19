@@ -114,6 +114,16 @@ export async function ensureDbSchema() {
       ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
     `);
 
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS icon_type TEXT DEFAULT 'polo'`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude TEXT`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude TEXT`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_ignition INTEGER`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_speed INTEGER`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_gps_signal INTEGER`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_address TEXT`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_time TEXT`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS stopped_since TEXT`);
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ignition_on_since TEXT`);
     await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS frota TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS route TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
