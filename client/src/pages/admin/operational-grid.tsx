@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,143 @@ import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+type OpNotifStatus = "pending" | "success" | "error";
+type OpNotifType = "mirror" | "command";
+interface OpNotification {
+  id: string;
+  type: OpNotifType;
+  status: OpNotifStatus;
+  plate: string;
+  label: string;
+  message?: string;
+  createdAt: number;
+}
+
+interface OpNotifContextType {
+  notifications: OpNotification[];
+  addNotification: (n: Omit<OpNotification, "id" | "createdAt">) => string;
+  updateNotification: (id: string, update: Partial<Pick<OpNotification, "status" | "message">>) => void;
+}
+
+const OpNotifContext = createContext<OpNotifContextType>({
+  notifications: [],
+  addNotification: () => "",
+  updateNotification: () => {},
+});
+
+function useOpNotifications() {
+  return useContext(OpNotifContext);
+}
+
+function OpNotifProvider({ children }: { children: React.ReactNode }) {
+  const [notifications, setNotifications] = useState<OpNotification[]>([]);
+
+  const addNotification = useCallback((n: Omit<OpNotification, "id" | "createdAt">) => {
+    const id = `op-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setNotifications(prev => [{ ...n, id, createdAt: Date.now() }, ...prev]);
+    return id;
+  }, []);
+
+  const updateNotification = useCallback((id: string, update: Partial<Pick<OpNotification, "status" | "message">>) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, ...update, createdAt: Date.now() } : n));
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNotifications(prev => {
+        const updated = prev.map(n => {
+          if (n.status === "pending" && Date.now() - n.createdAt > 30000) {
+            return { ...n, status: "error" as OpNotifStatus, message: "Tempo limite excedido. Tente novamente.", createdAt: Date.now() };
+          }
+          return n;
+        });
+        return updated.filter(n => {
+          if (n.status === "pending") return true;
+          return Date.now() - n.createdAt < 8000;
+        }).slice(0, 10);
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <OpNotifContext.Provider value={{ notifications, addNotification, updateNotification }}>
+      {children}
+    </OpNotifContext.Provider>
+  );
+}
+
+function OperationNotificationsBar() {
+  const { notifications } = useOpNotifications();
+  if (notifications.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="operation-notifications">
+      {notifications.map(n => {
+        const isPending = n.status === "pending";
+        const isSuccess = n.status === "success";
+        const isError = n.status === "error";
+        const isMirror = n.type === "mirror";
+
+        const bgClass = isPending
+          ? (isMirror ? "bg-blue-50 border-blue-200" : "bg-amber-50 border-amber-200")
+          : isSuccess
+            ? "bg-emerald-50 border-emerald-200"
+            : "bg-red-50 border-red-200";
+
+        const iconColor = isPending
+          ? (isMirror ? "text-blue-500" : "text-amber-500")
+          : isSuccess
+            ? "text-emerald-500"
+            : "text-red-500";
+
+        const progressBarColor = isPending
+          ? (isMirror ? "bg-blue-500" : "bg-amber-500")
+          : isSuccess
+            ? "bg-emerald-500"
+            : "bg-red-500";
+
+        return (
+          <div
+            key={n.id}
+            className={`relative overflow-hidden rounded-lg border px-4 py-3 flex items-center gap-3 transition-all duration-300 ${bgClass}`}
+            data-testid={`op-notif-${n.id}`}
+          >
+            {isPending && (
+              <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-neutral-200/50">
+                <div className={`h-full ${progressBarColor} animate-progress-bar`} />
+              </div>
+            )}
+            <div className="flex-shrink-0">
+              {isPending && <Loader2 className={`w-5 h-5 animate-spin ${iconColor}`} />}
+              {isSuccess && <CheckCircle2 className={`w-5 h-5 ${iconColor}`} />}
+              {isError && <XCircle className={`w-5 h-5 ${iconColor}`} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-neutral-800" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  {isPending ? (isMirror ? "Espelhamento em Processo" : "Comando em Processo") : isSuccess ? (isMirror ? "Espelhamento Concluído" : "Comando Enviado") : (isMirror ? "Falha no Espelhamento" : "Falha no Comando")}
+                </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-neutral-900 text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  {n.plate}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5 truncate">
+                {isPending ? n.label : n.message || n.label}
+              </p>
+            </div>
+            {isPending && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 animate-pulse">
+                Aguarde...
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 declare global {
   interface Window {
@@ -807,6 +944,7 @@ function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
 
 function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle[]; gerenciadoras: Gerenciadora[] }) {
   const { toast } = useToast();
+  const { addNotification, updateNotification } = useOpNotifications();
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -817,7 +955,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
   });
 
   const mirrorMutation = useMutation({
-    mutationFn: async (gerenciadoraId: number) => {
+    mutationFn: async ({ gerenciadoraId, notifId }: { gerenciadoraId: number; notifId: string }) => {
       const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
       const vehicleData = onlyVehicles.map((v) => ({
         plate: v.plate,
@@ -841,13 +979,14 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
         const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
         throw new Error(data.message);
       }
-      return res.json();
+      const data = await res.json();
+      return { ...data, notifId };
     },
     onSuccess: (data) => {
-      toast({ title: "Espelhamento enviado", description: data.message });
+      updateNotification(data.notifId, { status: "success", message: data.message });
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro no espelhamento", description: err.message, variant: "destructive" });
+    onError: (err: Error, variables) => {
+      updateNotification(variables.notifId, { status: "error", message: err.message });
     },
   });
 
@@ -984,7 +1123,16 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => mirrorMutation.mutate(g.id)}
+                        onClick={() => {
+                          const vCount = vehicles.filter(vv => vv.deviceType !== "spy").length;
+                          const notifId = addNotification({
+                            type: "mirror",
+                            status: "pending",
+                            plate: `${vCount} VTR(s)`,
+                            label: `Espelhando ${vCount} veículo(s) para ${g.name}...`,
+                          });
+                          mirrorMutation.mutate({ gerenciadoraId: g.id, notifId });
+                        }}
                         disabled={mirrorMutation.isPending || !g.apiUrl}
                         className="gap-1"
                         data-testid={`btn-send-mirror-${g.id}`}
@@ -1060,13 +1208,16 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
 
 function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; vehicles: TrackedVehicle[]; gerenciadoras: Gerenciadora[] }) {
   const { toast } = useToast();
+  const { addNotification, updateNotification } = useOpNotifications();
   const [mirrorOpen, setMirrorOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
 
+  const cmdLabels: Record<string, string> = { bloquear: "Bloquear", desbloquear: "Desbloquear", sirene: "Sirene/Alerta" };
+
   const commandMutation = useMutation({
-    mutationFn: async ({ vehicleId, command }: { vehicleId: number; command: string }) => {
+    mutationFn: async ({ vehicleId, command, notifId }: { vehicleId: number; command: string; notifId: string }) => {
       const res = await authFetch("/api/truckscontrol/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1074,29 +1225,35 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Erro ao enviar comando");
-      return data;
+      return { ...data, notifId };
     },
     onSuccess: (data) => {
-      toast({ title: "Comando enviado", description: data.message });
+      updateNotification(data.notifId, { status: "success", message: data.message });
       setCmdOpen(false);
       setCmdConfirm(null);
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro no comando", description: err.message, variant: "destructive" });
+    onError: (err: Error & { notifId?: string }, variables) => {
+      updateNotification(variables.notifId, { status: "error", message: err.message });
       setCmdConfirm(null);
     },
   });
 
   const handleCommand = (command: string) => {
     if (cmdConfirm === command) {
-      commandMutation.mutate({ vehicleId: v.id, command });
+      const notifId = addNotification({
+        type: "command",
+        status: "pending",
+        plate: v.plate,
+        label: `Enviando comando "${cmdLabels[command] || command}" para ${v.plate}...`,
+      });
+      commandMutation.mutate({ vehicleId: v.id, command, notifId });
     } else {
       setCmdConfirm(command);
     }
   };
 
   const mirrorMutation = useMutation({
-    mutationFn: async (gerenciadoraId: number) => {
+    mutationFn: async ({ gerenciadoraId, notifId }: { gerenciadoraId: number; notifId: string }) => {
       const vehicleData = [{
         plate: v.plate, model: v.model, brand: v.brand,
         latitude: v.tracker?.latitude, longitude: v.tracker?.longitude,
@@ -1110,10 +1267,11 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
         body: JSON.stringify({ vehicleData }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro");
-      return res.json();
+      const data = await res.json();
+      return { ...data, notifId };
     },
-    onSuccess: (data) => toast({ title: "Espelhado", description: data.message }),
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onSuccess: (data) => updateNotification(data.notifId, { status: "success", message: data.message }),
+    onError: (err: Error, variables) => updateNotification(variables.notifId, { status: "error", message: err.message }),
   });
 
   const activeGerenciadoras = gerenciadoras.filter(g => g.active !== 0);
@@ -1170,7 +1328,16 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                 <button
                   key={g.id}
                   className="w-full flex items-center justify-between rounded-lg border p-2.5 hover:bg-neutral-50 transition-colors text-left"
-                  onClick={() => { mirrorMutation.mutate(g.id); setMirrorOpen(false); }}
+                  onClick={() => {
+                    const notifId = addNotification({
+                      type: "mirror",
+                      status: "pending",
+                      plate: v.plate,
+                      label: `Espelhando ${v.plate} para ${g.name}...`,
+                    });
+                    mirrorMutation.mutate({ gerenciadoraId: g.id, notifId });
+                    setMirrorOpen(false);
+                  }}
                   disabled={mirrorMutation.isPending || !g.apiUrl}
                   data-testid={`btn-mirror-send-${g.id}`}
                 >
@@ -2086,6 +2253,7 @@ export default function OperationalGridPage() {
   const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
+    <OpNotifProvider>
     <AdminLayout>
       <div className="space-y-4">
         <div className="rounded-xl overflow-hidden shadow-lg" style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #2C3E50 100%)" }}>
@@ -2200,6 +2368,7 @@ export default function OperationalGridPage() {
                 onFocusVehicle={(id) => setFocusVehicleId(id)}
               />
             )}
+            <OperationNotificationsBar />
             <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} />
             <SpyTable spyDevices={spyDevices} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
@@ -2209,5 +2378,6 @@ export default function OperationalGridPage() {
         )}
       </div>
     </AdminLayout>
+    </OpNotifProvider>
   );
 }

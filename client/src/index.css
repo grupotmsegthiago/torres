@@ -347,3 +347,13 @@
   color: #2563eb;
 }
 
+@keyframes progress-bar-slide {
+  0% { width: 0%; margin-left: 0%; }
+  50% { width: 40%; margin-left: 30%; }
+  100% { width: 0%; margin-left: 100%; }
+}
+
+.animate-progress-bar {
+  animation: progress-bar-slide 1.8s ease-in-out infinite;
+}
+
