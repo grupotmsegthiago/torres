@@ -759,17 +759,19 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
 
   return (
     <div className="flex items-center gap-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-700 transition-colors"
+            onClick={() => setMirrorOpen(true)}
+            data-testid={`btn-mirror-${v.id}`}
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Espelhar</TooltipContent>
+      </Tooltip>
       <Dialog open={mirrorOpen} onOpenChange={setMirrorOpen}>
-        <DialogTrigger asChild>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-700 transition-colors" data-testid={`btn-mirror-${v.id}`}>
-                <Copy className="w-3 h-3" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Espelhar</TooltipContent>
-          </Tooltip>
-        </DialogTrigger>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-sm">Espelhar — {v.plate}</DialogTitle>
@@ -799,17 +801,19 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
         </DialogContent>
       </Dialog>
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-700 transition-colors"
+            onClick={() => setCmdOpen(true)}
+            data-testid={`btn-command-${v.id}`}
+          >
+            <Zap className="w-3 h-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Enviar Comando</TooltipContent>
+      </Tooltip>
       <Dialog open={cmdOpen} onOpenChange={setCmdOpen}>
-        <DialogTrigger asChild>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 hover:text-neutral-700 transition-colors" data-testid={`btn-command-${v.id}`}>
-                <Zap className="w-3 h-3" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Enviar Comando</TooltipContent>
-          </Tooltip>
-        </DialogTrigger>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-sm">Comando — {v.plate}</DialogTitle>
@@ -856,7 +860,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
       >
         <div className="flex items-center gap-2.5">
           <Truck className="w-4 h-4 text-neutral-300" />
-          <h2 className="font-semibold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Inter', system-ui, sans-serif", letterSpacing: "0.05em" }}>Veículos</h2>
+          <h2 className="font-bold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Montserrat', sans-serif", letterSpacing: "0.08em" }}>Veículos</h2>
           <span className="text-xs text-neutral-400 font-medium ml-0.5">({onlyVehicles.length})</span>
         </div>
         <div className="flex items-center gap-2">
@@ -870,18 +874,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
 
       {expanded && (
         <div className="overflow-x-auto">
-          <table className="w-full" data-testid="table-vehicles-tracking" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <table className="w-full" data-testid="table-vehicles-tracking" style={{ fontFamily: "'Inter', sans-serif" }}>
             <thead>
-              <tr style={{ background: "linear-gradient(180deg, #f8f8f8 0%, #f0f0f0 100%)" }}>
-                <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap w-10">#</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Ignição</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">GPS</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Localização</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Última Pos.</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Motor Parado</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">OS / Status / Cliente</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Ações</th>
+              <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap w-10">#</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status / Cliente</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -915,7 +919,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       <div className="flex items-center gap-2.5">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={`font-mono font-extrabold text-[13px] tracking-tight ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
+                            <span className={`font-extrabold text-[13px] tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
                               {v.plate}
                             </span>
                             {rodizio && (
@@ -935,10 +939,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-neutral-400 font-medium mt-0.5 leading-tight">
+                          <p className="text-[11px] text-neutral-500 mt-0.5 leading-tight" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
                             {v.brand} {v.model}
                             {v.year ? ` ${v.year}` : ""}
-                            {v.color ? <span className="text-neutral-300"> · {v.color}</span> : ""}
+                            {v.color ? <span className="text-neutral-400"> · {v.color}</span> : ""}
                           </p>
                         </div>
                         <VehicleInfoTooltip v={v} />
@@ -1033,7 +1037,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                       {v.activeOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-neutral-900 text-[11px]">{v.activeOs.osNumber}</span>
+                            <span className="font-bold text-neutral-900 text-[11px]" style={{ fontFamily: "'Montserrat', sans-serif" }}>{v.activeOs.osNumber}</span>
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
                               getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
                             }`}>
@@ -1076,7 +1080,7 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
       >
         <div className="flex items-center gap-2.5">
           <Radio className="w-4 h-4 text-violet-300" />
-          <h2 className="font-semibold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Inter', system-ui, sans-serif", letterSpacing: "0.05em" }}>SPY Trackers</h2>
+          <h2 className="font-bold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Montserrat', sans-serif", letterSpacing: "0.08em" }}>SPY Trackers</h2>
           <span className="text-xs text-violet-300 font-medium ml-0.5">({spyDevices.length})</span>
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-violet-300 hover:text-white transition-colors" /> : <ChevronDown className="w-4 h-4 text-violet-300 hover:text-white transition-colors" />}
@@ -1089,17 +1093,17 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full" data-testid="table-spy-tracking" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+            <table className="w-full" data-testid="table-spy-tracking" style={{ fontFamily: "'Inter', sans-serif" }}>
               <thead>
-                <tr style={{ background: "linear-gradient(180deg, #f8f8f8 0%, #f0f0f0 100%)" }}>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Série</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Descrição</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Bateria</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Acoplado</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Km/h</th>
-                  <th className="px-3 py-2.5 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">GPS</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Localização</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Última Pos.</th>
+                <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Série</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Descrição</th>
+                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Bateria</th>
+                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Acoplado</th>
+                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Km/h</th>
+                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -1114,7 +1118,7 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
                     <tr key={s.id} className={`transition-colors ${index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"}`} data-testid={`row-spy-${s.id}`}>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-extrabold text-[13px] text-violet-700">{s.plate}</span>
+                          <span className="font-extrabold text-[13px] text-violet-700 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>{s.plate}</span>
                           <span className="text-[8px] px-1.5 py-0.5 bg-violet-600 text-white rounded font-bold uppercase">SPY</span>
                         </div>
                       </td>
@@ -1216,7 +1220,7 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
       >
         <div className="flex items-center gap-2.5">
           <Radio className="w-4 h-4 text-emerald-300" />
-          <h2 className="font-semibold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Inter', system-ui, sans-serif", letterSpacing: "0.05em" }}>Operações Ativas</h2>
+          <h2 className="font-bold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Montserrat', sans-serif", letterSpacing: "0.08em" }}>Operações Ativas</h2>
           <span className="text-xs text-emerald-300 font-medium ml-0.5">({gridData.length})</span>
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-emerald-300 hover:text-white transition-colors" /> : <ChevronDown className="w-4 h-4 text-emerald-300 hover:text-white transition-colors" />}
@@ -1224,15 +1228,15 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
 
       {expanded && (
         <div className="overflow-x-auto">
-          <table className="w-full" data-testid="table-operational-grid" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <table className="w-full" data-testid="table-operational-grid" style={{ fontFamily: "'Inter', sans-serif" }}>
             <thead>
-              <tr style={{ background: "linear-gradient(180deg, #f8f8f8 0%, #f0f0f0 100%)" }}>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Nº OS</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cliente</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Agentes</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Prioridade</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-bold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Status</th>
+              <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Nº OS</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Cliente</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Prioridade</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -1244,7 +1248,7 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
 
                 return (
                   <tr key={item.id} className={`transition-colors ${index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"}`} data-testid={`row-grid-${item.id}`}>
-                    <td className="px-3 py-3 font-mono font-bold text-[12px] text-neutral-900 whitespace-nowrap">{item.osNumber}</td>
+                    <td className="px-3 py-3 font-bold text-[12px] text-neutral-900 whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.osNumber}</td>
                     <td className="px-3 py-3 text-[12px] font-medium text-neutral-700">{item.clientName}</td>
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-0.5">
@@ -1273,7 +1277,7 @@ function OperationsTable({ gridData }: { gridData: GridItem[] }) {
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       {item.vehicle ? (
-                        <span className="font-mono font-bold text-[12px] text-neutral-700">{item.vehicle.plate}</span>
+                        <span className="font-bold text-[12px] text-neutral-700 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.vehicle.plate}</span>
                       ) : (
                         <span className="text-neutral-300 text-[11px]">—</span>
                       )}
@@ -1427,19 +1431,19 @@ export default function OperationalGridPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title">
+              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                 Grid Operacional
               </h1>
               <TrucksControlStatus />
             </div>
-            <p className="text-sm text-neutral-500 mt-1">
+            <p className="text-sm text-neutral-500 mt-1" style={{ fontFamily: "'Inter', sans-serif" }}>
               Monitoramento em tempo real · {onlyVehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""}{spyDevices.length > 0 ? ` · ${spyDevices.length} SPY` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
             </p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5" data-testid="countdown-timer">
               <Timer className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Próxima: <span className="font-mono font-semibold text-neutral-700">{countdown.display}</span></span>
+              <span>Próxima: <span className="font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>{countdown.display}</span></span>
               <span className="text-neutral-300">|</span>
               <span>Última: {lastRefreshStr}</span>
             </div>
