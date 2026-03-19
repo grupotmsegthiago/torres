@@ -1107,10 +1107,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
 
                     <td className="px-3 py-3">
                       {v.activeOs ? (
-                        <div className="flex flex-col gap-0.5">
+                        <div className="flex flex-col gap-1.5">
                           {v.activeOs.employee1 && (
-                            <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                              {v.activeOs.employee1.name}
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
+                              <span className="font-bold text-[12px] text-neutral-900 leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                                {v.activeOs.employee1.name}
+                              </span>
                               {v.activeOs.employee1.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
                                   <SiWhatsapp className="w-3.5 h-3.5" />
@@ -1119,11 +1122,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                               <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent1-${v.id}`}>
                                 <FileText className="w-3.5 h-3.5" />
                               </Link>
-                            </span>
+                            </div>
                           )}
                           {v.activeOs.employee2 && (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-400" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                              {v.activeOs.employee2.name}
+                            <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
+                              <span className="font-semibold text-[11px] text-neutral-500 leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                                {v.activeOs.employee2.name}
+                              </span>
                               {v.activeOs.employee2.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
                                   <SiWhatsapp className="w-3.5 h-3.5" />
@@ -1132,7 +1137,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: Tracked
                               <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent2-${v.id}`}>
                                 <FileText className="w-3.5 h-3.5" />
                               </Link>
-                            </span>
+                            </div>
                           )}
                           {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-[11px]">Sem agente</span>}
                         </div>
