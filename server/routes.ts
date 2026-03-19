@@ -874,11 +874,37 @@ Para CPF, formate como 000.000.000-00.`
           address?: string;
         } | null = null;
 
-        if (vehicle?.trackerApiUrl && vehicle?.trackerId) {
+        const vTrackerType = vehicle?.trackerType || "none";
+        let vHasTracker = false;
+
+        if (vehicle && vTrackerType === "truckscontrol") {
+          vHasTracker = true;
+          const tcPositions = await truckscontrol.getCachedPositions();
+          if (tcPositions.length > 0) {
+            const pos = vehicle.truckscontrolIdentifier
+              ? truckscontrol.findPositionByIdentifier(tcPositions, vehicle.truckscontrolIdentifier)
+              : truckscontrol.findPositionByPlate(tcPositions, vehicle.plate);
+            if (pos) {
+              trackerData = {
+                latitude: pos.latitude,
+                longitude: pos.longitude,
+                ignition: pos.ignition,
+                lastPositionTime: pos.lastPositionTime,
+                gpsSignal: pos.gpsSignal,
+                speed: pos.speed,
+                address: pos.address,
+              };
+            }
+          }
+        } else if (vehicle && vTrackerType === "custom" && vehicle.trackerId && vehicle.trackerApiUrl) {
+          vHasTracker = true;
           try {
-            const resp = await fetch(vehicle.trackerApiUrl);
-            if (resp.ok) {
-              trackerData = await resp.json();
+            const url = new URL(vehicle.trackerApiUrl);
+            if (url.protocol === "https:") {
+              const resp = await fetch(vehicle.trackerApiUrl, { signal: AbortSignal.timeout(5000) });
+              if (resp.ok) {
+                trackerData = await resp.json();
+              }
             }
           } catch (_e) {
             trackerData = null;
@@ -904,7 +930,7 @@ Para CPF, formate como 000.000.000-00.`
           vehicle: vehicle ? {
             plate: vehicle.plate,
             model: vehicle.model,
-            hasTracker: !!(vehicle.trackerId && vehicle.trackerApiUrl),
+            hasTracker: vHasTracker,
           } : null,
           tracker: trackerData,
         };

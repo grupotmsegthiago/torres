@@ -28,6 +28,7 @@ interface TrackedVehicle {
   status: string;
   hasTracker: boolean;
   trackerId: string | null;
+  trackerType: string;
   tracker: {
     latitude?: number;
     longitude?: number;
@@ -370,7 +371,15 @@ function VehicleTable({ vehicles, gridData }: { vehicles: TrackedVehicle[]; grid
                     data-testid={`row-vehicle-${v.id}`}
                   >
                     <td className="p-3 whitespace-nowrap">
-                      <span className="font-mono font-bold text-neutral-900">{v.plate}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-neutral-900">{v.plate}</span>
+                        {v.trackerType === "truckscontrol" && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium">TC</span>
+                        )}
+                        {v.trackerType === "custom" && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-neutral-50 text-neutral-500 border border-neutral-200 rounded font-medium">API</span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="p-3 whitespace-nowrap">
@@ -615,6 +624,7 @@ export default function OperationalGridPage() {
 
   const trackedCount = vehicles.filter((v) => v.hasTracker).length;
   const withPositionCount = vehicles.filter((v) => v.tracker?.latitude).length;
+  const tcCount = vehicles.filter((v) => v.trackerType === "truckscontrol").length;
   const activeOsCount = gridData.length;
 
   return (
@@ -626,7 +636,7 @@ export default function OperationalGridPage() {
               Grid Operacional
             </h1>
             <p className="text-sm text-neutral-500 mt-1">
-              Monitoramento em tempo real · {vehicles.length} veículo(s) · {trackedCount} com rastreador · {activeOsCount} operação(ões) ativa(s)
+              Monitoramento em tempo real · {vehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
             </p>
           </div>
           <Button
