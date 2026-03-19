@@ -56,7 +56,7 @@ Institutional landing page and internal management system for Torres Vigilância
   - `timesheets.tsx` - Employee timesheet/punch clock
   - `tracker.tsx` - Vehicle tracker (API placeholder)
   - `mission.tsx` - Armed escort mission workflow
-  - `operational-grid.tsx` - Real-time operational monitoring with professional status display (Saída da Base → Chegada na Origem → Início de Missão → Chegada no Destino → Término de Missão)
+  - `operational-grid.tsx` - Real-time operational grid with numbered vehicles, info tooltip (full vehicle data + tracker ID), SP rodízio detection (red highlight), speed alert >110 km/h, ignition, GPS, map link, idle time tracking, OS/status/client display, gerenciadora mirroring button
   - `guia-missao.tsx` - Mission step guide
   - `weapons.tsx` - Weapon registration, PDF upload, agent linking/unlinking with audit history
   - `users.tsx` - User management (admin/diretoria only)
@@ -70,7 +70,7 @@ Institutional landing page and internal management system for Torres Vigilância
 - `APIBRASIL_DEVICE_*` - API Brasil device tokens for each service
 
 ## Database Tables
-users, perfis_acesso, clients, employees, employee_salaries, employee_documents, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, weapons, weapon_assignments, vehicle_assignments
+users, perfis_acesso, clients, employees, employee_salaries, employee_documents, vehicles, service_orders, trips, vehicle_maintenance, vehicle_fueling, timesheets, mission_photos, api_logs, weapons, weapon_assignments, vehicle_assignments, gerenciadoras
 
 ## Employee Documents (CNH/CNV)
 - `employee_documents` table: type (CNH/CNV/Certificado/Atestado), file_data (base64), expiry_date, issue_date, document_number
@@ -106,6 +106,20 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - **Operational Grid**: `/api/vehicle-tracking` merges TrucksControl positions with vehicle data (lat, lng, speed, ignition, GPS, address)
 - **Vehicle form**: Tracker section with type selector, TrucksControl identifier field, connection test button
 - **SPY Integration**: Portable tracker devices (SpyTrack eqp=7, SpyTrack2 eqp=14). Uses `RequestSpy` (list devices) and `RequestMensagemSpy` (positions with lat/lon/speed/battery/coupled status). SPY devices appear on operational grid map (purple circle markers) and in a separate "SPY Trackers" table below the vehicles table. Responses are ZIP-compressed like vehicle data. Rate limit: 5 min between same request type. SPY `mId` tracking separate from vehicle `lastMid`.
+
+## Gerenciadoras (Risk Management Companies)
+- `gerenciadoras` table: name, cnpj, api_url, api_key, api_type (webhook/rest/soap), contact_name, contact_phone, contact_email, active, notes
+- **Mirroring**: "Espelhar" button in vehicle grid sends real-time vehicle tracking data (positions, speed, ignition, OS) to gerenciadora's API via POST webhook
+- API logs recorded for each mirror attempt (success/failure)
+- CRUD management via modal dialog in operational grid
+
+## Operational Grid Features
+- **Numbered vehicles**: Sequential (01, 02, ...) identification
+- **Vehicle info tooltip**: "i" icon shows full vehicle data (brand, model, year, color, chassi, renavam, KM, tracker type/ID)
+- **SP Rodízio detection**: Plates restricted by São Paulo rodízio rules highlighted in red with pulsing "RODÍZIO SP" badge
+- **Speed alert**: Banner alert when any vehicle exceeds 110 km/h with plate, speed, location
+- **Idle time tracking**: Shows duration when vehicle has ignition ON but speed = 0 (amber badge with pause icon)
+- **OS/Status/Client**: Shows assigned OS number, mission status badge, and client name
 
 ## Vehicle Assignments
 - `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes

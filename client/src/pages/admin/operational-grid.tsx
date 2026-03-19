@@ -1,17 +1,24 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useCallback } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   MapPin, Key, Satellite, RefreshCw, Radio,
   ExternalLink, Zap, CalendarClock, Recycle,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
+  Info, Send, Plus, Pencil, Trash2, Copy,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
+import { authFetch, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 declare global {
   interface Window {
@@ -25,11 +32,16 @@ interface TrackedVehicle {
   plate: string;
   model: string;
   brand: string;
+  year?: number | null;
   color: string | null;
+  chassi?: string | null;
+  renavam?: string | null;
+  km?: number | null;
   status: string;
   hasTracker: boolean;
   trackerId: string | null;
   trackerType: string;
+  truckscontrolIdentifier?: string | null;
   deviceType?: "vehicle" | "spy";
   batteryLevel?: number;
   coupled?: boolean;
@@ -81,20 +93,34 @@ interface GridItem {
   } | null;
 }
 
+interface Gerenciadora {
+  id: number;
+  name: string;
+  cnpj: string | null;
+  apiUrl: string | null;
+  apiKey: string | null;
+  apiType: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  active: number | null;
+  notes: string | null;
+}
+
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("55") ? digits : `55${digits}`;
 }
 
 function getLastPositionInfo(lastPositionTime?: string) {
-  if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300" };
+  if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1 };
   const diffMin = Math.floor((Date.now() - new Date(lastPositionTime).getTime()) / 60000);
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
   const timeStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
-  if (diffMin > 30) return { text: timeStr, color: "text-red-600", dotColor: "bg-red-500" };
-  if (diffMin > 5) return { text: timeStr, color: "text-amber-600", dotColor: "bg-amber-500" };
-  return { text: timeStr, color: "text-green-600", dotColor: "bg-green-500" };
+  if (diffMin > 30) return { text: timeStr, color: "text-red-600", dotColor: "bg-red-500", diffMin };
+  if (diffMin > 5) return { text: timeStr, color: "text-amber-600", dotColor: "bg-amber-500", diffMin };
+  return { text: timeStr, color: "text-green-600", dotColor: "bg-green-500", diffMin };
 }
 
 function getMissionLabel(status: string | null) {
@@ -165,6 +191,43 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     default:
       return { label: missionStatus || "—", icon: CircleDot, className: "bg-neutral-50 text-neutral-600 border-neutral-200" };
   }
+}
+
+function isRodizioSP(plate: string): boolean {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+
+  const hour = now.getHours();
+  const inWindow = (hour >= 7 && hour < 10) || (hour >= 17 && hour < 20);
+  if (!inWindow) return false;
+
+  const cleanPlate = plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const lastChar = cleanPlate.charAt(cleanPlate.length - 1);
+  const lastDigit = parseInt(lastChar, 10);
+  if (isNaN(lastDigit)) return false;
+
+  const rodizioMap: Record<number, number[]> = {
+    1: [1, 2],
+    2: [3, 4],
+    3: [5, 6],
+    4: [7, 8],
+    5: [9, 0],
+  };
+
+  return (rodizioMap[dayOfWeek] || []).includes(lastDigit);
+}
+
+function getIdleTime(v: TrackedVehicle): string | null {
+  if (!v.tracker || v.tracker.ignition !== true) return null;
+  if ((v.tracker.speed ?? 0) > 0) return null;
+  if (!v.tracker.lastPositionTime) return null;
+
+  const diffMin = Math.floor((Date.now() - new Date(v.tracker.lastPositionTime).getTime()) / 60000);
+  if (diffMin < 1) return "< 1min";
+  const hours = Math.floor(diffMin / 60);
+  const mins = diffMin % 60;
+  return hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
 }
 
 function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
@@ -360,6 +423,537 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
   );
 }
 
+function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
+  const speeding = vehicles.filter(
+    (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 110
+  );
+
+  if (speeding.length === 0) return null;
+
+  return (
+    <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-3 flex items-start gap-3" data-testid="alert-speed">
+      <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5 animate-pulse" />
+      <div>
+        <p className="font-bold text-red-800 text-sm">ALERTA DE VELOCIDADE</p>
+        <div className="mt-1 space-y-0.5">
+          {speeding.map((v) => (
+            <p key={v.id} className="text-red-700 text-sm">
+              <span className="font-mono font-bold">{v.plate}</span>
+              <span className="mx-1">—</span>
+              <span className="font-bold">{v.tracker!.speed} km/h</span>
+              <span className="text-red-500 ml-1">({v.brand} {v.model})</span>
+              {v.tracker?.address && <span className="text-red-400 ml-1 text-xs">· {v.tracker.address}</span>}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button className="text-neutral-400 hover:text-neutral-600 transition-colors" data-testid={`btn-info-vehicle-${v.id}`}>
+          <Info className="w-3.5 h-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-xs p-3 text-xs space-y-1">
+        <p className="font-bold text-sm">{v.brand} {v.model} {v.year || ""}</p>
+        <p><span className="text-neutral-500">Placa:</span> <span className="font-mono">{v.plate}</span></p>
+        {v.color && <p><span className="text-neutral-500">Cor:</span> {v.color}</p>}
+        {v.chassi && <p><span className="text-neutral-500">Chassi:</span> <span className="font-mono text-[10px]">{v.chassi}</span></p>}
+        {v.renavam && <p><span className="text-neutral-500">Renavam:</span> <span className="font-mono">{v.renavam}</span></p>}
+        {v.km != null && v.km > 0 && <p><span className="text-neutral-500">KM:</span> {v.km.toLocaleString("pt-BR")}</p>}
+        <hr className="border-neutral-200 my-1" />
+        <p><span className="text-neutral-500">Rastreador:</span> {v.trackerType === "truckscontrol" ? "TrucksControl" : v.trackerType === "custom" ? "API Custom" : v.trackerType === "none" ? "Nenhum" : v.trackerType || "Nenhum"}</p>
+        {v.trackerId && <p><span className="text-neutral-500">ID:</span> <span className="font-mono">{v.trackerId}</span></p>}
+        {v.truckscontrolIdentifier && <p><span className="text-neutral-500">TC ID:</span> <span className="font-mono">{v.truckscontrolIdentifier}</span></p>}
+        <p><span className="text-neutral-500">Status:</span> {v.status}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function MirrorButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle[]; gerenciadoras: Gerenciadora[] }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({
+    name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook",
+    contactName: "", contactPhone: "", contactEmail: "", notes: "",
+  });
+
+  const mirrorMutation = useMutation({
+    mutationFn: async (gerenciadoraId: number) => {
+      const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
+      const vehicleData = onlyVehicles.map((v) => ({
+        plate: v.plate,
+        model: v.model,
+        brand: v.brand,
+        latitude: v.tracker?.latitude,
+        longitude: v.tracker?.longitude,
+        speed: v.tracker?.speed,
+        ignition: v.tracker?.ignition,
+        gpsSignal: v.tracker?.gpsSignal,
+        address: v.tracker?.address,
+        lastPositionTime: v.tracker?.lastPositionTime,
+        activeOs: v.activeOs,
+      }));
+      const res = await authFetch(`/api/gerenciadoras/${gerenciadoraId}/mirror`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleData }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+        throw new Error(data.message);
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Espelhamento enviado", description: data.message });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro no espelhamento", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const res = await authFetch("/api/gerenciadoras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro ao cadastrar");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      setShowAddForm(false);
+      resetForm();
+      toast({ title: "Gerenciadora cadastrada" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: typeof formData }) => {
+      const res = await authFetch(`/api/gerenciadoras/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro ao atualizar");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      setEditingId(null);
+      resetForm();
+      toast({ title: "Gerenciadora atualizada" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await authFetch(`/api/gerenciadoras/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Erro ao remover");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      toast({ title: "Gerenciadora removida" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({ name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook", contactName: "", contactPhone: "", contactEmail: "", notes: "" });
+  };
+
+  const startEdit = (g: Gerenciadora) => {
+    setEditingId(g.id);
+    setFormData({
+      name: g.name,
+      cnpj: g.cnpj || "",
+      apiUrl: g.apiUrl || "",
+      apiKey: g.apiKey || "",
+      apiType: g.apiType || "webhook",
+      contactName: g.contactName || "",
+      contactPhone: g.contactPhone || "",
+      contactEmail: g.contactEmail || "",
+      notes: g.notes || "",
+    });
+    setShowAddForm(true);
+  };
+
+  const handleSubmit = () => {
+    if (!formData.name.trim()) return;
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const activeGerenciadoras = gerenciadoras.filter((g) => g.active !== 0);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-mirror">
+          <Copy className="w-3.5 h-3.5" />
+          Espelhar
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Espelhamento para Gerenciadora</DialogTitle>
+          <DialogDescription>Envie dados de rastreamento em tempo real para a gerenciadora de risco cadastrada.</DialogDescription>
+        </DialogHeader>
+
+        {!showAddForm ? (
+          <div className="space-y-4">
+            {activeGerenciadoras.length === 0 ? (
+              <p className="text-sm text-neutral-500 text-center py-4">Nenhuma gerenciadora cadastrada</p>
+            ) : (
+              <div className="space-y-2">
+                {activeGerenciadoras.map((g) => (
+                  <div key={g.id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-neutral-50" data-testid={`gerenciadora-item-${g.id}`}>
+                    <div>
+                      <p className="font-semibold text-sm">{g.name}</p>
+                      {g.cnpj && <p className="text-xs text-neutral-500">{g.cnpj}</p>}
+                      {g.apiUrl && <p className="text-xs text-neutral-400 font-mono truncate max-w-[200px]">{g.apiUrl}</p>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(g)}
+                        data-testid={`btn-edit-gerenciadora-${g.id}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { if (confirm(`Remover ${g.name}?`)) deleteMutation.mutate(g.id); }}
+                        data-testid={`btn-delete-gerenciadora-${g.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => mirrorMutation.mutate(g.id)}
+                        disabled={mirrorMutation.isPending || !g.apiUrl}
+                        className="gap-1"
+                        data-testid={`btn-send-mirror-${g.id}`}
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Enviar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="outline" className="w-full gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAddForm(true); }} data-testid="btn-add-gerenciadora">
+              <Plus className="w-4 h-4" />
+              Cadastrar Gerenciadora
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label className="text-xs">Nome *</Label>
+                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Nome da gerenciadora" data-testid="input-gerenciadora-name" />
+              </div>
+              <div>
+                <Label className="text-xs">CNPJ</Label>
+                <Input value={formData.cnpj} onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })} placeholder="00.000.000/0001-00" data-testid="input-gerenciadora-cnpj" />
+              </div>
+              <div>
+                <Label className="text-xs">Tipo API</Label>
+                <Select value={formData.apiType} onValueChange={(v) => setFormData({ ...formData, apiType: v })}>
+                  <SelectTrigger data-testid="select-gerenciadora-api-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="webhook">Webhook</SelectItem>
+                    <SelectItem value="rest">REST API</SelectItem>
+                    <SelectItem value="soap">SOAP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">URL da API</Label>
+                <Input value={formData.apiUrl} onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })} placeholder="https://api.gerenciadora.com/webhook" data-testid="input-gerenciadora-api-url" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Chave/Token da API</Label>
+                <Input value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="Bearer token ou API key" data-testid="input-gerenciadora-api-key" />
+              </div>
+              <div>
+                <Label className="text-xs">Contato</Label>
+                <Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" data-testid="input-gerenciadora-contact" />
+              </div>
+              <div>
+                <Label className="text-xs">Telefone</Label>
+                <Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" data-testid="input-gerenciadora-phone" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">E-mail</Label>
+                <Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" data-testid="input-gerenciadora-email" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowAddForm(false); setEditingId(null); resetForm(); }}>Cancelar</Button>
+              <Button className="flex-1" onClick={handleSubmit} disabled={!formData.name.trim() || createMutation.isPending || updateMutation.isPending} data-testid="btn-save-gerenciadora">
+                {editingId ? "Atualizar" : "Cadastrar"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VehicleTable({ vehicles, gridData, gerenciadoras }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[] }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
+
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b cursor-pointer hover:bg-neutral-100 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+        data-testid="toggle-vehicles-table"
+      >
+        <div className="flex items-center gap-2">
+          <Truck className="w-4 h-4 text-neutral-600" />
+          <h2 className="font-semibold text-sm text-neutral-800">Veículos</h2>
+          <span className="text-xs text-neutral-500 ml-1">({onlyVehicles.length})</span>
+        </div>
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <MirrorButton vehicles={vehicles} gerenciadoras={gerenciadoras} />
+          {expanded ? <ChevronUp className="w-4 h-4 text-neutral-400 cursor-pointer" onClick={() => setExpanded(!expanded)} /> : <ChevronDown className="w-4 h-4 text-neutral-400 cursor-pointer" onClick={() => setExpanded(!expanded)} />}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="table-vehicles-tracking">
+            <thead>
+              <tr className="border-b bg-neutral-50/50">
+                <th className="p-2.5 text-center font-semibold text-neutral-700 whitespace-nowrap w-10">#</th>
+                <th className="p-2.5 text-left font-semibold text-neutral-700 whitespace-nowrap">Veículo</th>
+                <th className="p-2.5 text-center font-semibold text-neutral-700 whitespace-nowrap">Ignição</th>
+                <th className="p-2.5 text-center font-semibold text-neutral-700 whitespace-nowrap">GPS</th>
+                <th className="p-2.5 text-left font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
+                <th className="p-2.5 text-left font-semibold text-neutral-700 whitespace-nowrap">Última Pos.</th>
+                <th className="p-2.5 text-center font-semibold text-neutral-700 whitespace-nowrap">Motor Parado</th>
+                <th className="p-2.5 text-left font-semibold text-neutral-700 whitespace-nowrap">OS / Status / Cliente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {onlyVehicles.map((v, index) => {
+                const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
+                const hasLocation = v.tracker?.latitude && v.tracker?.longitude;
+                const mapsUrl = hasLocation
+                  ? `https://www.google.com/maps?q=${v.tracker!.latitude},${v.tracker!.longitude}`
+                  : null;
+                const rodizio = isRodizioSP(v.plate);
+                const idleTime = getIdleTime(v);
+                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
+
+                return (
+                  <tr
+                    key={v.id}
+                    className={`border-b last:border-0 transition-colors ${
+                      isOverSpeed ? "bg-red-50 hover:bg-red-100" :
+                      rodizio ? "hover:bg-red-50/50" :
+                      v.activeOs ? "hover:bg-neutral-50" : "opacity-60 hover:bg-neutral-50"
+                    }`}
+                    data-testid={`row-vehicle-${v.id}`}
+                  >
+                    <td className="p-2.5 text-center">
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-neutral-100 text-neutral-600 font-bold text-xs">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                    </td>
+
+                    <td className="p-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-mono font-bold ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
+                              {v.plate}
+                            </span>
+                            {rodizio && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-300 rounded font-bold animate-pulse">RODÍZIO SP</span>
+                                </TooltipTrigger>
+                                <TooltipContent>Veículo em rodízio hoje em São Paulo</TooltipContent>
+                              </Tooltip>
+                            )}
+                            {v.trackerType === "truckscontrol" && (
+                              <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium">TC</span>
+                            )}
+                            {isOverSpeed && (
+                              <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-300 rounded font-bold">
+                                {v.tracker!.speed} km/h
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-neutral-500">
+                            {v.brand} {v.model}
+                            {v.year ? ` ${v.year}` : ""}
+                            {v.color ? ` · ${v.color}` : ""}
+                          </span>
+                        </div>
+                        <VehicleInfoTooltip v={v} />
+                      </div>
+                    </td>
+
+                    <td className="p-2.5 text-center">
+                      {!v.hasTracker ? (
+                        <Key className="w-4 h-4 mx-auto text-neutral-200" />
+                      ) : v.tracker?.ignition === undefined ? (
+                        <Key className="w-4 h-4 mx-auto text-neutral-300" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Key className={`w-4 h-4 mx-auto ${v.tracker.ignition ? "text-green-500" : "text-red-500"}`} />
+                          </TooltipTrigger>
+                          <TooltipContent>{v.tracker.ignition ? "Ligada" : "Desligada"}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </td>
+
+                    <td className="p-2.5 text-center">
+                      {!v.hasTracker ? (
+                        <Satellite className="w-4 h-4 mx-auto text-neutral-200" />
+                      ) : v.tracker?.gpsSignal === undefined ? (
+                        <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Satellite className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                          </TooltipTrigger>
+                          <TooltipContent>{v.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </td>
+
+                    <td className="p-2.5 max-w-[250px]">
+                      {v.tracker?.address ? (
+                        <div className="flex items-start gap-1.5">
+                          {mapsUrl ? (
+                            <a
+                              href={mapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 flex-shrink-0 mt-0.5"
+                              data-testid={`link-map-${v.id}`}
+                            >
+                              <MapPin className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <MapPin className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0 mt-0.5" />
+                          )}
+                          <a
+                            href={mapsUrl || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`text-xs truncate ${mapsUrl ? "text-blue-600 hover:text-blue-800 hover:underline" : "text-neutral-600"}`}
+                            title={v.tracker.address}
+                          >
+                            {v.tracker.address}
+                          </a>
+                        </div>
+                      ) : hasLocation ? (
+                        <a
+                          href={mapsUrl!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs"
+                          data-testid={`link-map-${v.id}`}
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3 h-3" />
+                          Ver no mapa
+                        </a>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+
+                    <td className="p-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
+                        <span className={`text-xs font-medium ${posInfo.color}`}>{posInfo.text}</span>
+                      </div>
+                    </td>
+
+                    <td className="p-2.5 text-center whitespace-nowrap">
+                      {idleTime ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                              <Pause className="w-3 h-3" />
+                              <span className="text-xs font-semibold">{idleTime}</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>Motor ligado, veículo parado há {idleTime}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+
+                    <td className="p-2.5 whitespace-nowrap">
+                      {v.activeOs ? (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-semibold text-neutral-800 text-xs">{v.activeOs.osNumber}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+                              getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
+                            }`}>
+                              {getMissionLabel(v.activeOs.missionStatus)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-500 truncate max-w-[200px]" title={v.activeOs.clientName}>
+                            {v.activeOs.clientName}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -496,190 +1090,6 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
   );
 }
 
-function VehicleTable({ vehicles, gridData }: { vehicles: TrackedVehicle[]; gridData: GridItem[] }) {
-  const [expanded, setExpanded] = useState(true);
-
-  const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
-
-  return (
-    <Card className="overflow-hidden">
-      <div
-        className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b cursor-pointer hover:bg-neutral-100 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-        data-testid="toggle-vehicles-table"
-      >
-        <div className="flex items-center gap-2">
-          <Truck className="w-4 h-4 text-neutral-600" />
-          <h2 className="font-semibold text-sm text-neutral-800">Veículos</h2>
-          <span className="text-xs text-neutral-500 ml-1">({onlyVehicles.length})</span>
-        </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
-      </div>
-
-      {expanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="table-vehicles-tracking">
-            <thead>
-              <tr className="border-b bg-neutral-50/50">
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Placa</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Veículo</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Status</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Km/h</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Ignição</th>
-                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">GPS</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Última Pos.</th>
-                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">OS / Missão</th>
-              </tr>
-            </thead>
-            <tbody>
-              {onlyVehicles.map((v) => {
-                const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
-                const hasLocation = v.tracker?.latitude && v.tracker?.longitude;
-                const mapsUrl = hasLocation
-                  ? `https://www.google.com/maps?q=${v.tracker!.latitude},${v.tracker!.longitude}`
-                  : null;
-
-                return (
-                  <tr
-                    key={v.id}
-                    className={`border-b last:border-0 hover:bg-neutral-50 transition-colors ${v.activeOs ? "" : "opacity-60"}`}
-                    data-testid={`row-vehicle-${v.id}`}
-                  >
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-neutral-900">{v.plate}</span>
-                        {v.trackerType === "truckscontrol" && (
-                          <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded font-medium">TC</span>
-                        )}
-                        {v.trackerType === "custom" && (
-                          <span className="text-[9px] px-1.5 py-0.5 bg-neutral-50 text-neutral-500 border border-neutral-200 rounded font-medium">API</span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      <div>
-                        <span className="text-neutral-800">{v.brand} {v.model}</span>
-                        {v.color && <span className="text-neutral-400 text-xs ml-1.5">({v.color})</span>}
-                      </div>
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${
-                        v.status === "disponível" ? "bg-green-50 text-green-700" :
-                        v.status === "em_uso" || v.status === "em uso" ? "bg-blue-50 text-blue-700" :
-                        v.status === "manutenção" ? "bg-amber-50 text-amber-700" :
-                        "bg-neutral-100 text-neutral-600"
-                      }`}>{v.status}</span>
-                    </td>
-
-                    <td className="p-3 text-center whitespace-nowrap">
-                      {v.hasTracker && v.tracker?.speed !== undefined ? (
-                        <span className={`font-mono font-bold ${(v.tracker.speed ?? 0) > 0 ? "text-blue-700" : "text-neutral-400"}`}>
-                          {v.tracker.speed}
-                        </span>
-                      ) : (
-                        <span className="text-neutral-300">—</span>
-                      )}
-                    </td>
-
-                    <td className="p-3 text-center">
-                      {!v.hasTracker ? (
-                        <Key className="w-4 h-4 mx-auto text-neutral-200" />
-                      ) : v.tracker?.ignition === undefined ? (
-                        <Key className="w-4 h-4 mx-auto text-neutral-300" />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Key className={`w-4 h-4 mx-auto ${v.tracker.ignition ? "text-green-500" : "text-red-500"}`} />
-                          </TooltipTrigger>
-                          <TooltipContent>{v.tracker.ignition ? "Ligada" : "Desligada"}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
-
-                    <td className="p-3 text-center">
-                      {!v.hasTracker ? (
-                        <Satellite className="w-4 h-4 mx-auto text-neutral-200" />
-                      ) : v.tracker?.gpsSignal === undefined ? (
-                        <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Satellite className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
-                          </TooltipTrigger>
-                          <TooltipContent>{v.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
-
-                    <td className="p-3 max-w-[250px]">
-                      {v.tracker?.address ? (
-                        <div className="flex items-start gap-1.5">
-                          {mapsUrl ? (
-                            <a
-                              href={mapsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 flex-shrink-0 mt-0.5"
-                              data-testid={`link-map-${v.id}`}
-                            >
-                              <MapPin className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <MapPin className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0 mt-0.5" />
-                          )}
-                          <span className="text-xs text-neutral-600 truncate" title={v.tracker.address}>
-                            {v.tracker.address}
-                          </span>
-                        </div>
-                      ) : hasLocation ? (
-                        <a
-                          href={mapsUrl!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs"
-                          data-testid={`link-map-${v.id}`}
-                        >
-                          <MapPin className="w-3.5 h-3.5" />
-                          <ExternalLink className="w-3 h-3" />
-                          Ver no mapa
-                        </a>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
-                        <span className={`text-xs font-medium ${posInfo.color}`}>{posInfo.text}</span>
-                      </div>
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      {v.activeOs ? (
-                        <div>
-                          <span className="font-mono font-semibold text-neutral-800 text-xs">{v.activeOs.osNumber}</span>
-                          <span className="text-neutral-400 mx-1">·</span>
-                          <span className="text-xs text-neutral-500">{getMissionLabel(v.activeOs.missionStatus)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
-
 function OperationsTable({ gridData }: { gridData: GridItem[] }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -787,7 +1197,6 @@ function TrucksControlStatus() {
   const checkStatus = async () => {
     setLoading(true);
     try {
-      const { authFetch } = await import("@/lib/queryClient");
       const res = await authFetch("/api/truckscontrol/test");
       const data = await res.json();
       setStatus(data);
@@ -871,6 +1280,10 @@ export default function OperationalGridPage() {
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
+    queryKey: ["/api/gerenciadoras"],
+  });
+
   useEffect(() => {
     if (vehiclesUpdatedAt || gridUpdatedAt) {
       setLastRefresh(Math.max(vehiclesUpdatedAt || 0, gridUpdatedAt || 0));
@@ -937,8 +1350,9 @@ export default function OperationalGridPage() {
           </Card>
         ) : (
           <>
+            <SpeedAlert vehicles={vehicles} />
             <VehicleMap vehicles={vehicles} />
-            <VehicleTable vehicles={vehicles} gridData={gridData} />
+            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} />
             <SpyTable spyDevices={spyDevices} />
             <OperationsTable gridData={gridData} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">

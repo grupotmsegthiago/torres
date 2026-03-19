@@ -3,7 +3,7 @@ import { db } from "./db";
 import {
   users, clients, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
-  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments,
+  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, gerenciadoras,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -21,6 +21,7 @@ import {
   type Weapon, type InsertWeapon,
   type WeaponAssignment, type InsertWeaponAssignment,
   type VehicleAssignment, type InsertVehicleAssignment,
+  type Gerenciadora, type InsertGerenciadora,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -112,6 +113,12 @@ export interface IStorage {
 
   getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]>;
   createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment>;
+
+  getGerenciadoras(): Promise<Gerenciadora[]>;
+  getGerenciadora(id: number): Promise<Gerenciadora | undefined>;
+  createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora>;
+  updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined>;
+  deleteGerenciadora(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -485,6 +492,29 @@ export class DatabaseStorage implements IStorage {
   async createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment> {
     const [created] = await db.insert(vehicleAssignments).values(a).returning();
     return created;
+  }
+
+  async getGerenciadoras(): Promise<Gerenciadora[]> {
+    return db.select().from(gerenciadoras).orderBy(gerenciadoras.name);
+  }
+
+  async getGerenciadora(id: number): Promise<Gerenciadora | undefined> {
+    const [g] = await db.select().from(gerenciadoras).where(eq(gerenciadoras.id, id));
+    return g;
+  }
+
+  async createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora> {
+    const [created] = await db.insert(gerenciadoras).values(g).returning();
+    return created;
+  }
+
+  async updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined> {
+    const [updated] = await db.update(gerenciadoras).set(g).where(eq(gerenciadoras.id, id)).returning();
+    return updated;
+  }
+
+  async deleteGerenciadora(id: number): Promise<void> {
+    await db.delete(gerenciadoras).where(eq(gerenciadoras.id, id));
   }
 }
 

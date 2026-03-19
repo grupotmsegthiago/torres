@@ -9,7 +9,7 @@ import {
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
   insertVehicleFuelingSchema, insertTimesheetSchema, insertMissionPhotoSchema,
   insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
-  insertVehicleAssignmentSchema,
+  insertVehicleAssignmentSchema, insertGerenciadoraSchema,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -1005,11 +1005,16 @@ Para CPF, formate como 000.000.000-00.`
           plate: v.plate,
           model: v.model,
           brand: v.brand,
+          year: v.year,
           color: v.color,
+          chassi: v.chassi,
+          renavam: v.renavam,
+          km: v.km,
           status: v.status,
           hasTracker,
           trackerId: v.trackerId || v.truckscontrolIdentifier,
-          trackerType: v.trackerType || "custom",
+          trackerType: v.trackerType || "none",
+          truckscontrolIdentifier: v.truckscontrolIdentifier,
           deviceType: "vehicle" as const,
           tracker: trackerData,
           activeOs: linkedOrder
@@ -1074,6 +1079,97 @@ Para CPF, formate como 000.000.000-00.`
     const spyPositions = await truckscontrol.fetchSpyPositions();
     const spyDevices = truckscontrol.getSpyDevices();
     res.json({ devices: spyDevices, positions: spyPositions });
+  });
+
+  // ====================== GERENCIADORA ROUTES ======================
+
+  app.get("/api/gerenciadoras", requireAuth, requireAdminRole, async (_req, res) => {
+    const list = await storage.getGerenciadoras();
+    res.json(list);
+  });
+
+  app.post("/api/gerenciadoras", requireAuth, requireAdminRole, async (req, res) => {
+    const parsed = insertGerenciadoraSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
+    const g = await storage.createGerenciadora(parsed.data);
+    res.json(g);
+  });
+
+  app.patch("/api/gerenciadoras/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const parsed = insertGerenciadoraSchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.flatten() });
+    const updated = await storage.updateGerenciadora(id, parsed.data);
+    if (!updated) return res.status(404).json({ message: "Gerenciadora não encontrada" });
+    res.json(updated);
+  });
+
+  app.delete("/api/gerenciadoras/:id", requireAuth, requireAdminRole, async (req, res) => {
+    await storage.deleteGerenciadora(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  app.post("/api/gerenciadoras/:id/mirror", requireAuth, requireAdminRole, async (req, res) => {
+    const gerenciadora = await storage.getGerenciadora(Number(req.params.id));
+    if (!gerenciadora) return res.status(404).json({ message: "Gerenciadora não encontrada" });
+    if (!gerenciadora.apiUrl) return res.status(400).json({ message: "Gerenciadora sem URL de API configurada" });
+
+    try {
+      const parsedUrl = new URL(gerenciadora.apiUrl);
+      if (parsedUrl.protocol !== "https:") {
+        return res.status(400).json({ message: "URL deve usar HTTPS" });
+      }
+      const hostname = parsedUrl.hostname.toLowerCase();
+      if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname.startsWith("192.168.") || hostname.startsWith("10.") || hostname.startsWith("169.254.") || hostname.endsWith(".local")) {
+        return res.status(400).json({ message: "URL de rede interna não permitida" });
+      }
+    } catch {
+      return res.status(400).json({ message: "URL inválida" });
+    }
+
+    const { vehicleData } = req.body;
+    try {
+      const response = await fetch(gerenciadora.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(gerenciadora.apiKey ? { Authorization: `Bearer ${gerenciadora.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          source: "torres_vigilancia",
+          timestamp: new Date().toISOString(),
+          data: vehicleData,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      await storage.createApiLog({
+        endpoint: gerenciadora.apiUrl,
+        method: "POST",
+        requestData: JSON.stringify({ vehicleCount: vehicleData?.length || 0 }),
+        responseStatus: response.status,
+        responseData: response.ok ? "OK" : await response.text().catch(() => "error"),
+        userId: req.user?.id || null,
+        source: "mirror_gerenciadora",
+      });
+
+      if (response.ok) {
+        res.json({ success: true, message: `Espelhamento enviado para ${gerenciadora.name}` });
+      } else {
+        res.status(502).json({ success: false, message: `Erro ao enviar: HTTP ${response.status}` });
+      }
+    } catch (err: any) {
+      await storage.createApiLog({
+        endpoint: gerenciadora.apiUrl!,
+        method: "POST",
+        requestData: JSON.stringify({ vehicleCount: vehicleData?.length || 0 }),
+        responseStatus: 0,
+        responseData: err.message,
+        userId: req.user?.id || null,
+        source: "mirror_gerenciadora",
+      });
+      res.status(502).json({ success: false, message: `Falha na conexão: ${err.message}` });
+    }
   });
 
   // ====================== MISSION ROUTES ======================

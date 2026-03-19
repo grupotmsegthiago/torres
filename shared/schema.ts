@@ -314,6 +314,25 @@ export const insertVehicleAssignmentSchema = createInsertSchema(vehicleAssignmen
 export type InsertVehicleAssignment = z.infer<typeof insertVehicleAssignmentSchema>;
 export type VehicleAssignment = typeof vehicleAssignments.$inferSelect;
 
+export const gerenciadoras = pgTable("gerenciadoras", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  cnpj: text("cnpj"),
+  apiUrl: text("api_url"),
+  apiKey: text("api_key"),
+  apiType: text("api_type").default("webhook"),
+  contactName: text("contact_name"),
+  contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
+  active: integer("active").default(1),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGerenciadoraSchema = createInsertSchema(gerenciadoras).omit({ id: true, createdAt: true });
+export type InsertGerenciadora = z.infer<typeof insertGerenciadoraSchema>;
+export type Gerenciadora = typeof gerenciadoras.$inferSelect;
+
 export const apiLogs = pgTable("api_logs", {
   id: serial("id").primaryKey(),
   endpoint: text("endpoint").notNull(),

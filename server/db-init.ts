@@ -114,6 +114,23 @@ export async function ensureDbSchema() {
       ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS gerenciadoras (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        cnpj TEXT,
+        api_url TEXT,
+        api_key TEXT,
+        api_type TEXT DEFAULT 'webhook',
+        contact_name TEXT,
+        contact_phone TEXT,
+        contact_email TEXT,
+        active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
