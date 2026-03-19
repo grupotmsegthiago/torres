@@ -1457,7 +1457,7 @@ function TrucksControlStatus() {
   );
 }
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
 function useCountdown(intervalMs: number, lastFetchTime: number) {
   const [remaining, setRemaining] = useState(intervalMs / 1000);
@@ -1692,7 +1692,7 @@ export default function OperationalGridPage() {
             <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} />
             <SpyTable spyDevices={spyDevices} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
-              Atualização automática a cada 5 minutos (limite API TrucksControl)
+              Atualização automática a cada 2 minutos
             </div>
           </>
         )}
