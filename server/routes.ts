@@ -1667,5 +1667,127 @@ Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.`
     }
   });
 
+  app.post("/api/weapons/ocr-batch", requireAdminRole, async (req, res) => {
+    try {
+      const { imageData } = req.body;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ message: "Envie imageData (base64 data URL da imagem/PDF)" });
+      }
+
+      const mimeMatch = imageData.match(/^data:([^;]+);/);
+      const mimeType = mimeMatch?.[1] || "";
+      const isImage = mimeType.startsWith("image/");
+      const isPdf = mimeType === "application/pdf";
+
+      if (!isImage && !isPdf) {
+        return res.status(400).json({ message: "Formato não suportado. Envie uma imagem (JPG, PNG) ou PDF." });
+      }
+
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const systemPrompt = `Você é um sistema especializado em extrair dados de documentos de registro de armas de fogo brasileiros (CR, CRAF, Guia de Tráfego, Porte de Arma, listas de armamento, planilhas, etc).
+
+O documento pode conter UMA ou VÁRIAS armas. Extraia TODAS as armas encontradas no documento.
+
+Retorne APENAS um JSON válido (sem markdown, sem texto extra) com o seguinte formato:
+{
+  "weapons": [
+    {
+      "type": "tipo da arma (Revólver, Pistola, Espingarda, Carabina, Fuzil ou Outro)",
+      "brand": "marca/fabricante",
+      "model": "modelo",
+      "caliber": "calibre (use exatamente um destes: .38, .380 ACP, 9mm, .40 S&W, .45 ACP, 12 GA, 5.56x45mm, .308 Win, ou Outro)",
+      "serialNumber": "número de série",
+      "registrationNumber": "número do registro (CR, CRAF, SINARM, etc)",
+      "registrationExpiry": "data de validade no formato YYYY-MM-DD ou vazio se não encontrada",
+      "notes": "informações adicionais relevantes"
+    }
+  ],
+  "totalFound": número_total_de_armas_encontradas,
+  "documentType": "tipo do documento (ex: Certificado de Registro, Lista de Armamento, Guia de Tráfego, etc)"
+}
+
+Regras:
+- Se encontrar múltiplas armas listadas, extraia CADA UMA como item separado no array
+- Se encontrar apenas 1 arma, retorne array com 1 item
+- Se não conseguir identificar nenhuma arma, retorne array vazio com totalFound: 0
+- NUNCA invente dados. Se um campo não for encontrado, retorne string vazia ""
+- Preste atenção em tabelas, listas e campos repetidos que indicam múltiplas armas`;
+
+      let userContent: any[];
+      if (isPdf) {
+        const base64Data = imageData.split(",")[1] || "";
+        userContent = [
+          { type: "text", text: "Extraia TODAS as armas de fogo encontradas neste documento PDF:" },
+          { type: "file", file: { filename: "documento.pdf", file_data: `data:application/pdf;base64,${base64Data}` } },
+        ];
+      } else {
+        userContent = [
+          { type: "text", text: "Extraia TODAS as armas de fogo encontradas neste documento:" },
+          { type: "image_url", image_url: { url: imageData } },
+        ];
+      }
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      });
+
+      const text = response.choices?.[0]?.message?.content || "";
+      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      if (!parsed.weapons || !Array.isArray(parsed.weapons)) {
+        return res.status(422).json({ message: "A IA não retornou um formato válido. Tente novamente." });
+      }
+
+      res.json(parsed);
+    } catch (err: any) {
+      console.error("OCR batch weapon error:", err);
+      res.status(500).json({ message: "Erro ao processar documento: " + (err.message || "Erro desconhecido") });
+    }
+  });
+
+  app.post("/api/weapons/batch", requireAdminRole, async (req, res) => {
+    try {
+      const { weapons: weaponList } = req.body;
+      if (!Array.isArray(weaponList) || weaponList.length === 0) {
+        return res.status(400).json({ message: "Envie um array de armas" });
+      }
+
+      const results: { success: any[]; errors: { index: number; error: string }[] } = { success: [], errors: [] };
+
+      for (let i = 0; i < weaponList.length; i++) {
+        const parsed = insertWeaponSchema.safeParse(weaponList[i]);
+        if (!parsed.success) {
+          results.errors.push({ index: i, error: parsed.error.errors.map(e => e.message).join(", ") });
+          continue;
+        }
+        try {
+          const w = await storage.createWeapon(parsed.data);
+          results.success.push(w);
+        } catch (err: any) {
+          const msg = err.message || "Erro desconhecido";
+          if (msg.includes("unique") || msg.includes("duplicate")) {
+            results.errors.push({ index: i, error: `Nº série "${parsed.data.serialNumber}" já cadastrado` });
+          } else {
+            results.errors.push({ index: i, error: msg });
+          }
+        }
+      }
+
+      res.json(results);
+    } catch (err: any) {
+      console.error("Batch weapon create error:", err);
+      res.status(500).json({ message: "Erro ao criar armas em lote: " + (err.message || "Erro desconhecido") });
+    }
+  });
+
   return httpServer;
 }

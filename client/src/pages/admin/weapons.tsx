@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import type { Weapon, WeaponAssignment, Employee } from "@shared/schema";
 
 const WEAPON_TYPES = ["Revólver", "Pistola", "Espingarda", "Carabina", "Fuzil", "Outro"];
@@ -22,6 +22,309 @@ function isExpiringSoon(dateStr: string | null): "expired" | "warning" | "ok" {
   if (diffDays < 0) return "expired";
   if (diffDays < 30) return "warning";
   return "ok";
+}
+
+type ExtractedWeapon = {
+  type: string;
+  brand: string;
+  model: string;
+  caliber: string;
+  serialNumber: string;
+  registrationNumber: string;
+  registrationExpiry: string;
+  notes: string;
+  selected: boolean;
+};
+
+function BatchImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState<"upload" | "scanning" | "review" | "saving" | "done">("upload");
+  const [extracted, setExtracted] = useState<ExtractedWeapon[]>([]);
+  const [documentType, setDocumentType] = useState("");
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [results, setResults] = useState<{ success: number; errors: { index: number; error: string }[] } | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+      return;
+    }
+
+    setStep("scanning");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target!.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await authFetch("/api/weapons/ocr-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erro ao processar");
+      }
+
+      const data = await res.json();
+      if (!data.weapons || data.weapons.length === 0) {
+        toast({ title: "Nenhuma arma encontrada", description: "A IA não identificou armas no documento. Tente com outro documento.", variant: "destructive" });
+        setStep("upload");
+        return;
+      }
+
+      setExtracted(data.weapons.map((w: any) => ({ ...w, selected: true })));
+      setDocumentType(data.documentType || "Documento");
+      setStep("review");
+    } catch (err: any) {
+      toast({ title: "Erro ao processar", description: err.message, variant: "destructive" });
+      setStep("upload");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const updateWeapon = (idx: number, field: string, value: string) => {
+    setExtracted(prev => prev.map((w, i) => i === idx ? { ...w, [field]: value } : w));
+  };
+
+  const toggleSelect = (idx: number) => {
+    setExtracted(prev => prev.map((w, i) => i === idx ? { ...w, selected: !w.selected } : w));
+  };
+
+  const handleSave = async () => {
+    const selected = extracted.filter(w => w.selected);
+    if (selected.length === 0) {
+      toast({ title: "Nenhuma arma selecionada", variant: "destructive" });
+      return;
+    }
+
+    const incomplete = selected.filter(w => !w.type || !w.brand || !w.model || !w.caliber || !w.serialNumber);
+    if (incomplete.length > 0) {
+      toast({ title: "Dados incompletos", description: `${incomplete.length} arma(s) sem campos obrigatórios (tipo, marca, modelo, calibre, nº série)`, variant: "destructive" });
+      return;
+    }
+
+    setStep("saving");
+    try {
+      const weaponList = selected.map(({ selected: _, ...w }) => ({
+        ...w,
+        status: "disponível",
+      }));
+
+      const res = await authFetch("/api/weapons/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weapons: weaponList }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erro ao salvar");
+      }
+
+      const data = await res.json();
+      setResults({ success: data.success.length, errors: data.errors });
+      queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
+      setStep("done");
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
+      setStep("review");
+    }
+  };
+
+  const selectedCount = extracted.filter(w => w.selected).length;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setStep("upload"); setExtracted([]); setResults(null); } }}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-neutral-600" />
+            Importação Inteligente de Armas
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === "upload" && (
+          <div className="py-6">
+            <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFile} />
+            <div
+              className="border-2 border-dashed border-neutral-300 rounded-xl bg-neutral-50 p-8 text-center cursor-pointer hover:border-neutral-400 transition-colors"
+              onClick={() => fileRef.current?.click()}
+              data-testid="batch-upload-area"
+            >
+              <FileUp className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
+              <p className="text-base font-medium text-neutral-700">Anexe o documento com as armas</p>
+              <p className="text-sm text-neutral-500 mt-2">
+                PDF ou foto de lista de armamento, CR, CRAF, planilha, etc.
+              </p>
+              <p className="text-xs text-neutral-400 mt-3">
+                A IA vai identificar e extrair todas as armas automaticamente
+              </p>
+              <Button variant="outline" className="mt-4" type="button">
+                <Upload className="w-4 h-4 mr-2" /> Selecionar Arquivo
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "scanning" && (
+          <div className="py-12 text-center">
+            <Loader2 className="w-12 h-12 text-neutral-500 mx-auto animate-spin mb-4" />
+            <p className="text-base font-medium text-neutral-700">Analisando documento...</p>
+            <p className="text-sm text-neutral-400 mt-2">A IA está identificando e extraindo os dados das armas</p>
+          </div>
+        )}
+
+        {step === "review" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between bg-neutral-50 rounded-lg p-3">
+              <div>
+                <p className="text-sm font-medium text-neutral-700">
+                  {extracted.length} arma(s) encontrada(s)
+                </p>
+                <p className="text-xs text-neutral-500">Documento: {documentType}</p>
+              </div>
+              <p className="text-xs text-neutral-500">{selectedCount} selecionada(s)</p>
+            </div>
+
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+              {extracted.map((w, idx) => (
+                <div key={idx} className={`border rounded-lg transition-colors ${w.selected ? "border-neutral-300 bg-white" : "border-neutral-200 bg-neutral-50 opacity-60"}`} data-testid={`batch-weapon-${idx}`}>
+                  <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}>
+                    <input
+                      type="checkbox"
+                      checked={w.selected}
+                      onChange={(e) => { e.stopPropagation(); toggleSelect(idx); }}
+                      className="w-4 h-4 rounded border-neutral-300"
+                      data-testid={`checkbox-weapon-${idx}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium text-neutral-900">{w.brand || "?"} {w.model || "?"}</span>
+                        <span className="text-neutral-400">·</span>
+                        <span className="text-neutral-600">{w.type || "?"}</span>
+                        <span className="text-neutral-400">·</span>
+                        <span className="text-neutral-600">{w.caliber || "?"}</span>
+                      </div>
+                      <p className="text-xs text-neutral-500 truncate">
+                        Série: {w.serialNumber || "—"} {w.registrationNumber ? `| Reg: ${w.registrationNumber}` : ""}
+                      </p>
+                    </div>
+                    {(!w.type || !w.brand || !w.model || !w.caliber || !w.serialNumber) && (
+                      <span title="Campos obrigatórios faltando"><AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" /></span>
+                    )}
+                    {expandedIdx === idx ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
+                  </div>
+
+                  {expandedIdx === idx && (
+                    <div className="px-3 pb-3 border-t border-neutral-100 pt-3">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Tipo *</label>
+                          <select value={w.type} onChange={(e) => updateWeapon(idx, "type", e.target.value)} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid={`batch-type-${idx}`}>
+                            <option value="">Selecione...</option>
+                            {WEAPON_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Marca *</label>
+                          <Input value={w.brand} onChange={(e) => updateWeapon(idx, "brand", e.target.value)} className="h-7 text-xs" data-testid={`batch-brand-${idx}`} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Modelo *</label>
+                          <Input value={w.model} onChange={(e) => updateWeapon(idx, "model", e.target.value)} className="h-7 text-xs" data-testid={`batch-model-${idx}`} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Calibre *</label>
+                          <select value={w.caliber} onChange={(e) => updateWeapon(idx, "caliber", e.target.value)} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid={`batch-caliber-${idx}`}>
+                            <option value="">Selecione...</option>
+                            {CALIBERS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Nº Série *</label>
+                          <Input value={w.serialNumber} onChange={(e) => updateWeapon(idx, "serialNumber", e.target.value)} className="h-7 text-xs font-mono" data-testid={`batch-serial-${idx}`} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Nº Registro</label>
+                          <Input value={w.registrationNumber} onChange={(e) => updateWeapon(idx, "registrationNumber", e.target.value)} className="h-7 text-xs" data-testid={`batch-reg-${idx}`} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-neutral-500 block">Validade Registro</label>
+                          <Input type="date" value={w.registrationExpiry} onChange={(e) => updateWeapon(idx, "registrationExpiry", e.target.value)} className="h-7 text-xs" data-testid={`batch-expiry-${idx}`} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-neutral-500 block">Obs</label>
+                          <Input value={w.notes} onChange={(e) => updateWeapon(idx, "notes", e.target.value)} className="h-7 text-xs" data-testid={`batch-notes-${idx}`} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t">
+              <Button variant="outline" onClick={() => { setStep("upload"); setExtracted([]); }}>
+                Voltar
+              </Button>
+              <Button onClick={handleSave} disabled={selectedCount === 0} data-testid="button-batch-save">
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Cadastrar {selectedCount} arma(s)
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "saving" && (
+          <div className="py-12 text-center">
+            <Loader2 className="w-12 h-12 text-neutral-500 mx-auto animate-spin mb-4" />
+            <p className="text-base font-medium text-neutral-700">Cadastrando armas...</p>
+            <p className="text-sm text-neutral-400 mt-2">Salvando {selectedCount} registro(s)</p>
+          </div>
+        )}
+
+        {step === "done" && results && (
+          <div className="py-6 space-y-4">
+            <div className="text-center">
+              {results.success > 0 && (
+                <div className="flex items-center justify-center gap-2 text-green-700 mb-2">
+                  <CheckCircle2 className="w-8 h-8" />
+                  <span className="text-lg font-semibold">{results.success} arma(s) cadastrada(s)</span>
+                </div>
+              )}
+              {results.errors.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-sm text-red-600 font-medium mb-2">{results.errors.length} erro(s):</p>
+                  <div className="space-y-1">
+                    {results.errors.map((e, i) => (
+                      <div key={i} className="text-xs text-red-600 bg-red-50 rounded px-3 py-1.5 flex items-start gap-1.5">
+                        <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <span>Arma {e.index + 1}: {e.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-center pt-2">
+              <Button onClick={() => { onClose(); setStep("upload"); setExtracted([]); setResults(null); }} data-testid="button-batch-close">
+                Fechar
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void }) {
@@ -339,6 +642,7 @@ export default function WeaponsPage() {
   const [editItem, setEditItem] = useState<Weapon | undefined>();
   const [assignWeapon, setAssignWeapon] = useState<Weapon | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showBatchImport, setShowBatchImport] = useState(false);
   const { toast } = useToast();
   const { data: weapons = [], isLoading } = useQuery<Weapon[]>({ queryKey: ["/api/weapons"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -362,9 +666,14 @@ export default function WeaponsPage() {
           <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-weapons-title">Armamento</h1>
           <p className="text-sm text-neutral-500 mt-1">Cadastro e controle de armas</p>
         </div>
-        <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-weapon">
-          <Plus className="w-4 h-4 mr-2" /> Nova Arma
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowBatchImport(true)} data-testid="button-batch-import">
+            <Sparkles className="w-4 h-4 mr-2" /> Importar com IA
+          </Button>
+          <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-weapon">
+            <Plus className="w-4 h-4 mr-2" /> Nova Arma
+          </Button>
+        </div>
       </div>
 
       {expiringWeapons.length > 0 && (
@@ -377,6 +686,8 @@ export default function WeaponsPage() {
           </div>
         </Card>
       )}
+
+      <BatchImportDialog open={showBatchImport} onClose={() => setShowBatchImport(false)} />
 
       {showForm && <WeaponForm weapon={editItem} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
 
