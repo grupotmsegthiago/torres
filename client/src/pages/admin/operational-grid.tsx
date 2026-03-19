@@ -1344,101 +1344,6 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
   );
 }
 
-function OperationsTable({ gridData }: { gridData: GridItem[] }) {
-  const [expanded, setExpanded] = useState(true);
-
-  if (gridData.length === 0) return null;
-
-  return (
-    <Card className="overflow-hidden shadow-sm border-0 ring-1 ring-neutral-200">
-      <div
-        className="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors"
-        style={{ background: "linear-gradient(135deg, #0f4c3a 0%, #1a3a2e 50%, #0f4c3a 100%)" }}
-        onClick={() => setExpanded(!expanded)}
-        data-testid="toggle-operations-table"
-      >
-        <div className="flex items-center gap-2.5">
-          <Radio className="w-4 h-4 text-emerald-300" />
-          <h2 className="font-bold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Montserrat', sans-serif", letterSpacing: "0.08em" }}>Operações Ativas</h2>
-          <span className="text-xs text-emerald-300 font-medium ml-0.5">({gridData.length})</span>
-        </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-emerald-300 hover:text-white transition-colors" /> : <ChevronDown className="w-4 h-4 text-emerald-300 hover:text-white transition-colors" />}
-      </div>
-
-      {expanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full" data-testid="table-operational-grid" style={{ fontFamily: "'Inter', sans-serif" }}>
-            <thead>
-              <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Nº OS</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Cliente</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {gridData.map((item, index) => {
-                const statusInfo = getStatusDisplay(item.missionStatus, item.status);
-                const StatusIcon = statusInfo.icon;
-
-                return (
-                  <tr key={item.id} className={`transition-colors ${index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"}`} data-testid={`row-grid-${item.id}`}>
-                    <td className="px-3 py-3 whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                      <Link href={`/admin/service-orders?os=${item.id}`} className="font-bold text-[12px] text-neutral-900 hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-grid-${item.id}`}>
-                        {item.osNumber}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 text-[12px] font-medium text-neutral-700">{item.clientName}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-0.5">
-                        {item.employee1 && (
-                          <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                            {item.employee1.name}
-                            {item.employee1.phone && (
-                              <a href={`https://wa.me/${formatPhone(item.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600">
-                                <SiWhatsapp className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </span>
-                        )}
-                        {item.employee2 && (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-400" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                            {item.employee2.name}
-                            {item.employee2.phone && (
-                              <a href={`https://wa.me/${formatPhone(item.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600">
-                                <SiWhatsapp className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </span>
-                        )}
-                        {!item.employee1 && !item.employee2 && <span className="text-neutral-300 text-[11px]">—</span>}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      {item.vehicle ? (
-                        <span className="font-bold text-[12px] text-neutral-700 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.vehicle.plate}</span>
-                      ) : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded font-bold border ${statusInfo.className}`}>
-                        <StatusIcon className="w-3 h-3" />
-                        {statusInfo.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
-
 function TrucksControlStatus() {
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1604,7 +1509,6 @@ export default function OperationalGridPage() {
             <VehicleMap vehicles={vehicles} />
             <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} />
             <SpyTable spyDevices={spyDevices} />
-            <OperationsTable gridData={gridData} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 5 minutos (limite API TrucksControl)
             </div>
