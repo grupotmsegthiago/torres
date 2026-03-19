@@ -5,7 +5,7 @@ import imgEscortRoadPath from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(2)
 import imgVehiclePath from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(3)_1772473176100.jpeg";
 import imgGuardVehiclePath from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(1)_1772473176101.jpeg";
 import imgMonitoramentoPath from "@assets/WhatsApp_Image_2026-03-02_at_14.53.45_1772474055275.jpeg";
-import logoPath from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
+import logoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 
 const W = 297;
 const H = 210;
