@@ -1835,9 +1835,16 @@ Para CPF, formate como 000.000.000-00.`
         return res.status(400).json({ message: "Selecione ao menos uma arma para o kit" });
       }
       const uniqueIds = [...new Set(weaponIds.map(Number))];
+      const allKits = await storage.getWeaponKits();
+      const usedWeaponIds = new Set<number>();
+      for (const k of allKits) {
+        const items = await storage.getWeaponKitItems(k.id);
+        items.forEach(i => usedWeaponIds.add(i.weaponId));
+      }
       for (const wid of uniqueIds) {
         const w = await storage.getWeapon(wid);
         if (!w) return res.status(400).json({ message: `Arma ID ${wid} não encontrada` });
+        if (usedWeaponIds.has(wid)) return res.status(400).json({ message: `Arma "${w.type} ${w.brand} ${w.model} - ${w.serialNumber}" já está vinculada a outro kit` });
       }
       const kit = await storage.createWeaponKit({ name, description: description || null, status: "disponível" });
       for (const weaponId of uniqueIds) {
@@ -1863,9 +1870,17 @@ Para CPF, formate como 000.000.000-00.`
       if (!updated) return res.status(404).json({ message: "Kit não encontrado" });
       if (weaponIds && Array.isArray(weaponIds)) {
         const uniqueIds = [...new Set(weaponIds.map(Number))];
+        const allKits = await storage.getWeaponKits();
+        const usedWeaponIds = new Set<number>();
+        for (const k of allKits) {
+          if (k.id === id) continue;
+          const items = await storage.getWeaponKitItems(k.id);
+          items.forEach(i => usedWeaponIds.add(i.weaponId));
+        }
         for (const wid of uniqueIds) {
           const w = await storage.getWeapon(wid);
           if (!w) return res.status(400).json({ message: `Arma ID ${wid} não encontrada` });
+          if (usedWeaponIds.has(wid)) return res.status(400).json({ message: `Arma "${w.type} ${w.brand} ${w.model} - ${w.serialNumber}" já está vinculada a outro kit` });
         }
         await storage.deleteWeaponKitItemsByKit(id);
         for (const weaponId of uniqueIds) {

@@ -804,18 +804,25 @@ function WeaponGroupTable({
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
-function KitFormDialog({ open, onClose, kit, weapons }: { open: boolean; onClose: () => void; kit?: EnrichedKit; weapons: Weapon[] }) {
+function KitFormDialog({ open, onClose, kit, weapons, allKits }: { open: boolean; onClose: () => void; kit?: EnrichedKit; weapons: Weapon[]; allKits: EnrichedKit[] }) {
   const { toast } = useToast();
   const [name, setName] = useState(kit?.name || "");
   const [description, setDescription] = useState(kit?.description || "");
   const [selectedWeaponIds, setSelectedWeaponIds] = useState<number[]>(kit?.items.map(i => i.weaponId) || []);
   const [weaponSearch, setWeaponSearch] = useState("");
 
+  const weaponIdsInOtherKits = new Set(
+    allKits
+      .filter(k => k.id !== kit?.id)
+      .flatMap(k => k.items.map(i => i.weaponId))
+  );
+
   const toggleWeapon = (id: number) => {
     setSelectedWeaponIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const availableWeapons = weapons.filter(w => {
+    if (weaponIdsInOtherKits.has(w.id) && !selectedWeaponIds.includes(w.id)) return false;
     const term = weaponSearch.toLowerCase();
     return (!term || w.brand.toLowerCase().includes(term) || w.model.toLowerCase().includes(term) || w.serialNumber.toLowerCase().includes(term) || w.caliber.toLowerCase().includes(term) || w.type.toLowerCase().includes(term));
   });
@@ -948,7 +955,7 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
       </div>
 
       {showKitForm && (
-        <KitFormDialog open={showKitForm} onClose={() => { setShowKitForm(false); setEditKit(undefined); }} kit={editKit} weapons={weapons} />
+        <KitFormDialog open={showKitForm} onClose={() => { setShowKitForm(false); setEditKit(undefined); }} kit={editKit} weapons={weapons} allKits={kits} />
       )}
 
       {isLoading ? (
