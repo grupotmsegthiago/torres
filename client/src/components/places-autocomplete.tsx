@@ -12,7 +12,7 @@ declare global {
 }
 
 function loadGoogleMapsScript(callback: () => void) {
-  if (window._gmapsLoaded) {
+  if (window._gmapsLoaded && window.google?.maps?.places) {
     callback();
     return;
   }
@@ -32,9 +32,16 @@ function loadGoogleMapsScript(callback: () => void) {
   s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
   s.async = true;
   s.onload = () => {
-    window._gmapsLoaded = true;
-    window._gmapsCallbacks?.forEach((cb) => cb());
-    window._gmapsCallbacks = [];
+    const check = () => {
+      if (window.google?.maps?.places) {
+        window._gmapsLoaded = true;
+        window._gmapsCallbacks?.forEach((cb) => cb());
+        window._gmapsCallbacks = [];
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
   };
   document.head.appendChild(s);
 }
@@ -70,6 +77,7 @@ export function PlacesAutocomplete({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [apiReady, setApiReady] = useState(false);
+  const autocompleteServiceRef = useRef<any>(null);
   const sessionTokenRef = useRef<any>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -77,6 +85,13 @@ export function PlacesAutocomplete({
   useEffect(() => {
     loadGoogleMapsScript(() => setApiReady(true));
   }, []);
+
+  useEffect(() => {
+    if (apiReady && window.google?.maps?.places) {
+      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+      sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+    }
+  }, [apiReady]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -88,38 +103,34 @@ export function PlacesAutocomplete({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchSuggestions = useCallback(async (input: string) => {
-    if (!input || input.length < 2 || !apiReady) {
+  const fetchSuggestions = useCallback((input: string) => {
+    if (!input || input.length < 2 || !apiReady || !autocompleteServiceRef.current) {
       setSuggestions([]);
       return;
     }
 
-    try {
-      if (!sessionTokenRef.current) {
-        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
-      }
-
-      const { AutocompleteSuggestion } = window.google.maps.places;
-      const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+    autocompleteServiceRef.current.getPlacePredictions(
+      {
         input,
         sessionToken: sessionTokenRef.current,
-        includedRegionCodes: ["br"],
-        includedPrimaryTypes: ["locality", "administrative_area_level_2", "sublocality", "route", "street_address", "premise", "point_of_interest", "establishment"],
+        componentRestrictions: { country: "br" },
         language: "pt-BR",
-      });
-
-      const items: Suggestion[] = (response.suggestions || []).map((s: any) => ({
-        placeId: s.placePrediction?.placeId || "",
-        text: s.placePrediction?.text?.text || "",
-        mainText: s.placePrediction?.mainText?.text || "",
-        secondaryText: s.placePrediction?.secondaryText?.text || "",
-      }));
-
-      setSuggestions(items);
-      setShowDropdown(items.length > 0);
-    } catch {
-      setSuggestions([]);
-    }
+      },
+      (predictions: any[] | null, status: string) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+          const items: Suggestion[] = predictions.map((p) => ({
+            placeId: p.place_id,
+            text: p.description,
+            mainText: p.structured_formatting?.main_text || p.description,
+            secondaryText: p.structured_formatting?.secondary_text || "",
+          }));
+          setSuggestions(items);
+          setShowDropdown(items.length > 0);
+        } else {
+          setSuggestions([]);
+        }
+      }
+    );
   }, [apiReady]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,7 +145,7 @@ export function PlacesAutocomplete({
     onChange(suggestion.text);
     setSuggestions([]);
     setShowDropdown(false);
-    sessionTokenRef.current = null;
+    sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
   }, [onChange]);
 
   return (
@@ -176,4 +187,43 @@ export function PlacesAutocomplete({
       )}
     </div>
   );
+}
+
+export interface RouteInfo {
+  distanceText: string;
+  durationText: string;
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
+export function calculateRouteInfo(origin: string, destination: string): Promise<RouteInfo | null> {
+  return new Promise((resolve) => {
+    if (!origin || !destination || !window.google?.maps) {
+      resolve(null);
+      return;
+    }
+
+    const service = new window.google.maps.DistanceMatrixService();
+    service.getDistanceMatrix(
+      {
+        origins: [origin],
+        destinations: [destination],
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        unitSystem: window.google.maps.UnitSystem.METRIC,
+      },
+      (response: any, status: string) => {
+        if (status === "OK" && response?.rows?.[0]?.elements?.[0]?.status === "OK") {
+          const el = response.rows[0].elements[0];
+          resolve({
+            distanceText: el.distance.text,
+            durationText: el.duration.text,
+            distanceMeters: el.distance.value,
+            durationSeconds: el.duration.value,
+          });
+        } else {
+          resolve(null);
+        }
+      }
+    );
+  });
 }
