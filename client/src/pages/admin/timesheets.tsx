@@ -58,42 +58,42 @@ function TimesheetForm({ timesheet, employees, onClose }: {
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Funcionário *</label>
-          <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-timesheet-employee">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Funcionário *</label>
+          <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-timesheet-employee">
             <option value={0}>Selecione...</option>
             {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Data *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
           <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-timesheet-date" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Entrada</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Entrada</label>
           <Input type="time" value={form.checkIn} onChange={(e) => setForm({ ...form, checkIn: e.target.value })} data-testid="input-timesheet-checkin" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Saída Almoço</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Saída Almoço</label>
           <Input type="time" value={form.checkOutLunch} onChange={(e) => setForm({ ...form, checkOutLunch: e.target.value })} data-testid="input-timesheet-checkout-lunch" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Retorno Almoço</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Retorno Almoço</label>
           <Input type="time" value={form.checkInLunch} onChange={(e) => setForm({ ...form, checkInLunch: e.target.value })} data-testid="input-timesheet-checkin-lunch" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Saída</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Saída</label>
           <Input type="time" value={form.checkOut} onChange={(e) => setForm({ ...form, checkOut: e.target.value })} data-testid="input-timesheet-checkout" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Horas Trabalhadas</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Trabalhadas</label>
           <Input type="number" step="0.01" value={form.hoursWorked} onChange={(e) => setForm({ ...form, hoursWorked: e.target.value })} data-testid="input-timesheet-hours" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Horas Extras</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Extras</label>
           <Input type="number" step="0.01" value={form.overtime} onChange={(e) => setForm({ ...form, overtime: e.target.value })} data-testid="input-timesheet-overtime" />
         </div>
         <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-timesheet-notes" />
         </div>
         <div className="md:col-span-3 flex gap-3">
@@ -145,14 +145,14 @@ export default function TimesheetsPage() {
             <table className="w-full text-sm" data-testid="table-timesheets">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Data</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Funcionário</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Entrada</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Saída Almoço</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Ret. Almoço</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Saída</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Horas</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Funcionário</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Entrada</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Saída Almoço</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ret. Almoço</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Saída</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Horas</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>

@@ -170,41 +170,40 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const step2Valid = true;
 
   const SectionHeader = ({ icon: Icon, title, extra }: { icon: any; title: string; extra?: any }) => (
-    <div className="bg-neutral-900 px-4 py-2.5 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-white/60" />
-        <span className="font-bold text-[11px] text-white tracking-[0.12em] uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>{title}</span>
+    <div className="bg-neutral-900 px-4 py-3 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <Icon className="w-4 h-4 text-white/70" />
+        <span className="font-bold text-xs text-white tracking-wide uppercase">{title}</span>
       </div>
       {extra}
     </div>
   );
   const InfoCell = ({ label, children, className = "" }: { label: string; children: any; className?: string }) => (
-    <div className={`px-3 py-2.5 ${className}`}>
-      <span className="text-[9px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>{label}</span>
-      <span className="text-xs font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{children}</span>
+    <div className={`px-3.5 py-3 ${className}`}>
+      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold block mb-1">{label}</span>
+      <span className="text-sm font-semibold text-neutral-900">{children}</span>
     </div>
   );
   const FieldLabel = ({ children }: { children: any }) => (
-    <label className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold mb-1 block" style={{ fontFamily: "'Montserrat', sans-serif" }}>{children}</label>
+    <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">{children}</label>
   );
-  const selectClass = "w-full border border-neutral-200 rounded px-3 py-2 text-sm bg-white focus:border-neutral-400 focus:ring-1 focus:ring-neutral-200 outline-none transition-colors";
+  const selectClass = "w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200";
 
   const StepIndicator = () => (
-    <div className="flex items-center gap-1 px-5 py-2.5 bg-neutral-50 border-b border-neutral-200">
+    <div className="flex items-center gap-1.5 px-5 py-3 bg-neutral-50 border-b border-neutral-200">
       {[
         { n: 1, label: "Dados da OS" },
         { n: 2, label: "Agentes" },
         { n: 3, label: "Equipamento" },
       ].map((s, i) => (
-        <div key={s.n} className="flex items-center gap-1">
-          {i > 0 && <ChevronRight className="w-3 h-3 text-neutral-300 mx-0.5" />}
+        <div key={s.n} className="flex items-center gap-1.5">
+          {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-neutral-300 mx-0.5" />}
           <button
             type="button"
             onClick={() => { if (order || (s.n <= step)) setStep(s.n); }}
-            className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded transition-colors ${
-              step === s.n ? "bg-neutral-900 text-white" : s.n < step ? "text-neutral-600 hover:bg-neutral-100 cursor-pointer" : "text-neutral-300 cursor-default"
+            className={`text-xs font-semibold uppercase tracking-wide px-3 py-1.5 rounded-lg transition-all duration-200 ${
+              step === s.n ? "bg-neutral-900 text-white shadow-sm" : s.n < step ? "text-neutral-600 hover:bg-neutral-100 cursor-pointer" : "text-neutral-300 cursor-default"
             }`}
-            style={{ fontFamily: "'Montserrat', sans-serif" }}
           >
             {s.n}. {s.label}
           </button>
@@ -245,14 +244,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         <div>
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-white/60" />
-            <h2 className="text-lg font-bold text-white tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            <h2 className="text-lg font-bold text-white tracking-wider uppercase">
               {order ? "Editar OS" : "Nova Ordem de Serviço"}
             </h2>
           </div>
           <div className="flex items-center gap-4 mt-1">
-            <span className="text-[11px] text-white/70 font-semibold uppercase tracking-wider" style={{ fontFamily: "'Montserrat', sans-serif" }}>Escolta Armada</span>
+            <span className="text-xs text-white/70 font-semibold uppercase tracking-wide">Escolta Armada</span>
             {form.route && (
-              <span className="text-[10px] text-white/50 flex items-center gap-1">
+              <span className="text-xs text-white/50 flex items-center gap-1">
                 <Navigation className="w-3 h-3" />
                 {form.route}
               </span>
@@ -260,7 +259,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-white/90 tracking-wider" style={{ fontFamily: "'Montserrat', sans-serif" }}>{form.osNumber}</span>
+          <span className="text-sm font-bold text-white/90 tracking-wider">{form.osNumber}</span>
           <Button variant="ghost" size="icon" onClick={onClose} className="text-white/60 hover:text-white hover:bg-white/10"><X className="w-4 h-4" /></Button>
         </div>
       </div>
@@ -402,8 +401,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           <div className={order ? "border-t border-neutral-100 pt-4" : ""}>
             {!order && (
               <div className="flex items-center gap-2 mb-3">
-                <User className="w-4 h-4 text-neutral-400" />
-                <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Seleção de Agentes</span>
+                <User className="w-4 h-4 text-neutral-500" />
+                <span className="text-xs uppercase tracking-wide text-neutral-600 font-bold">Seleção de Agentes</span>
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -432,7 +431,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             {!order && (
               <div className="flex items-center gap-2 mb-3">
                 <Shield className="w-4 h-4 text-neutral-400" />
-                <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Veículo & Armamento</span>
+                <span className="text-xs uppercase tracking-wide text-neutral-600 font-bold">Veículo & Armamento</span>
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -458,7 +457,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3" data-testid="section-vehicle-info">
                 <SectionHeader icon={Car} title="Viatura" extra={
                   trackerLabel && (
-                    <span className="inline-flex items-center gap-1.5 text-[9px] px-2 py-0.5 rounded bg-white/10 text-white/80 font-semibold border border-white/20">
+                    <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-white/10 text-white/80 font-semibold border border-white/20">
                       <Satellite className="w-3 h-3" />
                       {trackerLabel} · {sv.truckscontrolIdentifier || sv.trackerId || sv.plate}
                     </span>
@@ -477,7 +476,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <div className="p-3 bg-neutral-50/50">
                     <div className="flex items-center gap-1.5 mb-2">
                       <Camera className="w-3 h-3 text-neutral-400" />
-                      <span className="text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Registro Fotográfico</span>
+                      <span className="text-xs uppercase tracking-wide text-neutral-500 font-semibold">Registro Fotográfico</span>
                     </div>
                     <div className="grid grid-cols-4 gap-2">
                       {photos.map((p, i) => (
@@ -485,7 +484,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <div className="aspect-[4/3] rounded overflow-hidden border border-neutral-200 bg-white">
                             <img src={p.src!} alt={p.label} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                           </div>
-                          <span className="block text-center text-[8px] text-neutral-400 font-semibold uppercase tracking-wider mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>{p.label}</span>
+                          <span className="block text-center text-[10px] text-neutral-500 font-semibold uppercase tracking-wide mt-1.5">{p.label}</span>
                         </div>
                       ))}
                     </div>
@@ -497,24 +496,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             {selectedKit && (
               <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3" data-testid="section-kit-info">
                 <SectionHeader icon={Shield} title={selectedKit.name} extra={
-                  <span className="text-[9px] text-white/50 font-medium">{selectedKit.items.length} arma(s)</span>
+                  <span className="text-xs text-white/50 font-medium">{selectedKit.items.length} arma(s)</span>
                 } />
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-neutral-50 border-b border-neutral-100">
-                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Armamento</th>
-                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Calibre</th>
-                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Numeração</th>
-                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</th>
+                      <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Armamento</th>
+                      <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Calibre</th>
+                      <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Numeração</th>
+                      <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Marca</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {selectedKit.items.map(item => item.weapon ? (
                       <tr key={item.id}>
-                        <td className="px-3 py-2 font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.weapon.type}</td>
-                        <td className="px-3 py-2 text-neutral-600 font-mono">{item.weapon.caliber}</td>
-                        <td className="px-3 py-2 text-neutral-600 font-mono font-semibold">{item.weapon.serialNumber}</td>
-                        <td className="px-3 py-2 text-neutral-600">{item.weapon.brand}</td>
+                        <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{item.weapon.type}</td>
+                        <td className="px-3.5 py-2.5 text-neutral-600 font-mono text-sm">{item.weapon.caliber}</td>
+                        <td className="px-3.5 py-2.5 text-neutral-600 font-mono font-semibold text-sm">{item.weapon.serialNumber}</td>
+                        <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{item.weapon.brand}</td>
                       </tr>
                     ) : null)}
                   </tbody>
@@ -645,14 +644,14 @@ export default function ServiceOrdersPage() {
             <table className="w-full text-sm" data-testid="table-orders">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">OS</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Cliente</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Prioridade</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Kit</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Missão</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">OS</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cliente</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Prioridade</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>

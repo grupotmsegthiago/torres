@@ -106,7 +106,7 @@ export default function DashboardPage() {
                 {multaLogs.slice(0, 3).map((l: any) => (
                   <div key={l.id} className="flex items-center justify-between text-xs" data-testid={`row-multa-${l.id}`}>
                     <span className="text-neutral-600 font-mono">{l.requestPreview || "-"}</span>
-                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-[9px]">{l.responseStatus}</Badge>
+                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-xs">{l.responseStatus}</Badge>
                   </div>
                 ))}
                 <Link href="/admin/consultas" className="text-xs text-blue-600 hover:underline" data-testid="link-ver-multas">Ver todas &rarr;</Link>
@@ -126,7 +126,7 @@ export default function DashboardPage() {
                 {nfLogs.slice(0, 3).map((l: any) => (
                   <div key={l.id} className="flex items-center justify-between text-xs" data-testid={`row-nf-${l.id}`}>
                     <span className="text-neutral-600">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("pt-BR") : "-"}</span>
-                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-[9px]">{l.responseStatus === 200 ? "Emitida" : "Erro"}</Badge>
+                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-xs">{l.responseStatus === 200 ? "Emitida" : "Erro"}</Badge>
                   </div>
                 ))}
                 <Link href="/admin/consultas" className="text-xs text-blue-600 hover:underline" data-testid="link-ver-nf">Ver todas &rarr;</Link>
@@ -146,7 +146,7 @@ export default function DashboardPage() {
                 {processosLogs.slice(0, 3).map((l: any) => (
                   <div key={l.id} className="flex items-center justify-between text-xs" data-testid={`row-processo-${l.id}`}>
                     <span className="text-neutral-600">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("pt-BR") : "-"}</span>
-                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-[9px]">{l.responseStatus}</Badge>
+                    <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-xs">{l.responseStatus}</Badge>
                   </div>
                 ))}
                 <Link href="/admin/consultas" className="text-xs text-blue-600 hover:underline" data-testid="link-ver-processos">Ver todos &rarr;</Link>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center"><Activity className="w-4 h-4 text-white" /></div>
               <h3 className="text-sm font-semibold text-neutral-900">Consumo API Brasil</h3>
-              <Badge variant="outline" className="text-[10px] ml-auto">{apiStats.today} hoje / {apiStats.total} total</Badge>
+              <Badge variant="outline" className="text-xs ml-auto">{apiStats.today} hoje / {apiStats.total} total</Badge>
             </div>
             <div className="flex gap-4 text-xs">
               <span className="text-green-600 font-medium">{apiStats.byStatus?.success || 0} sucesso</span>

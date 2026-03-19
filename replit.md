@@ -158,11 +158,19 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 - Telemetry: KM values tracked at checkout, checkin, and final; timestamps per step
 - Admin/Diretoria can access via sidebar link "Mobile (Agente)"
 
-## Brand
+## Brand & UI Design System
 - Colors: Black/white professional aesthetic (monochrome system — NO olive/military colors)
 - Fonts: Montserrat (primary), Inter (fallback)
 - Logo: Vectorized, uses CSS `invert` filter on dark backgrounds
 - DIRETORIA role: Crown icon, amber/golden accent
+- **Enterprise UI (March 2026 Redesign)**:
+  - Labels: `text-sm font-semibold text-neutral-700` — never smaller than inputs
+  - Inputs/Textareas: `h-10 rounded-lg border-neutral-300 shadow-sm` with `focus:ring-2 focus:ring-neutral-900/10`
+  - Native selects: Same h-10/rounded-lg/shadow-sm styling as inputs
+  - Table headers: `text-xs font-semibold uppercase tracking-wider text-neutral-500`
+  - Table cells: `px-4 py-3.5 text-sm text-neutral-700`
+  - Buttons: `rounded-lg font-semibold shadow-sm` with smooth transitions
+  - All base components in `client/src/components/ui/` updated globally
 
 ## Automated Tasks (Cron Jobs)
 - **Fleet Monitoring**: Daily at 02:00 AM

@@ -228,41 +228,41 @@ function BatchImportDialog({ open, onClose }: { open: boolean; onClose: () => vo
                     <div className="px-3 pb-3 border-t border-neutral-100 pt-3">
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Tipo *</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Tipo *</label>
                           <select value={w.type} onChange={(e) => updateWeapon(idx, "type", e.target.value)} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid={`batch-type-${idx}`}>
                             <option value="">Selecione...</option>
                             {WEAPON_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Marca *</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Marca *</label>
                           <Input value={w.brand} onChange={(e) => updateWeapon(idx, "brand", e.target.value)} className="h-7 text-xs" data-testid={`batch-brand-${idx}`} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Modelo *</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Modelo *</label>
                           <Input value={w.model} onChange={(e) => updateWeapon(idx, "model", e.target.value)} className="h-7 text-xs" data-testid={`batch-model-${idx}`} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Calibre *</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Calibre *</label>
                           <select value={w.caliber} onChange={(e) => updateWeapon(idx, "caliber", e.target.value)} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid={`batch-caliber-${idx}`}>
                             <option value="">Selecione...</option>
                             {CALIBERS.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Nº Série *</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Nº Série *</label>
                           <Input value={w.serialNumber} onChange={(e) => updateWeapon(idx, "serialNumber", e.target.value)} className="h-7 text-xs font-mono" data-testid={`batch-serial-${idx}`} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Nº Registro</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Nº Registro</label>
                           <Input value={w.registrationNumber} onChange={(e) => updateWeapon(idx, "registrationNumber", e.target.value)} className="h-7 text-xs" data-testid={`batch-reg-${idx}`} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-neutral-500 block">Validade Registro</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Validade Registro</label>
                           <Input type="date" value={w.registrationExpiry} onChange={(e) => updateWeapon(idx, "registrationExpiry", e.target.value)} className="h-7 text-xs" data-testid={`batch-expiry-${idx}`} />
                         </div>
                         <div className="col-span-2">
-                          <label className="text-[10px] text-neutral-500 block">Obs</label>
+                          <label className="text-sm font-semibold text-neutral-700 block">Obs</label>
                           <Input value={w.notes} onChange={(e) => updateWeapon(idx, "notes", e.target.value)} className="h-7 text-xs" data-testid={`batch-notes-${idx}`} />
                         </div>
                       </div>
@@ -482,42 +482,42 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Tipo *</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-weapon-type">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo *</label>
+            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-weapon-type">
               <option value="" disabled>Selecione o tipo...</option>
               {WEAPON_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Marca *</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Marca *</label>
             <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} required placeholder="Ex: Taurus" data-testid="input-weapon-brand" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Modelo *</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Modelo *</label>
             <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required placeholder="Ex: G2C" data-testid="input-weapon-model" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Calibre *</label>
-            <select value={form.caliber} onChange={(e) => setForm({ ...form, caliber: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-weapon-caliber">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Calibre *</label>
+            <select value={form.caliber} onChange={(e) => setForm({ ...form, caliber: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-weapon-caliber">
               <option value="" disabled>Selecione o calibre...</option>
               {CALIBERS.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Nº Série *</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nº Série *</label>
             <Input value={form.serialNumber} onChange={(e) => setForm({ ...form, serialNumber: e.target.value })} required placeholder="Número de série da arma" data-testid="input-weapon-serial" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Nº Registro</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nº Registro</label>
             <Input value={form.registrationNumber} onChange={(e) => setForm({ ...form, registrationNumber: e.target.value })} placeholder="Registro junto à PF/EB" data-testid="input-weapon-registration" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Validade do Registro</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade do Registro</label>
             <Input type="date" value={form.registrationExpiry} onChange={(e) => setForm({ ...form, registrationExpiry: e.target.value })} data-testid="input-weapon-reg-expiry" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-weapon-status">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-weapon-status">
               <option value="disponível">Disponível</option>
               <option value="em uso">Em Uso</option>
               <option value="manutenção">Manutenção</option>
@@ -526,7 +526,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
           </div>
           <div className="flex items-end">
             <div className="w-full">
-              <label className="text-xs text-neutral-500 mb-1 block">PDF do Registro</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">PDF do Registro</label>
               <Button type="button" variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()} data-testid="button-upload-registration">
                 <Upload className="w-4 h-4 mr-2" />
                 {form.registrationFileData ? "Substituir PDF" : "Anexar PDF"}
@@ -536,7 +536,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
           </div>
           <div className="flex items-end">
             <div className="w-full">
-              <label className="text-xs text-neutral-500 mb-1 block">Foto da Arma</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Foto da Arma</label>
               {form.photoData ? (
                 <div className="flex items-center gap-2">
                   <img src={form.photoData} alt="Foto da arma" className="w-10 h-10 rounded object-cover border border-neutral-200" />
@@ -557,7 +557,7 @@ function WeaponForm({ weapon, onClose }: { weapon?: Weapon; onClose: () => void 
           </div>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-weapon-notes" />
         </div>
         <div className="flex gap-3">
@@ -631,8 +631,8 @@ function AssignWeaponModal({ weapon, open, onClose }: { weapon: Weapon; open: bo
           ) : (
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Selecione o Agente *</label>
-                <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-assign-employee">
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Selecione o Agente *</label>
+                <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-assign-employee">
                   <option value="">Selecione...</option>
                   {activeEmployees.map(e => <option key={e.id} value={e.id}>{e.matricula} - {e.name}</option>)}
                 </select>
@@ -665,7 +665,7 @@ function AssignWeaponModal({ weapon, open, onClose }: { weapon: Weapon; open: bo
                       </span>
                       {h.notes && <span className="text-xs text-neutral-400 ml-2">({h.notes})</span>}
                     </div>
-                    <span className="text-[10px] text-neutral-400">
+                    <span className="text-xs text-neutral-500">
                       {h.createdAt ? new Date(h.createdAt).toLocaleDateString("pt-BR") + " " + new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
                     </span>
                   </div>
@@ -718,15 +718,15 @@ function WeaponGroupTable({
         <thead className="bg-neutral-50 border-b border-neutral-200">
           <tr>
             <th className="text-left p-3 font-medium text-neutral-600 w-10"></th>
-            <th className="text-left p-3 font-medium text-neutral-600">Marca / Modelo</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Calibre</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Nº Série</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Registro</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Val. Registro</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Kit</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Agente</th>
-            <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-            <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Marca / Modelo</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Calibre</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nº Série</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Registro</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Val. Registro</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agente</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -768,7 +768,7 @@ function WeaponGroupTable({
                 </td>
                 <td className="p-3">
                   {kitName ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] bg-neutral-900 text-white rounded px-2 py-0.5 font-semibold whitespace-nowrap" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                    <span className="inline-flex items-center gap-1 text-xs bg-neutral-900 text-white rounded px-2 py-0.5 font-semibold whitespace-nowrap">
                       <Package className="w-3 h-3" />
                       {kitName}
                     </span>
@@ -864,7 +864,7 @@ function KitFormDialog({ open, onClose, kit, weapons, allKits }: { open: boolean
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle style={{ fontFamily: "'Montserrat', sans-serif" }}>{kit ? "Editar Kit" : "Novo Kit de Armamento"}</DialogTitle>
+          <DialogTitle>{kit ? "Editar Kit" : "Novo Kit de Armamento"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div>
@@ -893,7 +893,7 @@ function KitFormDialog({ open, onClose, kit, weapons, allKits }: { open: boolean
                     <div className="text-sm font-semibold text-neutral-900">{w.type} {w.brand} {w.model}</div>
                     <div className="text-xs text-neutral-500">Cal. {w.caliber} · Nº {w.serialNumber}</div>
                   </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${w.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{w.status}</span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${w.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{w.status}</span>
                 </label>
               ))}
             </div>
@@ -971,7 +971,7 @@ function KitDocsModal({ kit, open, onClose }: { kit: EnrichedKit; open: boolean;
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <DialogTitle>
             Documentos — {kit.name}
           </DialogTitle>
         </DialogHeader>
@@ -998,7 +998,7 @@ function KitDocsModal({ kit, open, onClose }: { kit: EnrichedKit; open: boolean;
                       <div className="flex items-center justify-between px-4 py-2 bg-neutral-50 border-b border-neutral-200">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-neutral-400">#{String(idx + 1).padStart(2, "0")}</span>
-                          <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                          <span className="text-sm font-semibold text-neutral-900">
                             {w.type} {w.brand} {w.model}
                           </span>
                           <span className="text-xs text-neutral-500">Cal. {w.caliber} · Nº {w.serialNumber}</span>
@@ -1129,16 +1129,16 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-white text-xs font-bold" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                    <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-white text-xs font-bold">
                       #{String(idx + 1).padStart(2, "0")}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{kit.name}</h3>
+                      <h3 className="font-semibold text-neutral-900">{kit.name}</h3>
                       {kit.description && <p className="text-xs text-neutral-500">{kit.description}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getKitStatusColor(kit)}`}>{getKitStatusLabel(kit)}</span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${getKitStatusColor(kit)}`}>{getKitStatusLabel(kit)}</span>
                     <Button variant="ghost" size="icon" onClick={() => setDocsKit(kit)} title="Documentos das Armas" data-testid={`button-docs-kit-${kit.id}`}>
                       <FileText className="w-4 h-4 text-blue-600" />
                     </Button>
@@ -1176,11 +1176,11 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-neutral-100">
-                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Tipo</th>
-                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Marca/Modelo</th>
-                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Calibre</th>
-                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Nº Série</th>
-                        <th className="px-4 py-2 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-wider">Status</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Marca/Modelo</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Calibre</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Nº Série</th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -1190,7 +1190,7 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
                           <td className="px-4 py-2 text-neutral-700">{item.weapon.brand} {item.weapon.model}</td>
                           <td className="px-4 py-2 text-neutral-700">{item.weapon.caliber}</td>
                           <td className="px-4 py-2 font-mono text-neutral-600 text-xs">{item.weapon.serialNumber}</td>
-                          <td className="px-4 py-2"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.weapon.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{item.weapon.status}</span></td>
+                          <td className="px-4 py-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${item.weapon.status === "disponível" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{item.weapon.status}</span></td>
                         </tr>
                       ) : null)}
                     </tbody>
@@ -1271,7 +1271,7 @@ export default function WeaponsPage() {
         <button
           className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 ${activeTab === "armas" ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
           onClick={() => setActiveTab("armas")}
-          style={{ fontFamily: "'Montserrat', sans-serif" }}
+         
           data-testid="tab-armas"
         >
           Armas ({weapons.length})
@@ -1279,7 +1279,7 @@ export default function WeaponsPage() {
         <button
           className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${activeTab === "kits" ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
           onClick={() => setActiveTab("kits")}
-          style={{ fontFamily: "'Montserrat', sans-serif" }}
+         
           data-testid="tab-kits"
         >
           <Package className="w-4 h-4" /> Kits

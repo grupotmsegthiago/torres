@@ -60,7 +60,7 @@ function ResultCard({ title, icon, data, loading }: { title: string; icon: React
       <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center gap-2">
         {icon}
         <span className="text-sm font-medium text-neutral-700">{title}</span>
-        <Badge variant={data.success ? "secondary" : "destructive"} className="ml-auto text-[10px]">
+        <Badge variant={data.success ? "secondary" : "destructive"} className="ml-auto text-xs">
           {data.success ? "OK" : "Erro"}
         </Badge>
       </div>
@@ -188,8 +188,8 @@ function DataJudTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-sm font-medium text-neutral-900" data-testid={`text-process-number-${i}`}>{formatProcessNumber(p.numeroProcesso)}</span>
-                        <Badge variant="outline" className="text-[10px]">{p.tribunal}</Badge>
-                        <Badge variant="secondary" className="text-[10px]">{p.grau}</Badge>
+                        <Badge variant="outline" className="text-xs">{p.tribunal}</Badge>
+                        <Badge variant="secondary" className="text-xs">{p.grau}</Badge>
                       </div>
                       <p className="text-xs text-neutral-600 mt-1">{p.classe}</p>
                       {p.assuntos && <p className="text-xs text-neutral-400 mt-0.5">{p.assuntos}</p>}
@@ -496,7 +496,7 @@ function LogsTab() {
         <div className="p-4 border-b border-neutral-100 bg-neutral-50 flex items-center gap-2">
           <ScrollText className="w-4 h-4 text-neutral-600" />
           <span className="text-sm font-medium text-neutral-700">Logs de Consumo da API</span>
-          <Badge variant="secondary" className="ml-auto text-[10px]">{logs.length} registros</Badge>
+          <Badge variant="secondary" className="ml-auto text-xs">{logs.length} registros</Badge>
         </div>
         {isLoading ? (
           <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin text-neutral-400 mx-auto" /></div>
@@ -522,9 +522,9 @@ function LogsTab() {
                       {l.createdAt ? new Date(l.createdAt).toLocaleString("pt-BR") : "-"}
                     </td>
                     <td className="p-2.5 text-neutral-800 font-mono">{l.endpoint}</td>
-                    <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{l.method}</Badge></td>
+                    <td className="p-2.5"><Badge variant="outline" className="text-xs">{l.method}</Badge></td>
                     <td className="p-2.5">
-                      <Badge variant={l.responseStatus >= 200 && l.responseStatus < 300 ? "secondary" : "destructive"} className="text-[10px]">
+                      <Badge variant={l.responseStatus >= 200 && l.responseStatus < 300 ? "secondary" : "destructive"} className="text-xs">
                         {l.responseStatus || "—"}
                       </Badge>
                     </td>
@@ -543,7 +543,7 @@ function LogsTab() {
 function InfoField({ label, value, testId }: { label: string; value?: string; testId: string }) {
   return (
     <div>
-      <p className="text-[10px] text-neutral-400 mb-0.5">{label}</p>
+      <p className="text-xs text-neutral-400 mb-0.5">{label}</p>
       <p className="text-sm text-neutral-800 font-medium" data-testid={testId}>{value || "-"}</p>
     </div>
   );
@@ -649,13 +649,13 @@ function TestarTodasTab() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-neutral-900">{name}</p>
-                    <p className="text-[10px] text-neutral-400">
+                    <p className="text-xs text-neutral-400">
                       Status HTTP: {r.status || "N/A"}
                       {r.error && ` — ${r.error}`}
                       {r.data?.error && typeof r.data.error === "string" && ` — ${r.data.error}`}
                     </p>
                   </div>
-                  <Badge variant={r.success ? "secondary" : "destructive"} className="text-[10px] shrink-0">
+                  <Badge variant={r.success ? "secondary" : "destructive"} className="text-xs shrink-0">
                     {r.success ? "OK" : "ERRO"}
                   </Badge>
                 </div>

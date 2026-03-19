@@ -251,7 +251,7 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
             <Users className="w-7 h-7 text-background" />
           </div>
           <p className="text-sm font-bold text-foreground" data-testid="text-employee1-name">{formatName(mission.employee1Name)}</p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Agente 1</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Agente 1</p>
         </div>
 
         <div className="text-muted-foreground font-bold text-xl">+</div>
@@ -261,7 +261,7 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
             <Users className="w-7 h-7 text-background" />
           </div>
           <p className="text-sm font-bold text-foreground" data-testid="text-employee2-name">{formatName(mission.employee2Name)}</p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Agente 2</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Agente 2</p>
         </div>
       </div>
 

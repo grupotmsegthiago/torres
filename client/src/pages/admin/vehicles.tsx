@@ -105,7 +105,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Placa *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Placa *</label>
           <div className="relative">
             <Input
               value={form.plate}
@@ -132,39 +132,39 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
               )}
             </div>
           </div>
-          {!vehicle && <p className="text-[10px] text-neutral-400 mt-1">Digite a placa completa para buscar automaticamente</p>}
+          {!vehicle && <p className="text-xs text-neutral-500 mt-1.5">Digite a placa completa para buscar automaticamente</p>}
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Marca *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Marca *</label>
           <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} required data-testid="input-vehicle-brand" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Modelo *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Modelo *</label>
           <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required data-testid="input-vehicle-model" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Ano</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Ano</label>
           <Input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: Number(e.target.value) })} data-testid="input-vehicle-year" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Cor</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cor</label>
           <Input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} data-testid="input-vehicle-color" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">KM Atual</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Atual</label>
           <Input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: Number(e.target.value) })} data-testid="input-vehicle-km" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Chassi</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Chassi</label>
           <Input value={form.chassi} onChange={(e) => setForm({ ...form, chassi: e.target.value })} data-testid="input-vehicle-chassi" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">RENAVAM</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RENAVAM</label>
           <Input value={form.renavam} onChange={(e) => setForm({ ...form, renavam: e.target.value })} data-testid="input-vehicle-renavam" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-vehicle-status">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
+          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-vehicle-status">
             <option value="disponível">Disponível</option>
             <option value="em_uso">Em Uso</option>
             <option value="manutenção">Manutenção</option>
@@ -178,8 +178,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Tipo de Rastreador</label>
-              <select value={form.trackerType} onChange={(e) => setForm({ ...form, trackerType: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-tracker-type">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo de Rastreador</label>
+              <select value={form.trackerType} onChange={(e) => setForm({ ...form, trackerType: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-tracker-type">
                 <option value="truckscontrol">TrucksControl</option>
                 <option value="custom">OnixSat</option>
                 <option value="none">Sem Rastreador</option>
@@ -188,7 +188,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             {form.trackerType === "truckscontrol" && (
               <>
                 <div>
-                  <label className="text-xs text-neutral-500 mb-1 block">Identificador TrucksControl</label>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Identificador TrucksControl</label>
                   <Input value={form.truckscontrolIdentifier} onChange={(e) => setForm({ ...form, truckscontrolIdentifier: e.target.value })} placeholder="Usa placa se vazio" data-testid="input-tc-identifier" />
                 </div>
                 <div className="flex items-end">
@@ -226,11 +226,11 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             {form.trackerType === "custom" && (
               <>
                 <div>
-                  <label className="text-xs text-neutral-500 mb-1 block">ID Rastreador</label>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">ID Rastreador</label>
                   <Input value={form.trackerId} onChange={(e) => setForm({ ...form, trackerId: e.target.value })} placeholder="ID do dispositivo" data-testid="input-vehicle-tracker" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="text-xs text-neutral-500 mb-1 block">URL API Rastreador</label>
+                  <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">URL API Rastreador</label>
                   <Input value={form.trackerApiUrl} onChange={(e) => setForm({ ...form, trackerApiUrl: e.target.value })} placeholder="https://api.rastreador.com/..." data-testid="input-vehicle-tracker-url" />
                 </div>
               </>
@@ -263,7 +263,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
                   ) : (
                     <label className="w-full aspect-[4/3] rounded-lg border-2 border-dashed border-neutral-300 bg-white flex flex-col items-center justify-center cursor-pointer hover:border-neutral-400 hover:bg-neutral-50 transition-colors">
                       <ImageIcon className="w-6 h-6 text-neutral-300 mb-1" />
-                      <span className="text-[10px] text-neutral-400">Clique para enviar</span>
+                      <span className="text-xs text-neutral-500">Clique para enviar</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -289,7 +289,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
           </div>
         </div>
         <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-vehicle-notes" />
         </div>
         <div className="md:col-span-3 flex gap-3">
@@ -379,8 +379,8 @@ function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; 
           ) : (
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Selecione o Agente *</label>
-                <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-assign-vehicle-employee">
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Selecione o Agente *</label>
+                <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-assign-vehicle-employee">
                   <option value="">Selecione...</option>
                   {activeEmployees.map(e => <option key={e.id} value={e.id}>{e.matricula} - {e.name}</option>)}
                 </select>
@@ -417,7 +417,7 @@ function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; 
                       {h.kmAtAction && <span className="text-xs text-neutral-400 ml-2">{h.kmAtAction.toLocaleString()} km</span>}
                       {h.notes && <span className="text-xs text-neutral-400 ml-1">- {h.notes}</span>}
                     </div>
-                    <span className="text-[10px] text-neutral-400 shrink-0">
+                    <span className="text-xs text-neutral-500 shrink-0">
                       {h.createdAt ? new Date(h.createdAt).toLocaleDateString("pt-BR") + " " + new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
                     </span>
                   </div>
@@ -485,12 +485,12 @@ export default function VehiclesPage() {
             <table className="w-full text-sm" data-testid="table-vehicles">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Placa</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Veículo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">KM</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Média</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Placa</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Veículo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Média</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>

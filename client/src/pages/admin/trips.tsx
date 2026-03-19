@@ -62,37 +62,37 @@ function TripForm({ trip, vehicles, employees, orders, onClose }: {
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Ordem de Serviço</label>
-          <select value={form.serviceOrderId || ""} onChange={(e) => setForm({ ...form, serviceOrderId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-trip-os">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Ordem de Serviço</label>
+          <select value={form.serviceOrderId || ""} onChange={(e) => setForm({ ...form, serviceOrderId: e.target.value ? Number(e.target.value) : null })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-trip-os">
             <option value="">Nenhuma</option>
             {orders.map((o) => <option key={o.id} value={o.id}>{o.osNumber}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Veículo *</label>
-          <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-trip-vehicle">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Veículo *</label>
+          <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-trip-vehicle">
             <option value={0}>Selecione...</option>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Motorista *</label>
-          <select value={form.driverId} onChange={(e) => setForm({ ...form, driverId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-trip-driver">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motorista *</label>
+          <select value={form.driverId} onChange={(e) => setForm({ ...form, driverId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-trip-driver">
             <option value={0}>Selecione...</option>
             {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Origem *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Origem *</label>
           <Input value={form.origin} onChange={(e) => setForm({ ...form, origin: e.target.value })} required data-testid="input-trip-origin" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Destino *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Destino *</label>
           <Input value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} required data-testid="input-trip-destination" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-trip-status">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
+          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-trip-status">
             <option value="planejada">Planejada</option>
             <option value="em_andamento">Em Andamento</option>
             <option value="concluída">Concluída</option>
@@ -100,23 +100,23 @@ function TripForm({ trip, vehicles, employees, orders, onClose }: {
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Data/Hora Saída</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data/Hora Saída</label>
           <Input type="datetime-local" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} data-testid="input-trip-start" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Data/Hora Chegada</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data/Hora Chegada</label>
           <Input type="datetime-local" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} data-testid="input-trip-end" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">KM Saída</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Saída</label>
           <Input type="number" value={form.kmStart} onChange={(e) => setForm({ ...form, kmStart: Number(e.target.value) })} data-testid="input-trip-km-start" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">KM Chegada</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Chegada</label>
           <Input type="number" value={form.kmEnd} onChange={(e) => setForm({ ...form, kmEnd: Number(e.target.value) })} data-testid="input-trip-km-end" />
         </div>
         <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-trip-notes" />
         </div>
         <div className="md:col-span-3 flex gap-3">
@@ -171,13 +171,13 @@ export default function TripsPage() {
             <table className="w-full text-sm" data-testid="table-trips">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Veículo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Motorista</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Origem</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Destino</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">KM</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Veículo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Origem</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Destino</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>

@@ -62,19 +62,19 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }} className="space-y-4">
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Usuário *</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Usuário *</label>
             <Input value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="Ex: joao.silva" data-testid="input-access-username" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Senha *</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Senha *</label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Senha de acesso" data-testid="input-access-password" />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Perfil</label>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Perfil</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200"
               data-testid="select-access-role"
             >
               <option value="funcionario">Funcionário</option>
@@ -137,15 +137,15 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Salário Base (R$) *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Salário Base (R$) *</label>
               <Input type="number" step="0.01" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: e.target.value })} required data-testid="input-salary-value" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Data Vigência *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Vigência *</label>
               <Input type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} required data-testid="input-salary-date" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Motivo</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motivo</label>
               <Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Ex: Promoção, Reajuste" data-testid="input-salary-reason" />
             </div>
             <div className="flex items-end">
@@ -347,8 +347,8 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
             <legend className="text-xs font-semibold text-neutral-600 px-2">Adicionar Documento</legend>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Tipo *</label>
-                <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-doc-type">
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo *</label>
+                <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-doc-type">
                   <option value="CNH">CNH</option>
                   <option value="CNV">CNV</option>
                   <option value="Comprovante de Residência">Comprovante de Residência</option>
@@ -358,19 +358,19 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                 </select>
               </div>
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Nº Documento</label>
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nº Documento</label>
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Número" data-testid="input-doc-number" />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Data Emissão</label>
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Emissão</label>
                 <Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue" />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Validade *</label>
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade *</label>
                 <Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 mb-1 block">Foto/PDF</label>
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Foto/PDF</label>
                 <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc">
                   <Upload className="w-3 h-3 mr-1" /> {docForm.fileName || "Anexar"}
                 </Button>
@@ -804,13 +804,13 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
                       <div className="flex flex-col items-center gap-1 py-1">
                         <CheckCircle2 className="w-6 h-6 text-green-500" />
                         <p className="text-xs font-medium text-green-700">{label} anexada</p>
-                        <p className="text-[10px] text-green-600 truncate max-w-full">{att.fileName}</p>
+                        <p className="text-xs text-green-600 truncate max-w-full">{att.fileName}</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1 py-1">
                         <Icon className="w-6 h-6 text-neutral-400" />
                         <p className="text-xs font-medium text-neutral-600">{label}</p>
-                        <p className="text-[10px] text-neutral-400">{desc}</p>
+                        <p className="text-xs text-neutral-500">{desc}</p>
                       </div>
                     )}
                   </div>
@@ -858,15 +858,15 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           </div>
           <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Matrícula</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Matrícula</label>
               <Input value={displayMatricula} disabled className="bg-neutral-50 font-mono" data-testid="input-employee-matricula" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Status</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
               <select value={form.status} onChange={(e) => {
                 const newStatus = e.target.value;
                 setForm({ ...form, status: newStatus, blockType: newStatus !== "bloqueado_definitivo" ? "" : form.blockType, blockReason: newStatus !== "bloqueado_definitivo" ? "" : form.blockReason });
-              }} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-status">
+              }} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-status">
                 <option value="ativo">Ativo</option>
                 <option value="inativo">Inativo</option>
                 <option value="férias">Férias</option>
@@ -875,8 +875,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               </select>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Cargo *</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-employee-role">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cargo *</label>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-employee-role">
                 {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -895,7 +895,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
                 <select
                   value={form.blockType}
                   onChange={(e) => setForm({ ...form, blockType: e.target.value })}
-                  className="w-full border border-red-200 rounded-md px-3 py-2 text-sm bg-white"
+                  className="w-full h-10 border border-red-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/10 outline-none transition-all duration-200"
                   data-testid="select-employee-block-type"
                 >
                   <option value="">Selecione...</option>
@@ -923,7 +923,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           <legend className="text-xs font-semibold text-neutral-600 px-2">Dados Pessoais</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="relative">
-              <label className="text-xs text-neutral-500 mb-1 block">CPF *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CPF *</label>
               <div className="flex gap-1">
                 <Input
                   value={form.cpf}
@@ -938,39 +938,39 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
               </div>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">RG *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RG *</label>
               <Input value={form.rg} onChange={(e) => setForm({ ...form, rg: e.target.value })} required data-testid="input-employee-rg" />
             </div>
             <div className="md:col-span-1">
-              <label className="text-xs text-neutral-500 mb-1 block">Nome Completo *</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome Completo *</label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="input-employee-name" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Data de Nascimento</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Nascimento</label>
               <Input type="date" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} data-testid="input-employee-birth" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Nacionalidade</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nacionalidade</label>
               <Input value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} placeholder="Brasileira" data-testid="input-employee-nationality" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Estado Civil</label>
-              <select value={form.maritalStatus} onChange={(e) => setForm({ ...form, maritalStatus: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-marital">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Estado Civil</label>
+              <select value={form.maritalStatus} onChange={(e) => setForm({ ...form, maritalStatus: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-marital">
                 <option value="">Selecione</option>
                 {ESTADO_CIVIL.map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Nome da Mãe</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome da Mãe</label>
               <Input value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} data-testid="input-employee-mother" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Nome do Pai</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome do Pai</label>
               <Input value={form.fatherName} onChange={(e) => setForm({ ...form, fatherName: e.target.value })} data-testid="input-employee-father" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Escolaridade</label>
-              <select value={form.education} onChange={(e) => setForm({ ...form, education: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-education">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Escolaridade</label>
+              <select value={form.education} onChange={(e) => setForm({ ...form, education: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-education">
                 <option value="">Selecione</option>
                 {ESCOLARIDADE.map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
@@ -982,15 +982,15 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           <legend className="text-xs font-semibold text-neutral-600 px-2">Contato e Endereço</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Telefone</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="input-employee-phone" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">E-mail</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail</label>
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-employee-email" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Endereço</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Endereço</label>
               <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-employee-address" />
             </div>
           </div>
@@ -1000,29 +1000,29 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           <legend className="text-xs font-semibold text-neutral-600 px-2">Documentos e Profissional</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">CNH</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNH</label>
               <Input value={form.cnhNumber} onChange={(e) => setForm({ ...form, cnhNumber: e.target.value })} data-testid="input-employee-cnh" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">PIS</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">PIS</label>
               <Input value={form.pis} onChange={(e) => setForm({ ...form, pis: e.target.value })} data-testid="input-employee-pis" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Categoria</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-category">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Categoria</label>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-category">
                 {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Data de Admissão</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data de Admissão</label>
               <Input type="date" value={form.hireDate} onChange={(e) => setForm({ ...form, hireDate: e.target.value })} data-testid="input-employee-hire" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Vencimento de Férias</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Vencimento de Férias</label>
               <Input type="date" value={form.vacationExpiry} onChange={(e) => setForm({ ...form, vacationExpiry: e.target.value })} data-testid="input-employee-vacation" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Sindicato</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Sindicato</label>
               <Input value={form.sindicato} onChange={(e) => setForm({ ...form, sindicato: e.target.value })} data-testid="input-employee-sindicato" />
             </div>
           </div>
@@ -1032,32 +1032,32 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           <legend className="text-xs font-semibold text-neutral-600 px-2">Dados Bancários / Pagamento</legend>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Forma de Pagamento</label>
-              <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-employee-payment">
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Forma de Pagamento</label>
+              <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-employee-payment">
                 {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Banco</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Banco</label>
               <Input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} placeholder="Ex: Itaú, Bradesco" data-testid="input-employee-bank" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Agência</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Agência</label>
               <Input value={form.bankAgency} onChange={(e) => setForm({ ...form, bankAgency: e.target.value })} data-testid="input-employee-agency" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Conta</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Conta</label>
               <Input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} data-testid="input-employee-account" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">Chave PIX</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Chave PIX</label>
               <Input value={form.pixKey} onChange={(e) => setForm({ ...form, pixKey: e.target.value })} placeholder="CPF, e-mail, celular ou chave aleatória" data-testid="input-employee-pix" />
             </div>
           </div>
         </fieldset>
 
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-employee-notes" />
         </div>
 
@@ -1136,15 +1136,15 @@ export default function EmployeesPage() {
             <table className="w-full text-sm" data-testid="table-employees">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Foto</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Matrícula</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Nome</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">CPF</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Cargo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Categoria</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Telefone</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Foto</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Matrícula</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Telefone</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1176,7 +1176,7 @@ export default function EmployeesPage() {
                           "bg-neutral-100 text-neutral-600"
                         }`}>{e.status === "bloqueado_definitivo" ? "Bloqueado" : e.status}</span>
                         {e.status === "bloqueado_definitivo" && isDiretoria && e.blockType && (
-                          <span className="text-[10px] text-red-500 font-medium" title={e.blockReason || ""}>
+                          <span className="text-xs text-red-500 font-medium" title={e.blockReason || ""}>
                             {e.blockType === "criminal" ? "Criminal" : e.blockType === "processo" ? "Processo" : e.blockType === "ambos" ? "Criminal + Processo" : e.blockType}
                           </span>
                         )}

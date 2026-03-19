@@ -99,7 +99,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">CNPJ</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNPJ</label>
           <div className="relative">
             <Input
               value={form.cnpj}
@@ -123,46 +123,46 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               </button>
             )}
           </div>
-          <p className="text-[10px] text-neutral-400 mt-1">Digite o CNPJ para preencher automaticamente</p>
+          <p className="text-xs text-neutral-500 mt-1.5">Digite o CNPJ para preencher automaticamente</p>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Nome / Razão Social *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome / Razão Social *</label>
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="input-client-name" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">CPF</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CPF</label>
           <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} data-testid="input-client-cpf" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">E-mail</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail</label>
           <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-client-email" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Telefone</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
           <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="input-client-phone" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Pessoa de Contato</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Pessoa de Contato</label>
           <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} data-testid="input-client-contact" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">CEP</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CEP</label>
           <Input value={form.zip} onChange={(e) => setForm({ ...form, zip: e.target.value })} data-testid="input-client-zip" />
         </div>
         <div className="md:col-span-2">
-          <label className="text-xs text-neutral-500 mb-1 block">Endereço</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Endereço</label>
           <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-client-address" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Cidade</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cidade</label>
           <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} data-testid="input-client-city" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Estado</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Estado</label>
           <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} data-testid="input-client-state" />
         </div>
         <div className="md:col-span-2">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-client-notes" />
         </div>
         <div className="md:col-span-2 flex gap-3">
@@ -306,7 +306,7 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
                         {result.companyInfo.socios.map((s: any, i: number) => (
                           <div key={i} className="px-4 py-2.5 flex items-center justify-between">
                             <span className="text-sm text-neutral-900 font-medium">{s.nome}</span>
-                            <span className="text-[10px] text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">{s.qualificacao}</span>
+                            <span className="text-xs text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">{s.qualificacao}</span>
                           </div>
                         ))}
                       </div>
@@ -358,7 +358,7 @@ function InfoRow({ label, value, icon, highlight, full }: { label: string; value
   if (!value) return null;
   return (
     <div className={full ? "col-span-2" : ""}>
-      <p className="text-[10px] text-neutral-400 mb-0.5">{label}</p>
+      <p className="text-xs text-neutral-500 mb-1">{label}</p>
       <div className="flex items-center gap-1">
         {icon && <span className="text-neutral-400">{icon}</span>}
         <p className={`text-xs font-medium ${
@@ -426,11 +426,11 @@ export default function ClientsPage() {
             <table className="w-full text-sm" data-testid="table-clients">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Nome</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">CNPJ/CPF</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Telefone</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Cidade</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CNPJ/CPF</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Telefone</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cidade</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>

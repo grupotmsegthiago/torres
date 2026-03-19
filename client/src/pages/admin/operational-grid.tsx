@@ -510,7 +510,7 @@ function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
         <p className="font-bold text-sm">{v.brand} {v.model} {v.year || ""}</p>
         <p><span className="text-neutral-500">Placa:</span> <span className="font-mono">{v.plate}</span></p>
         {v.color && <p><span className="text-neutral-500">Cor:</span> {v.color}</p>}
-        {v.chassi && <p><span className="text-neutral-500">Chassi:</span> <span className="font-mono text-[10px]">{v.chassi}</span></p>}
+        {v.chassi && <p><span className="text-neutral-500">Chassi:</span> <span className="font-mono text-xs">{v.chassi}</span></p>}
         {v.renavam && <p><span className="text-neutral-500">Renavam:</span> <span className="font-mono">{v.renavam}</span></p>}
         {v.km != null && v.km > 0 && <p><span className="text-neutral-500">KM:</span> {v.km.toLocaleString("pt-BR")}</p>}
         <hr className="border-neutral-200 my-1" />
@@ -963,17 +963,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           <table className="w-full" data-testid="table-vehicles-tracking" style={{ fontFamily: "'Inter', sans-serif" }}>
             <thead>
               <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap w-10">#</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Viatura</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap w-10">#</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Motor Parado</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Viatura</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -1007,22 +1007,22 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       <div className="flex items-center gap-2.5">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={`font-extrabold text-[13px] tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                            <span className={`font-extrabold text-[13px] tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
                               {v.plate}
                             </span>
                             {rodizio && (
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <span className="text-[8px] px-1.5 py-0.5 bg-red-600 text-white rounded font-bold uppercase animate-pulse shadow-sm">Rodízio SP</span>
+                                  <span className="text-[10px] px-2 py-0.5 bg-red-600 text-white rounded font-bold uppercase animate-pulse shadow-sm">Rodízio SP</span>
                                 </TooltipTrigger>
                                 <TooltipContent>Veículo em rodízio hoje em São Paulo (7h-10h / 17h-20h)</TooltipContent>
                               </Tooltip>
                             )}
                             {v.trackerType === "truckscontrol" && (
-                              <span className="text-[8px] px-1.5 py-0.5 bg-blue-600 text-white rounded font-bold uppercase">TC</span>
+                              <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-bold uppercase">TC</span>
                             )}
                             {isOverSpeed && (
-                              <span className="text-[8px] px-1.5 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
+                              <span className="text-[10px] px-2 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
                                 {v.tracker!.speed} km/h
                               </span>
                             )}
@@ -1144,7 +1144,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {v.activeOs.employee1 && (
                             <div className="flex items-center gap-1.5">
                               <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
-                              <span className="font-bold text-[12px] text-neutral-900 leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                              <span className="font-bold text-[12px] text-neutral-900 leading-tight">
                                 {v.activeOs.employee1.name}
                               </span>
                               {v.activeOs.employee1.phone && (
@@ -1159,7 +1159,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           )}
                           {v.activeOs.employee2 && (
                             <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
-                              <span className="font-semibold text-[11px] text-neutral-500 leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                              <span className="font-semibold text-[11px] text-neutral-500 leading-tight">
                                 {v.activeOs.employee2.name}
                               </span>
                               {v.activeOs.employee2.phone && (
@@ -1183,7 +1183,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       {v.activeOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid={`link-os-vehicle-${v.id}`}>
+                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-vehicle-${v.id}`}>
                               {v.activeOs.osNumber}
                             </Link>
                             {hasLocation && (
@@ -1204,28 +1204,28 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <TooltipContent>Ver veículos próximos</TooltipContent>
                               </Tooltip>
                             )}
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
+                            <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
                               getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
                             }`}>
                               {getMissionLabel(v.activeOs.missionStatus)}
                             </span>
                           </div>
-                          <p className="text-[10px] text-neutral-400 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
+                          <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
                           </p>
                         </div>
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid={`link-os-scheduled-${v.id}`}>
+                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-scheduled-${v.id}`}>
                               {v.scheduledOs.osNumber}
                             </Link>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold border bg-slate-50 text-slate-600 border-slate-200">
+                            <span className="text-xs px-2 py-0.5 rounded font-bold border bg-slate-50 text-slate-600 border-slate-200">
                               Agendada
                             </span>
                           </div>
                           {v.scheduledOs.scheduledDate && (
-                            <p className="text-[10px] text-neutral-400 font-medium">
+                            <p className="text-xs text-neutral-500 font-medium">
                               {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
@@ -1240,7 +1240,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         const vStatus = getViaturaStatus(v);
                         const VIcon = vStatus.icon;
                         return (
-                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${vStatus.className}`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
                             <VIcon className="w-3 h-3" />
                             {vStatus.label}
                           </span>
@@ -1291,14 +1291,14 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
             <table className="w-full" data-testid="table-spy-tracking" style={{ fontFamily: "'Inter', sans-serif" }}>
               <thead>
                 <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Série</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Descrição</th>
-                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Bateria</th>
-                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Acoplado</th>
-                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Km/h</th>
-                  <th className="px-3 py-2.5 text-center text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-extrabold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Série</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Descrição</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Bateria</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Acoplado</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Km/h</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -1313,8 +1313,8 @@ function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
                     <tr key={s.id} className={`transition-colors ${index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"}`} data-testid={`row-spy-${s.id}`}>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-extrabold text-[13px] text-violet-700 tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }}>{s.plate}</span>
-                          <span className="text-[8px] px-1.5 py-0.5 bg-violet-600 text-white rounded font-bold uppercase">SPY</span>
+                          <span className="font-extrabold text-[13px] text-violet-700 tracking-wide">{s.plate}</span>
+                          <span className="text-[10px] px-2 py-0.5 bg-violet-600 text-white rounded font-bold uppercase">SPY</span>
                         </div>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-[12px] font-medium text-neutral-700">{s.model}</td>
@@ -1508,11 +1508,11 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-blue-600" />
-            <h3 className="text-sm font-bold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            <h3 className="text-sm font-bold text-neutral-900">
               Veículos Próximos — {selected.plate}
             </h3>
             {selected.activeOs && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-neutral-900 text-white">
+              <span className="text-xs px-2 py-0.5 rounded font-bold bg-neutral-900 text-white">
                 {selected.activeOs.osNumber}
               </span>
             )}
@@ -1535,8 +1535,8 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
               >
                 <Car className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-neutral-900 truncate" style={{ fontFamily: "'Montserrat', sans-serif" }}>{v.plate}</p>
-                  <p className="text-[10px] text-neutral-500 font-medium">{v.distance < 1 ? `${Math.round(v.distance * 1000)}m` : `${v.distance.toFixed(1)}km`}</p>
+                  <p className="text-[11px] font-bold text-neutral-900 truncate">{v.plate}</p>
+                  <p className="text-xs text-neutral-500 font-medium">{v.distance < 1 ? `${Math.round(v.distance * 1000)}m` : `${v.distance.toFixed(1)}km`}</p>
                 </div>
               </button>
             ))}
@@ -1597,7 +1597,7 @@ export default function OperationalGridPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-grid-title">
                 Grid Operacional
               </h1>
               <TrucksControlStatus />
@@ -1609,7 +1609,7 @@ export default function OperationalGridPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5" data-testid="countdown-timer">
               <Timer className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Próxima: <span className="font-semibold text-neutral-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>{countdown.display}</span></span>
+              <span>Próxima: <span className="font-semibold text-neutral-700">{countdown.display}</span></span>
               <span className="text-neutral-300">|</span>
               <span>Última: {lastRefreshStr}</span>
             </div>

@@ -62,15 +62,15 @@ function MaintenanceForm({ maintenance, vehicles, onClose }: {
       </div>
       <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Veículo *</label>
-          <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-maintenance-vehicle">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Veículo *</label>
+          <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-maintenance-vehicle">
             <option value={0}>Selecione...</option>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Tipo *</label>
-          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-maintenance-type">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo *</label>
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-maintenance-type">
             <option value="preventiva">Preventiva</option>
             <option value="corretiva">Corretiva</option>
             <option value="troca_oleo">Troca de Óleo</option>
@@ -82,43 +82,43 @@ function MaintenanceForm({ maintenance, vehicles, onClose }: {
           </select>
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Data *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
           <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-maintenance-date" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Custo (R$)</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Custo (R$)</label>
           <Input type="number" step="0.01" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} data-testid="input-maintenance-cost" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">KM Atual</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Atual</label>
           <Input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: Number(e.target.value) })} data-testid="input-maintenance-km" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Próx. Manutenção (KM)</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Próx. Manutenção (KM)</label>
           <Input type="number" value={form.nextMaintenanceKm || ""} onChange={(e) => setForm({ ...form, nextMaintenanceKm: e.target.value ? Number(e.target.value) : null })} data-testid="input-maintenance-next-km" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Próx. Manutenção (Data)</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Próx. Manutenção (Data)</label>
           <Input type="date" value={form.nextMaintenanceDate} onChange={(e) => setForm({ ...form, nextMaintenanceDate: e.target.value })} data-testid="input-maintenance-next-date" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Prestador</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Prestador</label>
           <Input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} data-testid="input-maintenance-provider" />
         </div>
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-maintenance-status">
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
+          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-maintenance-status">
             <option value="agendada">Agendada</option>
             <option value="realizada">Realizada</option>
             <option value="cancelada">Cancelada</option>
           </select>
         </div>
         <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Descrição</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Descrição</label>
           <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-maintenance-description" />
         </div>
         <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-maintenance-notes" />
         </div>
         <div className="md:col-span-3 flex gap-3">
@@ -170,13 +170,13 @@ export default function MaintenancePage() {
             <table className="w-full text-sm" data-testid="table-maintenance">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left p-3 font-medium text-neutral-600">Data</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Veículo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Tipo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Custo</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">KM</th>
-                  <th className="text-left p-3 font-medium text-neutral-600">Status</th>
-                  <th className="text-right p-3 font-medium text-neutral-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Veículo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Custo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
