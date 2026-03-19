@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "i68LQUP0dsB96eUznq5-q"
+uri = "file://public/truckscontrol_debug_login.xml"
+type = "unspecified"
+title = "TrucksControl - Debug Login XML (Envio e Retorno)"

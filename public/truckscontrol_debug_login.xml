@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  RELATÓRIO DE DEBUG - TrucksControl WebService Login
+  Empresa: Torres Vigilância Patrimonial
+  CNPJ: 36.982.392/0001-89
+  URL do WebService: https://webservice.newrastreamentoonline.com.br/
+  Data do teste: 19/03/2026
+  ============================================================
+-->
+
+<!-- =============================== -->
+<!-- TENTATIVA 1                     -->
+<!-- Login: 123400 (Nº Identificação)-->
+<!-- Senha: 211784                   -->
+<!-- =============================== -->
+
+<!-- XML ENVIADO -->
+<Tentativa1_Enviado>
+  <Login>
+    <login>123400</login>
+    <senha>211784</senha>
+  </Login>
+</Tentativa1_Enviado>
+
+<!-- XML RETORNO -->
+<Tentativa1_Retorno>
+  <ErrorRequest>
+    <erro>Atributos para leitura de requisição inválidos. (Atributos, login e/ou senha incorretos.)</erro>
+  </ErrorRequest>
+</Tentativa1_Retorno>
+
+
+<!-- =============================== -->
+<!-- TENTATIVA 2                     -->
+<!-- Login: 36982392000189 (CNPJ)    -->
+<!-- Senha: 211784                   -->
+<!-- =============================== -->
+
+<!-- XML ENVIADO -->
+<Tentativa2_Enviado>
+  <Login>
+    <login>36982392000189</login>
+    <senha>211784</senha>
+  </Login>
+</Tentativa2_Enviado>
+
+<!-- XML RETORNO -->
+<Tentativa2_Retorno>
+  <ResponseLogin>
+    <Login>
+      <login>False</login>
+      <cliente></cliente>
+      <stork>False</stork>
+    </Login>
+  </ResponseLogin>
+</Tentativa2_Retorno>
+
+
+<!-- =============================== -->
+<!-- CONCLUSÃO                       -->
+<!-- =============================== -->
+<!--
+  Tentativa 1 (123400): WebService não reconhece as credenciais.
+  Tentativa 2 (CNPJ):   WebService reconhece o formato mas retorna login=False.
+  
+  Nenhuma das combinações autorizou acesso ao webservice.
+  Solicitar ao suporte TrucksControl as credenciais corretas
+  para integração via webservice (API), que são diferentes
+  das credenciais do portal web.
+-->
