@@ -1,7 +1,7 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Home, Crosshair, ClipboardCheck, UserCircle } from "lucide-react";
-import { TorresLogoIcon } from "@/components/torres-logo";
+import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
 const navItems = [
   { path: "/mobile", label: "Início", icon: Home },
@@ -18,7 +18,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-neutral-50 flex flex-col" data-testid="mobile-layout">
       <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <TorresLogoIcon size={22} />
+          <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />
           <span className="text-sm font-black text-neutral-900 uppercase tracking-wider">Torres</span>
         </div>
         {user && (

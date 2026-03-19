@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { PlacesAutocomplete } from "@/components/places-autocomplete";
-import { TorresLogoIcon, TorresLogo } from "@/components/torres-logo";
+import logoBW from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 import imgTeam from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_1772473176101.jpeg";
 import imgGuardRadio from "@assets/WhatsApp_Image_2026-03-02_at_14.38.49_1772473176101.jpeg";
 import imgEscortRoad from "@assets/WhatsApp_Image_2026-03-02_at_14.36.36_(2)_1772473176100.jpeg";
@@ -52,7 +52,12 @@ function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4 h-20">
           <a href="#hero" className="flex items-center gap-2 shrink-0" data-testid="link-home">
-            <TorresLogoIcon size={36} color="white" />
+            <img
+              src={logoBW}
+              alt="Torres Vigilância Patrimonial"
+              className="h-12 w-auto invert"
+              data-testid="img-nav-logo"
+            />
           </a>
 
           <div className="hidden lg:flex items-center gap-8 flex-wrap">
@@ -454,7 +459,7 @@ function AboutSection() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
               <div className="absolute bottom-4 left-4">
-                  <TorresLogoIcon size={30} color="white" className="drop-shadow-lg" />
+                  <img src={logoBW} alt="Torres" className="h-8 w-auto invert drop-shadow-lg" data-testid="img-about-logo" />
               </div>
             </div>
           </motion.div>
@@ -743,7 +748,7 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-12 grid sm:grid-cols-3 gap-8 items-center">
           <div>
-            <TorresLogoIcon size={32} color="rgba(255,255,255,0.5)" />
+            <img src={logoBW} alt="Torres" className="h-10 w-auto invert opacity-50" data-testid="img-footer-logo" />
           </div>
           <div className="text-center">
             <p className="text-xs text-white/20" data-testid="text-footer-cnpj">

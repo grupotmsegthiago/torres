@@ -10,7 +10,7 @@ import {
   Shield, Car, Users, Clock, Crosshair,
   AlertTriangle, CheckCircle2, Truck, User, Siren,
 } from "lucide-react";
-import { TorresLogoIcon } from "@/components/torres-logo";
+import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
 const MISSION_STEPS = [
   { key: "checkout_armamento", label: "Armamento", screenTitle: "Armamento", screenSub: "CONFERÊNCIA DE ARMAS" },
@@ -113,7 +113,7 @@ function getGeoLocation(): Promise<{ latitude: string; longitude: string } | nul
 function ShieldWatermark() {
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden opacity-[0.04]">
-      <TorresLogoIcon size={400} color="currentColor" />
+      <img src={logoSrc} alt="" className="w-[500px] h-[500px] object-contain" draggable={false} />
     </div>
   );
 }
@@ -476,7 +476,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         <div className="relative z-10 p-5">
           <div className="text-center mb-6">
             <div className="inline-flex items-center gap-2 mb-2">
-              <TorresLogoIcon size={28} />
+              <img src={logoSrc} alt="" className="w-8 h-8 object-contain" />
               <Shield className="w-5 h-5 text-foreground" />
             </div>
             <h1 className="text-2xl font-black text-foreground uppercase tracking-wider leading-tight">
@@ -710,7 +710,7 @@ export default function MissionPage() {
             <ShieldWatermark />
             <div className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] p-6 text-center">
               <div className="inline-flex items-center gap-2 mb-4">
-                <TorresLogoIcon size={36} />
+                <img src={logoSrc} alt="" className="w-10 h-10 object-contain" />
               </div>
               <h1 className="text-2xl font-black text-foreground uppercase tracking-wider mb-2">
                 Área do Vigilante

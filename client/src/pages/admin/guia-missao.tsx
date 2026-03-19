@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useAuth } from "@/hooks/use-auth";
-import { TorresLogoIcon } from "@/components/torres-logo";
+import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 import {
   Shield, Camera, Car, Truck, User, Siren,
   CheckCircle2, ChevronRight, Crosshair, Users, MapPin,
@@ -268,7 +268,7 @@ function PhoneMockup({ step }: { step: typeof steps[0] }) {
         <div className="bg-neutral-50 mx-1 mt-1.5 rounded-t-2xl overflow-hidden border border-neutral-200">
           <div className="bg-neutral-900 px-3 py-1.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <TorresLogoIcon size={12} color="white" />
+              <img src={logoSrc} alt="" className="w-3.5 h-3.5 object-contain rounded-sm invert" />
               <span className="text-[9px] font-black text-white uppercase tracking-widest">Torres</span>
             </div>
             <span className="text-[8px] font-semibold text-neutral-400 uppercase">{step.subtitle.split("·")[0].trim()}</span>
@@ -498,7 +498,7 @@ export default function GuiaMissaoPage() {
     <AdminLayout>
       <div className="max-w-5xl mx-auto pb-20 px-4" data-testid="guia-missao-page">
         <div className="text-center mb-10 pt-6">
-          <div className="flex justify-center mb-4"><TorresLogoIcon size={40} /></div>
+          <div className="flex justify-center mb-4"><img src={logoSrc} alt="Torres" className="w-12 h-12 object-contain mx-auto rounded" /></div>
           <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 uppercase tracking-[0.15em] mb-1" data-testid="text-guia-title">
             Guia Operacional
           </h1>
@@ -594,7 +594,7 @@ export default function GuiaMissaoPage() {
         </div>
 
         <div className="mt-14 border border-neutral-200 rounded-xl p-8 text-center bg-white shadow-sm">
-          <div className="flex justify-center mb-3"><TorresLogoIcon size={34} /></div>
+          <div className="flex justify-center mb-3"><img src={logoSrc} alt="Torres" className="w-10 h-10 object-contain mx-auto rounded" /></div>
           <h3 className="text-sm font-black text-neutral-900 uppercase tracking-[0.15em] mb-1">
             Torres Vigilância Patrimonial
           </h3>
