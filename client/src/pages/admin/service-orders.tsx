@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Truck, Satellite, Camera, Shield } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText } from "lucide-react";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
@@ -85,6 +85,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     assignedEmployee2Id: order?.assignedEmployee2Id || null,
     vehicleId: order?.vehicleId || prefilledVehicleId || null,
     kitId: order?.kitId || null,
+    route: (order as any)?.route || "",
+    requesterName: (order as any)?.requesterName || "",
     notes: order?.notes || "",
   });
 
@@ -117,219 +119,268 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     },
   });
 
-  return (
-    <Card className="p-6 bg-white border-neutral-200 mb-6" data-testid="card-order-form">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">{order ? "Editar OS" : "Nova Ordem de Serviço"}</h2>
-        <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
+  const emp1 = form.assignedEmployeeId ? employees.find(e => e.id === form.assignedEmployeeId) : null;
+  const emp2 = form.assignedEmployee2Id ? employees.find(e => e.id === form.assignedEmployee2Id) : null;
+  const sv = form.vehicleId ? vehicles.find(v => v.id === form.vehicleId) : null;
+  const selectedKit = form.kitId ? kits.find(k => k.id === form.kitId) : null;
+  const photos = sv ? [
+    { label: "Dianteira", src: sv.photoFront },
+    { label: "Lateral Esq.", src: sv.photoLeft },
+    { label: "Traseira", src: sv.photoRear },
+    { label: "Lateral Dir.", src: sv.photoRight },
+  ].filter(p => p.src) : [];
+  const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
+
+  const SectionHeader = ({ icon: Icon, title, extra }: { icon: any; title: string; extra?: any }) => (
+    <div className="bg-neutral-900 px-4 py-2.5 flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-white/60" />
+        <span className="font-bold text-[11px] text-white tracking-[0.12em] uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>{title}</span>
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Número da OS</label>
-          <Input value={form.osNumber} onChange={(e) => setForm({ ...form, osNumber: e.target.value })} required data-testid="input-os-number" />
+      {extra}
+    </div>
+  );
+  const InfoCell = ({ label, children, className = "" }: { label: string; children: any; className?: string }) => (
+    <div className={`px-3 py-2.5 ${className}`}>
+      <span className="text-[9px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>{label}</span>
+      <span className="text-xs font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{children}</span>
+    </div>
+  );
+  const FieldLabel = ({ children }: { children: any }) => (
+    <label className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold mb-1 block" style={{ fontFamily: "'Montserrat', sans-serif" }}>{children}</label>
+  );
+  const selectClass = "w-full border border-neutral-200 rounded px-3 py-2 text-sm bg-white focus:border-neutral-400 focus:ring-1 focus:ring-neutral-200 outline-none transition-colors";
+
+  const AgentSection = ({ emp, label }: { emp: Employee | null | undefined; label: string }) => {
+    if (!emp) return null;
+    return (
+      <div className="border border-neutral-200 rounded-lg overflow-hidden" data-testid={`section-agent-${label.toLowerCase()}`}>
+        <SectionHeader icon={User} title={`Agente: ${emp.name.split(" ")[0].toUpperCase()}`} />
+        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+          <InfoCell label="Nome" className="md:col-span-2 border-r border-neutral-100">{emp.name}</InfoCell>
+          <InfoCell label="CPF" className="border-r border-neutral-100">{emp.cpf || "—"}</InfoCell>
+          <InfoCell label="RG">{emp.rg || "—"}</InfoCell>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Cliente *</label>
-          <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value) })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" required data-testid="select-os-client">
-            <option value={0}>Selecione...</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+          <InfoCell label="Contato" className="border-r border-neutral-100">{emp.phone || "—"}</InfoCell>
+          <InfoCell label="CNH" className="border-r border-neutral-100">{emp.cnhNumber || "—"}</InfoCell>
+          <InfoCell label="Val. CNH" className="border-r border-neutral-100">{(emp as any).cnhExpiry ? new Date((emp as any).cnhExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+          <InfoCell label="Matrícula">{emp.matricula}</InfoCell>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Tipo de Serviço *</label>
-          <Input value="Escolta Armada" readOnly className="bg-neutral-50 text-neutral-700 cursor-default" data-testid="input-os-type" />
-          <input type="hidden" name="type" value="escolta" />
+        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+          <InfoCell label="CNV" className="border-r border-neutral-100">{(emp as any).cnvNumber || "—"}</InfoCell>
+          <InfoCell label="Val. CNV" className="border-r border-neutral-100">{(emp as any).cnvExpiry ? new Date((emp as any).cnvExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+          <InfoCell label="Colete" className="border-r border-neutral-100">{(emp as any).vestNumber || "—"}</InfoCell>
+          <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${new Date((emp as any).vestExpiry).toLocaleDateString("pt-BR")}` : ""}</InfoCell>
         </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white mb-6" data-testid="card-order-form">
+      <div className="bg-neutral-900 px-5 py-4 flex items-center justify-between">
         <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Prioridade</label>
-          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-priority">
-            <option value="imediata">Imediata</option>
-            <option value="agendada">Agendada</option>
-            <option value="reaproveitamento">Reaproveitamento</option>
-          </select>
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-white/60" />
+            <h2 className="text-lg font-bold text-white tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              {order ? "Editar OS" : "Ordem de Serviço"}
+            </h2>
+          </div>
+          <div className="flex items-center gap-4 mt-1">
+            <span className="text-[11px] text-white/70 font-semibold uppercase tracking-wider" style={{ fontFamily: "'Montserrat', sans-serif" }}>Escolta Armada</span>
+            {form.route && <span className="text-[10px] text-white/50">{form.route}</span>}
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Status</label>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-status">
-            <option value="aberta">Aberta</option>
-            <option value="em_andamento">Em Andamento</option>
-            <option value="concluída">Concluída</option>
-            <option value="cancelada">Cancelada</option>
-          </select>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-white/90 tracking-wider" style={{ fontFamily: "'Montserrat', sans-serif" }}>{form.osNumber}</span>
+          <Button variant="ghost" size="icon" onClick={onClose} className="text-white/60 hover:text-white hover:bg-white/10"><X className="w-4 h-4" /></Button>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Data Agendada</label>
-          <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} data-testid="input-os-scheduled" />
+      </div>
+
+      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="p-5 space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <FieldLabel>Nº da OS</FieldLabel>
+            <Input value={form.osNumber} onChange={(e) => setForm({ ...form, osNumber: e.target.value })} required className="text-sm" data-testid="input-os-number" />
+          </div>
+          <div>
+            <FieldLabel>Cliente *</FieldLabel>
+            <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value) })} className={selectClass} required data-testid="select-os-client">
+              <option value={0}>Selecione...</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Solicitante</FieldLabel>
+            <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
+          </div>
+          <div>
+            <FieldLabel>Rota</FieldLabel>
+            <Input value={form.route} onChange={(e) => setForm({ ...form, route: e.target.value })} placeholder="Ex: SP X RJ 400km" className="text-sm" data-testid="input-os-route" />
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Funcionário 1</label>
-          <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-employee">
-            <option value="">Selecione...</option>
-            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-          </select>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <FieldLabel>Data/Hora Início</FieldLabel>
+            <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
+          </div>
+          <div>
+            <FieldLabel>Prioridade</FieldLabel>
+            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={selectClass} data-testid="select-os-priority">
+              <option value="imediata">Imediata</option>
+              <option value="agendada">Agendada</option>
+              <option value="reaproveitamento">Reaproveitamento</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Status</FieldLabel>
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={selectClass} data-testid="select-os-status">
+              <option value="aberta">Aberta</option>
+              <option value="agendada">Agendada</option>
+              <option value="em_andamento">Em Andamento</option>
+              <option value="concluída">Concluída</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </div>
+          {form.status === "concluída" && (
+            <div>
+              <FieldLabel>Data Conclusão</FieldLabel>
+              <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} className="text-sm" data-testid="input-os-completed" />
+            </div>
+          )}
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Funcionário 2</label>
-          <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm({ ...form, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-employee2">
-            <option value="">Selecione...</option>
-            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-          </select>
+
+        <div className="border-t border-neutral-100 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <FieldLabel>Agente 1</FieldLabel>
+              <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee">
+                <option value="">Selecione...</option>
+                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Agente 2</FieldLabel>
+              <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm({ ...form, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee2">
+                <option value="">Selecione...</option>
+                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select>
+            </div>
+          </div>
+          {emp1 && <div className="mb-3"><AgentSection emp={emp1} label="1" /></div>}
+          {emp2 && <div className="mb-3"><AgentSection emp={emp2} label="2" /></div>}
         </div>
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 block">Veículo</label>
-          <select value={form.vehicleId || ""} onChange={(e) => setForm({ ...form, vehicleId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-vehicle">
-            <option value="">Selecione...</option>
-            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}{v.color ? ` · ${v.color}` : ""}</option>)}
-          </select>
-        </div>
-        {form.vehicleId && (() => {
-          const sv = vehicles.find(v => v.id === form.vehicleId);
-          if (!sv) return null;
-          const photos = [
-            { label: "Dianteira", src: sv.photoFront },
-            { label: "Lateral Esq.", src: sv.photoLeft },
-            { label: "Traseira", src: sv.photoRear },
-            { label: "Lateral Dir.", src: sv.photoRight },
-          ].filter(p => p.src);
-          const trackerLabel = sv.trackerType === "truckscontrol" ? "TrucksControl" : sv.trackerType === "custom" ? "OnixSat" : null;
-          const trackerId = sv.truckscontrolIdentifier || sv.trackerId || sv.plate;
-          return (
-            <div className="md:col-span-3 border border-neutral-200 rounded-lg overflow-hidden bg-white" data-testid="section-vehicle-info">
-              <div className="bg-neutral-900 px-5 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Car className="w-5 h-5 text-white/70" />
-                  <span className="font-bold text-[17px] text-white tracking-[0.15em] uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                    {sv.plate}
-                  </span>
-                </div>
-                {trackerLabel && (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded bg-white/10 text-white/90 font-semibold border border-white/20">
+
+        <div className="border-t border-neutral-100 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <FieldLabel>Veículo</FieldLabel>
+              <select value={form.vehicleId || ""} onChange={(e) => setForm({ ...form, vehicleId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-vehicle">
+                <option value="">Selecione...</option>
+                {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}{v.color ? ` · ${v.color}` : ""}</option>)}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Kit de Armamento</FieldLabel>
+              <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-kit">
+                <option value="">Sem kit</option>
+                {kits.filter(k => k.status === "disponível" || (order?.kitId && k.id === order.kitId)).map((k) => (
+                  <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas)</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {sv && (
+            <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3" data-testid="section-vehicle-info">
+              <SectionHeader icon={Car} title="Viatura" extra={
+                trackerLabel && (
+                  <span className="inline-flex items-center gap-1.5 text-[9px] px-2 py-0.5 rounded bg-white/10 text-white/80 font-semibold border border-white/20">
                     <Satellite className="w-3 h-3" />
-                    {trackerLabel} · {trackerId}
+                    {trackerLabel} · {sv.truckscontrolIdentifier || sv.trackerId || sv.plate}
                   </span>
-                )}
+                )
+              } />
+              <div className="grid grid-cols-2 md:grid-cols-5 border-b border-neutral-100">
+                <InfoCell label="Placa" className="border-r border-neutral-100">
+                  <span className="tracking-[0.1em]">{sv.plate}</span>
+                </InfoCell>
+                <InfoCell label="Modelo" className="border-r border-neutral-100">{sv.brand} {sv.model}</InfoCell>
+                <InfoCell label="Cor" className="border-r border-neutral-100">{sv.color || "—"}</InfoCell>
+                <InfoCell label="Frota" className="border-r border-neutral-100">{(sv as any).frota || "—"}</InfoCell>
+                <InfoCell label="Ano">{sv.year || "—"}</InfoCell>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
-                <div className="px-4 py-3 border-r border-neutral-100">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</span>
-                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.brand || "—"}</span>
-                </div>
-                <div className="px-4 py-3 border-r border-neutral-100">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Modelo</span>
-                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.model || "—"}</span>
-                </div>
-                <div className="px-4 py-3 border-r border-neutral-100">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Cor</span>
-                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.color || "—"}</span>
-                </div>
-                <div className="px-4 py-3">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Ano</span>
-                  <span className="text-sm font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{sv.year || "—"}</span>
-                </div>
-              </div>
-              {(sv.chassi || sv.renavam || sv.km) && (
-                <div className="grid grid-cols-3 border-b border-neutral-100">
-                  <div className="px-4 py-3 border-r border-neutral-100">
-                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Chassi</span>
-                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.chassi || "—"}</span>
-                  </div>
-                  <div className="px-4 py-3 border-r border-neutral-100">
-                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>Renavam</span>
-                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.renavam || "—"}</span>
-                  </div>
-                  <div className="px-4 py-3">
-                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block mb-0.5" style={{ fontFamily: "'Montserrat', sans-serif" }}>KM Atual</span>
-                    <span className="text-xs font-medium text-neutral-700 font-mono">{sv.km ? sv.km.toLocaleString("pt-BR") : "—"}</span>
-                  </div>
-                </div>
-              )}
               {photos.length > 0 && (
-                <div className="p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Camera className="w-3.5 h-3.5 text-neutral-400" />
-                    <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Registro Fotográfico</span>
+                <div className="p-3 bg-neutral-50/50">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Camera className="w-3 h-3 text-neutral-400" />
+                    <span className="text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Registro Fotográfico</span>
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {photos.map((p, i) => (
-                      <div key={i} className="group relative">
-                        <div className="aspect-[4/3] rounded-md overflow-hidden border border-neutral-200 bg-neutral-50">
+                      <div key={i} className="group">
+                        <div className="aspect-[4/3] rounded overflow-hidden border border-neutral-200 bg-white">
                           <img src={p.src!} alt={p.label} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                         </div>
-                        <span className="block text-center text-[9px] text-neutral-400 font-semibold uppercase tracking-wider mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>{p.label}</span>
+                        <span className="block text-center text-[8px] text-neutral-400 font-semibold uppercase tracking-wider mt-1" style={{ fontFamily: "'Montserrat', sans-serif" }}>{p.label}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-          );
-        })()}
-        <div>
-          <label className="text-xs text-neutral-500 mb-1 flex items-center gap-1"><Package className="w-3 h-3" /> Kit de Armamento</label>
-          <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className="w-full border border-neutral-200 rounded-md px-3 py-2 text-sm" data-testid="select-os-kit">
-            <option value="">Sem kit</option>
-            {kits.filter(k => k.status === "disponível" || (order?.kitId && k.id === order.kitId)).map((k) => (
-              <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas)</option>
-            ))}
-          </select>
-        </div>
-        {form.kitId && (() => {
-          const selectedKit = kits.find(k => k.id === form.kitId);
-          if (!selectedKit) return null;
-          return (
-            <div className="md:col-span-3 border border-neutral-200 rounded-lg overflow-hidden bg-white" data-testid="section-kit-info">
-              <div className="bg-neutral-800 px-5 py-2.5 flex items-center gap-2.5">
-                <Shield className="w-4 h-4 text-white/70" />
-                <span className="font-bold text-[13px] text-white tracking-wider uppercase" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-                  {selectedKit.name}
-                </span>
-                <span className="text-[10px] text-white/50 font-medium ml-1">{selectedKit.items.length} arma(s)</span>
-              </div>
+          )}
+
+          {selectedKit && (
+            <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3" data-testid="section-kit-info">
+              <SectionHeader icon={Shield} title={selectedKit.name} extra={
+                <span className="text-[9px] text-white/50 font-medium">{selectedKit.items.length} arma(s)</span>
+              } />
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-neutral-50 border-b border-neutral-100">
-                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Tipo</th>
-                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</th>
-                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Calibre</th>
-                    <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Nº Série</th>
+                    <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Armamento</th>
+                    <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Calibre</th>
+                    <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Numeração</th>
+                    <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-neutral-400 font-semibold" style={{ fontFamily: "'Montserrat', sans-serif" }}>Marca</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-50">
+                <tbody className="divide-y divide-neutral-100">
                   {selectedKit.items.map(item => item.weapon ? (
-                    <tr key={item.id} className="hover:bg-neutral-50/50">
-                      <td className="px-4 py-2 font-medium text-neutral-900">{item.weapon.type}</td>
-                      <td className="px-4 py-2 text-neutral-600">{item.weapon.brand}</td>
-                      <td className="px-4 py-2 text-neutral-600 font-mono">{item.weapon.caliber}</td>
-                      <td className="px-4 py-2 text-neutral-600 font-mono font-semibold">{item.weapon.serialNumber}</td>
+                    <tr key={item.id}>
+                      <td className="px-3 py-2 font-semibold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>{item.weapon.type}</td>
+                      <td className="px-3 py-2 text-neutral-600 font-mono">{item.weapon.caliber}</td>
+                      <td className="px-3 py-2 text-neutral-600 font-mono font-semibold">{item.weapon.serialNumber}</td>
+                      <td className="px-3 py-2 text-neutral-600">{item.weapon.brand}</td>
                     </tr>
                   ) : null)}
                 </tbody>
               </table>
             </div>
-          );
-        })()}
-        {form.status === "concluída" && (
+          )}
+        </div>
+
+        <div className="border-t border-neutral-100 pt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">Data de Conclusão</label>
-            <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} data-testid="input-os-completed" />
+            <FieldLabel>Descrição / Informações Complementares</FieldLabel>
+            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="text-sm" data-testid="input-os-description" />
           </div>
-        )}
-        <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Descrição</label>
-          <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} data-testid="input-os-description" />
+          <div>
+            <FieldLabel>Observações</FieldLabel>
+            <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="text-sm" data-testid="input-os-notes" />
+          </div>
         </div>
-        <div className="md:col-span-3">
-          <label className="text-xs text-neutral-500 mb-1 block">Observações</label>
-          <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-os-notes" />
-        </div>
-        <div className="md:col-span-3 flex gap-3">
-          <Button type="submit" disabled={mutation.isPending} data-testid="button-save-order">
-            {mutation.isPending ? "Salvando..." : "Salvar"}
+
+        <div className="border-t border-neutral-100 pt-4 flex items-center gap-3">
+          <Button type="submit" disabled={mutation.isPending} className="bg-neutral-900 hover:bg-neutral-800" data-testid="button-save-order">
+            {mutation.isPending ? "Salvando..." : "Salvar OS"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
       </form>
-    </Card>
+    </div>
   );
 }
 
@@ -481,6 +532,21 @@ export default function ServiceOrdersPage() {
                             <Play className="w-4 h-4 text-green-600" />
                           </Button>
                         )}
+                        <Button variant="ghost" size="icon" onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/service-orders/${o.id}/pdf`, { credentials: "include" });
+                            if (!res.ok) throw new Error("Falha ao gerar PDF");
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `OS_${o.osNumber}.pdf`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          } catch {
+                            toast({ title: "Erro ao baixar PDF", variant: "destructive" });
+                          }
+                        }} title="Baixar PDF" data-testid={`button-pdf-order-${o.id}`}><Download className="w-4 h-4 text-neutral-500" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(o.id)} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                       </div>

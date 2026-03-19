@@ -445,6 +445,221 @@ Para CPF, formate como 000.000.000-00.`
     res.json({ message: "OS removida" });
   });
 
+  app.get("/api/service-orders/:id/pdf", requireAuth, async (req, res) => {
+    try {
+      const PDFDocument = (await import("pdfkit")).default;
+      const os = await storage.getServiceOrder(Number(req.params.id));
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const client = os.clientId ? await storage.getClient(os.clientId) : null;
+      const emp1 = os.assignedEmployeeId ? await storage.getEmployee(os.assignedEmployeeId) : null;
+      const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
+      const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
+      let kitItems: any[] = [];
+      if (os.kitId) {
+        const rawItems = await storage.getWeaponKitItems(os.kitId);
+        kitItems = await Promise.all(rawItems.map(async (item) => {
+          const weapon = await storage.getWeapon(item.weaponId);
+          return { ...item, weapon };
+        }));
+      }
+
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename=OS_${os.osNumber}.pdf`);
+      doc.pipe(res);
+
+      const W = 515;
+      const LM = 40;
+      let y = 40;
+
+      const drawRect = (x: number, yy: number, w: number, h: number, fill: string) => {
+        doc.save().rect(x, yy, w, h).fill(fill).restore();
+      };
+      const drawBorderedRect = (x: number, yy: number, w: number, h: number) => {
+        doc.save().rect(x, yy, w, h).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
+      };
+      const cellLabel = (x: number, yy: number, label: string) => {
+        doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(label.toUpperCase(), x + 4, yy + 3, { width: 120 });
+      };
+      const cellValue = (x: number, yy: number, val: string, w?: number) => {
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#171717").text(val || "—", x + 4, yy + 14, { width: (w || 120) - 8 });
+      };
+
+      drawRect(LM, y, W, 50, "#171717");
+      doc.font("Helvetica-Bold").fontSize(18).fillColor("#ffffff").text("ORDEM DE SERVIÇO", LM + 15, y + 8, { width: W - 30 });
+      doc.font("Helvetica").fontSize(9).fillColor("#ffffff").text(os.osNumber, LM + W - 100, y + 10, { width: 85, align: "right" });
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#ffffff").text("ESCOLTA ARMADA", LM + 15, y + 32, { width: 200 });
+      if (os.route) {
+        doc.font("Helvetica").fontSize(8).fillColor("#d4d4d4").text(os.route, LM + 200, y + 34, { width: W - 215, align: "right" });
+      }
+      y += 55;
+
+      drawRect(LM, y, W, 28, "#f5f5f5");
+      drawBorderedRect(LM, y, W, 28);
+      const halfW = W / 2;
+      cellLabel(LM, y, "EMPRESA CONTRATANTE");
+      cellValue(LM, y, client?.name || "—", halfW);
+      drawBorderedRect(LM + halfW, y, halfW, 28);
+      cellLabel(LM + halfW, y, "SOLICITANTE");
+      cellValue(LM + halfW, y, os.requesterName || "—", halfW);
+      y += 28;
+
+      const thirdW = W / 3;
+      drawRect(LM, y, W, 28, "#fafafa");
+      drawBorderedRect(LM, y, thirdW, 28);
+      cellLabel(LM, y, "DATA INÍCIO");
+      cellValue(LM, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "—", thirdW);
+      drawBorderedRect(LM + thirdW, y, thirdW, 28);
+      cellLabel(LM + thirdW, y, "HORA INÍCIO");
+      cellValue(LM + thirdW, y, os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—", thirdW);
+      drawBorderedRect(LM + thirdW * 2, y, thirdW, 28);
+      cellLabel(LM + thirdW * 2, y, "PRIORIDADE");
+      cellValue(LM + thirdW * 2, y, (os.priority || "").toUpperCase(), thirdW);
+      y += 33;
+
+      const renderAgent = (emp: any, label: string, weapons: any[]) => {
+        drawRect(LM, y, W, 22, "#171717");
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`IDENTIFICAÇÃO DO AGENTE: ${label}`, LM + 10, y + 6, { width: W - 20 });
+        y += 22;
+
+        const col4 = W / 4;
+        const rows = [
+          [
+            { l: "NOME", v: emp?.name || "—" },
+            { l: "CPF", v: emp?.cpf || "—" },
+            { l: "RG", v: emp?.rg || "—" },
+            { l: "CONTATO", v: emp?.phone || "—" },
+          ],
+          [
+            { l: "CNH", v: emp?.cnhNumber || "—" },
+            { l: "VAL CNH", v: emp?.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "—" },
+            { l: "CNV", v: emp?.cnvNumber || "—" },
+            { l: "VAL CNV", v: emp?.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "—" },
+          ],
+        ];
+        for (const row of rows) {
+          for (let i = 0; i < row.length; i++) {
+            drawBorderedRect(LM + i * col4, y, col4, 28);
+            cellLabel(LM + i * col4, y, row[i].l);
+            cellValue(LM + i * col4, y, row[i].v, col4);
+          }
+          y += 28;
+        }
+
+        if (weapons.length > 0) {
+          drawRect(LM, y, W, 18, "#f5f5f5");
+          drawBorderedRect(LM, y, W, 18);
+          doc.font("Helvetica-Bold").fontSize(7).fillColor("#737373").text("ARMAMENTO", LM + 10, y + 5, { width: 100 });
+          doc.text("CALIBRE", LM + col4, y + 5, { width: 100 });
+          doc.text("NUMERAÇÃO", LM + col4 * 2, y + 5, { width: 100 });
+          doc.text("MUNIÇÃO", LM + col4 * 3, y + 5, { width: 100 });
+          y += 18;
+          for (const w of weapons) {
+            drawBorderedRect(LM, y, col4, 22);
+            drawBorderedRect(LM + col4, y, col4, 22);
+            drawBorderedRect(LM + col4 * 2, y, col4, 22);
+            drawBorderedRect(LM + col4 * 3, y, col4, 22);
+            doc.font("Helvetica-Bold").fontSize(8).fillColor("#171717");
+            doc.text(w.weapon?.type || "—", LM + 4, y + 6, { width: col4 - 8 });
+            doc.font("Helvetica").fontSize(8);
+            doc.text(w.weapon?.caliber || "—", LM + col4 + 4, y + 6, { width: col4 - 8 });
+            doc.text(w.weapon?.serialNumber || "—", LM + col4 * 2 + 4, y + 6, { width: col4 - 8 });
+            doc.text(String(emp?.ammoCount || 12), LM + col4 * 3 + 4, y + 6, { width: col4 - 8 });
+            y += 22;
+          }
+        }
+
+        if (emp?.vestNumber) {
+          drawRect(LM, y, W, 18, "#f5f5f5");
+          drawBorderedRect(LM, y, W, 18);
+          doc.font("Helvetica-Bold").fontSize(7).fillColor("#737373").text("COLETE", LM + 10, y + 5, { width: 100 });
+          doc.text("MARCA", LM + col4, y + 5, { width: 100 });
+          doc.text("PROTEÇÃO", LM + col4 * 2, y + 5, { width: 100 });
+          doc.text("VALIDADE", LM + col4 * 3, y + 5, { width: 100 });
+          y += 18;
+          drawBorderedRect(LM, y, col4, 22);
+          drawBorderedRect(LM + col4, y, col4, 22);
+          drawBorderedRect(LM + col4 * 2, y, col4, 22);
+          drawBorderedRect(LM + col4 * 3, y, col4, 22);
+          doc.font("Helvetica-Bold").fontSize(8).fillColor("#171717");
+          doc.text(emp.vestNumber, LM + 4, y + 6, { width: col4 - 8 });
+          doc.font("Helvetica").fontSize(8);
+          doc.text(emp.vestBrand || "—", LM + col4 + 4, y + 6, { width: col4 - 8 });
+          doc.text(emp.vestProtection || "—", LM + col4 * 2 + 4, y + 6, { width: col4 - 8 });
+          doc.text(emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "—", LM + col4 * 3 + 4, y + 6, { width: col4 - 8 });
+          y += 22;
+        }
+        y += 5;
+      };
+
+      let emp1Weapons: any[] = [];
+      let emp2Weapons: any[] = [];
+      if (emp1 && emp2) {
+        emp1Weapons = kitItems.filter((_: any, i: number) => i < Math.ceil(kitItems.length / 2));
+        emp2Weapons = kitItems.filter((_: any, i: number) => i >= Math.ceil(kitItems.length / 2));
+      } else if (emp1) {
+        emp1Weapons = kitItems;
+      } else if (emp2) {
+        emp2Weapons = kitItems;
+      }
+
+      if (emp1) renderAgent(emp1, emp1.name.split(" ")[0].toUpperCase(), emp1Weapons);
+      if (emp2) renderAgent(emp2, emp2.name.split(" ")[0].toUpperCase(), emp2Weapons);
+
+      if (vehicle) {
+        drawRect(LM, y, W, 22, "#171717");
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text("VIATURA", LM + 10, y + 6, { width: W - 20 });
+        y += 22;
+        const col5 = W / 5;
+        const vehFields = [
+          { l: "MODELO", v: `${vehicle.brand || ""} ${vehicle.model || ""}`.trim() },
+          { l: "COR", v: vehicle.color || "—" },
+          { l: "FROTA", v: (vehicle as any).frota || "—" },
+          { l: "PLACA", v: vehicle.plate },
+          { l: "ANO", v: vehicle.year ? String(vehicle.year) : "—" },
+        ];
+        for (let i = 0; i < vehFields.length; i++) {
+          drawBorderedRect(LM + i * col5, y, col5, 28);
+          cellLabel(LM + i * col5, y, vehFields[i].l);
+          cellValue(LM + i * col5, y, vehFields[i].v, col5);
+        }
+        y += 28;
+
+        const trackerLabel = vehicle.trackerType === "truckscontrol" ? "TrucksControl" : vehicle.trackerType === "custom" ? "OnixSat" : null;
+        if (trackerLabel) {
+          drawRect(LM, y, W, 22, "#f5f5f5");
+          drawBorderedRect(LM, y, W, 22);
+          doc.font("Helvetica-Bold").fontSize(8).fillColor("#737373").text("TECNOLOGIA DE RASTREAMENTO", LM + 10, y + 3, { width: W - 20 });
+          doc.font("Helvetica-Bold").fontSize(9).fillColor("#171717").text(`${trackerLabel} — ID: ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}`, LM + 10, y + 12, { width: W - 20, align: "center" });
+          y += 22;
+        }
+        y += 5;
+      }
+
+      if (os.description || os.notes) {
+        drawRect(LM, y, W, 18, "#171717");
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("INFORMAÇÕES COMPLEMENTARES", LM + 10, y + 5, { width: W - 20 });
+        y += 18;
+        drawBorderedRect(LM, y, W, 50);
+        doc.font("Helvetica").fontSize(8).fillColor("#171717");
+        const infoText = [os.description, os.notes].filter(Boolean).join("\n");
+        doc.text(infoText || "—", LM + 6, y + 5, { width: W - 12 });
+        y += 55;
+      }
+
+      y += 15;
+      doc.font("Helvetica").fontSize(8).fillColor("#737373").text("ATENCIOSAMENTE DEPARTAMENTO DE ESCOLTA ARMADA", LM, y, { width: W, align: "center" });
+      y += 14;
+      doc.font("Helvetica").fontSize(7).fillColor("#a3a3a3").text("TORRES VIGILÂNCIA PATRIMONIAL LTDA — CNPJ 36.982.392/0001-89", LM, y, { width: W, align: "center" });
+
+      doc.end();
+    } catch (error: any) {
+      console.error("PDF generation error:", error);
+      res.status(500).json({ message: "Erro ao gerar PDF" });
+    }
+  });
+
   app.get("/api/trips", requireAuth, async (_req, res) => {
     const data = await storage.getTrips();
     res.json(data);

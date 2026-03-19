@@ -49,7 +49,7 @@ Institutional landing page and internal management system for Torres Vigilância
   - `clients.tsx` - Client registration/management
   - `employees.tsx` - Employee management
   - `vehicles.tsx` - Vehicle fleet management with avg consumption
-  - `service-orders.tsx` - Service orders (OS) with workflow (priorities: imediata/agendada/reaproveitamento)
+  - `service-orders.tsx` - Service orders (OS) with professional document-style form layout, PDF generation, route/requesterName fields, agent credential display (CPF, RG, CNH, CNV, vest), vehicle info with photos/tracker, kit table, PDF download via authenticated fetch
   - `trips.tsx` - Trip control linked to OS
   - `fueling.tsx` - Vehicle fueling records
   - `maintenance.tsx` - Vehicle maintenance control
