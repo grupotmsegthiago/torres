@@ -30,6 +30,9 @@ interface TrackedVehicle {
   hasTracker: boolean;
   trackerId: string | null;
   trackerType: string;
+  deviceType?: "vehicle" | "spy";
+  batteryLevel?: number;
+  coupled?: boolean;
   tracker: {
     latitude?: number;
     longitude?: number;
@@ -237,37 +240,67 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
       const position = { lat: v.tracker.latitude, lng: v.tracker.longitude };
       bounds.extend(position);
 
-      const isIgnitionOn = v.tracker.ignition === true;
-      const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
-      const markerColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+      const isSpy = v.deviceType === "spy";
 
-      const svgIcon = {
-        path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-        fillColor: markerColor,
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
-        scale: 6,
-        rotation: 0,
-      };
+      let markerColor: string;
+      let svgIcon: any;
+
+      if (isSpy) {
+        markerColor = v.coupled ? "#8b5cf6" : "#a855f7";
+        svgIcon = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: markerColor,
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 7,
+        };
+      } else {
+        const isIgnitionOn = v.tracker.ignition === true;
+        const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
+        markerColor = isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+        svgIcon = {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          fillColor: markerColor,
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 6,
+          rotation: 0,
+        };
+      }
 
       const marker = new window.google.maps.Marker({
         position,
         map: mapInstanceRef.current,
         icon: svgIcon,
-        title: `${v.plate} - ${v.model}`,
+        title: isSpy ? `SPY: ${v.model}` : `${v.plate} - ${v.model}`,
       });
 
-      const infoContent = `
-        <div style="font-family: system-ui; min-width: 200px; padding: 4px;">
-          <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">${v.plate}</div>
-          <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
-          ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
-          ${v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
-          ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
-          ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
-        </div>
-      `;
+      let infoContent: string;
+      if (isSpy) {
+        infoContent = `
+          <div style="font-family: system-ui; min-width: 200px; padding: 4px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; color: #7c3aed;">🔍 ${v.model}</div>
+            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.plate}</div>
+            ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
+            ${v.batteryLevel !== undefined && v.batteryLevel >= 0 ? `<div style="font-size: 12px;"><b>Bateria:</b> ${v.batteryLevel}%</div>` : ""}
+            <div style="font-size: 12px;"><b>Acoplado:</b> ${v.coupled ? "Sim ✅" : "Não ❌"}</div>
+            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
+          </div>
+        `;
+      } else {
+        infoContent = `
+          <div style="font-family: system-ui; min-width: 200px; padding: 4px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">${v.plate}</div>
+            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
+            ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
+            ${v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
+            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
+            ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
+          </div>
+        `;
+      }
 
       const infoWindow = new window.google.maps.InfoWindow({ content: infoContent });
       marker.addListener("click", () => {
@@ -304,7 +337,7 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
     <div className="relative rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
       <div ref={mapRef} className="w-full h-[450px]" data-testid="map-container" />
       <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-md border border-neutral-200">
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs flex-wrap">
           <span className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#22c55e" }} />
             Em movimento
@@ -317,14 +350,152 @@ function VehicleMap({ vehicles }: { vehicles: TrackedVehicle[] }) {
             <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#ef4444" }} />
             Desligado
           </span>
+          <span className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: "#8b5cf6" }} />
+            SPY Tracker
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
+function SpyTable({ spyDevices }: { spyDevices: TrackedVehicle[] }) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (spyDevices.length === 0) return null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className="flex items-center justify-between px-4 py-3 bg-violet-50 border-b cursor-pointer hover:bg-violet-100 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+        data-testid="toggle-spy-table"
+      >
+        <div className="flex items-center gap-2">
+          <Radio className="w-4 h-4 text-violet-600" />
+          <h2 className="font-semibold text-sm text-violet-800">SPY Trackers</h2>
+          <span className="text-xs text-violet-500 ml-1">({spyDevices.length})</span>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-violet-400" /> : <ChevronDown className="w-4 h-4 text-violet-400" />}
+      </div>
+
+      {expanded && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="table-spy-tracking">
+            <thead>
+              <tr className="border-b bg-neutral-50/50">
+                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Série</th>
+                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Descrição</th>
+                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Bateria</th>
+                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Acoplado</th>
+                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">Km/h</th>
+                <th className="p-3 text-center font-semibold text-neutral-700 whitespace-nowrap">GPS</th>
+                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Localização</th>
+                <th className="p-3 text-left font-semibold text-neutral-700 whitespace-nowrap">Última Pos.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {spyDevices.map((s) => {
+                const posInfo = getLastPositionInfo(s.tracker?.lastPositionTime);
+                const hasLocation = s.tracker?.latitude && s.tracker?.longitude;
+                const mapsUrl = hasLocation
+                  ? `https://www.google.com/maps?q=${s.tracker!.latitude},${s.tracker!.longitude}`
+                  : null;
+
+                return (
+                  <tr key={s.id} className="border-b last:border-0 hover:bg-neutral-50 transition-colors" data-testid={`row-spy-${s.id}`}>
+                    <td className="p-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-violet-700">{s.plate}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 bg-violet-50 text-violet-600 border border-violet-200 rounded font-medium">SPY</span>
+                      </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap text-neutral-800">{s.model}</td>
+                    <td className="p-3 text-center whitespace-nowrap">
+                      {s.batteryLevel !== undefined && s.batteryLevel >= 0 ? (
+                        <span className={`font-mono font-bold ${
+                          s.batteryLevel > 50 ? "text-green-600" :
+                          s.batteryLevel > 20 ? "text-amber-600" : "text-red-600"
+                        }`}>
+                          {s.batteryLevel}%
+                        </span>
+                      ) : (
+                        <span className="text-neutral-300">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <div className={`w-3 h-3 rounded-full mx-auto ${s.coupled ? "bg-green-500" : "bg-neutral-300"}`} />
+                        </TooltipTrigger>
+                        <TooltipContent>{s.coupled ? "Acoplado" : "Desacoplado"}</TooltipContent>
+                      </Tooltip>
+                    </td>
+                    <td className="p-3 text-center whitespace-nowrap">
+                      {s.tracker?.speed !== undefined ? (
+                        <span className={`font-mono font-bold ${(s.tracker.speed ?? 0) > 0 ? "text-blue-700" : "text-neutral-400"}`}>
+                          {s.tracker.speed}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-300">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      {s.tracker?.gpsSignal === undefined ? (
+                        <Satellite className="w-4 h-4 mx-auto text-neutral-300" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Satellite className={`w-4 h-4 mx-auto ${s.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                          </TooltipTrigger>
+                          <TooltipContent>{s.tracker.gpsSignal ? "Sinal OK" : "Sem sinal"}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </td>
+                    <td className="p-3 max-w-[250px]">
+                      {s.tracker?.address ? (
+                        <div className="flex items-start gap-1.5">
+                          {mapsUrl ? (
+                            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800 flex-shrink-0 mt-0.5">
+                              <MapPin className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <MapPin className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0 mt-0.5" />
+                          )}
+                          <span className="text-xs text-neutral-600 truncate" title={s.tracker.address}>{s.tracker.address}</span>
+                        </div>
+                      ) : hasLocation ? (
+                        <a href={mapsUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 text-xs">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3 h-3" />
+                          Ver no mapa
+                        </a>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
+                        <span className={`text-xs font-medium ${posInfo.color}`}>{posInfo.text}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function VehicleTable({ vehicles, gridData }: { vehicles: TrackedVehicle[]; gridData: GridItem[] }) {
   const [expanded, setExpanded] = useState(true);
+
+  const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
 
   return (
     <Card className="overflow-hidden">
@@ -336,7 +507,7 @@ function VehicleTable({ vehicles, gridData }: { vehicles: TrackedVehicle[]; grid
         <div className="flex items-center gap-2">
           <Truck className="w-4 h-4 text-neutral-600" />
           <h2 className="font-semibold text-sm text-neutral-800">Veículos</h2>
-          <span className="text-xs text-neutral-500 ml-1">({vehicles.length})</span>
+          <span className="text-xs text-neutral-500 ml-1">({onlyVehicles.length})</span>
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-neutral-400" /> : <ChevronDown className="w-4 h-4 text-neutral-400" />}
       </div>
@@ -358,7 +529,7 @@ function VehicleTable({ vehicles, gridData }: { vehicles: TrackedVehicle[]; grid
               </tr>
             </thead>
             <tbody>
-              {vehicles.map((v) => {
+              {onlyVehicles.map((v) => {
                 const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
                 const hasLocation = v.tracker?.latitude && v.tracker?.longitude;
                 const mapsUrl = hasLocation
@@ -712,9 +883,11 @@ export default function OperationalGridPage() {
     setLastRefresh(Date.now());
   };
 
-  const trackedCount = vehicles.filter((v) => v.hasTracker).length;
+  const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
+  const spyDevices = vehicles.filter((v) => v.deviceType === "spy");
+  const trackedCount = onlyVehicles.filter((v) => v.hasTracker).length;
   const withPositionCount = vehicles.filter((v) => v.tracker?.latitude).length;
-  const tcCount = vehicles.filter((v) => v.trackerType === "truckscontrol").length;
+  const tcCount = onlyVehicles.filter((v) => v.trackerType === "truckscontrol").length;
   const activeOsCount = gridData.length;
 
   const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -731,7 +904,7 @@ export default function OperationalGridPage() {
               <TrucksControlStatus />
             </div>
             <p className="text-sm text-neutral-500 mt-1">
-              Monitoramento em tempo real · {vehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
+              Monitoramento em tempo real · {onlyVehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""}{spyDevices.length > 0 ? ` · ${spyDevices.length} SPY` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -762,6 +935,7 @@ export default function OperationalGridPage() {
           <>
             <VehicleMap vehicles={vehicles} />
             <VehicleTable vehicles={vehicles} gridData={gridData} />
+            <SpyTable spyDevices={spyDevices} />
             <OperationsTable gridData={gridData} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 5 minutos (limite API TrucksControl)

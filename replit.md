@@ -99,12 +99,13 @@ users, perfis_acesso, clients, employees, employee_salaries, employee_documents,
 ## TrucksControl Integration (Vehicle Tracking)
 - **Service**: TrucksControl / NewRastreamentoOnline SOAP webservice
 - **Base URL**: `https://webservice.newrastreamentoonline.com.br/`
-- **Server module**: `server/truckscontrol.ts` — SOAP XML client with 30s position cache
+- **Server module**: `server/truckscontrol.ts` — SOAP XML client with 5-min position cache
 - **Env vars**: `TRUCKSCONTROL_CHAVE` (integration key), `TRUCKSCONTROL_SENHA` (password)
 - **Vehicle schema fields**: `tracker_type` (truckscontrol/custom/none), `truckscontrol_identifier` (optional, falls back to plate matching)
-- **API endpoints**: `GET /api/truckscontrol/test` (connection test), `GET /api/truckscontrol/positions` (all positions)
+- **API endpoints**: `GET /api/truckscontrol/test` (connection test), `GET /api/truckscontrol/positions` (all positions), `GET /api/truckscontrol/spy` (SPY devices + positions)
 - **Operational Grid**: `/api/vehicle-tracking` merges TrucksControl positions with vehicle data (lat, lng, speed, ignition, GPS, address)
 - **Vehicle form**: Tracker section with type selector, TrucksControl identifier field, connection test button
+- **SPY Integration**: Portable tracker devices (SpyTrack eqp=7, SpyTrack2 eqp=14). Uses `RequestSpy` (list devices) and `RequestMensagemSpy` (positions with lat/lon/speed/battery/coupled status). SPY devices appear on operational grid map (purple circle markers) and in a separate "SPY Trackers" table below the vehicles table. Responses are ZIP-compressed like vehicle data. Rate limit: 5 min between same request type. SPY `mId` tracking separate from vehicle `lastMid`.
 
 ## Vehicle Assignments
 - `vehicle_assignments` table: vehicle_id, employee_id, action (vincular/desvincular), km_at_action, service_order_id, notes

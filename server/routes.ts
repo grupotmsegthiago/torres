@@ -966,10 +966,11 @@ Para CPF, formate como 000.000.000-00.`
 
         if (trackerType === "truckscontrol") {
           hasTracker = true;
-          if (tcPositions.length > 0) {
+          const vehiclePositions = tcPositions.filter(p => p.deviceType === "vehicle");
+          if (vehiclePositions.length > 0) {
             const pos = v.truckscontrolIdentifier
-              ? truckscontrol.findPositionByIdentifier(tcPositions, v.truckscontrolIdentifier)
-              : truckscontrol.findPositionByPlate(tcPositions, v.plate);
+              ? truckscontrol.findPositionByIdentifier(vehiclePositions, v.truckscontrolIdentifier)
+              : truckscontrol.findPositionByPlate(vehiclePositions, v.plate);
             if (pos) {
               trackerData = {
                 latitude: pos.latitude,
@@ -1009,6 +1010,7 @@ Para CPF, formate como 000.000.000-00.`
           hasTracker,
           trackerId: v.trackerId || v.truckscontrolIdentifier,
           trackerType: v.trackerType || "custom",
+          deviceType: "vehicle" as const,
           tracker: trackerData,
           activeOs: linkedOrder
             ? {
@@ -1022,7 +1024,35 @@ Para CPF, formate como 000.000.000-00.`
       })
     );
 
-    res.json(tracked);
+    const spyPositions = tcPositions.filter(p => p.deviceType === "spy");
+    const spyEntries = spyPositions.map((sp, idx) => ({
+      id: -(idx + 1000),
+      plate: sp.plate,
+      model: sp.identifier,
+      brand: "SPY",
+      color: null,
+      status: sp.coupled ? "acoplado" : "desacoplado",
+      hasTracker: true,
+      trackerId: String(sp.veiID),
+      trackerType: "truckscontrol",
+      deviceType: "spy" as const,
+      batteryLevel: sp.batteryLevel,
+      coupled: sp.coupled,
+      tracker: sp.latitude !== 0 || sp.longitude !== 0
+        ? {
+            latitude: sp.latitude,
+            longitude: sp.longitude,
+            ignition: false,
+            lastPositionTime: sp.lastPositionTime,
+            gpsSignal: sp.gpsSignal,
+            speed: sp.speed,
+            address: sp.address,
+          }
+        : null,
+      activeOs: null,
+    }));
+
+    res.json([...tracked, ...spyEntries]);
   });
 
   app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
@@ -1038,6 +1068,12 @@ Para CPF, formate como 000.000.000-00.`
   app.get("/api/truckscontrol/positions", requireAuth, requireAdminRole, async (_req, res) => {
     const positions = await truckscontrol.getCachedPositions();
     res.json(positions);
+  });
+
+  app.get("/api/truckscontrol/spy", requireAuth, requireAdminRole, async (_req, res) => {
+    const spyPositions = await truckscontrol.fetchSpyPositions();
+    const spyDevices = truckscontrol.getSpyDevices();
+    res.json({ devices: spyDevices, positions: spyPositions });
   });
 
   // ====================== MISSION ROUTES ======================
