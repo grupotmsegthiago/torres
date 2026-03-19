@@ -1636,6 +1636,57 @@ Para CPF, formate como 000.000.000-00.`
     res.json({ devices: spyDevices, positions: spyPositions });
   });
 
+  app.post("/api/truckscontrol/command", requireAuth, requireAdminRole, async (req, res) => {
+    const vehicleId = Number(req.body.vehicleId);
+    const command = String(req.body.command || "");
+    const validCommands = ["bloquear", "desbloquear", "sirene"] as const;
+
+    if (!Number.isInteger(vehicleId) || vehicleId <= 0) {
+      return res.status(400).json({ success: false, message: "vehicleId deve ser um número inteiro positivo." });
+    }
+    if (!validCommands.includes(command as any)) {
+      return res.status(400).json({ success: false, message: `Comando inválido. Use: ${validCommands.join(", ")}` });
+    }
+
+    const vehicle = await storage.getVehicle(vehicleId);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Veículo não encontrado." });
+    }
+
+    let veiID: number | null = null;
+
+    if (vehicle.truckscontrolIdentifier) {
+      const parsed = parseInt(vehicle.truckscontrolIdentifier);
+      if (!isNaN(parsed) && parsed > 0) veiID = parsed;
+    }
+
+    if (!veiID) {
+      let tcCache = truckscontrol.getVehicleCache();
+      if (tcCache.length === 0) {
+        const positions = await truckscontrol.getCachedPositions();
+        if (positions.length > 0) {
+          tcCache = truckscontrol.getVehicleCache();
+        }
+      }
+      const cleanPlate = vehicle.plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      const found = tcCache.find(tc => tc.placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase() === cleanPlate);
+      if (found) {
+        veiID = found.veiID;
+      }
+    }
+
+    if (!veiID) {
+      return res.status(400).json({ success: false, message: "Veículo sem identificador TrucksControl configurado. Configure o campo 'truckscontrolIdentifier' no cadastro do veículo." });
+    }
+
+    console.log(`[command] Enviando ${command} para veículo ${vehicle.plate} (veiID=${veiID}) por ${req.user?.name || req.user?.email}`);
+    const result = await truckscontrol.sendCommand(veiID, command as any);
+    if (!result.success) {
+      return res.status(502).json(result);
+    }
+    res.json(result);
+  });
+
   // ====================== GERENCIADORA ROUTES ======================
 
   app.get("/api/gerenciadoras", requireAuth, requireAdminRole, async (_req, res) => {

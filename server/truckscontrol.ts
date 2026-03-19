@@ -616,6 +616,54 @@ export function findPositionByIdentifier(positions: TrucksControlPosition[], ide
   return positions.find((p) => p.identifier.trim().toUpperCase() === clean) || null;
 }
 
+export type CommandType = "bloquear" | "desbloquear" | "sirene";
+
+export async function sendCommand(
+  veiID: number,
+  command: CommandType
+): Promise<{ success: boolean; message: string; rawResponse?: string }> {
+  const config = getConfig();
+  if (!config) {
+    return { success: false, message: "Credenciais TrucksControl não configuradas." };
+  }
+
+  const commandMap: Record<CommandType, { cmd: number; label: string }> = {
+    bloquear: { cmd: 1, label: "Bloquear" },
+    desbloquear: { cmd: 2, label: "Desbloquear" },
+    sirene: { cmd: 3, label: "Sirene/Alerta" },
+  };
+
+  const cmdInfo = commandMap[command];
+  if (!cmdInfo) {
+    return { success: false, message: `Comando desconhecido: ${command}` };
+  }
+
+  try {
+    const xml = `<RequestComando><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd></RequestComando>`;
+    const response = await postXml(xml);
+
+    if (response.includes("<erro>") || response.includes("<Erro>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
+      console.log(`[truckscontrol] Erro ao enviar comando ${command} para veiID=${veiID}: ${erroMsg}`);
+      return { success: false, message: `Erro: ${erroMsg}`, rawResponse: response.substring(0, 500) };
+    }
+
+    const status = parseXmlValue(response, "status") || parseXmlValue(response, "Status");
+    console.log(`[truckscontrol] Comando ${command} enviado para veiID=${veiID} — status: ${status || "OK"}`);
+    return {
+      success: true,
+      message: `Comando "${cmdInfo.label}" enviado com sucesso.${status ? ` Status: ${status}` : ""}`,
+    };
+  } catch (err: any) {
+    console.log(`[truckscontrol] Erro ao enviar comando ${command}: ${err.message}`);
+    return { success: false, message: `Erro de conexão: ${err.message}` };
+  }
+}
+
+export function getVehicleCache(): TrucksControlVehicle[] {
+  return vehicleCache;
+}
+
 export function getLastError(): string | null {
   return lastError;
 }

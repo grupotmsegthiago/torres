@@ -1062,7 +1062,38 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   const { toast } = useToast();
   const [mirrorOpen, setMirrorOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
+
+  const commandMutation = useMutation({
+    mutationFn: async ({ vehicleId, command }: { vehicleId: number; command: string }) => {
+      const res = await authFetch("/api/truckscontrol/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleId, command }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Erro ao enviar comando");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Comando enviado", description: data.message });
+      setCmdOpen(false);
+      setCmdConfirm(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro no comando", description: err.message, variant: "destructive" });
+      setCmdConfirm(null);
+    },
+  });
+
+  const handleCommand = (command: string) => {
+    if (cmdConfirm === command) {
+      commandMutation.mutate({ vehicleId: v.id, command });
+    } else {
+      setCmdConfirm(command);
+    }
+  };
 
   const mirrorMutation = useMutation({
     mutationFn: async (gerenciadoraId: number) => {
@@ -1167,7 +1198,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
         </TooltipTrigger>
         <TooltipContent>Enviar Comando</TooltipContent>
       </Tooltip>
-      <Dialog open={cmdOpen} onOpenChange={setCmdOpen}>
+      <Dialog open={cmdOpen} onOpenChange={(open) => { setCmdOpen(open); if (!open) setCmdConfirm(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-sm">Comando — {v.plate}</DialogTitle>
@@ -1176,17 +1207,44 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
           <div className="space-y-2 py-2">
             {v.hasTracker ? (
               <>
-                <button className="w-full flex items-center gap-3 rounded-lg border p-3 hover:bg-neutral-50 transition-colors text-left" data-testid={`btn-cmd-block-${v.id}`}>
+                <button
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "bloquear" ? "bg-red-50 border-red-300 ring-1 ring-red-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("bloquear")}
+                  disabled={commandMutation.isPending}
+                  data-testid={`btn-cmd-block-${v.id}`}
+                >
                   <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center"><XCircle className="w-4 h-4 text-red-500" /></div>
-                  <div><p className="text-sm font-medium">Bloquear</p><p className="text-[11px] text-neutral-400">Cortar combustível remotamente</p></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Bloquear</p>
+                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível remotamente"}</p>
+                  </div>
+                  {commandMutation.isPending && cmdConfirm === "bloquear" && <Loader2 className="w-4 h-4 animate-spin text-red-500" />}
                 </button>
-                <button className="w-full flex items-center gap-3 rounded-lg border p-3 hover:bg-neutral-50 transition-colors text-left" data-testid={`btn-cmd-unblock-${v.id}`}>
+                <button
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "desbloquear" ? "bg-green-50 border-green-300 ring-1 ring-green-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("desbloquear")}
+                  disabled={commandMutation.isPending}
+                  data-testid={`btn-cmd-unblock-${v.id}`}
+                >
                   <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>
-                  <div><p className="text-sm font-medium">Desbloquear</p><p className="text-[11px] text-neutral-400">Liberar combustível</p></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Desbloquear</p>
+                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "desbloquear" ? "Clique novamente para confirmar" : "Liberar combustível"}</p>
+                  </div>
+                  {commandMutation.isPending && cmdConfirm === "desbloquear" && <Loader2 className="w-4 h-4 animate-spin text-green-500" />}
                 </button>
-                <button className="w-full flex items-center gap-3 rounded-lg border p-3 hover:bg-neutral-50 transition-colors text-left" data-testid={`btn-cmd-siren-${v.id}`}>
+                <button
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "sirene" ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("sirene")}
+                  disabled={commandMutation.isPending}
+                  data-testid={`btn-cmd-siren-${v.id}`}
+                >
                   <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center"><AlertTriangle className="w-4 h-4 text-amber-500" /></div>
-                  <div><p className="text-sm font-medium">Sirene / Alerta</p><p className="text-[11px] text-neutral-400">Ativar sirene do rastreador</p></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Sirene / Alerta</p>
+                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "sirene" ? "Clique novamente para confirmar" : "Ativar sirene do rastreador"}</p>
+                  </div>
+                  {commandMutation.isPending && cmdConfirm === "sirene" && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
                 </button>
               </>
             ) : (
