@@ -359,7 +359,7 @@ export async function debugLogin(): Promise<{
 }
 
 let positionCache: { data: TrucksControlPosition[]; timestamp: number } | null = null;
-const CACHE_TTL = 30000;
+const CACHE_TTL = 5 * 60 * 1000;
 
 export async function getCachedPositions(): Promise<TrucksControlPosition[]> {
   if (positionCache && Date.now() - positionCache.timestamp < CACHE_TTL) {

@@ -9,7 +9,7 @@ import {
   ExternalLink, Zap, CalendarClock, Recycle,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
-  AlertTriangle, CheckCircle2, XCircle, Loader2,
+  AlertTriangle, CheckCircle2, XCircle, Loader2, Timer,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
@@ -662,29 +662,62 @@ function TrucksControlStatus() {
   );
 }
 
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+function useCountdown(intervalMs: number, lastFetchTime: number) {
+  const [remaining, setRemaining] = useState(intervalMs / 1000);
+
+  useEffect(() => {
+    const tick = () => {
+      const elapsed = Date.now() - lastFetchTime;
+      const left = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
+      setRemaining(left);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [intervalMs, lastFetchTime]);
+
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return { remaining, display: `${minutes}:${String(seconds).padStart(2, "0")}` };
+}
+
 export default function OperationalGridPage() {
-  const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles } = useQuery<TrackedVehicle[]>({
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
+
+  const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
-    refetchInterval: 15000,
+    refetchInterval: REFRESH_INTERVAL_MS,
   });
 
-  const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid } = useQuery<GridItem[]>({
+  const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid, dataUpdatedAt: gridUpdatedAt } = useQuery<GridItem[]>({
     queryKey: ["/api/operational-grid"],
-    refetchInterval: 15000,
+    refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  useEffect(() => {
+    if (vehiclesUpdatedAt || gridUpdatedAt) {
+      setLastRefresh(Math.max(vehiclesUpdatedAt || 0, gridUpdatedAt || 0));
+    }
+  }, [vehiclesUpdatedAt, gridUpdatedAt]);
+
+  const countdown = useCountdown(REFRESH_INTERVAL_MS, lastRefresh);
   const isFetching = fetchingVehicles || fetchingGrid;
   const isLoading = loadingVehicles || loadingGrid;
 
   const handleRefresh = () => {
     refetchVehicles();
     refetchGrid();
+    setLastRefresh(Date.now());
   };
 
   const trackedCount = vehicles.filter((v) => v.hasTracker).length;
   const withPositionCount = vehicles.filter((v) => v.tracker?.latitude).length;
   const tcCount = vehicles.filter((v) => v.trackerType === "truckscontrol").length;
   const activeOsCount = gridData.length;
+
+  const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <AdminLayout>
@@ -701,16 +734,24 @@ export default function OperationalGridPage() {
               Monitoramento em tempo real · {vehicles.length} veículo(s) · {trackedCount} com rastreador{tcCount > 0 ? ` (${tcCount} TC)` : ""} · {withPositionCount} com posição · {activeOsCount} operação(ões)
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isFetching}
-            data-testid="button-refresh-grid"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5" data-testid="countdown-timer">
+              <Timer className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Próxima: <span className="font-mono font-semibold text-neutral-700">{countdown.display}</span></span>
+              <span className="text-neutral-300">|</span>
+              <span>Última: {lastRefreshStr}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              data-testid="button-refresh-grid"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
@@ -723,7 +764,7 @@ export default function OperationalGridPage() {
             <VehicleTable vehicles={vehicles} gridData={gridData} />
             <OperationsTable gridData={gridData} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
-              Atualização automática a cada 15s
+              Atualização automática a cada 5 minutos (limite API TrucksControl)
             </div>
           </>
         )}
