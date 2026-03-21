@@ -70,3 +70,12 @@ Every time a `funcionario` user logs in, they must take a selfie before accessin
 - **Storage**: `login_selfies` table stores userId, employeeId, userName, photoData (base64 JPEG), GPS coordinates, IP, user-agent, timestamp
 - **Backend**: `POST /api/auth/login-selfie` (validates format/size), `GET /api/auth/login-selfie-today` (checks if selfie exists for today)
 - **Admin access**: `GET /api/admin/login-selfies` (list, last 100, no photo data), `GET /api/admin/login-selfie/:id` (full detail with photo)
+
+## Audit System (Auditoria)
+Complete tracking of all vigilante actions with security alerting. Page: `/admin/auditoria` (admin/diretoria only).
+- **Tracked actions**: page_view, mission_step_advance, photo_captured, mission_status_update, login_selfie, terms_accepted
+- **Security detection**: screenshot_attempt (PrintScreen, Cmd+Shift+3/4/5, Ctrl+Shift+S), tab_hidden (visibility change), window_blur (focus loss), context_menu (right-click)
+- **Hook**: `useAuditLog(page)` for page views, `useScreenshotDetection(page)` for security monitoring (both active in MobileLayout), `logAuditAction(action, page, details)` for manual logging
+- **Backend**: `POST /api/audit-log` (log events), `GET /api/audit-logs` (filterable: userId, action, search, dateFrom/dateTo, securityOnly), `GET /api/audit-logs/stats` (totals, today count, security alerts, top users, action distribution)
+- **Admin page**: Stats cards (total, today, security alerts, active users), top users/action types panels, full log table with severity highlighting (red for screenshot attempts, amber for warnings), filters, pagination
+- **Table**: audit_logs (id, userId, userName, userRole, action, page, details, ipAddress, userAgent, createdAt)

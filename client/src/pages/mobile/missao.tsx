@@ -1,5 +1,6 @@
 import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
+import { logAuditAction } from "@/hooks/use-audit";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -358,12 +359,15 @@ export default function MobileMissaoPage() {
       longitude: pos?.lng || null,
       notes: label,
     });
+    logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""}`);
   };
 
   const advanceMission = async () => {
+    const fromStep = currentStep;
     await apiRequest("POST", "/api/mission/advance", {
       serviceOrderId: mission.serviceOrderId,
     });
+    logAuditAction("mission_step_advance", "/mobile/missao", `Avançou de ${fromStep} | OS #${mission.serviceOrderId}`);
     queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
     resetStepState();
   };
@@ -542,11 +546,7 @@ export default function MobileMissaoPage() {
     }
     setSubmitting(true);
     try {
-      await apiRequest("POST", "/api/audit-log", {
-        action: "mission_status_update",
-        page: "missao",
-        details: { serviceOrderId: mission.serviceOrderId, message: statusUpdate.trim(), step: currentStep },
-      });
+      logAuditAction("mission_status_update", "/mobile/missao", `Status: ${statusUpdate.trim()} | Etapa: ${currentStep} | OS #${mission.serviceOrderId}`);
       toast({ title: "Status enviado!" });
       setStatusUpdate("");
     } catch (err: any) {

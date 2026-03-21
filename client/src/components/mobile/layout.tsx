@@ -1,7 +1,7 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
-import { useAuditLog } from "@/hooks/use-audit";
+import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
 import { useMemo } from "react";
 import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   const { user } = useAuth();
   const { denied, requestPermission } = useGeolocation();
   useAuditLog(location);
+  useScreenshotDetection(location);
 
   if (denied) {
     return (

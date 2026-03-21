@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, desc, sql, and, gte } from "drizzle-orm";
+import { eq, desc, sql, and, gte, lte, like, or, ilike } from "drizzle-orm";
 import { requireAuth, requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -2436,10 +2436,85 @@ Para CPF, formate como 000.000.000-00.`
   app.get("/api/audit-logs", requireAuth, requireAdmin, async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const offset = Number(req.query.offset) || 0;
-    const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
-    const countResult = await db.execute(sql`SELECT COUNT(*) as total FROM audit_logs`);
-    const total = Number((countResult as any).rows?.[0]?.total || 0);
+    const userId = req.query.userId ? Number(req.query.userId) : null;
+    const action = req.query.action ? String(req.query.action) : null;
+    const search = req.query.search ? String(req.query.search) : null;
+    const dateFrom = req.query.dateFrom ? String(req.query.dateFrom) : null;
+    const dateTo = req.query.dateTo ? String(req.query.dateTo) : null;
+    const securityOnly = req.query.securityOnly === "true";
+
+    const conditions: any[] = [];
+    if (userId) conditions.push(eq(auditLogs.userId, userId));
+    if (action) conditions.push(eq(auditLogs.action, action));
+    if (search) conditions.push(or(
+      ilike(auditLogs.details, `%${search}%`),
+      ilike(auditLogs.userName, `%${search}%`),
+      ilike(auditLogs.page, `%${search}%`),
+    ));
+    if (dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(dateFrom)));
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(auditLogs.createdAt, endDate));
+    }
+    if (securityOnly) {
+      conditions.push(or(
+        eq(auditLogs.action, "screenshot_attempt"),
+        eq(auditLogs.action, "tab_hidden"),
+        eq(auditLogs.action, "window_blur"),
+        eq(auditLogs.action, "context_menu"),
+      ));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const rows = whereClause
+      ? await db.select().from(auditLogs).where(whereClause).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset)
+      : await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
+
+    const countQuery = whereClause
+      ? await db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(whereClause)
+      : await db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs);
+
+    const total = Number(countQuery[0]?.count || 0);
+
     res.json({ logs: rows, total });
+  });
+
+  app.get("/api/audit-logs/stats", requireAuth, requireAdmin, async (req, res) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [totalResult, todayResult, securityResult, usersResult] = await Promise.all([
+      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs),
+      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(gte(auditLogs.createdAt, today)),
+      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(
+        or(
+          eq(auditLogs.action, "screenshot_attempt"),
+          eq(auditLogs.action, "tab_hidden"),
+          eq(auditLogs.action, "window_blur"),
+          eq(auditLogs.action, "context_menu"),
+        )
+      ),
+      db.select({
+        userId: auditLogs.userId,
+        userName: auditLogs.userName,
+        count: sql<number>`COUNT(*)`,
+      }).from(auditLogs).groupBy(auditLogs.userId, auditLogs.userName).orderBy(desc(sql`COUNT(*)`)).limit(10),
+    ]);
+
+    const actionCounts = await db.select({
+      action: auditLogs.action,
+      count: sql<number>`COUNT(*)`,
+    }).from(auditLogs).groupBy(auditLogs.action).orderBy(desc(sql`COUNT(*)`));
+
+    res.json({
+      total: Number(totalResult[0]?.count || 0),
+      today: Number(todayResult[0]?.count || 0),
+      securityAlerts: Number(securityResult[0]?.count || 0),
+      topUsers: usersResult,
+      actionCounts,
+    });
   });
 
   // ====================== HR MOBILE (próprio funcionário) ======================
