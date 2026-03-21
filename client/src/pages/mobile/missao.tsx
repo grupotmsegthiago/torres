@@ -11,9 +11,9 @@ import {
 } from "lucide-react";
 
 const MISSION_STEPS = [
-  "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km",
-  "em_transito_ida", "checkin_km", "checkin_veiculo_escoltado", "checkin_motorista",
-  "iniciar_missao", "em_transito_destino", "km_final", "viatura_retorno", "finalizada",
+  "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+  "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
+  "iniciar_missao", "em_transito_destino", "checkout_km_final", "checkout_viatura_retorno", "finalizada",
 ] as const;
 
 type MissionStep = typeof MISSION_STEPS[number];
@@ -22,16 +22,49 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e inicie", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/11", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/11", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
-  checkout_km: { title: "KM de Saída", subtitle: "Check-out · 3/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  em_transito_ida: { title: "Em Trânsito", subtitle: "Deslocamento · 4/11", icon: Route },
-  checkin_km: { title: "KM Chegada", subtitle: "Check-in · 5/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/11", icon: Route },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/11", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
-  checkin_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/11", icon: User, needsForm: true },
+  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/11", icon: User, needsForm: true },
   iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/11", icon: Siren },
   em_transito_destino: { title: "Em Trânsito", subtitle: "Execução · 9/11", icon: Route },
-  km_final: { title: "KM Final", subtitle: "Finalização · 10/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 11/11", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 10/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 11/11", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Missão Finalizada", subtitle: "Concluída", icon: CheckCircle2 },
+};
+
+const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
+  checkout_armamento: {
+    "Pistola 1": "arma_pistola_1",
+    "Pistola 2": "arma_pistola_2",
+    "Espingarda 12": "arma_espingarda",
+  },
+  checkout_viatura: {
+    "Dianteira": "viatura_frente",
+    "Lateral Esq.": "viatura_lateral_esq",
+    "Lateral Dir.": "viatura_lateral_dir",
+    "Traseira": "viatura_traseira",
+  },
+  checkout_km_saida: {
+    "Hodômetro": "km_saida",
+  },
+  checkin_chegada_km: {
+    "Hodômetro": "km_chegada",
+  },
+  checkin_veiculo_escoltado: {
+    "Frente do Caminhão": "escoltado_frente",
+    "Traseira do Caminhão": "escoltado_traseira",
+  },
+  checkout_km_final: {
+    "Hodômetro": "km_final",
+  },
+  checkout_viatura_retorno: {
+    "Dianteira": "viatura_retorno_frente",
+    "Lateral Esq.": "viatura_retorno_lateral_esq",
+    "Lateral Dir.": "viatura_retorno_lateral_dir",
+    "Traseira": "viatura_retorno_traseira",
+  },
 };
 
 function useGeoLocation() {
@@ -172,10 +205,12 @@ export default function MobileMissaoPage() {
 
     setSubmitting(true);
     try {
+      const stepMap = PHOTO_STEP_MAP[currentStep] || {};
       for (const label of config.photos) {
         const key = label.toLowerCase().replace(/\s/g, '-');
+        const backendStep = stepMap[label] || currentStep;
         if (photos[key]) {
-          await uploadPhoto(currentStep, label, photos[key], config.needsKm ? parseInt(kmValue) : undefined);
+          await uploadPhoto(backendStep, label, photos[key], config.needsKm ? parseInt(kmValue) : undefined);
         }
       }
       await advanceMission();
@@ -405,12 +440,12 @@ export default function MobileMissaoPage() {
               data-testid="button-confirm-km"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              {currentStep === "checkout_km" ? "Liberar Viagem" : "Confirmar"}
+              {currentStep === "checkout_km_saida" ? "Liberar Viagem" : "Confirmar"}
             </button>
           </div>
         )}
 
-        {(currentStep === "em_transito_ida" || currentStep === "em_transito_destino") && (
+        {(currentStep === "em_transito_origem" || currentStep === "em_transito_destino") && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto mb-3 animate-pulse">
@@ -431,7 +466,7 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {currentStep === "checkin_motorista" && (
+        {currentStep === "checkin_dados_motorista" && (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-4">
               <div>
