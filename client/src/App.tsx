@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -55,6 +56,12 @@ function MobileProtectedRoute({ component: Component }: { component: React.Compo
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
+  useEffect(() => {
+    if (!isLoading && !user) {
+      setLocation("/admin");
+    }
+  }, [isLoading, user, setLocation]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
@@ -64,7 +71,6 @@ function MobileProtectedRoute({ component: Component }: { component: React.Compo
   }
 
   if (!user) {
-    setLocation("/admin");
     return null;
   }
 
