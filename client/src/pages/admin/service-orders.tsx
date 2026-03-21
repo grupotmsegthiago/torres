@@ -98,6 +98,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     origin: (order as any)?.origin || "",
     destination: (order as any)?.destination || "",
     requesterName: (order as any)?.requesterName || "",
+    escortedDriverName: (order as any)?.escortedDriverName || "",
+    escortedDriverPhone: (order as any)?.escortedDriverPhone || "",
+    escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
     notes: order?.notes || "",
   });
 
@@ -384,6 +387,21 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     Adicionar rota
                   </button>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <FieldLabel>Motorista Escoltado</FieldLabel>
+                <Input value={form.escortedDriverName} onChange={(e) => setForm({ ...form, escortedDriverName: e.target.value })} placeholder="Nome do motorista" className="text-sm" data-testid="input-os-driver-name" />
+              </div>
+              <div>
+                <FieldLabel>Telefone do Motorista</FieldLabel>
+                <Input value={form.escortedDriverPhone} onChange={(e) => setForm({ ...form, escortedDriverPhone: e.target.value })} placeholder="(11) 99999-9999" className="text-sm" data-testid="input-os-driver-phone" />
+              </div>
+              <div>
+                <FieldLabel>Placa do Veículo Escoltado</FieldLabel>
+                <Input value={form.escortedVehiclePlate} onChange={(e) => setForm({ ...form, escortedVehiclePlate: e.target.value.toUpperCase() })} placeholder="ABC1D23" className="text-sm" data-testid="input-os-driver-plate" />
               </div>
             </div>
 

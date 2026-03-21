@@ -183,16 +183,15 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
             href={googleMapsRouteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-600 uppercase tracking-wider pt-1 border-t border-neutral-100"
+            className="flex items-center justify-center pt-1 border-t border-neutral-100"
             data-testid="link-ver-rota-completa"
           >
-            <ExternalLink className="w-3 h-3" />
-            Ver rota completa no Maps
+            <ExternalLink className="w-4 h-4 text-blue-600" />
           </a>
         )}
       </div>
 
-      {embedUrl && (
+      {embedUrl && false && (
         <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
           <iframe
             src={embedUrl}
@@ -212,21 +211,21 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
             href={googleMapsNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-12 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
+            className="flex items-center justify-center h-12 bg-blue-600 text-white rounded-2xl active:scale-[0.98]"
             data-testid="button-navigate-gmaps"
+            title="Google Maps"
           >
-            <Navigation className="w-4 h-4" />
-            Google Maps
+            <Navigation className="w-5 h-5" />
           </a>
           <a
             href={wazeNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-12 bg-[#33ccff] text-white rounded-2xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
+            className="flex items-center justify-center h-12 bg-[#33ccff] text-white rounded-2xl active:scale-[0.98]"
             data-testid="button-navigate-waze"
+            title="Waze"
           >
-            <Navigation className="w-4 h-4" />
-            Waze
+            <Navigation className="w-5 h-5" />
           </a>
         </div>
       )}
@@ -277,10 +276,19 @@ export default function MobileMissaoPage() {
   const config = stepConfig[currentStep] || stepConfig.aguardando;
   const Icon = config.icon;
 
+  useEffect(() => {
+    if (mission && currentStep === "checkin_dados_motorista") {
+      if (mission.escortedDriverName && !driverName) setDriverName(mission.escortedDriverName);
+      if (mission.escortedDriverPhone && !driverPhone) setDriverPhone(mission.escortedDriverPhone);
+      if (mission.escortedVehiclePlate && !driverPlate) setDriverPlate(mission.escortedVehiclePlate);
+    }
+  }, [mission, currentStep]);
+
   const resetStepState = useCallback(() => {
     setPhotos({});
     setKmValue("");
     setDriverName("");
+    setDriverPhone("");
     setDriverPlate("");
   }, []);
 
