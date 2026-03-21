@@ -1971,6 +1971,9 @@ Para CPF, formate como 000.000.000-00.`
       escortedDriverName: active.escortedDriverName || null,
       escortedVehiclePlate: active.escortedVehiclePlate || null,
       missionStartedAt: active.missionStartedAt || null,
+      origin: active.origin || null,
+      destination: active.destination || null,
+      route: active.route || null,
     });
   });
 

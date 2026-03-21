@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
-  Loader2, AlertCircle,
+  Loader2, AlertCircle, Navigation, ExternalLink,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -120,6 +120,116 @@ function CameraCapture({ label, onCapture, captured }: { label: string; onCaptur
         {captured ? <CheckCircle2 className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
         {label}
       </button>
+    </div>
+  );
+}
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+
+function RouteInfoCard({ origin, destination, currentStep }: { origin?: string | null; destination?: string | null; currentStep: string }) {
+  if (!origin && !destination) return null;
+
+  const isGoingToOrigin = ["aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep);
+  const currentTarget = isGoingToOrigin ? origin : destination;
+  const currentTargetLabel = isGoingToOrigin ? "Destino: Origem" : "Destino: Entrega";
+
+  const encOrigin = encodeURIComponent(origin || "");
+  const encDest = encodeURIComponent(destination || "");
+  const encTarget = encodeURIComponent(currentTarget || "");
+
+  const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${encTarget}&travelmode=driving`;
+  const wazeNavUrl = `https://waze.com/ul?q=${encTarget}&navigate=yes`;
+  const googleMapsRouteUrl = `https://www.google.com/maps/dir/?api=1&origin=${encOrigin}&destination=${encDest}&travelmode=driving`;
+
+  const embedUrl = GOOGLE_MAPS_API_KEY
+    ? `https://www.google.com/maps/embed/v1/directions?key=${GOOGLE_MAPS_API_KEY}&origin=${encOrigin}&destination=${encDest}&mode=driving`
+    : null;
+
+  return (
+    <div className="space-y-2">
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+        <div className="flex items-center gap-2 mb-1">
+          <Navigation className="w-4 h-4 text-neutral-700" />
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Rota da Missão</span>
+        </div>
+
+        {origin && (
+          <div className="flex items-start gap-3">
+            <div className="flex flex-col items-center mt-0.5">
+              <div className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600" />
+              {destination && <div className="w-0.5 h-6 bg-neutral-200" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Origem</p>
+              <p className="text-sm font-semibold text-neutral-800 leading-tight">{origin}</p>
+            </div>
+          </div>
+        )}
+
+        {destination && (
+          <div className="flex items-start gap-3">
+            <div className="flex flex-col items-center mt-0.5">
+              <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Destino</p>
+              <p className="text-sm font-semibold text-neutral-800 leading-tight">{destination}</p>
+            </div>
+          </div>
+        )}
+
+        {origin && destination && (
+          <a
+            href={googleMapsRouteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-600 uppercase tracking-wider pt-1 border-t border-neutral-100"
+            data-testid="link-ver-rota-completa"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Ver rota completa no Maps
+          </a>
+        )}
+      </div>
+
+      {embedUrl && (
+        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+          <iframe
+            src={embedUrl}
+            width="100%"
+            height="200"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+      )}
+
+      {currentTarget && (
+        <div className="grid grid-cols-2 gap-2">
+          <a
+            href={googleMapsNavUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 h-12 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
+            data-testid="button-navigate-gmaps"
+          >
+            <Navigation className="w-4 h-4" />
+            Google Maps
+          </a>
+          <a
+            href={wazeNavUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 h-12 bg-[#33ccff] text-white rounded-2xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
+            data-testid="button-navigate-waze"
+          >
+            <Navigation className="w-4 h-4" />
+            Waze
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -365,6 +475,8 @@ export default function MobileMissaoPage() {
         {mission.missionStartedAt && currentStep !== "finalizada" && (
           <MissionTimer startedAt={mission.missionStartedAt} />
         )}
+
+        <RouteInfoCard origin={mission.origin} destination={mission.destination} currentStep={currentStep} />
 
         {currentStep === "aguardando" && (
           <div className="space-y-3">

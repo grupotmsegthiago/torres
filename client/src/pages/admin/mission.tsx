@@ -21,7 +21,8 @@ const MISSION_STEPS = [
   { key: "checkin_veiculo_escoltado", label: "Veíc. Escoltado", screenTitle: "Veículo Escoltado", screenSub: "REGISTRO DO CAMINHÃO" },
   { key: "checkin_dados_motorista", label: "Dados Motorista", screenTitle: "Dados do Motorista", screenSub: "INFORMAÇÕES DO ESCOLTADO" },
   { key: "iniciar_missao", label: "Iniciar Missão", screenTitle: "Iniciar Missão", screenSub: "EXECUÇÃO DA ESCOLTA" },
-  { key: "em_transito_destino", label: "Retorno", screenTitle: "Em Trânsito", screenSub: "DESLOCAMENTO AO DESTINO" },
+  { key: "em_transito_destino", label: "Trânsito Destino", screenTitle: "Em Trânsito", screenSub: "DESLOCAMENTO AO DESTINO" },
+  { key: "chegada_destino", label: "Chegada", screenTitle: "Chegada no Destino", screenSub: "ENTREGA / NOVA ENTREGA" },
   { key: "checkout_km_final", label: "KM Final", screenTitle: "KM Final", screenSub: "REGISTRO DE CHEGADA" },
   { key: "checkout_viatura_retorno", label: "Viatura Retorno", screenTitle: "Viatura Retorno", screenSub: "CHECK-OUT FINAL" },
 ] as const;

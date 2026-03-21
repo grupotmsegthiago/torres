@@ -128,6 +128,8 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS frota TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS route TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin TEXT`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination TEXT`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);

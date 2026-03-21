@@ -24,7 +24,8 @@ const MISSION_STATUS_LABELS: Record<string, string> = {
   checkin_veiculo_escoltado: "Chegada na Origem",
   checkin_dados_motorista: "Chegada na Origem",
   iniciar_missao: "Início de Missão",
-  em_transito_destino: "Chegada no Destino",
+  em_transito_destino: "Em Trânsito ao Destino",
+  chegada_destino: "Chegada no Destino",
   checkout_km_final: "Término de Missão",
   checkout_viatura_retorno: "Término de Missão",
   finalizada: "Finalizada",
@@ -94,6 +95,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     vehicleId: order?.vehicleId || prefilledVehicleId || null,
     kitId: order?.kitId || null,
     route: (order as any)?.route || "",
+    origin: (order as any)?.origin || "",
+    destination: (order as any)?.destination || "",
     requesterName: (order as any)?.requesterName || "",
     notes: order?.notes || "",
   });
@@ -109,7 +112,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const addRoute = async () => {
     if (!routeOrigin.trim() || !routeDestination.trim()) return;
     const routeStr = `${routeOrigin.trim()} → ${routeDestination.trim()}`;
-    setForm({ ...form, route: routeStr });
+    setForm({ ...form, route: routeStr, origin: routeOrigin.trim(), destination: routeDestination.trim() });
     setShowRouteForm(false);
     setCalculatingRoute(true);
     try {
@@ -336,7 +339,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm({ ...form, route: "" }); setRouteInfo(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", destination: "" }); setRouteInfo(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>

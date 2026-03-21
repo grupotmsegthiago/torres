@@ -172,6 +172,8 @@ export const serviceOrders = pgTable("service_orders", {
   escortedVehiclePlate: text("escorted_vehicle_plate"),
   missionStartedAt: timestamp("mission_started_at"),
   route: text("route"),
+  origin: text("origin"),
+  destination: text("destination"),
   requesterName: text("requester_name"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
