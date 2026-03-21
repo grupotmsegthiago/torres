@@ -1,7 +1,8 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
-import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
@@ -12,10 +13,55 @@ const navItems = [
   { path: "/mobile/perfil", label: "Perfil", icon: UserCircle },
 ];
 
+function useScreenshotGuard() {
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const showBlock = () => {
+      setBlocked(true);
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setBlocked(false), 4000);
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        showBlock();
+      }
+    };
+
+    const handleBlur = () => {
+      showBlock();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "PrintScreen" || (e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5"))) {
+        e.preventDefault();
+        showBlock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  return blocked;
+}
+
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { denied, requestPermission } = useGeolocation();
+  const screenshotBlocked = useScreenshotGuard();
 
   if (denied) {
     return (
@@ -54,7 +100,17 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col" data-testid="mobile-layout">
+    <div className="min-h-screen bg-neutral-50 flex flex-col select-none" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
+      {screenshotBlocked && (
+        <div className="fixed inset-0 bg-black z-[99999] flex items-center justify-center" data-testid="screenshot-block-overlay">
+          <div className="text-center p-6">
+            <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <p className="text-white font-black text-lg uppercase tracking-wider">Conteúdo Protegido</p>
+            <p className="text-neutral-400 text-sm mt-2">Capturas de tela não são permitidas</p>
+          </div>
+        </div>
+      )}
+
       <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />
