@@ -9,6 +9,7 @@ export default function MobileHomePage() {
 
   const { data: mission, isLoading } = useQuery<any>({
     queryKey: ["/api/mission/active"],
+    refetchInterval: 2 * 60 * 1000,
   });
 
   const firstName = user?.name?.split(" ")[0] || "Agente";

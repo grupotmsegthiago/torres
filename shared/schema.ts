@@ -433,3 +433,19 @@ export const apiLogs = pgTable("api_logs", {
 export const insertApiLogSchema = createInsertSchema(apiLogs).omit({ id: true, createdAt: true });
 export type InsertApiLog = z.infer<typeof insertApiLogSchema>;
 export type ApiLog = typeof apiLogs.$inferSelect;
+
+export const agentLocations = pgTable("agent_locations", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  employeeId: integer("employee_id"),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+  accuracy: real("accuracy"),
+  speed: real("speed"),
+  heading: real("heading"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentLocationSchema = createInsertSchema(agentLocations).omit({ id: true, updatedAt: true });
+export type InsertAgentLocation = z.infer<typeof insertAgentLocationSchema>;
+export type AgentLocation = typeof agentLocations.$inferSelect;

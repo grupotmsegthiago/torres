@@ -2915,5 +2915,28 @@ Regras:
     }
   });
 
+  app.post("/api/agent/location", requireAuth, async (req, res) => {
+    const user = req.user!;
+    const { latitude, longitude, accuracy, speed, heading } = req.body;
+    if (latitude == null || longitude == null) {
+      return res.status(400).json({ message: "Latitude e longitude são obrigatórios" });
+    }
+    const loc = await storage.upsertAgentLocation({
+      userId: user.id,
+      employeeId: user.employeeId || null,
+      latitude,
+      longitude,
+      accuracy: accuracy ?? null,
+      speed: speed ?? null,
+      heading: heading ?? null,
+    });
+    res.json(loc);
+  });
+
+  app.get("/api/agent/locations", requireAuth, async (req, res) => {
+    const locations = await storage.getAgentLocations();
+    res.json(locations);
+  });
+
   return httpServer;
 }

@@ -182,6 +182,20 @@ export async function ensureDbSchema() {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry_events(created_at)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_plate ON telemetry_events(plate)`);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS agent_locations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        employee_id INTEGER,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        accuracy REAL,
+        speed REAL,
+        heading REAL,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_tie INTEGER DEFAULT 0`);

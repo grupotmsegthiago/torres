@@ -26,6 +26,8 @@ import {
   type WeaponKitItem, type InsertWeaponKitItem,
   type Gerenciadora, type InsertGerenciadora,
   type TelemetryEvent, type InsertTelemetryEvent,
+  agentLocations,
+  type AgentLocation, type InsertAgentLocation,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -136,6 +138,9 @@ export interface IStorage {
 
   createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent>;
   getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]>;
+
+  upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation>;
+  getAgentLocations(): Promise<AgentLocation[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -594,6 +599,22 @@ export class DatabaseStorage implements IStorage {
     query = query.orderBy(desc(telemetryEvents.createdAt)) as any;
     if (filters?.limit) query = query.limit(filters.limit) as any;
     return query;
+  }
+  async upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation> {
+    const existing = await db.select().from(agentLocations).where(eq(agentLocations.userId, data.userId));
+    if (existing.length > 0) {
+      const [updated] = await db.update(agentLocations)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(agentLocations.userId, data.userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(agentLocations).values(data).returning();
+    return created;
+  }
+
+  async getAgentLocations(): Promise<AgentLocation[]> {
+    return db.select().from(agentLocations).orderBy(desc(agentLocations.updatedAt));
   }
 }
 
