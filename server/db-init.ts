@@ -130,6 +130,7 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination TEXT`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_driver_phone TEXT`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
     await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);
@@ -205,6 +206,66 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_posso_cancelar INTEGER DEFAULT 1`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_comando_exclusivo INTEGER DEFAULT 0`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_compartilhar_dados INTEGER DEFAULT 0`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_absences (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        start_date TIMESTAMP NOT NULL,
+        end_date TIMESTAMP,
+        reason TEXT,
+        document_url TEXT,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_fines (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        vehicle_id INTEGER,
+        date TIMESTAMP NOT NULL,
+        infraction TEXT NOT NULL,
+        amount REAL,
+        points INTEGER,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_timesheets (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        date TIMESTAMP NOT NULL,
+        clock_in TEXT,
+        clock_out TEXT,
+        lunch_out TEXT,
+        lunch_in TEXT,
+        overtime REAL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_payslips (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        gross_salary REAL,
+        net_salary REAL,
+        deductions REAL,
+        benefits REAL,
+        document_url TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {

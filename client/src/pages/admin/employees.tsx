@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, Home, Ban } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1072,12 +1072,348 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   );
 }
 
+type HRTab = "absences" | "fines" | "timesheets" | "payslips";
+const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
+  { key: "absences", label: "Faltas / Atestados", icon: AlertTriangle },
+  { key: "fines", label: "Multas", icon: Ban },
+  { key: "timesheets", label: "Folha de Ponto", icon: Clock },
+  { key: "payslips", label: "Holerite", icon: DollarSign },
+];
+
+const ABSENCE_TYPES = ["Falta", "Atestado Médico", "Licença", "Suspensão", "Outro"];
+const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function HRDialog({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [tab, setTab] = useState<HRTab>("absences");
+
+  const { data: absences = [], isLoading: loadingAbs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "absences"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/absences`); return r.json(); },
+    enabled: open,
+  });
+  const { data: fines = [], isLoading: loadingFines } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "fines"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/fines`); return r.json(); },
+    enabled: open,
+  });
+  const { data: timesheets = [], isLoading: loadingTs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "timesheets"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/timesheets`); return r.json(); },
+    enabled: open,
+  });
+  const { data: payslips = [], isLoading: loadingPs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "payslips"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/payslips`); return r.json(); },
+    enabled: open,
+  });
+
+  const [showAbsForm, setShowAbsForm] = useState(false);
+  const [absForm, setAbsForm] = useState({ type: "Falta", startDate: "", endDate: "", reason: "", status: "pendente" });
+  const addAbsence = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/absences`, absForm); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "absences"] }); setShowAbsForm(false); setAbsForm({ type: "Falta", startDate: "", endDate: "", reason: "", status: "pendente" }); toast({ title: "Falta/atestado registrado" }); },
+  });
+  const deleteAbsence = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/absences/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "absences"] }); toast({ title: "Registro removido" }); },
+  });
+
+  const [showFineForm, setShowFineForm] = useState(false);
+  const [fineForm, setFineForm] = useState({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" });
+  const addFine = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? Number(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); setShowFineForm(false); setFineForm({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" }); toast({ title: "Multa registrada" }); },
+  });
+  const deleteFine = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fines/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); toast({ title: "Multa removida" }); },
+  });
+
+  const [showTsForm, setShowTsForm] = useState(false);
+  const [tsForm, setTsForm] = useState({ date: "", clockIn: "", clockOut: "", lunchOut: "", lunchIn: "", overtime: "", notes: "" });
+  const addTimesheet = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/timesheets`, { ...tsForm, overtime: tsForm.overtime ? Number(tsForm.overtime) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); setShowTsForm(false); setTsForm({ date: "", clockIn: "", clockOut: "", lunchOut: "", lunchIn: "", overtime: "", notes: "" }); toast({ title: "Ponto registrado" }); },
+  });
+  const deleteTimesheet = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/timesheets/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); toast({ title: "Ponto removido" }); },
+  });
+
+  const [showPsForm, setShowPsForm] = useState(false);
+  const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
+  const addPayslip = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? Number(psForm.grossSalary) : null, netSalary: psForm.netSalary ? Number(psForm.netSalary) : null, deductions: psForm.deductions ? Number(psForm.deductions) : null, benefits: psForm.benefits ? Number(psForm.benefits) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); setShowPsForm(false); setPsForm({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" }); toast({ title: "Holerite registrado" }); },
+  });
+  const deletePayslip = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/payslips/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); toast({ title: "Holerite removido" }); },
+  });
+
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "-";
+  const fmtCurrency = (v: number | null) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-";
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold">RH — {employee.name}</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex gap-1 border-b border-neutral-200 mb-4">
+          {HR_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors ${tab === t.key ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
+              data-testid={`tab-hr-${t.key}`}
+            >
+              <t.icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "absences" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Faltas e Atestados</h3>
+              <Button size="sm" onClick={() => setShowAbsForm(!showAbsForm)} data-testid="button-add-absence"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showAbsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={absForm.type} onChange={(e) => setAbsForm({ ...absForm, type: e.target.value })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-absence-type">
+                    {ABSENCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select value={absForm.status} onChange={(e) => setAbsForm({ ...absForm, status: e.target.value })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-absence-status">
+                    <option value="pendente">Pendente</option>
+                    <option value="aprovado">Aprovado</option>
+                    <option value="rejeitado">Rejeitado</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start" />
+                  <Input type="date" value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end" />
+                </div>
+                <Input value={absForm.reason} onChange={(e) => setAbsForm({ ...absForm, reason: e.target.value })} placeholder="Motivo" data-testid="input-absence-reason" />
+                <Button size="sm" onClick={() => addAbsence.mutate()} disabled={!absForm.startDate || addAbsence.isPending} data-testid="button-save-absence">Salvar</Button>
+              </div>
+            )}
+            {loadingAbs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : absences.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum registro</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Tipo</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Início</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Fim</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Motivo</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Status</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {absences.map((a: any) => (
+                    <tr key={a.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{a.type}</td>
+                      <td className="px-3 py-2">{fmtDate(a.startDate)}</td>
+                      <td className="px-3 py-2">{fmtDate(a.endDate)}</td>
+                      <td className="px-3 py-2 text-neutral-500">{a.reason || "-"}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${a.status === "aprovado" ? "bg-green-50 text-green-700" : a.status === "rejeitado" ? "bg-red-50 text-red-700" : "bg-yellow-50 text-yellow-700"}`}>{a.status}</span>
+                      </td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteAbsence.mutate(a.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "fines" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Multas de Trânsito</h3>
+              <Button size="sm" onClick={() => setShowFineForm(!showFineForm)} data-testid="button-add-fine"><Plus className="w-4 h-4 mr-1" />Nova</Button>
+            </div>
+            {showFineForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <Input type="date" value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date" />
+                <Input value={fineForm.infraction} onChange={(e) => setFineForm({ ...fineForm, infraction: e.target.value })} placeholder="Infração" data-testid="input-fine-infraction" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" value={fineForm.amount} onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })} placeholder="Valor (R$)" data-testid="input-fine-amount" />
+                  <Input type="number" value={fineForm.points} onChange={(e) => setFineForm({ ...fineForm, points: e.target.value })} placeholder="Pontos" data-testid="input-fine-points" />
+                </div>
+                <select value={fineForm.status} onChange={(e) => setFineForm({ ...fineForm, status: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-fine-status">
+                  <option value="pendente">Pendente</option>
+                  <option value="paga">Paga</option>
+                  <option value="contestada">Contestada</option>
+                </select>
+                <Input value={fineForm.notes} onChange={(e) => setFineForm({ ...fineForm, notes: e.target.value })} placeholder="Observações" data-testid="input-fine-notes" />
+                <Button size="sm" onClick={() => addFine.mutate()} disabled={!fineForm.date || !fineForm.infraction || addFine.isPending} data-testid="button-save-fine">Salvar</Button>
+              </div>
+            )}
+            {loadingFines ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : fines.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhuma multa registrada</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Infração</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Valor</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Pontos</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Status</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fines.map((f: any) => (
+                    <tr key={f.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{fmtDate(f.date)}</td>
+                      <td className="px-3 py-2">{f.infraction}</td>
+                      <td className="px-3 py-2">{fmtCurrency(f.amount)}</td>
+                      <td className="px-3 py-2">{f.points ?? "-"}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${f.status === "paga" ? "bg-green-50 text-green-700" : f.status === "contestada" ? "bg-blue-50 text-blue-700" : "bg-yellow-50 text-yellow-700"}`}>{f.status}</span>
+                      </td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteFine.mutate(f.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "timesheets" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Folha de Ponto</h3>
+              <Button size="sm" onClick={() => setShowTsForm(!showTsForm)} data-testid="button-add-timesheet"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showTsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <Input type="date" value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="time" value={tsForm.clockIn} onChange={(e) => setTsForm({ ...tsForm, clockIn: e.target.value })} placeholder="Entrada" data-testid="input-ts-clockin" />
+                  <Input type="time" value={tsForm.clockOut} onChange={(e) => setTsForm({ ...tsForm, clockOut: e.target.value })} placeholder="Saída" data-testid="input-ts-clockout" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="time" value={tsForm.lunchOut} onChange={(e) => setTsForm({ ...tsForm, lunchOut: e.target.value })} placeholder="Saída Almoço" data-testid="input-ts-lunchout" />
+                  <Input type="time" value={tsForm.lunchIn} onChange={(e) => setTsForm({ ...tsForm, lunchIn: e.target.value })} placeholder="Retorno Almoço" data-testid="input-ts-lunchin" />
+                </div>
+                <Input type="number" step="0.5" value={tsForm.overtime} onChange={(e) => setTsForm({ ...tsForm, overtime: e.target.value })} placeholder="Horas extras" data-testid="input-ts-overtime" />
+                <Input value={tsForm.notes} onChange={(e) => setTsForm({ ...tsForm, notes: e.target.value })} placeholder="Observações" data-testid="input-ts-notes" />
+                <Button size="sm" onClick={() => addTimesheet.mutate()} disabled={!tsForm.date || addTimesheet.isPending} data-testid="button-save-timesheet">Salvar</Button>
+              </div>
+            )}
+            {loadingTs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : timesheets.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum ponto registrado</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída Almoço</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timesheets.map((t: any) => (
+                    <tr key={t.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{fmtDate(t.date)}</td>
+                      <td className="px-3 py-2">{t.clockIn || "-"}</td>
+                      <td className="px-3 py-2">{t.lunchOut || "-"}</td>
+                      <td className="px-3 py-2">{t.lunchIn || "-"}</td>
+                      <td className="px-3 py-2">{t.clockOut || "-"}</td>
+                      <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "payslips" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Holerites</h3>
+              <Button size="sm" onClick={() => setShowPsForm(!showPsForm)} data-testid="button-add-payslip"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showPsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={psForm.month} onChange={(e) => setPsForm({ ...psForm, month: Number(e.target.value) })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-payslip-month">
+                    {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <Input type="number" value={psForm.year} onChange={(e) => setPsForm({ ...psForm, year: Number(e.target.value) })} placeholder="Ano" data-testid="input-payslip-year" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" step="0.01" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross" />
+                  <Input type="number" step="0.01" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" step="0.01" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions" />
+                  <Input type="number" step="0.01" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits" />
+                </div>
+                <Input value={psForm.notes} onChange={(e) => setPsForm({ ...psForm, notes: e.target.value })} placeholder="Observações" data-testid="input-payslip-notes" />
+                <Button size="sm" onClick={() => addPayslip.mutate()} disabled={addPayslip.isPending} data-testid="button-save-payslip">Salvar</Button>
+              </div>
+            )}
+            {loadingPs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : payslips.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum holerite registrado</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Mês/Ano</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Bruto</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Descontos</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Benefícios</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Líquido</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payslips.map((p: any) => (
+                    <tr key={p.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{MONTHS[p.month - 1]}/{p.year}</td>
+                      <td className="px-3 py-2">{fmtCurrency(p.grossSalary)}</td>
+                      <td className="px-3 py-2 text-red-600">{fmtCurrency(p.deductions)}</td>
+                      <td className="px-3 py-2 text-green-600">{fmtCurrency(p.benefits)}</td>
+                      <td className="px-3 py-2 font-bold">{fmtCurrency(p.netSalary)}</td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deletePayslip.mutate(p.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function EmployeesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Employee | undefined>();
   const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
   const [salaryEmployee, setSalaryEmployee] = useState<Employee | null>(null);
   const [docEmployee, setDocEmployee] = useState<Employee | null>(null);
+  const [hrEmployee, setHrEmployee] = useState<Employee | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -1124,6 +1460,10 @@ export default function EmployeesPage() {
 
       {docEmployee && (
         <DocumentsModal employee={docEmployee} open={!!docEmployee} onClose={() => setDocEmployee(null)} />
+      )}
+
+      {hrEmployee && (
+        <HRDialog employee={hrEmployee} open={!!hrEmployee} onClose={() => setHrEmployee(null)} />
       )}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
@@ -1184,6 +1524,9 @@ export default function EmployeesPage() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
+                        <Button variant="ghost" size="icon" onClick={() => setHrEmployee(e)} title="RH (Faltas, Multas, Ponto, Holerite)" data-testid={`button-hr-${e.id}`}>
+                          <ClipboardList className="w-4 h-4 text-orange-600" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setDocEmployee(e)} title="Documentos / Contrato" data-testid={`button-docs-${e.id}`}>
                           <FileText className="w-4 h-4 text-purple-600" />
                         </Button>

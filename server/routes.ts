@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -11,6 +13,7 @@ import {
   insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
+  employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -1969,6 +1972,7 @@ Para CPF, formate como 000.000.000-00.`
       employeeId: user.employeeId,
       completedSteps,
       escortedDriverName: active.escortedDriverName || null,
+      escortedDriverPhone: active.escortedDriverPhone || null,
       escortedVehiclePlate: active.escortedVehiclePlate || null,
       missionStartedAt: active.missionStartedAt || null,
       origin: active.origin || null,
@@ -2092,7 +2096,7 @@ Para CPF, formate como 000.000.000-00.`
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
-    const { serviceOrderId, driverName, vehiclePlate } = req.body;
+    const { serviceOrderId, driverName, vehiclePlate, driverPhone } = req.body;
     if (!serviceOrderId || !driverName || !vehiclePlate) {
       return res.status(400).json({ message: "Campos obrigatórios: serviceOrderId, driverName, vehiclePlate" });
     }
@@ -2107,6 +2111,7 @@ Para CPF, formate como 000.000.000-00.`
 
     const updated = await storage.updateServiceOrder(serviceOrderId, {
       escortedDriverName: driverName,
+      escortedDriverPhone: driverPhone || null,
       escortedVehiclePlate: vehiclePlate,
     });
     res.json(updated);
@@ -2217,6 +2222,86 @@ Para CPF, formate como 000.000.000-00.`
       missionStatus: "em_transito_destino",
     });
     res.json(updated);
+  });
+
+  // ====================== HR: FALTAS/ATESTADOS ======================
+
+  app.get("/api/employees/:id/absences", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const rows = await db.select().from(employeeAbsences).where(eq(employeeAbsences.employeeId, employeeId)).orderBy(desc(employeeAbsences.startDate));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/absences", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const data = { ...req.body, employeeId };
+    const [row] = await db.insert(employeeAbsences).values(data).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/absences/:id", requireAuth, requireAdmin, async (req, res) => {
+    await db.delete(employeeAbsences).where(eq(employeeAbsences.id, Number(req.params.id)));
+    res.json({ ok: true });
+  });
+
+  // ====================== HR: MULTAS ======================
+
+  app.get("/api/employees/:id/fines", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const rows = await db.select().from(employeeFines).where(eq(employeeFines.employeeId, employeeId)).orderBy(desc(employeeFines.date));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/fines", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const data = { ...req.body, employeeId, vehicleId: req.body.vehicleId ? Number(req.body.vehicleId) : null };
+    const [row] = await db.insert(employeeFines).values(data).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/fines/:id", requireAuth, requireAdmin, async (req, res) => {
+    await db.delete(employeeFines).where(eq(employeeFines.id, Number(req.params.id)));
+    res.json({ ok: true });
+  });
+
+  // ====================== HR: FOLHA DE PONTO ======================
+
+  app.get("/api/employees/:id/timesheets", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const rows = await db.select().from(employeeTimesheets).where(eq(employeeTimesheets.employeeId, employeeId)).orderBy(desc(employeeTimesheets.date));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/timesheets", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const data = { ...req.body, employeeId };
+    const [row] = await db.insert(employeeTimesheets).values(data).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/timesheets/:id", requireAuth, requireAdmin, async (req, res) => {
+    await db.delete(employeeTimesheets).where(eq(employeeTimesheets.id, Number(req.params.id)));
+    res.json({ ok: true });
+  });
+
+  // ====================== HR: HOLERITES ======================
+
+  app.get("/api/employees/:id/payslips", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const rows = await db.select().from(employeePayslips).where(eq(employeePayslips.employeeId, employeeId)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/payslips", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const data = { ...req.body, employeeId };
+    const [row] = await db.insert(employeePayslips).values(data).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/payslips/:id", requireAuth, requireAdmin, async (req, res) => {
+    await db.delete(employeePayslips).where(eq(employeePayslips.id, Number(req.params.id)));
+    res.json({ ok: true });
   });
 
   // ====================== TESTAR TODAS APIs ======================

@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
-  Loader2, AlertCircle, Navigation, ExternalLink,
+  Loader2, AlertCircle, Navigation, ExternalLink, Phone,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -264,6 +264,7 @@ export default function MobileMissaoPage() {
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [kmValue, setKmValue] = useState("");
   const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
   const [driverPlate, setDriverPlate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -355,6 +356,7 @@ export default function MobileMissaoPage() {
       await apiRequest("POST", "/api/mission/escort-data", {
         serviceOrderId: mission.serviceOrderId,
         driverName: driverName.trim(),
+        driverPhone: driverPhone.trim() || null,
         vehiclePlate: driverPlate.trim().toUpperCase(),
       });
       await advanceMission();
@@ -477,6 +479,38 @@ export default function MobileMissaoPage() {
         )}
 
         <RouteInfoCard origin={mission.origin} destination={mission.destination} currentStep={currentStep} />
+
+        {mission.escortedDriverName && ["em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno"].includes(currentStep) && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Truck className="w-4 h-4 text-neutral-700" />
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Motorista Escoltado</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-neutral-800">{mission.escortedDriverName}</p>
+                {mission.escortedVehiclePlate && (
+                  <p className="text-xs text-neutral-500">Placa: <span className="font-mono font-bold text-neutral-700">{mission.escortedVehiclePlate}</span></p>
+                )}
+                {mission.escortedDriverPhone && (
+                  <p className="text-xs text-neutral-500">{mission.escortedDriverPhone}</p>
+                )}
+              </div>
+              {mission.escortedDriverPhone && (
+                <a
+                  href={`https://wa.me/55${mission.escortedDriverPhone.replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-green-500 text-white rounded-xl text-xs font-bold active:scale-[0.98]"
+                  data-testid="link-whatsapp-driver-floating"
+                >
+                  <Phone className="w-4 h-4" />
+                  WhatsApp
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
         {currentStep === "aguardando" && (
           <div className="space-y-3">
@@ -655,6 +689,18 @@ export default function MobileMissaoPage() {
                 />
               </div>
               <div>
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Telefone do Motorista</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={driverPhone}
+                  onChange={(e) => setDriverPhone(e.target.value)}
+                  placeholder="(11) 99999-9999"
+                  className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-medium text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400"
+                  data-testid="input-driver-phone"
+                />
+              </div>
+              <div>
                 <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Placa do Veículo Escoltado</label>
                 <input
                   type="text"
@@ -689,9 +735,24 @@ export default function MobileMissaoPage() {
               <p className="text-xs text-neutral-400">O sistema registrará o horário exato de início</p>
 
               {(mission.escortedDriverName || mission.escortedVehiclePlate) && (
-                <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 mt-4 text-left space-y-1">
+                <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 mt-4 text-left space-y-2">
                   {mission.escortedDriverName && (
                     <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Motorista:</strong> {mission.escortedDriverName}</p>
+                  )}
+                  {mission.escortedDriverPhone && (
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Telefone:</strong> {mission.escortedDriverPhone}</p>
+                      <a
+                        href={`https://wa.me/55${mission.escortedDriverPhone.replace(/\D/g, "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white rounded-full text-[10px] font-bold"
+                        data-testid="link-whatsapp-driver"
+                      >
+                        <Phone className="w-3 h-3" />
+                        WhatsApp
+                      </a>
+                    </div>
                   )}
                   {mission.escortedVehiclePlate && (
                     <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Placa:</strong> {mission.escortedVehiclePlate}</p>

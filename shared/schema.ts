@@ -169,6 +169,7 @@ export const serviceOrders = pgTable("service_orders", {
   missionStatus: text("mission_status").default("aguardando"),
   kitId: integer("kit_id"),
   escortedDriverName: text("escorted_driver_name"),
+  escortedDriverPhone: text("escorted_driver_phone"),
   escortedVehiclePlate: text("escorted_vehicle_plate"),
   missionStartedAt: timestamp("mission_started_at"),
   route: text("route"),
@@ -451,3 +452,78 @@ export const agentLocations = pgTable("agent_locations", {
 export const insertAgentLocationSchema = createInsertSchema(agentLocations).omit({ id: true, updatedAt: true });
 export type InsertAgentLocation = z.infer<typeof insertAgentLocationSchema>;
 export type AgentLocation = typeof agentLocations.$inferSelect;
+
+export const employeeAbsences = pgTable("employee_absences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  type: text("type").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  reason: text("reason"),
+  documentUrl: text("document_url"),
+  status: text("status").notNull().default("pendente"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeAbsenceSchema = createInsertSchema(employeeAbsences).omit({ id: true, createdAt: true }).extend({
+  startDate: z.preprocess((val) => (val === null || val === undefined || val === "" ? null : val), z.union([z.coerce.date(), z.null()])),
+  endDate: z.preprocess((val) => (val === null || val === undefined || val === "" ? null : val), z.union([z.coerce.date(), z.null()])).optional(),
+});
+export type InsertEmployeeAbsence = z.infer<typeof insertEmployeeAbsenceSchema>;
+export type EmployeeAbsence = typeof employeeAbsences.$inferSelect;
+
+export const employeeFines = pgTable("employee_fines", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  vehicleId: integer("vehicle_id"),
+  date: timestamp("date").notNull(),
+  infraction: text("infraction").notNull(),
+  amount: real("amount"),
+  points: integer("points"),
+  status: text("status").notNull().default("pendente"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeFineSchema = createInsertSchema(employeeFines).omit({ id: true, createdAt: true }).extend({
+  date: z.preprocess((val) => (val === null || val === undefined || val === "" ? null : val), z.union([z.coerce.date(), z.null()])),
+});
+export type InsertEmployeeFine = z.infer<typeof insertEmployeeFineSchema>;
+export type EmployeeFine = typeof employeeFines.$inferSelect;
+
+export const employeeTimesheets = pgTable("employee_timesheets", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  date: timestamp("date").notNull(),
+  clockIn: text("clock_in"),
+  clockOut: text("clock_out"),
+  lunchOut: text("lunch_out"),
+  lunchIn: text("lunch_in"),
+  overtime: real("overtime"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeTimesheetSchema = createInsertSchema(employeeTimesheets).omit({ id: true, createdAt: true }).extend({
+  date: z.preprocess((val) => (val === null || val === undefined || val === "" ? null : val), z.union([z.coerce.date(), z.null()])),
+});
+export type InsertEmployeeTimesheet = z.infer<typeof insertEmployeeTimesheetSchema>;
+export type EmployeeTimesheet = typeof employeeTimesheets.$inferSelect;
+
+export const employeePayslips = pgTable("employee_payslips", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  month: integer("month").notNull(),
+  year: integer("year").notNull(),
+  grossSalary: real("gross_salary"),
+  netSalary: real("net_salary"),
+  deductions: real("deductions"),
+  benefits: real("benefits"),
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeePayslipSchema = createInsertSchema(employeePayslips).omit({ id: true, createdAt: true });
+export type InsertEmployeePayslip = z.infer<typeof insertEmployeePayslipSchema>;
+export type EmployeePayslip = typeof employeePayslips.$inferSelect;
