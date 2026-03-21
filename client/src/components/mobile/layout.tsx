@@ -2,14 +2,15 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useEffect, useState } from "react";
-import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, ShieldAlert } from "lucide-react";
+import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, ShieldAlert, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
 const navItems = [
   { path: "/mobile", label: "Início", icon: Home },
-  { path: "/mobile/missao", label: "Minha Missão", icon: Crosshair },
+  { path: "/mobile/missao", label: "Missão", icon: Crosshair },
   { path: "/mobile/checklist", label: "Checklist", icon: ClipboardCheck },
+  { path: "/mobile/meu-rh", label: "Meu RH", icon: FileText },
   { path: "/mobile/perfil", label: "Perfil", icon: UserCircle },
 ];
 

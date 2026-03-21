@@ -2224,6 +2224,23 @@ Para CPF, formate como 000.000.000-00.`
     res.json(updated);
   });
 
+  // ====================== HR MOBILE (próprio funcionário) ======================
+
+  app.get("/api/my/hr-summary", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+    const empId = user.employeeId;
+
+    const [absRows, fineRows, tsRows, psRows] = await Promise.all([
+      db.select().from(employeeAbsences).where(eq(employeeAbsences.employeeId, empId)).orderBy(desc(employeeAbsences.startDate)),
+      db.select().from(employeeFines).where(eq(employeeFines.employeeId, empId)).orderBy(desc(employeeFines.date)),
+      db.select().from(employeeTimesheets).where(eq(employeeTimesheets.employeeId, empId)).orderBy(desc(employeeTimesheets.date)),
+      db.select().from(employeePayslips).where(eq(employeePayslips.employeeId, empId)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month)),
+    ]);
+
+    res.json({ absences: absRows, fines: fineRows, timesheets: tsRows, payslips: psRows });
+  });
+
   // ====================== HR: FALTAS/ATESTADOS ======================
 
   app.get("/api/employees/:id/absences", requireAuth, requireAdmin, async (req, res) => {

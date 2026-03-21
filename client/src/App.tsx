@@ -30,6 +30,7 @@ import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
 import MobilePerfilPage from "@/pages/mobile/perfil";
+import MobileRHPage from "@/pages/mobile/meu-rh";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -105,6 +106,7 @@ function Router() {
       <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route path="/mobile/checklist">{() => <MobileProtectedRoute component={MobileChecklistPage} />}</Route>
       <Route path="/mobile/perfil">{() => <MobileProtectedRoute component={MobilePerfilPage} />}</Route>
+      <Route path="/mobile/meu-rh">{() => <MobileProtectedRoute component={MobileRHPage} />}</Route>
       <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
