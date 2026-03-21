@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Download, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation } from "wouter";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -12,8 +13,16 @@ export function PWAInstallPrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [location] = useLocation();
+
+  const isMobileRoute = location.startsWith("/mobile");
 
   useEffect(() => {
+    if (!isMobileRoute) {
+      setShowPrompt(false);
+      return;
+    }
+
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches
       || (navigator as any).standalone === true;
     if (isStandalone) return;
@@ -40,7 +49,7 @@ export function PWAInstallPrompt() {
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [isMobileRoute]);
 
   const handleInstall = async () => {
     if (isIOS) {
@@ -62,7 +71,7 @@ export function PWAInstallPrompt() {
     localStorage.setItem("pwa-prompt-dismissed", String(Date.now()));
   };
 
-  if (!showPrompt) return null;
+  if (!showPrompt || !isMobileRoute) return null;
 
   if (showIOSGuide) {
     return (
@@ -85,18 +94,18 @@ export function PWAInstallPrompt() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-white border-t border-neutral-200 shadow-2xl p-4 animate-in slide-in-from-bottom duration-300" data-testid="pwa-install-prompt">
       <div className="max-w-md mx-auto flex items-center gap-3">
-        <div className="flex-shrink-0 bg-amber-50 rounded-xl p-2.5">
-          <Smartphone className="h-6 w-6 text-amber-700" />
+        <div className="flex-shrink-0 bg-neutral-900 rounded-xl p-2.5">
+          <Smartphone className="h-6 w-6 text-white" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-neutral-800">Instalar Torres VP</p>
-          <p className="text-xs text-neutral-500 mt-0.5">Acesse o sistema direto da tela inicial</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Acesse suas missões direto da tela inicial</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={handleDismiss} className="text-neutral-400 hover:text-neutral-600 p-1" data-testid="btn-dismiss-pwa">
             <X className="h-4 w-4" />
           </button>
-          <Button size="sm" onClick={handleInstall} className="bg-amber-700 hover:bg-amber-800 text-white gap-1.5" data-testid="btn-install-pwa">
+          <Button size="sm" onClick={handleInstall} className="bg-neutral-900 hover:bg-neutral-800 text-white gap-1.5" data-testid="btn-install-pwa">
             <Download className="h-3.5 w-3.5" />
             Instalar
           </Button>

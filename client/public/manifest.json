@@ -1,11 +1,11 @@
 {
   "name": "Torres Vigilância Patrimonial",
   "short_name": "Torres VP",
-  "description": "Sistema de Gestão Operacional - Torres Vigilância Patrimonial",
-  "start_url": "/admin",
+  "description": "App do Agente - Torres Vigilância Patrimonial",
+  "start_url": "/mobile",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#d4a843",
+  "theme_color": "#171717",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
