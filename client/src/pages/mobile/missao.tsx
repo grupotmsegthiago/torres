@@ -8,13 +8,14 @@ import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
-  Bell, Shield, Home, ClipboardCheck, Eye,
+  Bell, Shield, Home, ClipboardCheck, Eye, Sparkles,
 } from "lucide-react";
 
 const MISSION_STEPS = [
   "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
-  "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno", "finalizada",
+  "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
+  "finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada",
 ] as const;
 
 type MissionStep = typeof MISSION_STEPS[number];
@@ -28,19 +29,23 @@ const VEHICLE_CHECKLIST_ITEMS = [
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
-  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/12", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
-  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
-  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/12", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/12", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
-  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/12", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
-  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/12", icon: User, needsForm: true },
-  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/12", icon: Siren },
-  em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/12", icon: Route },
-  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/12", icon: MapPin, photos: ["Foto do Local"] },
-  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
-  finalizada: { title: "Missão Finalizada", subtitle: "Concluída", icon: CheckCircle2 },
+  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/16", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
+  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
+  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/16", icon: Route },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/16", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
+  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/16", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
+  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/16", icon: User, needsForm: true },
+  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/16", icon: Siren },
+  em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/16", icon: Route },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/16", icon: MapPin, photos: ["Foto do Local"] },
+  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/16", icon: CheckCircle2 },
+  em_prontidao: { title: "Em Prontidão", subtitle: "Operação · 14/16", icon: Shield },
+  retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 15/16", icon: Home },
+  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 16/16", icon: ClipboardCheck },
+  encerrada: { title: "Operação Encerrada", subtitle: "Concluída", icon: Sparkles },
 };
 
 const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
@@ -77,6 +82,13 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
     "Lateral Esq.": "viatura_retorno_lateral_esq",
     "Lateral Dir.": "viatura_retorno_lateral_dir",
     "Traseira": "viatura_retorno_traseira",
+  },
+  chegada_base: {
+    "Dianteira": "base_viatura_frente",
+    "Lateral Esq.": "base_viatura_lateral_esq",
+    "Lateral Dir.": "base_viatura_lateral_dir",
+    "Traseira": "base_viatura_traseira",
+    "Hodômetro": "base_hodometro",
   },
 };
 
@@ -300,7 +312,10 @@ export default function MobileMissaoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [cienteConfirmed, setCienteConfirmed] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
-  const [emProntidao, setEmProntidao] = useState(false);
+  const [baseCleanStatus, setBaseCleanStatus] = useState<"limpa" | "suja" | "">("");
+  const [baseCleanNotes, setBaseCleanNotes] = useState("");
+  const [baseReturnKm, setBaseReturnKm] = useState("");
+  const [baseChecklistOk, setBaseChecklistOk] = useState<Record<string, boolean>>({});
   const [statusUpdate, setStatusUpdate] = useState("");
 
   const { data: mission, isLoading } = useQuery<any>({
@@ -541,16 +556,46 @@ export default function MobileMissaoPage() {
     }
   };
 
-  const handleRetornoBase = async () => {
+  const handleSimpleAdvance = async (successMsg: string) => {
     setSubmitting(true);
     try {
-      await apiRequest("POST", "/api/audit-log", {
-        action: "retorno_base",
-        page: "missao",
-        details: { serviceOrderId: mission.serviceOrderId },
+      await advanceMission();
+      toast({ title: successMsg });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBaseCleanSubmit = async () => {
+    if (!baseCleanStatus) {
+      toast({ title: "Informe o status de limpeza", variant: "destructive" });
+      return;
+    }
+    if (baseCleanStatus === "suja" && !baseCleanNotes.trim()) {
+      toast({ title: "Informe o motivo", description: "Motivo obrigatório quando viatura está suja.", variant: "destructive" });
+      return;
+    }
+    if (!baseReturnKm || Number(baseReturnKm) <= 0) {
+      toast({ title: "Informe a quilometragem", variant: "destructive" });
+      return;
+    }
+    const allBaseChecked = VEHICLE_CHECKLIST_ITEMS.every(item => baseChecklistOk[item.id]);
+    if (!allBaseChecked) {
+      toast({ title: "Checklist incompleto", description: "Confirme todos os itens do checklist da viatura.", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiRequest("POST", "/api/mission/base-clean", {
+        serviceOrderId: mission.serviceOrderId,
+        cleanStatus: baseCleanStatus,
+        cleanNotes: baseCleanNotes,
+        baseReturnKm,
+        checklistConfirmed: true,
       });
-      setEmProntidao(false);
-      toast({ title: "Retorno à base registrado!", description: "Equipe retornando à base." });
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -609,7 +654,7 @@ export default function MobileMissaoPage() {
           </div>
         </div>
 
-        {mission.missionStartedAt && currentStep !== "finalizada" && (
+        {mission.missionStartedAt && !["finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada"].includes(currentStep) && (
           <MissionTimer startedAt={mission.missionStartedAt} />
         )}
 
@@ -1070,50 +1115,212 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {currentStep === "finalizada" && !emProntidao && (
+        {currentStep === "finalizada" && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
               <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-10 h-10 text-white" />
               </div>
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Missão Finalizada</h3>
-              <p className="text-xs text-neutral-400 mb-4">Todas as etapas foram concluídas com sucesso.</p>
-
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Entregas Finalizadas</h3>
+              <p className="text-xs text-neutral-400 mb-4">Prossiga para encerramento logístico.</p>
               {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
             </div>
-
             <button
-              onClick={() => setEmProntidao(true)}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+              onClick={() => handleSimpleAdvance("Em prontidão!")}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
               data-testid="button-em-prontidao"
             >
-              <Shield className="w-5 h-5" />
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
               Em Prontidão
             </button>
           </div>
         )}
 
-        {currentStep === "finalizada" && emProntidao && (
+        {currentStep === "em_prontidao" && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-em-prontidao">
               <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4 animate-pulse">
                 <Shield className="w-10 h-10 text-green-600" />
               </div>
               <h3 className="text-lg font-black text-green-700 uppercase tracking-wider mb-1">Em Prontidão</h3>
-              <p className="text-xs text-neutral-400 mb-4">Equipe disponível para nova missão</p>
-
+              <p className="text-xs text-neutral-400 mb-4">Equipe disponível. Quando liberados, inicie o retorno à base.</p>
               {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
             </div>
-
             <button
-              onClick={handleRetornoBase}
+              onClick={() => handleSimpleAdvance("Retorno à base iniciado!")}
               disabled={submitting}
-              className="w-full h-14 bg-white border-2 border-neutral-900 text-neutral-900 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
               data-testid="button-retorno-base"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Home className="w-5 h-5" />}
               Retorno à Base
             </button>
+          </div>
+        )}
+
+        {currentStep === "retorno_base" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-retorno-base">
+              <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <Navigation className="w-10 h-10 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-black text-blue-700 uppercase tracking-wider mb-1">Retornando à Base</h3>
+              <p className="text-xs text-neutral-400 mb-4">Ao chegar na base, registre o encerramento logístico.</p>
+              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+            </div>
+            <button
+              onClick={() => handleSimpleAdvance("Chegada à base registrada!")}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-chegada-base"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardCheck className="w-5 h-5" />}
+              Cheguei na Base
+            </button>
+          </div>
+        )}
+
+        {currentStep === "chegada_base" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="card-base-checklist">
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Checklist da Viatura (Base)</p>
+              {VEHICLE_CHECKLIST_ITEMS.map(item => (
+                <label key={item.id} className="flex items-center gap-3 py-2 border-b border-neutral-100 last:border-0">
+                  <input
+                    type="checkbox"
+                    checked={!!baseChecklistOk[item.id]}
+                    onChange={() => setBaseChecklistOk(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                    className="w-5 h-5 rounded border-neutral-300 accent-neutral-900"
+                    data-testid={`checkbox-base-${item.id}`}
+                  />
+                  <span className="text-sm font-semibold text-neutral-700">{item.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Fotos da Viatura na Base</p>
+              {stepConfig.chegada_base.photos!.map((label) => {
+                const key = label.toLowerCase().replace(/\s/g, '-');
+                return (
+                  <CameraCapture
+                    key={key}
+                    label={label}
+                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    captured={!!photos[key]}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="card-base-km">
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2">KM Retorno à Base</p>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={baseReturnKm}
+                onChange={(e) => setBaseReturnKm(e.target.value)}
+                placeholder="Ex: 145320"
+                className="w-full h-12 border border-neutral-200 rounded-xl px-4 text-sm font-bold text-neutral-900 bg-neutral-50"
+                data-testid="input-base-km"
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="card-base-clean">
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Status de Limpeza da Viatura</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setBaseCleanStatus("limpa")}
+                  className={`flex-1 h-14 rounded-xl font-bold text-sm uppercase tracking-wider border-2 transition-colors ${
+                    baseCleanStatus === "limpa"
+                      ? "bg-green-50 border-green-500 text-green-700"
+                      : "bg-neutral-50 border-neutral-200 text-neutral-400"
+                  }`}
+                  data-testid="button-clean-limpa"
+                >
+                  Limpa
+                </button>
+                <button
+                  onClick={() => setBaseCleanStatus("suja")}
+                  className={`flex-1 h-14 rounded-xl font-bold text-sm uppercase tracking-wider border-2 transition-colors ${
+                    baseCleanStatus === "suja"
+                      ? "bg-red-50 border-red-500 text-red-700"
+                      : "bg-neutral-50 border-neutral-200 text-neutral-400"
+                  }`}
+                  data-testid="button-clean-suja"
+                >
+                  Suja
+                </button>
+              </div>
+              {baseCleanStatus === "suja" && (
+                <textarea
+                  value={baseCleanNotes}
+                  onChange={(e) => setBaseCleanNotes(e.target.value)}
+                  placeholder="Descreva o motivo (obrigatório)"
+                  className="w-full mt-3 h-20 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 bg-neutral-50 resize-none"
+                  data-testid="input-clean-notes"
+                />
+              )}
+            </div>
+
+            {(!mission.baseCleanStatus) && (
+              <button
+                onClick={handleBaseCleanSubmit}
+                disabled={submitting}
+                className="w-full h-14 bg-neutral-800 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                data-testid="button-save-base-clean"
+              >
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardCheck className="w-5 h-5" />}
+                Salvar Dados Logísticos
+              </button>
+            )}
+
+            {mission.baseCleanStatus && (
+              <button
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const config = stepConfig[currentStep];
+                    if (config?.photos) {
+                      const stepMap = PHOTO_STEP_MAP[currentStep] || {};
+                      for (const label of config.photos) {
+                        const key = label.toLowerCase().replace(/\s/g, '-');
+                        const backendStep = stepMap[label] || currentStep;
+                        if (photos[key]) {
+                          await uploadPhoto(backendStep, label, photos[key]);
+                        }
+                      }
+                    }
+                    await advanceMission();
+                    toast({ title: "Operação encerrada com sucesso!" });
+                  } catch (err: any) {
+                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                disabled={submitting}
+                className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                data-testid="button-encerrar-missao"
+              >
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                Encerrar Operação
+              </button>
+            )}
+          </div>
+        )}
+
+        {currentStep === "encerrada" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-encerrada">
+              <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-4">
+                <Sparkles className="w-10 h-10 text-white" />
+              </div>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Operação Encerrada</h3>
+              <p className="text-xs text-neutral-400 mb-4">Todas as etapas foram concluídas com sucesso. Bom trabalho!</p>
+              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+            </div>
           </div>
         )}
 

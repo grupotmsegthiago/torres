@@ -32,8 +32,8 @@ The system is built on a modern web stack: React with TypeScript and Vite for th
 -   **Framer Motion:** For animations in the frontend.
 -   **Lucide React / React Icons:** Icon libraries for the user interface.
 
-## Mission Workflow (14 Steps)
-The mobile mission page (`/mobile/missao`) implements a 14-step digital OS workflow for armed escorts:
+## Mission Workflow (18 Steps)
+The mobile mission page (`/mobile/missao`) implements an 18-step digital OS workflow for armed escorts:
 1. **Dados da Missão** (aguardando) — Agent must check "Ciente" (acknowledgment) checkbox before proceeding
 2. **Armamento** (checkout_armamento) — Photos of 3 weapons with serial number visible instruction
 3. **Viatura** (checkout_viatura) — 4 vehicle photos + **mandatory checklist**: estepe, chave de roda, macaco, triângulo
@@ -47,7 +47,11 @@ The mobile mission page (`/mobile/missao`) implements a 14-step digital OS workf
 11. **Chegada no Destino** (chegada_destino) — **Destination photo** required + option for new delivery or finalize
 12. **KM Final** (checkout_km_final) — Odometer photo + KM input
 13. **Viatura Retorno** (checkout_viatura_retorno) — 4 vehicle photos
-14. **Missão Finalizada** (finalizada) — **Em Prontidão** status + **Retorno à Base** button
+14. **Entregas Finalizadas** (finalizada) — Transition to logistical closure
+15. **Em Prontidão** (em_prontidao) — Team standby status, awaiting release
+16. **Retorno à Base** (retorno_base) — In-transit back to base
+17. **Chegada na Base** (chegada_base) — VTR checklist (4 items), 5 vehicle photos (4 angles + odometer), KM input, cleanliness status (Limpa/Suja with reason if dirty). Data saved via `/api/mission/base-clean` with server-side validation. Backend enforces checklist confirmation, KM, and clean status before advancing.
+18. **Operação Encerrada** (encerrada) — Final state, OS marked as concluída, weapon kit released
 
 ## HR Module
 The employee HR module (`/mobile/meu-rh`) provides 5 tabs:

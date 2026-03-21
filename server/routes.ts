@@ -37,6 +37,10 @@ const MISSION_STEPS = [
   "checkout_km_final",
   "checkout_viatura_retorno",
   "finalizada",
+  "em_prontidao",
+  "retorno_base",
+  "chegada_base",
+  "encerrada",
 ] as const;
 
 const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
@@ -48,6 +52,7 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkout_km_final: ["km_final"],
   chegada_destino: ["foto_local_destino"],
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
+  chegada_base: ["base_viatura_frente", "base_viatura_lateral_esq", "base_viatura_lateral_dir", "base_viatura_traseira", "base_hodometro"],
 };
 
 function toSafeUser(user: any) {
@@ -480,7 +485,7 @@ Para CPF, formate como 000.000.000-00.`
     if (data.kitId && (!existing || existing.kitId !== data.kitId)) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
     }
-    if (data.kitId && (data.missionStatus === "finalizada" || data.status === "concluída" || data.status === "cancelada")) {
+    if (data.kitId && (data.missionStatus === "encerrada" || data.status === "concluída" || data.status === "cancelada")) {
       await storage.updateWeaponKit(data.kitId, { status: "disponível" });
     }
 
@@ -1992,7 +1997,7 @@ Para CPF, formate como 000.000.000-00.`
 
     const orders = await storage.getServiceOrdersByEmployee(user.employeeId);
     const active = orders.find(
-      (o) => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "finalizada"
+      (o) => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
     if (!active) return res.json(null);
 
@@ -2229,20 +2234,71 @@ Para CPF, formate como 000.000.000-00.`
       }
     }
 
+    if (currentStep === "chegada_base") {
+      if (!so.baseReturnKm) {
+        return res.status(400).json({ message: "Quilometragem de retorno obrigatória" });
+      }
+      if (!so.baseCleanStatus) {
+        return res.status(400).json({ message: "Status de limpeza da viatura obrigatório" });
+      }
+      if (!so.baseChecklistConfirmed) {
+        return res.status(400).json({ message: "Checklist da viatura obrigatório" });
+      }
+    }
+
     const nextStep = MISSION_STEPS[currentIdx + 1];
     const updates: any = { missionStatus: nextStep };
 
-    if (nextStep === "finalizada") {
+    if (nextStep === "encerrada") {
       updates.status = "concluida";
       updates.completedDate = new Date();
     }
 
     const updated = await storage.updateServiceOrder(serviceOrderId, updates);
 
-    if (nextStep === "finalizada" && so.kitId) {
+    if (nextStep === "encerrada" && so.kitId) {
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
     }
 
+    res.json(updated);
+  });
+
+  app.post("/api/mission/base-clean", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+
+    const { serviceOrderId, cleanStatus, cleanNotes, baseReturnKm, checklistConfirmed } = req.body;
+    const so = await storage.getServiceOrder(serviceOrderId);
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    const isAssigned =
+      so.assignedEmployeeId === user.employeeId ||
+      so.assignedEmployee2Id === user.employeeId;
+    if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
+
+    if (so.missionStatus !== "chegada_base") {
+      return res.status(400).json({ message: "Ação disponível apenas na etapa de chegada à base" });
+    }
+
+    if (!cleanStatus || !["limpa", "suja"].includes(cleanStatus)) {
+      return res.status(400).json({ message: "Status de limpeza inválido" });
+    }
+    if (cleanStatus === "suja" && (!cleanNotes || !cleanNotes.trim())) {
+      return res.status(400).json({ message: "Motivo obrigatório quando viatura está suja" });
+    }
+    if (!baseReturnKm || Number(baseReturnKm) <= 0) {
+      return res.status(400).json({ message: "Quilometragem de retorno obrigatória" });
+    }
+    if (!checklistConfirmed) {
+      return res.status(400).json({ message: "Checklist da viatura obrigatório" });
+    }
+
+    const updated = await storage.updateServiceOrder(serviceOrderId, {
+      baseCleanStatus: cleanStatus,
+      baseCleanNotes: cleanStatus === "suja" ? cleanNotes.trim() : null,
+      baseReturnKm: String(baseReturnKm),
+      baseChecklistConfirmed: true,
+    });
     res.json(updated);
   });
 
