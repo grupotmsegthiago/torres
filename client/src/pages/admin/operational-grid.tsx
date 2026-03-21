@@ -15,7 +15,7 @@ import {
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
-  Crosshair, Search, Minus, LocateFixed,
+  Crosshair, Search, Minus, LocateFixed, ChevronRight,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -959,6 +959,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
   const [activeTab, setActiveTab] = useState<"cadastro" | "espelhados" | "pendentes">("cadastro");
   const [espelharVeiID, setEspelharVeiID] = useState("");
   const [espelharGerId, setEspelharGerId] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [formData, setFormData] = useState({
     name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook",
     contactName: "", contactPhone: "", contactEmail: "", notes: "",
@@ -1266,112 +1267,129 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                 <Label className="text-xs">Nome *</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Nome da gerenciadora" data-testid="input-gerenciadora-name" />
               </div>
-              <div>
+              <div className="col-span-2">
                 <Label className="text-xs">CNPJ *</Label>
                 <Input value={formData.cnpj} onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })} placeholder="00.000.000/0001-00" data-testid="input-gerenciadora-cnpj" />
               </div>
-              <div>
-                <Label className="text-xs">Tipo API</Label>
-                <Select value={formData.apiType} onValueChange={(v) => setFormData({ ...formData, apiType: v })}>
-                  <SelectTrigger data-testid="select-gerenciadora-api-type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="webhook">Webhook</SelectItem>
-                    <SelectItem value="rest">REST API</SelectItem>
-                    <SelectItem value="soap">SOAP / TrucksControl</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">URL da API (webhook)</Label>
-                <Input value={formData.apiUrl} onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })} placeholder="https://api.gerenciadora.com/webhook" data-testid="input-gerenciadora-api-url" />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">Chave/Token</Label>
-                <Input value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="Bearer token ou API key" data-testid="input-gerenciadora-api-key" />
-              </div>
             </div>
 
-            <div className="border-t pt-3">
-              <p className="text-xs font-semibold text-neutral-700 mb-2">Configurações TrucksControl (Espelhamento)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs">Permissão de Comando</Label>
-                  <Select value={String(formData.tcPermissaoComando)} onValueChange={(v) => setFormData({ ...formData, tcPermissaoComando: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-cmd"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">Permitido</SelectItem>
-                      <SelectItem value="0">Não permitido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Inteligência Embarcada (IE)</Label>
-                  <Select value={String(formData.tcIE)} onValueChange={(v) => setFormData({ ...formData, tcIE: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-ie"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Não permitido</SelectItem>
-                      <SelectItem value="1">Permitido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Transferir IE no ato (TIE)</Label>
-                  <Select value={String(formData.tcTIE)} onValueChange={(v) => setFormData({ ...formData, tcTIE: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-tie"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Não transfere</SelectItem>
-                      <SelectItem value="1">Transfere</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Validade (DD/MM/AAAA)</Label>
-                  <Input value={formData.tcValidade} onChange={(e) => setFormData({ ...formData, tcValidade: e.target.value })} placeholder="21/03/2027" className="h-8" data-testid="input-tc-validade" />
-                </div>
-                <div>
-                  <Label className="text-xs">Proprietário pode cancelar</Label>
-                  <Select value={String(formData.tcPossoCancelar)} onValueChange={(v) => setFormData({ ...formData, tcPossoCancelar: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-cancelar"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">Sim</SelectItem>
-                      <SelectItem value="0">Não</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Comando exclusivo</Label>
-                  <Select value={String(formData.tcComandoExclusivo)} onValueChange={(v) => setFormData({ ...formData, tcComandoExclusivo: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-exclusivo"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Não</SelectItem>
-                      <SelectItem value="1">Sim</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Compartilhar dados</Label>
-                  <Select value={String(formData.tcCompartilharDados)} onValueChange={(v) => setFormData({ ...formData, tcCompartilharDados: Number(v) })}>
-                    <SelectTrigger className="h-8" data-testid="select-tc-compartilhar"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Não</SelectItem>
-                      <SelectItem value="1">Sim</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 transition-colors pt-1"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              data-testid="btn-toggle-advanced"
+            >
+              {showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              Configurações avançadas
+            </button>
 
-            <div className="border-t pt-3">
-              <p className="text-xs font-semibold text-neutral-700 mb-2">Contato</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label className="text-xs">Nome</Label><Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" className="h-8" data-testid="input-gerenciadora-contact" /></div>
-                <div><Label className="text-xs">Telefone</Label><Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
-                <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>
-              </div>
-            </div>
+            {showAdvanced && (
+              <>
+                <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                  <div>
+                    <Label className="text-xs">Tipo API</Label>
+                    <Select value={formData.apiType} onValueChange={(v) => setFormData({ ...formData, apiType: v })}>
+                      <SelectTrigger data-testid="select-gerenciadora-api-type"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="webhook">Webhook</SelectItem>
+                        <SelectItem value="rest">REST API</SelectItem>
+                        <SelectItem value="soap">SOAP / TrucksControl</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Chave/Token</Label>
+                    <Input value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="Bearer token ou API key" className="h-8" data-testid="input-gerenciadora-api-key" />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">URL da API (webhook)</Label>
+                    <Input value={formData.apiUrl} onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })} placeholder="https://api.gerenciadora.com/webhook" data-testid="input-gerenciadora-api-url" />
+                  </div>
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-xs font-semibold text-neutral-700 mb-2">Configurações TrucksControl (Espelhamento)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Permissão de Comando</Label>
+                      <Select value={String(formData.tcPermissaoComando)} onValueChange={(v) => setFormData({ ...formData, tcPermissaoComando: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-cmd"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Permitido</SelectItem>
+                          <SelectItem value="0">Não permitido</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Inteligência Embarcada (IE)</Label>
+                      <Select value={String(formData.tcIE)} onValueChange={(v) => setFormData({ ...formData, tcIE: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-ie"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Não permitido</SelectItem>
+                          <SelectItem value="1">Permitido</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Transferir IE no ato (TIE)</Label>
+                      <Select value={String(formData.tcTIE)} onValueChange={(v) => setFormData({ ...formData, tcTIE: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-tie"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Não transfere</SelectItem>
+                          <SelectItem value="1">Transfere</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Validade (DD/MM/AAAA)</Label>
+                      <Input value={formData.tcValidade} onChange={(e) => setFormData({ ...formData, tcValidade: e.target.value })} placeholder="21/03/2027" className="h-8" data-testid="input-tc-validade" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Proprietário pode cancelar</Label>
+                      <Select value={String(formData.tcPossoCancelar)} onValueChange={(v) => setFormData({ ...formData, tcPossoCancelar: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-cancelar"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Sim</SelectItem>
+                          <SelectItem value="0">Não</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Comando exclusivo</Label>
+                      <Select value={String(formData.tcComandoExclusivo)} onValueChange={(v) => setFormData({ ...formData, tcComandoExclusivo: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-exclusivo"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Não</SelectItem>
+                          <SelectItem value="1">Sim</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Compartilhar dados</Label>
+                      <Select value={String(formData.tcCompartilharDados)} onValueChange={(v) => setFormData({ ...formData, tcCompartilharDados: Number(v) })}>
+                        <SelectTrigger className="h-8" data-testid="select-tc-compartilhar"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Não</SelectItem>
+                          <SelectItem value="1">Sim</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-xs font-semibold text-neutral-700 mb-2">Contato</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label className="text-xs">Nome</Label><Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" className="h-8" data-testid="input-gerenciadora-contact" /></div>
+                    <div><Label className="text-xs">Telefone</Label><Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
+                    <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setShowAddForm(false); setEditingId(null); resetForm(); }}>Cancelar</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { setShowAddForm(false); setEditingId(null); resetForm(); setShowAdvanced(false); }}>Cancelar</Button>
               <Button className="flex-1" onClick={handleSubmit} disabled={!formData.name.trim() || createMutation.isPending || updateMutation.isPending} data-testid="btn-save-gerenciadora">
                 {editingId ? "Atualizar" : "Cadastrar"}
               </Button>
