@@ -150,9 +150,24 @@ export async function ensureDbSchema() {
         contact_email TEXT,
         active INTEGER DEFAULT 1,
         notes TEXT,
+        tc_permissao_comando INTEGER DEFAULT 1,
+        tc_ie INTEGER DEFAULT 0,
+        tc_tie INTEGER DEFAULT 0,
+        tc_validade TEXT,
+        tc_posso_cancelar INTEGER DEFAULT 1,
+        tc_comando_exclusivo INTEGER DEFAULT 0,
+        tc_compartilhar_dados INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_tie INTEGER DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_validade TEXT`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_posso_cancelar INTEGER DEFAULT 1`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_comando_exclusivo INTEGER DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_compartilhar_dados INTEGER DEFAULT 0`);
 
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {

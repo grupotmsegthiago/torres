@@ -187,6 +187,7 @@ interface TrackedVehicle {
   batteryLevel?: number;
   coupled?: boolean;
   tracker: {
+    veiID?: number;
     latitude?: number;
     longitude?: number;
     ignition?: boolean;
@@ -257,6 +258,13 @@ interface Gerenciadora {
   contactEmail: string | null;
   active: number | null;
   notes: string | null;
+  tcPermissaoComando: number | null;
+  tcIE: number | null;
+  tcTIE: number | null;
+  tcValidade: string | null;
+  tcPossoCancelar: number | null;
+  tcComandoExclusivo: number | null;
+  tcCompartilharDados: number | null;
 }
 
 function formatPhone(phone: string): string {
@@ -946,55 +954,127 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
   const { toast } = useToast();
   const { addNotification, updateNotification } = useOpNotifications();
   const [open, setOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"cadastro" | "espelhados" | "pendentes">("cadastro");
+  const [espelharVeiID, setEspelharVeiID] = useState("");
+  const [espelharGerId, setEspelharGerId] = useState("");
   const [formData, setFormData] = useState({
     name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook",
     contactName: "", contactPhone: "", contactEmail: "", notes: "",
+    tcPermissaoComando: 1, tcIE: 0, tcTIE: 0, tcValidade: "",
+    tcPossoCancelar: 1, tcComandoExclusivo: 0, tcCompartilharDados: 0,
+  });
+
+  const espelhadosQuery = useQuery({
+    queryKey: ["/api/truckscontrol/espelhados"],
+    queryFn: async () => { const r = await authFetch("/api/truckscontrol/espelhados"); return r.json(); },
+    enabled: open && activeTab === "espelhados",
+    refetchOnWindowFocus: false,
+  });
+
+  const pendentesQuery = useQuery({
+    queryKey: ["/api/truckscontrol/espelhamentos-pendentes"],
+    queryFn: async () => { const r = await authFetch("/api/truckscontrol/espelhamentos-pendentes"); return r.json(); },
+    enabled: open && activeTab === "pendentes",
+    refetchOnWindowFocus: false,
+  });
+
+  const espelharMutation = useMutation({
+    mutationFn: async ({ veiID, cnpj, options }: { veiID: number; cnpj: string; options: any }) => {
+      const r = await authFetch("/api/truckscontrol/espelhar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ veiID, cnpj, ...options }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Espelhamento realizado", description: data.message });
+        queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhados"] });
+      } else {
+        toast({ title: "Falha no espelhamento", description: data.message, variant: "destructive" });
+      }
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const aceitarMutation = useMutation({
+    mutationFn: async (veiID: number) => {
+      const r = await authFetch("/api/truckscontrol/espelhamento/aceitar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ veiID }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: data.success ? "Aceito" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhamentos-pendentes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhados"] });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const rejeitarMutation = useMutation({
+    mutationFn: async (veiID: number) => {
+      const r = await authFetch("/api/truckscontrol/espelhamento/rejeitar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ veiID }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: data.success ? "Rejeitado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhamentos-pendentes"] });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const cancelarMutation = useMutation({
+    mutationFn: async ({ veiID, cnpj }: { veiID: number; cnpj: string }) => {
+      const r = await authFetch("/api/truckscontrol/espelhamento/cancelar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ veiID, cnpj }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: data.success ? "Cancelado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhados"] });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const mirrorMutation = useMutation({
     mutationFn: async ({ gerenciadoraId, notifId }: { gerenciadoraId: number; notifId: string }) => {
       const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
       const vehicleData = onlyVehicles.map((v) => ({
-        plate: v.plate,
-        model: v.model,
-        brand: v.brand,
-        latitude: v.tracker?.latitude,
-        longitude: v.tracker?.longitude,
-        speed: v.tracker?.speed,
-        ignition: v.tracker?.ignition,
-        gpsSignal: v.tracker?.gpsSignal,
-        address: v.tracker?.address,
-        lastPositionTime: v.tracker?.lastPositionTime,
-        activeOs: v.activeOs,
+        plate: v.plate, model: v.model, brand: v.brand,
+        latitude: v.tracker?.latitude, longitude: v.tracker?.longitude,
+        speed: v.tracker?.speed, ignition: v.tracker?.ignition,
+        gpsSignal: v.tracker?.gpsSignal, address: v.tracker?.address,
+        lastPositionTime: v.tracker?.lastPositionTime, activeOs: v.activeOs,
       }));
       const res = await authFetch(`/api/gerenciadoras/${gerenciadoraId}/mirror`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vehicleData }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
-        throw new Error(data.message);
-      }
+      if (!res.ok) { const data = await res.json().catch(() => ({ message: "Erro desconhecido" })); throw new Error(data.message); }
       const data = await res.json();
       return { ...data, notifId };
     },
-    onSuccess: (data) => {
-      updateNotification(data.notifId, { status: "success", message: data.message });
-    },
-    onError: (err: Error, variables) => {
-      updateNotification(variables.notifId, { status: "error", message: err.message });
-    },
+    onSuccess: (data) => updateNotification(data.notifId, { status: "success", message: data.message }),
+    onError: (err: Error, variables) => updateNotification(variables.notifId, { status: "error", message: err.message }),
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const res = await authFetch("/api/gerenciadoras", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro ao cadastrar");
@@ -1002,20 +1082,16 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
-      setShowAddForm(false);
-      resetForm();
+      setShowAddForm(false); resetForm();
       toast({ title: "Gerenciadora cadastrada" });
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: typeof formData }) => {
       const res = await authFetch(`/api/gerenciadoras/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro ao atualizar");
@@ -1023,13 +1099,10 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
-      setEditingId(null);
-      resetForm();
+      setEditingId(null); resetForm();
       toast({ title: "Gerenciadora atualizada" });
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -1041,41 +1114,55 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
       queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
       toast({ title: "Gerenciadora removida" });
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const resetForm = () => {
-    setFormData({ name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook", contactName: "", contactPhone: "", contactEmail: "", notes: "" });
+    setFormData({ name: "", cnpj: "", apiUrl: "", apiKey: "", apiType: "webhook", contactName: "", contactPhone: "", contactEmail: "", notes: "", tcPermissaoComando: 1, tcIE: 0, tcTIE: 0, tcValidade: "", tcPossoCancelar: 1, tcComandoExclusivo: 0, tcCompartilharDados: 0 });
   };
 
   const startEdit = (g: Gerenciadora) => {
     setEditingId(g.id);
     setFormData({
-      name: g.name,
-      cnpj: g.cnpj || "",
-      apiUrl: g.apiUrl || "",
-      apiKey: g.apiKey || "",
-      apiType: g.apiType || "webhook",
-      contactName: g.contactName || "",
-      contactPhone: g.contactPhone || "",
-      contactEmail: g.contactEmail || "",
-      notes: g.notes || "",
+      name: g.name, cnpj: g.cnpj || "", apiUrl: g.apiUrl || "", apiKey: g.apiKey || "",
+      apiType: g.apiType || "webhook", contactName: g.contactName || "",
+      contactPhone: g.contactPhone || "", contactEmail: g.contactEmail || "", notes: g.notes || "",
+      tcPermissaoComando: g.tcPermissaoComando ?? 1, tcIE: g.tcIE ?? 0, tcTIE: g.tcTIE ?? 0,
+      tcValidade: g.tcValidade || "", tcPossoCancelar: g.tcPossoCancelar ?? 1,
+      tcComandoExclusivo: g.tcComandoExclusivo ?? 0, tcCompartilharDados: g.tcCompartilharDados ?? 0,
     });
     setShowAddForm(true);
   };
 
   const handleSubmit = () => {
     if (!formData.name.trim()) return;
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data: formData });
-    } else {
-      createMutation.mutate(formData);
-    }
+    if (editingId) updateMutation.mutate({ id: editingId, data: formData });
+    else createMutation.mutate(formData);
+  };
+
+  const handleEspelhar = () => {
+    if (!espelharVeiID || !espelharGerId) return;
+    const ger = gerenciadoras.find(g => g.id === Number(espelharGerId));
+    if (!ger || !ger.cnpj) { toast({ title: "CNPJ da gerenciadora é obrigatório para espelhamento TC", variant: "destructive" }); return; }
+    espelharMutation.mutate({
+      veiID: Number(espelharVeiID),
+      cnpj: ger.cnpj,
+      options: {
+        cmd: ger.tcPermissaoComando ?? 1,
+        IE: ger.tcIE ?? 0,
+        TIE: ger.tcTIE ?? 0,
+        validade: ger.tcValidade || undefined,
+        possoCancelar: ger.tcPossoCancelar ?? 1,
+        comandoExclusivo: ger.tcComandoExclusivo ?? 0,
+        compartilharDados: ger.tcCompartilharDados ?? 0,
+      },
+    });
   };
 
   const activeGerenciadoras = gerenciadoras.filter((g) => g.active !== 0);
+  const tcVehicles = vehicles.filter(v => v.deviceType !== "spy" && v.tracker);
+
+  const tabClass = (tab: string) => `px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeTab === tab ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100"}`;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1085,13 +1172,19 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
           Gerenciadoras
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Espelhamento para Gerenciadora</DialogTitle>
-          <DialogDescription>Envie dados de rastreamento em tempo real para a gerenciadora de risco cadastrada.</DialogDescription>
+          <DialogTitle>Espelhamento — Gerenciadoras de Risco</DialogTitle>
+          <DialogDescription>Gerencie gerenciadoras e espelhamento TrucksControl de veículos.</DialogDescription>
         </DialogHeader>
 
-        {!showAddForm ? (
+        <div className="flex gap-1 border-b pb-2 mb-3">
+          <button className={tabClass("cadastro")} onClick={() => { setActiveTab("cadastro"); setShowAddForm(false); }} data-testid="tab-cadastro">Cadastro</button>
+          <button className={tabClass("espelhados")} onClick={() => setActiveTab("espelhados")} data-testid="tab-espelhados">Espelhados</button>
+          <button className={tabClass("pendentes")} onClick={() => setActiveTab("pendentes")} data-testid="tab-pendentes">Pendentes</button>
+        </div>
+
+        {activeTab === "cadastro" && !showAddForm && (
           <div className="space-y-4">
             {activeGerenciadoras.length === 0 ? (
               <p className="text-sm text-neutral-500 text-center py-4">Nenhuma gerenciadora cadastrada</p>
@@ -1099,58 +1192,74 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
               <div className="space-y-2">
                 {activeGerenciadoras.map((g) => (
                   <div key={g.id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-neutral-50" data-testid={`gerenciadora-item-${g.id}`}>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm">{g.name}</p>
                       {g.cnpj && <p className="text-xs text-neutral-500">{g.cnpj}</p>}
-                      {g.apiUrl && <p className="text-xs text-neutral-400 font-mono truncate max-w-[200px]">{g.apiUrl}</p>}
+                      <div className="flex gap-2 mt-1 flex-wrap">
+                        {g.apiUrl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-mono truncate max-w-[160px]">{g.apiType?.toUpperCase()}</span>}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">CMD: {g.tcPermissaoComando ? "Sim" : "Não"}</span>
+                        {g.tcValidade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700">Val: {g.tcValidade}</span>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => startEdit(g)}
-                        data-testid={`btn-edit-gerenciadora-${g.id}`}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => { if (confirm(`Remover ${g.name}?`)) deleteMutation.mutate(g.id); }}
-                        data-testid={`btn-delete-gerenciadora-${g.id}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => {
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      <Button variant="ghost" size="sm" onClick={() => startEdit(g)} data-testid={`btn-edit-gerenciadora-${g.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Remover ${g.name}?`)) deleteMutation.mutate(g.id); }} data-testid={`btn-delete-gerenciadora-${g.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                      {g.apiUrl && (
+                        <Button size="sm" onClick={() => {
                           const vCount = vehicles.filter(vv => vv.deviceType !== "spy").length;
-                          const notifId = addNotification({
-                            type: "mirror",
-                            status: "pending",
-                            plate: `${vCount} VTR(s)`,
-                            label: `Espelhando ${vCount} veículo(s) para ${g.name}...`,
-                          });
+                          const notifId = addNotification({ type: "mirror", status: "pending", plate: `${vCount} VTR(s)`, label: `Espelhando para ${g.name}...` });
                           mirrorMutation.mutate({ gerenciadoraId: g.id, notifId });
-                        }}
-                        disabled={mirrorMutation.isPending || !g.apiUrl}
-                        className="gap-1"
-                        data-testid={`btn-send-mirror-${g.id}`}
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        Enviar
-                      </Button>
+                        }} disabled={mirrorMutation.isPending} className="gap-1" data-testid={`btn-send-mirror-${g.id}`}>
+                          <Send className="w-3.5 h-3.5" /> Webhook
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
+            {activeGerenciadoras.length > 0 && tcVehicles.length > 0 && (
+              <div className="border rounded-lg p-3 bg-neutral-50">
+                <p className="text-xs font-semibold text-neutral-700 mb-2">Espelhar veículo via TrucksControl</p>
+                <div className="flex gap-2 items-end flex-wrap">
+                  <div className="flex-1 min-w-[120px]">
+                    <Label className="text-[10px] text-neutral-500">Veículo (veiID)</Label>
+                    <Select value={espelharVeiID} onValueChange={setEspelharVeiID}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-espelhar-vei"><SelectValue placeholder="Veículo" /></SelectTrigger>
+                      <SelectContent>
+                        {tcVehicles.map(v => (
+                          <SelectItem key={v.id} value={String(v.tracker?.veiID || v.id)}>{v.plate} (veiID: {v.tracker?.veiID || "?"})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1 min-w-[120px]">
+                    <Label className="text-[10px] text-neutral-500">Gerenciadora</Label>
+                    <Select value={espelharGerId} onValueChange={setEspelharGerId}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-espelhar-ger"><SelectValue placeholder="Gerenciadora" /></SelectTrigger>
+                      <SelectContent>
+                        {activeGerenciadoras.filter(g => g.cnpj).map(g => (
+                          <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button size="sm" className="gap-1 h-8" onClick={handleEspelhar} disabled={!espelharVeiID || !espelharGerId || espelharMutation.isPending} data-testid="btn-espelhar-tc">
+                    {espelharMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
+                    Espelhar TC
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <Button variant="outline" className="w-full gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAddForm(true); }} data-testid="btn-add-gerenciadora">
-              <Plus className="w-4 h-4" />
-              Cadastrar Gerenciadora
+              <Plus className="w-4 h-4" /> Cadastrar Gerenciadora
             </Button>
           </div>
-        ) : (
+        )}
+
+        {activeTab === "cadastro" && showAddForm && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
@@ -1158,7 +1267,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                 <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Nome da gerenciadora" data-testid="input-gerenciadora-name" />
               </div>
               <div>
-                <Label className="text-xs">CNPJ</Label>
+                <Label className="text-xs">CNPJ *</Label>
                 <Input value={formData.cnpj} onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })} placeholder="00.000.000/0001-00" data-testid="input-gerenciadora-cnpj" />
               </div>
               <div>
@@ -1168,37 +1277,181 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                   <SelectContent>
                     <SelectItem value="webhook">Webhook</SelectItem>
                     <SelectItem value="rest">REST API</SelectItem>
-                    <SelectItem value="soap">SOAP</SelectItem>
+                    <SelectItem value="soap">SOAP / TrucksControl</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="col-span-2">
-                <Label className="text-xs">URL da API</Label>
+                <Label className="text-xs">URL da API (webhook)</Label>
                 <Input value={formData.apiUrl} onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })} placeholder="https://api.gerenciadora.com/webhook" data-testid="input-gerenciadora-api-url" />
               </div>
               <div className="col-span-2">
-                <Label className="text-xs">Chave/Token da API</Label>
+                <Label className="text-xs">Chave/Token</Label>
                 <Input value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="Bearer token ou API key" data-testid="input-gerenciadora-api-key" />
               </div>
-              <div>
-                <Label className="text-xs">Contato</Label>
-                <Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" data-testid="input-gerenciadora-contact" />
-              </div>
-              <div>
-                <Label className="text-xs">Telefone</Label>
-                <Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" data-testid="input-gerenciadora-phone" />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">E-mail</Label>
-                <Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" data-testid="input-gerenciadora-email" />
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-neutral-700 mb-2">Configurações TrucksControl (Espelhamento)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Permissão de Comando</Label>
+                  <Select value={String(formData.tcPermissaoComando)} onValueChange={(v) => setFormData({ ...formData, tcPermissaoComando: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-cmd"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Permitido</SelectItem>
+                      <SelectItem value="0">Não permitido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Inteligência Embarcada (IE)</Label>
+                  <Select value={String(formData.tcIE)} onValueChange={(v) => setFormData({ ...formData, tcIE: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-ie"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Não permitido</SelectItem>
+                      <SelectItem value="1">Permitido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Transferir IE no ato (TIE)</Label>
+                  <Select value={String(formData.tcTIE)} onValueChange={(v) => setFormData({ ...formData, tcTIE: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-tie"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Não transfere</SelectItem>
+                      <SelectItem value="1">Transfere</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Validade (DD/MM/AAAA)</Label>
+                  <Input value={formData.tcValidade} onChange={(e) => setFormData({ ...formData, tcValidade: e.target.value })} placeholder="21/03/2027" className="h-8" data-testid="input-tc-validade" />
+                </div>
+                <div>
+                  <Label className="text-xs">Proprietário pode cancelar</Label>
+                  <Select value={String(formData.tcPossoCancelar)} onValueChange={(v) => setFormData({ ...formData, tcPossoCancelar: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-cancelar"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Sim</SelectItem>
+                      <SelectItem value="0">Não</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Comando exclusivo</Label>
+                  <Select value={String(formData.tcComandoExclusivo)} onValueChange={(v) => setFormData({ ...formData, tcComandoExclusivo: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-exclusivo"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Não</SelectItem>
+                      <SelectItem value="1">Sim</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Compartilhar dados</Label>
+                  <Select value={String(formData.tcCompartilharDados)} onValueChange={(v) => setFormData({ ...formData, tcCompartilharDados: Number(v) })}>
+                    <SelectTrigger className="h-8" data-testid="select-tc-compartilhar"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Não</SelectItem>
+                      <SelectItem value="1">Sim</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-neutral-700 mb-2">Contato</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label className="text-xs">Nome</Label><Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" className="h-8" data-testid="input-gerenciadora-contact" /></div>
+                <div><Label className="text-xs">Telefone</Label><Input value={formData.contactPhone} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
+                <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>
+              </div>
+            </div>
+
             <div className="flex gap-2 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => { setShowAddForm(false); setEditingId(null); resetForm(); }}>Cancelar</Button>
               <Button className="flex-1" onClick={handleSubmit} disabled={!formData.name.trim() || createMutation.isPending || updateMutation.isPending} data-testid="btn-save-gerenciadora">
                 {editingId ? "Atualizar" : "Cadastrar"}
               </Button>
             </div>
+          </div>
+        )}
+
+        {activeTab === "espelhados" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-neutral-500">Veículos espelhados na conta TrucksControl (proprietário)</p>
+              <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhados"] })} data-testid="btn-refresh-espelhados"><RefreshCw className="w-3.5 h-3.5" /></Button>
+            </div>
+            {espelhadosQuery.isLoading && <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-neutral-400" /></div>}
+            {espelhadosQuery.data && !espelhadosQuery.data.success && (
+              <p className="text-xs text-red-500 text-center py-3">{espelhadosQuery.data.message}</p>
+            )}
+            {espelhadosQuery.data?.vehicles?.length === 0 && <p className="text-sm text-neutral-500 text-center py-4">Nenhum veículo espelhado</p>}
+            {espelhadosQuery.data?.vehicles?.map((v: any, i: number) => (
+              <div key={i} className="border rounded-lg p-3 text-xs space-y-1" data-testid={`espelhado-${v.veiID}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-sm">VeiID: {v.veiID}</p>
+                    <p className="text-neutral-500">Cliente: {v.cliente || v.cgccpf}</p>
+                  </div>
+                  <Button variant="destructive" size="sm" className="h-7 text-xs gap-1"
+                    onClick={() => { if (confirm(`Cancelar espelhamento do veículo ${v.veiID}?`)) cancelarMutation.mutate({ veiID: Number(v.veiID), cnpj: v.cgccpf }); }}
+                    disabled={cancelarMutation.isPending}
+                    data-testid={`btn-cancelar-espelhamento-${v.veiID}`}
+                  >
+                    <XCircle className="w-3 h-3" /> Cancelar
+                  </Button>
+                </div>
+                <div className="flex gap-3 flex-wrap text-neutral-600">
+                  <span>CMD: {v.cmd === "1" ? "Sim" : "Não"}</span>
+                  <span>IE: {v.IE === "1" ? "Sim" : "Não"}</span>
+                  <span>TIE: {v.TIE === "1" ? "Sim" : "Não"}</span>
+                  <span>Validade: {v.validade || "—"}</span>
+                  <span>Cancelável: {v.possoCancelar === "1" ? "Sim" : "Não"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "pendentes" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-neutral-500">Espelhamentos pendentes de aceitação</p>
+              <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhamentos-pendentes"] })} data-testid="btn-refresh-pendentes"><RefreshCw className="w-3.5 h-3.5" /></Button>
+            </div>
+            {pendentesQuery.isLoading && <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-neutral-400" /></div>}
+            {pendentesQuery.data && !pendentesQuery.data.success && (
+              <p className="text-xs text-red-500 text-center py-3">{pendentesQuery.data.message}</p>
+            )}
+            {pendentesQuery.data?.pendentes?.length === 0 && <p className="text-sm text-neutral-500 text-center py-4">Nenhum espelhamento pendente</p>}
+            {pendentesQuery.data?.pendentes?.map((p: any, i: number) => (
+              <div key={i} className="border rounded-lg p-3 text-xs space-y-2" data-testid={`pendente-${p.veiID}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-sm">Placa: {p.placa} — VeiID: {p.veiID}</p>
+                    <p className="text-neutral-500">Proprietário: {p.prop}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 flex-wrap text-neutral-600">
+                  <span>CMD: {p.cmd === "1" ? "Sim" : "Não"}</span>
+                  <span>IE: {p.IE === "1" ? "Sim" : "Não"}</span>
+                  <span>TIE: {p.TIE === "1" ? "Sim" : "Não"}</span>
+                  <span>Validade: {p.validade || "—"}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => aceitarMutation.mutate(Number(p.veiID))} disabled={aceitarMutation.isPending} data-testid={`btn-aceitar-${p.veiID}`}>
+                    <CheckCircle2 className="w-3 h-3" /> Aceitar
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-7 text-xs gap-1" onClick={() => rejeitarMutation.mutate(Number(p.veiID))} disabled={rejeitarMutation.isPending} data-testid={`btn-rejeitar-${p.veiID}`}>
+                    <XCircle className="w-3 h-3" /> Rejeitar
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </DialogContent>

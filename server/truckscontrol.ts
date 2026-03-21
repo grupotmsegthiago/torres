@@ -667,3 +667,218 @@ export function getVehicleCache(): TrucksControlVehicle[] {
 export function getLastError(): string | null {
   return lastError;
 }
+
+let espelhamentoSeqId = Date.now();
+
+function nextEspelhamentoId(): number {
+  return ++espelhamentoSeqId;
+}
+
+export interface EspelhamentoResult {
+  success: boolean;
+  message: string;
+  id?: number;
+  status?: number;
+  erro?: number;
+  rawResponse?: string;
+}
+
+export async function createEspelhamento(
+  veiID: number,
+  cnpjGerenciadora: string,
+  options: {
+    cmd?: number;
+    IE?: number;
+    TIE?: number;
+    validade?: string;
+    possoCancelar?: number;
+    comandoExclusivo?: number;
+    compartilharDados?: number;
+  } = {}
+): Promise<EspelhamentoResult> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais TrucksControl não configuradas." };
+
+  const id = nextEspelhamentoId();
+  const cnpjClean = cnpjGerenciadora.replace(/[^0-9]/g, "");
+  const cmd = options.cmd ?? 1;
+  const IE = options.IE ?? 0;
+  const TIE = options.TIE ?? 0;
+  const validade = options.validade || getDefaultValidade();
+  const possoCancelar = options.possoCancelar ?? 1;
+  const comandoExclusivo = options.comandoExclusivo ?? 0;
+  const compartilharDados = options.compartilharDados ?? 0;
+
+  const xml = `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${id}</id><veiID>${veiID}</veiID><cmd>${cmd}</cmd><IE>${IE}</IE><TIE>${TIE}</TIE><validade>${validade}</validade><possocancelar>${possoCancelar}</possocancelar><comandoexclusivo>${comandoExclusivo}</comandoexclusivo><compartilhardados>${compartilharDados}</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`;
+
+  try {
+    const response = await postXml(xml);
+    console.log(`[truckscontrol] Espelhamento veiID=${veiID} -> CNPJ=${cnpjClean}: ${response.substring(0, 300)}`);
+
+    if (response.includes("<ErrorRequest>") || response.includes("<erro>") || response.includes("<Erro>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
+      return { success: false, message: erroMsg || "Erro desconhecido", id, rawResponse: response.substring(0, 500) };
+    }
+
+    const statusVal = parseInt(parseXmlValue(response, "status") || "0");
+    const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
+
+    if (statusVal === 2) {
+      return { success: true, message: "Espelhamento realizado com sucesso", id, status: statusVal, erro: erroVal };
+    } else {
+      return { success: false, message: `Espelhamento não realizado (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
+    }
+  } catch (err: any) {
+    return { success: false, message: `Erro de conexão: ${err.message}`, id };
+  }
+}
+
+export async function listEspelhados(): Promise<{ success: boolean; message: string; vehicles: Array<{ veiID: string; cmd: string; IE: string; TIE: string; cgccpf: string; cliente: string; validade: string; possoCancelar: string }>; rawResponse?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais não configuradas.", vehicles: [] };
+
+  const xml = `<RequestVeiculoEspelhado><login>${config.login}</login><senha>${config.senha}</senha></RequestVeiculoEspelhado>`;
+
+  try {
+    const response = await postXml(xml);
+
+    if (response.includes("<ErrorRequest>") || (response.includes("<erro>") && !response.includes("<VeiculoEspelhado>"))) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
+      if (erroMsg.includes("tempo minimo")) {
+        return { success: true, message: "Rate limit — tente novamente em alguns segundos", vehicles: [] };
+      }
+      return { success: false, message: erroMsg || "Erro desconhecido", vehicles: [], rawResponse: response.substring(0, 500) };
+    }
+
+    const vehicles: Array<{ veiID: string; cmd: string; IE: string; TIE: string; cgccpf: string; cliente: string; validade: string; possoCancelar: string }> = [];
+    const regex = /<VeiculoEspelhado>([\s\S]*?)<\/VeiculoEspelhado>/gi;
+    let match;
+    while ((match = regex.exec(response)) !== null) {
+      const block = match[1];
+      vehicles.push({
+        veiID: parseXmlValue(block, "veiID"),
+        cmd: parseXmlValue(block, "cmd"),
+        IE: parseXmlValue(block, "IE"),
+        TIE: parseXmlValue(block, "TIE"),
+        cgccpf: parseXmlValue(block, "cgccpf"),
+        cliente: parseXmlValue(block, "cliente"),
+        validade: parseXmlValue(block, "validade"),
+        possoCancelar: parseXmlValue(block, "possocancelar") || parseXmlValue(block, "possoCancelar"),
+      });
+    }
+
+    return { success: true, message: `${vehicles.length} espelhamento(s) encontrado(s)`, vehicles };
+  } catch (err: any) {
+    return { success: false, message: `Erro de conexão: ${err.message}`, vehicles: [] };
+  }
+}
+
+export async function listEspelhamentosPendentes(): Promise<{ success: boolean; message: string; pendentes: Array<{ veiID: string; placa: string; cmd: string; IE: string; TIE: string; prop: string; validade: string; propCancelamento: string }>; rawResponse?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais não configuradas.", pendentes: [] };
+
+  const xml = `<RequestEspelhamentoPendenteVeiculo><login>${config.login}</login><senha>${config.senha}</senha></RequestEspelhamentoPendenteVeiculo>`;
+
+  try {
+    const response = await postXml(xml);
+
+    if (response.includes("<ErrorRequest>") || (response.includes("<erro>") && !response.includes("<EspelhamentoPendenteVeiculo>"))) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
+      if (erroMsg.includes("tempo minimo")) {
+        return { success: true, message: "Rate limit — tente novamente em alguns segundos", pendentes: [] };
+      }
+      return { success: false, message: erroMsg || "Erro desconhecido", pendentes: [], rawResponse: response.substring(0, 500) };
+    }
+
+    const pendentes: Array<{ veiID: string; placa: string; cmd: string; IE: string; TIE: string; prop: string; validade: string; propCancelamento: string }> = [];
+    const regex = /<EspelhamentoPendenteVeiculo>([\s\S]*?)<\/EspelhamentoPendenteVeiculo>/gi;
+    let match;
+    while ((match = regex.exec(response)) !== null) {
+      const block = match[1];
+      pendentes.push({
+        veiID: parseXmlValue(block, "veiID"),
+        placa: parseXmlValue(block, "placa"),
+        cmd: parseXmlValue(block, "cmd"),
+        IE: parseXmlValue(block, "IE"),
+        TIE: parseXmlValue(block, "TIE"),
+        prop: parseXmlValue(block, "prop"),
+        validade: parseXmlValue(block, "validade"),
+        propCancelamento: parseXmlValue(block, "propCancelamento"),
+      });
+    }
+
+    return { success: true, message: `${pendentes.length} espelhamento(s) pendente(s)`, pendentes };
+  } catch (err: any) {
+    return { success: false, message: `Erro de conexão: ${err.message}`, pendentes: [] };
+  }
+}
+
+export async function acceptEspelhamento(veiID: number, desc?: string): Promise<EspelhamentoResult> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais não configuradas." };
+
+  const id = nextEspelhamentoId();
+  const xml = `<RequestAREspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento tipo="1"><id>${id}</id><veiID>${veiID}</veiID><desc>${desc || "Aceito via Torres VP"}</desc><usuario>torres</usuario></espelhamento></RequestAREspelhamentoVeiculo>`;
+
+  try {
+    const response = await postXml(xml);
+    console.log(`[truckscontrol] Aceitar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+    const statusVal = parseInt(parseXmlValue(response, "status") || "0");
+    const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
+    if (statusVal === 2) {
+      return { success: true, message: "Espelhamento aceito", id, status: statusVal, erro: erroVal };
+    }
+    return { success: false, message: `Falha ao aceitar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
+  } catch (err: any) {
+    return { success: false, message: `Erro: ${err.message}`, id };
+  }
+}
+
+export async function rejectEspelhamento(veiID: number): Promise<EspelhamentoResult> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais não configuradas." };
+
+  const id = nextEspelhamentoId();
+  const xml = `<RequestAREspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento tipo="2"><id>${id}</id><veiID>${veiID}</veiID><usuario>torres</usuario></espelhamento></RequestAREspelhamentoVeiculo>`;
+
+  try {
+    const response = await postXml(xml);
+    console.log(`[truckscontrol] Rejeitar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+    const statusVal = parseInt(parseXmlValue(response, "status") || "0");
+    const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
+    if (statusVal === 2) {
+      return { success: true, message: "Espelhamento rejeitado", id, status: statusVal, erro: erroVal };
+    }
+    return { success: false, message: `Falha ao rejeitar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
+  } catch (err: any) {
+    return { success: false, message: `Erro: ${err.message}`, id };
+  }
+}
+
+export async function cancelEspelhamentoProprietario(veiID: number, cnpjCliente: string): Promise<EspelhamentoResult> {
+  const config = getConfig();
+  if (!config) return { success: false, message: "Credenciais não configuradas." };
+
+  const id = nextEspelhamentoId();
+  const cnpjClean = cnpjCliente.replace(/[^0-9]/g, "");
+  const xml = `<RequestCancelarEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento tipo="2"><id>${id}</id><veiID>${veiID}</veiID><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestCancelarEspelhamentoVeiculo>`;
+
+  try {
+    const response = await postXml(xml);
+    console.log(`[truckscontrol] Cancelar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+    const statusVal = parseInt(parseXmlValue(response, "status") || "0");
+    const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
+    if (statusVal === 2) {
+      return { success: true, message: "Espelhamento cancelado", id, status: statusVal, erro: erroVal };
+    }
+    return { success: false, message: `Falha ao cancelar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
+  } catch (err: any) {
+    return { success: false, message: `Erro: ${err.message}`, id };
+  }
+}
+
+function getDefaultValidade(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}

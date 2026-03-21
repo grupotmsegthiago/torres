@@ -1419,6 +1419,7 @@ Para CPF, formate como 000.000.000-00.`
     const tracked = await Promise.all(
       allVehicles.map(async (v) => {
         let trackerData: {
+          veiID?: number;
           latitude?: number;
           longitude?: number;
           ignition?: boolean;
@@ -1445,6 +1446,7 @@ Para CPF, formate como 000.000.000-00.`
             if (pos) {
               gotLiveData = true;
               trackerData = {
+                veiID: pos.veiID,
                 latitude: pos.latitude,
                 longitude: pos.longitude,
                 ignition: pos.ignition,
@@ -1782,6 +1784,68 @@ Para CPF, formate como 000.000.000-00.`
         source: "mirror_gerenciadora",
       });
       res.status(502).json({ success: false, message: `Falha na conexão: ${err.message}` });
+    }
+  });
+
+  app.get("/api/truckscontrol/espelhados", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const result = await truckscontrol.listEspelhados();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.get("/api/truckscontrol/espelhamentos-pendentes", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const result = await truckscontrol.listEspelhamentosPendentes();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/truckscontrol/espelhar", requireAuth, requireAdminRole, async (req, res) => {
+    const { veiID, cnpj, cmd, IE, TIE, validade, possoCancelar, comandoExclusivo, compartilharDados } = req.body;
+    if (!veiID || !cnpj) return res.status(400).json({ success: false, message: "veiID e cnpj são obrigatórios" });
+    try {
+      const result = await truckscontrol.createEspelhamento(veiID, cnpj, { cmd, IE, TIE, validade, possoCancelar, comandoExclusivo, compartilharDados });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/truckscontrol/espelhamento/aceitar", requireAuth, requireAdminRole, async (req, res) => {
+    const { veiID, desc } = req.body;
+    if (!veiID) return res.status(400).json({ success: false, message: "veiID é obrigatório" });
+    try {
+      const result = await truckscontrol.acceptEspelhamento(veiID, desc);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/truckscontrol/espelhamento/rejeitar", requireAuth, requireAdminRole, async (req, res) => {
+    const { veiID } = req.body;
+    if (!veiID) return res.status(400).json({ success: false, message: "veiID é obrigatório" });
+    try {
+      const result = await truckscontrol.rejectEspelhamento(veiID);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/truckscontrol/espelhamento/cancelar", requireAuth, requireAdminRole, async (req, res) => {
+    const { veiID, cnpj } = req.body;
+    if (!veiID || !cnpj) return res.status(400).json({ success: false, message: "veiID e cnpj são obrigatórios" });
+    try {
+      const result = await truckscontrol.cancelEspelhamentoProprietario(veiID, cnpj);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
     }
   });
 

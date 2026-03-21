@@ -385,6 +385,13 @@ export const gerenciadoras = pgTable("gerenciadoras", {
   contactEmail: text("contact_email"),
   active: integer("active").default(1),
   notes: text("notes"),
+  tcPermissaoComando: integer("tc_permissao_comando").default(1),
+  tcIE: integer("tc_ie").default(0),
+  tcTIE: integer("tc_tie").default(0),
+  tcValidade: text("tc_validade"),
+  tcPossoCancelar: integer("tc_posso_cancelar").default(1),
+  tcComandoExclusivo: integer("tc_comando_exclusivo").default(0),
+  tcCompartilharDados: integer("tc_compartilhar_dados").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
