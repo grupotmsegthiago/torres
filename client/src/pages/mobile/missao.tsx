@@ -8,6 +8,7 @@ import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
+  Bell, Shield, Home, ClipboardCheck, Eye,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -18,18 +19,25 @@ const MISSION_STEPS = [
 
 type MissionStep = typeof MISSION_STEPS[number];
 
-const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean }> = {
-  aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e inicie", icon: Lock },
+const VEHICLE_CHECKLIST_ITEMS = [
+  { id: "estepe", label: "Estepe" },
+  { id: "chave_roda", label: "Chave de Roda" },
+  { id: "macaco", label: "Macaco" },
+  { id: "triangulo", label: "Triângulo" },
+];
+
+const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
+  aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/12", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
-  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
   checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/12", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/12", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
   checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/12", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
   checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/12", icon: User, needsForm: true },
   iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/12", icon: Siren },
   em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/12", icon: Route },
-  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/12", icon: MapPin },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/12", icon: MapPin, photos: ["Foto do Local"] },
   checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Missão Finalizada", subtitle: "Concluída", icon: CheckCircle2 },
@@ -52,10 +60,14 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
   },
   checkin_chegada_km: {
     "Hodômetro": "km_chegada",
+    "Agente Equipado": "agente_equipado",
   },
   checkin_veiculo_escoltado: {
     "Frente do Caminhão": "escoltado_frente",
     "Traseira do Caminhão": "escoltado_traseira",
+  },
+  chegada_destino: {
+    "Foto do Local": "foto_local_destino",
   },
   checkout_km_final: {
     "Hodômetro": "km_final",
@@ -82,7 +94,7 @@ function useGeoLocation() {
   return { getPosition };
 }
 
-function CameraCapture({ label, onCapture, captured }: { label: string; onCapture: (data: string) => void; captured: boolean }) {
+function CameraCapture({ label, onCapture, captured, hint }: { label: string; onCapture: (data: string) => void; captured: boolean; hint?: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,6 +132,9 @@ function CameraCapture({ label, onCapture, captured }: { label: string; onCaptur
         {captured ? <CheckCircle2 className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
         {label}
       </button>
+      {hint && !captured && (
+        <p className="text-[10px] text-neutral-400 mt-1 text-center italic">{hint}</p>
+      )}
     </div>
   );
 }
@@ -131,7 +146,6 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
 
   const isGoingToOrigin = ["aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep);
   const currentTarget = isGoingToOrigin ? origin : destination;
-  const currentTargetLabel = isGoingToOrigin ? "Destino: Origem" : "Destino: Entrega";
 
   const encOrigin = encodeURIComponent(origin || "");
   const encDest = encodeURIComponent(destination || "");
@@ -140,10 +154,6 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
   const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${encTarget}&travelmode=driving`;
   const wazeNavUrl = `https://waze.com/ul?q=${encTarget}&navigate=yes`;
   const googleMapsRouteUrl = `https://www.google.com/maps/dir/?api=1&origin=${encOrigin}&destination=${encDest}&travelmode=driving`;
-
-  const embedUrl = GOOGLE_MAPS_API_KEY
-    ? `https://www.google.com/maps/embed/v1/directions?key=${GOOGLE_MAPS_API_KEY}&origin=${encOrigin}&destination=${encDest}&mode=driving`
-    : null;
 
   return (
     <div className="space-y-2">
@@ -190,20 +200,6 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
           </a>
         )}
       </div>
-
-      {embedUrl && false && (
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
-          <iframe
-            src={embedUrl}
-            width="100%"
-            height="200"
-            style={{ border: 0 }}
-            allowFullScreen
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-        </div>
-      )}
 
       {currentTarget && (
         <div className="grid grid-cols-2 gap-2">
@@ -257,6 +253,42 @@ function MissionTimer({ startedAt }: { startedAt: string | null }) {
   );
 }
 
+function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
+  const [showAlert, setShowAlert] = useState(false);
+  const [minutesSince, setMinutesSince] = useState(0);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const start = new Date(startedAt).getTime();
+
+    const check = () => {
+      const diff = Date.now() - start;
+      const totalMinutes = Math.floor(diff / 60000);
+      const minutesSinceLastHour = totalMinutes % 60;
+      setMinutesSince(totalMinutes);
+      setShowAlert(minutesSinceLastHour >= 55 || totalMinutes < 5);
+    };
+
+    check();
+    const timer = setInterval(check, 30000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  if (!showAlert || !startedAt) return null;
+
+  return (
+    <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-center gap-3 animate-pulse" data-testid="alert-hourly-update">
+      <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0">
+        <Bell className="w-5 h-5 text-white" />
+      </div>
+      <div>
+        <p className="text-sm font-bold text-amber-800 uppercase tracking-wider">Atualização Obrigatória</p>
+        <p className="text-xs text-amber-600">Envie um status atualizado. Ambos os agentes devem reportar a cada 1 hora.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function MobileMissaoPage() {
   const { toast } = useToast();
   const { getPosition } = useGeoLocation();
@@ -266,6 +298,10 @@ export default function MobileMissaoPage() {
   const [driverPhone, setDriverPhone] = useState("");
   const [driverPlate, setDriverPlate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [cienteConfirmed, setCienteConfirmed] = useState(false);
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [emProntidao, setEmProntidao] = useState(false);
+  const [statusUpdate, setStatusUpdate] = useState("");
 
   const { data: mission, isLoading } = useQuery<any>({
     queryKey: ["/api/mission/active"],
@@ -290,6 +326,9 @@ export default function MobileMissaoPage() {
     setDriverName("");
     setDriverPhone("");
     setDriverPlate("");
+    setCienteConfirmed(false);
+    setChecklist({});
+    setStatusUpdate("");
   }, []);
 
   const uploadPhoto = async (step: string, label: string, photoData: string, km?: number) => {
@@ -323,6 +362,14 @@ export default function MobileMissaoPage() {
       return;
     }
 
+    if (config.needsChecklist) {
+      const allChecked = VEHICLE_CHECKLIST_ITEMS.every(item => checklist[item.id]);
+      if (!allChecked) {
+        toast({ title: "Checklist incompleto", description: "Confirme todos os itens obrigatórios da viatura.", variant: "destructive" });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const stepMap = PHOTO_STEP_MAP[currentStep] || {};
@@ -347,9 +394,13 @@ export default function MobileMissaoPage() {
       toast({ title: "Informe o KM", description: "Digite a quilometragem do hodômetro.", variant: "destructive" });
       return;
     }
-    if (config.photos && !photos[config.photos[0].toLowerCase().replace(/\s/g, '-')]) {
-      toast({ title: "Foto obrigatória", description: "Tire a foto do hodômetro.", variant: "destructive" });
-      return;
+    const allPhotos = config.photos || [];
+    for (const p of allPhotos) {
+      const key = p.toLowerCase().replace(/\s/g, '-');
+      if (!photos[key]) {
+        toast({ title: "Foto obrigatória", description: `Tire a foto: ${p}`, variant: "destructive" });
+        return;
+      }
     }
     await handlePhotoStep();
   };
@@ -392,8 +443,27 @@ export default function MobileMissaoPage() {
   };
 
   const handleNovaEntrega = async () => {
+    const allPhotos = config.photos || [];
+    for (const p of allPhotos) {
+      const key = p.toLowerCase().replace(/\s/g, '-');
+      if (!photos[key]) {
+        toast({ title: "Foto obrigatória", description: `Tire a foto: ${p}`, variant: "destructive" });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      if (config.photos) {
+        const stepMap = PHOTO_STEP_MAP[currentStep] || {};
+        for (const label of config.photos) {
+          const key = label.toLowerCase().replace(/\s/g, '-');
+          const backendStep = stepMap[label] || currentStep;
+          if (photos[key]) {
+            await uploadPhoto(backendStep, label, photos[key]);
+          }
+        }
+      }
       await apiRequest("POST", "/api/mission/nova-entrega", {
         serviceOrderId: mission.serviceOrderId,
       });
@@ -408,8 +478,27 @@ export default function MobileMissaoPage() {
   };
 
   const handleFinalizarEntregas = async () => {
+    const allPhotos = config.photos || [];
+    for (const p of allPhotos) {
+      const key = p.toLowerCase().replace(/\s/g, '-');
+      if (!photos[key]) {
+        toast({ title: "Foto obrigatória", description: `Tire a foto: ${p}`, variant: "destructive" });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      if (config.photos) {
+        const stepMap = PHOTO_STEP_MAP[currentStep] || {};
+        for (const label of config.photos) {
+          const key = label.toLowerCase().replace(/\s/g, '-');
+          const backendStep = stepMap[label] || currentStep;
+          if (photos[key]) {
+            await uploadPhoto(backendStep, label, photos[key]);
+          }
+        }
+      }
       await advanceMission();
       toast({ title: "Entregas finalizadas!", description: "Prossiga para a finalização." });
     } catch (err: any) {
@@ -424,6 +513,44 @@ export default function MobileMissaoPage() {
     try {
       await advanceMission();
       toast({ title: "Chegada confirmada!" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendStatusUpdate = async () => {
+    if (!statusUpdate.trim()) {
+      toast({ title: "Informe o status", description: "Digite uma mensagem de atualização.", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiRequest("POST", "/api/audit-log", {
+        action: "mission_status_update",
+        page: "missao",
+        details: { serviceOrderId: mission.serviceOrderId, message: statusUpdate.trim(), step: currentStep },
+      });
+      toast({ title: "Status enviado!" });
+      setStatusUpdate("");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRetornoBase = async () => {
+    setSubmitting(true);
+    try {
+      await apiRequest("POST", "/api/audit-log", {
+        action: "retorno_base",
+        page: "missao",
+        details: { serviceOrderId: mission.serviceOrderId },
+      });
+      setEmProntidao(false);
+      toast({ title: "Retorno à base registrado!", description: "Equipe retornando à base." });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -486,6 +613,10 @@ export default function MobileMissaoPage() {
           <MissionTimer startedAt={mission.missionStartedAt} />
         )}
 
+        {mission.missionStartedAt && ["em_transito_origem", "em_transito_destino"].includes(currentStep) && (
+          <HourlyAlertBanner startedAt={mission.missionStartedAt} />
+        )}
+
         <RouteInfoCard origin={mission.origin} destination={mission.destination} currentStep={currentStep} />
 
         {mission.escortedDriverName && ["em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno"].includes(currentStep) && (
@@ -545,24 +676,140 @@ export default function MobileMissaoPage() {
                   <span><strong className="text-neutral-700">Agente 2:</strong> {mission.employee2Name}</span>
                 </div>
               )}
+              {mission.scheduledDate && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <Bell className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR")}</span>
+                </div>
+              )}
+              {mission.origin && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Origem:</strong> {mission.origin}</span>
+                </div>
+              )}
+              {mission.destination && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Destino:</strong> {mission.destination}</span>
+                </div>
+              )}
               {mission.description && (
                 <p className="text-xs text-neutral-500 border-t border-neutral-100 pt-2 mt-2">{mission.description}</p>
               )}
             </div>
 
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <label className="flex items-start gap-3 cursor-pointer" data-testid="label-ciente">
+                <input
+                  type="checkbox"
+                  checked={cienteConfirmed}
+                  onChange={(e) => setCienteConfirmed(e.target.checked)}
+                  className="mt-1 w-5 h-5 rounded border-neutral-300 accent-neutral-900"
+                  data-testid="checkbox-ciente"
+                />
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">Declaro ciência desta missão</p>
+                  <p className="text-[10px] text-neutral-400 mt-0.5">Confirmo que li e compreendi todos os dados da operação acima.</p>
+                </div>
+              </label>
+            </div>
+
             <button
               onClick={handleTransitAdvance}
-              disabled={submitting}
+              disabled={submitting || !cienteConfirmed}
               className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
               data-testid="button-start-checkout"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-              Iniciar Check-Out
+              Ciente — Iniciar Check-Out
             </button>
           </div>
         )}
 
-        {config.photos && !config.needsKm && currentStep !== "aguardando" && (
+        {currentStep === "checkout_armamento" && config.photos && (
+          <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+              <Eye className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-amber-700 font-medium">Fotografe cada arma com o número de série visível na imagem.</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+              {config.photos.map((label) => {
+                const key = label.toLowerCase().replace(/\s/g, '-');
+                return (
+                  <CameraCapture
+                    key={key}
+                    label={label}
+                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    captured={!!photos[key]}
+                    hint="Número de série deve estar visível"
+                  />
+                );
+              })}
+            </div>
+            <button
+              onClick={handlePhotoStep}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-confirm-photos"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              Confirmar
+            </button>
+          </div>
+        )}
+
+        {currentStep === "checkout_viatura" && config.photos && (
+          <div className="space-y-3">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+              {config.photos.map((label) => {
+                const key = label.toLowerCase().replace(/\s/g, '-');
+                return (
+                  <CameraCapture
+                    key={key}
+                    label={label}
+                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    captured={!!photos[key]}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <ClipboardCheck className="w-4 h-4 text-neutral-700" />
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Itens Obrigatórios da Viatura</span>
+              </div>
+              <div className="space-y-2">
+                {VEHICLE_CHECKLIST_ITEMS.map((item) => (
+                  <label key={item.id} className="flex items-center gap-3 p-3 bg-neutral-50 rounded-xl cursor-pointer" data-testid={`label-checklist-${item.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!checklist[item.id]}
+                      onChange={(e) => setChecklist(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                      className="w-5 h-5 rounded border-neutral-300 accent-neutral-900"
+                      data-testid={`checkbox-${item.id}`}
+                    />
+                    <span className={`text-sm font-semibold ${checklist[item.id] ? "text-neutral-900" : "text-neutral-500"}`}>{item.label}</span>
+                    {checklist[item.id] && <CheckCircle2 className="w-4 h-4 text-green-600 ml-auto" />}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handlePhotoStep}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-confirm-photos"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              Confirmar
+            </button>
+          </div>
+        )}
+
+        {config.photos && !config.needsKm && !config.needsChecklist && currentStep !== "aguardando" && currentStep !== "checkout_armamento" && currentStep !== "checkout_viatura" && currentStep !== "chegada_destino" && (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
               {config.photos.map((label) => {
@@ -606,12 +853,14 @@ export default function MobileMissaoPage() {
               </div>
               {config.photos?.map((label) => {
                 const key = label.toLowerCase().replace(/\s/g, '-');
+                const isAgentPhoto = label === "Agente Equipado";
                 return (
                   <CameraCapture
                     key={key}
                     label={label}
                     onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
                     captured={!!photos[key]}
+                    hint={isAgentPhoto ? "Agente posicionado à frente da viatura, devidamente equipado" : undefined}
                   />
                 );
               })}
@@ -637,6 +886,30 @@ export default function MobileMissaoPage() {
               <p className="text-sm font-bold text-neutral-800 uppercase tracking-wider">Em deslocamento</p>
               <p className="text-xs text-neutral-400 mt-1">Confirme a chegada ao destino</p>
             </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-neutral-700" />
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Atualização de Status</span>
+              </div>
+              <textarea
+                value={statusUpdate}
+                onChange={(e) => setStatusUpdate(e.target.value)}
+                placeholder="Ex: Tráfego intenso na BR-101, previsão de chegada 14h30..."
+                className="w-full h-20 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400 resize-none"
+                data-testid="input-status-update"
+              />
+              <button
+                onClick={handleSendStatusUpdate}
+                disabled={submitting || !statusUpdate.trim()}
+                className="w-full h-12 bg-white border-2 border-neutral-900 text-neutral-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                data-testid="button-send-status"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                Enviar Atualização
+              </button>
+            </div>
+
             <button
               onClick={handleTransitAdvance}
               disabled={submitting}
@@ -656,9 +929,25 @@ export default function MobileMissaoPage() {
                 <MapPin className="w-10 h-10 text-green-600" />
               </div>
               <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Chegou no Destino</h3>
-              <p className="text-xs text-neutral-400 mb-1">Entrega realizada com sucesso</p>
-              <p className="text-xs text-neutral-500 mt-3">Há mais entregas nesta missão?</p>
+              <p className="text-xs text-neutral-400 mb-1">Registre a foto do local de destino</p>
             </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+              {config.photos?.map((label) => {
+                const key = label.toLowerCase().replace(/\s/g, '-');
+                return (
+                  <CameraCapture
+                    key={key}
+                    label={label}
+                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    captured={!!photos[key]}
+                    hint="Fotografia do local de destino/entrega"
+                  />
+                );
+              })}
+            </div>
+
+            <p className="text-xs text-neutral-500 text-center">Há mais entregas nesta missão?</p>
 
             <button
               onClick={handleNovaEntrega}
@@ -781,15 +1070,50 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {currentStep === "finalizada" && (
-          <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
-            <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-10 h-10 text-white" />
-            </div>
-            <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Missão Finalizada</h3>
-            <p className="text-xs text-neutral-400 mb-4">Todas as etapas foram concluídas com sucesso.</p>
+        {currentStep === "finalizada" && !emProntidao && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
+              <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-10 h-10 text-white" />
+              </div>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Missão Finalizada</h3>
+              <p className="text-xs text-neutral-400 mb-4">Todas as etapas foram concluídas com sucesso.</p>
 
-            {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+            </div>
+
+            <button
+              onClick={() => setEmProntidao(true)}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+              data-testid="button-em-prontidao"
+            >
+              <Shield className="w-5 h-5" />
+              Em Prontidão
+            </button>
+          </div>
+        )}
+
+        {currentStep === "finalizada" && emProntidao && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-em-prontidao">
+              <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <Shield className="w-10 h-10 text-green-600" />
+              </div>
+              <h3 className="text-lg font-black text-green-700 uppercase tracking-wider mb-1">Em Prontidão</h3>
+              <p className="text-xs text-neutral-400 mb-4">Equipe disponível para nova missão</p>
+
+              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+            </div>
+
+            <button
+              onClick={handleRetornoBase}
+              disabled={submitting}
+              className="w-full h-14 bg-white border-2 border-neutral-900 text-neutral-900 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-retorno-base"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Home className="w-5 h-5" />}
+              Retorno à Base
+            </button>
           </div>
         )}
 

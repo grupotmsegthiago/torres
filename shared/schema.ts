@@ -494,6 +494,23 @@ export const insertEmployeeFineSchema = createInsertSchema(employeeFines).omit({
 export type InsertEmployeeFine = z.infer<typeof insertEmployeeFineSchema>;
 export type EmployeeFine = typeof employeeFines.$inferSelect;
 
+export const employeeDisciplinary = pgTable("employee_disciplinary", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  type: text("type").notNull(),
+  date: timestamp("date").notNull(),
+  reason: text("reason").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("ativa"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeDisciplinarySchema = createInsertSchema(employeeDisciplinary).omit({ id: true, createdAt: true }).extend({
+  date: z.preprocess((val) => (val === null || val === undefined || val === "" ? null : val), z.union([z.coerce.date(), z.null()])),
+});
+export type InsertEmployeeDisciplinary = z.infer<typeof insertEmployeeDisciplinarySchema>;
+export type EmployeeDisciplinary = typeof employeeDisciplinary.$inferSelect;
+
 export const employeeTimesheets = pgTable("employee_timesheets", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),

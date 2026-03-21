@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1072,10 +1072,11 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   );
 }
 
-type HRTab = "absences" | "fines" | "timesheets" | "payslips";
+type HRTab = "absences" | "fines" | "disciplinary" | "timesheets" | "payslips";
 const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "absences", label: "Faltas / Atestados", icon: AlertTriangle },
   { key: "fines", label: "Multas", icon: Ban },
+  { key: "disciplinary", label: "Disciplinar", icon: Shield },
   { key: "timesheets", label: "Folha de Ponto", icon: Clock },
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
@@ -1128,6 +1129,23 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
   const deleteFine = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fines/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); toast({ title: "Multa removida" }); },
+  });
+
+  const { data: disciplinary = [], isLoading: loadingDisc } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "disciplinary"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/disciplinary`); return r.json(); },
+    enabled: open,
+  });
+
+  const [showDiscForm, setShowDiscForm] = useState(false);
+  const [discForm, setDiscForm] = useState({ type: "Advertência", date: "", reason: "", description: "", status: "ativa" });
+  const addDisciplinary = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/disciplinary`, discForm); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "disciplinary"] }); setShowDiscForm(false); setDiscForm({ type: "Advertência", date: "", reason: "", description: "", status: "ativa" }); toast({ title: "Registro disciplinar adicionado" }); },
+  });
+  const deleteDisciplinary = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/disciplinary/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "disciplinary"] }); toast({ title: "Registro removido" }); },
   });
 
   const [showTsForm, setShowTsForm] = useState(false);
@@ -1283,6 +1301,73 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${f.status === "paga" ? "bg-green-50 text-green-700" : f.status === "contestada" ? "bg-blue-50 text-blue-700" : "bg-yellow-50 text-yellow-700"}`}>{f.status}</span>
                       </td>
                       <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteFine.mutate(f.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "disciplinary" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-neutral-700">Advertências e Suspensões</h3>
+              <Button size="sm" variant="outline" onClick={() => setShowDiscForm(!showDiscForm)} data-testid="button-add-disciplinary">
+                <Plus className="w-3.5 h-3.5 mr-1" /> Novo
+              </Button>
+            </div>
+
+            {showDiscForm && (
+              <div className="bg-neutral-50 rounded-xl p-4 space-y-3 border border-neutral-200">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-500 block mb-1">Tipo</label>
+                    <select value={discForm.type} onChange={(e) => setDiscForm({...discForm, type: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-type">
+                      <option value="Advertência">Advertência</option>
+                      <option value="Suspensão">Suspensão</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-500 block mb-1">Data</label>
+                    <Input type="date" value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-500 block mb-1">Status</label>
+                    <select value={discForm.status} onChange={(e) => setDiscForm({...discForm, status: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-status">
+                      <option value="ativa">Ativa</option>
+                      <option value="cumprida">Cumprida</option>
+                      <option value="revogada">Revogada</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-500 block mb-1">Motivo</label>
+                  <Input value={discForm.reason} onChange={(e) => setDiscForm({...discForm, reason: e.target.value})} placeholder="Motivo da advertência/suspensão" data-testid="input-disc-reason" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-neutral-500 block mb-1">Descrição (opcional)</label>
+                  <Textarea value={discForm.description} onChange={(e) => setDiscForm({...discForm, description: e.target.value})} placeholder="Detalhes adicionais" data-testid="input-disc-description" />
+                </div>
+                <Button size="sm" onClick={() => addDisciplinary.mutate()} disabled={!discForm.date || !discForm.reason || addDisciplinary.isPending} data-testid="button-save-disciplinary">
+                  {addDisciplinary.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null} Salvar
+                </Button>
+              </div>
+            )}
+
+            {loadingDisc ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : disciplinary.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum registro disciplinar</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead><tr className="border-b text-neutral-400 uppercase tracking-wider"><th className="text-left py-2 font-medium">Tipo</th><th className="text-left py-2 font-medium">Data</th><th className="text-left py-2 font-medium">Motivo</th><th className="text-left py-2 font-medium">Status</th><th className="py-2"></th></tr></thead>
+                <tbody>
+                  {disciplinary.map((d: any) => (
+                    <tr key={d.id} className="border-b border-neutral-100" data-testid={`row-disc-${d.id}`}>
+                      <td className="py-2 font-semibold">{d.type}</td>
+                      <td className="py-2">{fmtDate(d.date)}</td>
+                      <td className="py-2">{d.reason}</td>
+                      <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${d.status === "ativa" ? "bg-red-50 text-red-700" : d.status === "cumprida" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-500"}`}>{d.status}</span></td>
+                      <td className="py-2 text-right"><Button variant="ghost" size="icon" onClick={() => deleteDisciplinary.mutate(d.id)} data-testid={`button-delete-disc-${d.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
                     </tr>
                   ))}
                 </tbody>

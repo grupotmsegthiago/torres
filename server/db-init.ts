@@ -237,6 +237,19 @@ export async function ensureDbSchema() {
     `);
 
     await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_disciplinary (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        date TIMESTAMP NOT NULL,
+        reason TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'ativa',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS employee_timesheets (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,

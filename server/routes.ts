@@ -14,6 +14,7 @@ import {
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
+  employeeDisciplinary,
   auditLogs, users,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
@@ -42,9 +43,10 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkout_armamento: ["arma_pistola_1", "arma_pistola_2", "arma_espingarda"],
   checkout_viatura: ["viatura_frente", "viatura_lateral_esq", "viatura_lateral_dir", "viatura_traseira"],
   checkout_km_saida: ["km_saida"],
-  checkin_chegada_km: ["km_chegada"],
+  checkin_chegada_km: ["km_chegada", "agente_equipado"],
   checkin_veiculo_escoltado: ["escoltado_frente", "escoltado_traseira"],
   checkout_km_final: ["km_final"],
+  chegada_destino: ["foto_local_destino"],
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
 };
 
@@ -2304,14 +2306,15 @@ Para CPF, formate como 000.000.000-00.`
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
     const empId = user.employeeId;
 
-    const [absRows, fineRows, tsRows, psRows] = await Promise.all([
+    const [absRows, fineRows, tsRows, psRows, discRows] = await Promise.all([
       db.select().from(employeeAbsences).where(eq(employeeAbsences.employeeId, empId)).orderBy(desc(employeeAbsences.startDate)),
       db.select().from(employeeFines).where(eq(employeeFines.employeeId, empId)).orderBy(desc(employeeFines.date)),
       db.select().from(employeeTimesheets).where(eq(employeeTimesheets.employeeId, empId)).orderBy(desc(employeeTimesheets.date)),
       db.select().from(employeePayslips).where(eq(employeePayslips.employeeId, empId)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month)),
+      db.select().from(employeeDisciplinary).where(eq(employeeDisciplinary.employeeId, empId)).orderBy(desc(employeeDisciplinary.date)),
     ]);
 
-    res.json({ absences: absRows, fines: fineRows, timesheets: tsRows, payslips: psRows });
+    res.json({ absences: absRows, fines: fineRows, timesheets: tsRows, payslips: psRows, disciplinary: discRows });
   });
 
   // ====================== HR: FALTAS/ATESTADOS ======================
@@ -2351,6 +2354,41 @@ Para CPF, formate como 000.000.000-00.`
 
   app.delete("/api/fines/:id", requireAuth, requireAdmin, async (req, res) => {
     await db.delete(employeeFines).where(eq(employeeFines.id, Number(req.params.id)));
+    res.json({ ok: true });
+  });
+
+  // ====================== HR: DISCIPLINAR ======================
+
+  app.get("/api/employees/:id/disciplinary", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const rows = await db.select().from(employeeDisciplinary).where(eq(employeeDisciplinary.employeeId, employeeId)).orderBy(desc(employeeDisciplinary.date));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/disciplinary", requireAuth, requireAdmin, async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const allowedTypes = ["Advertência", "Suspensão"];
+    const allowedStatuses = ["ativa", "cumprida", "revogada"];
+    const { type, date, reason, description, status } = req.body;
+
+    if (!type || !allowedTypes.includes(type)) {
+      return res.status(400).json({ message: "Tipo inválido. Use: Advertência ou Suspensão" });
+    }
+    if (!date) {
+      return res.status(400).json({ message: "Data é obrigatória" });
+    }
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: "Motivo é obrigatório" });
+    }
+    const finalStatus = status && allowedStatuses.includes(status) ? status : "ativa";
+
+    const data = { employeeId, type, date: new Date(date), reason: reason.trim(), description: description?.trim() || null, status: finalStatus };
+    const [row] = await db.insert(employeeDisciplinary).values(data).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/disciplinary/:id", requireAuth, requireAdmin, async (req, res) => {
+    await db.delete(employeeDisciplinary).where(eq(employeeDisciplinary.id, Number(req.params.id)));
     res.json({ ok: true });
   });
 

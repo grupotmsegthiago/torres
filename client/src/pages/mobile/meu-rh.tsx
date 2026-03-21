@@ -3,14 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { useState } from "react";
 import {
-  AlertTriangle, Ban, Clock, DollarSign, Loader2, FileX,
+  AlertTriangle, Ban, Clock, DollarSign, Loader2, FileX, Shield,
 } from "lucide-react";
 
-type HRTab = "absences" | "fines" | "timesheets" | "payslips";
+type HRTab = "absences" | "fines" | "disciplinary" | "timesheets" | "payslips";
 
 const TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "absences", label: "Faltas", icon: AlertTriangle },
   { key: "fines", label: "Multas", icon: Ban },
+  { key: "disciplinary", label: "Discipl.", icon: Shield },
   { key: "timesheets", label: "Ponto", icon: Clock },
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
@@ -36,6 +37,7 @@ export default function MeuRHPage() {
 
   const absences = data?.absences || [];
   const fines = data?.fines || [];
+  const disciplinary = data?.disciplinary || [];
   const timesheets = data?.timesheets || [];
   const payslips = data?.payslips || [];
 
@@ -110,6 +112,26 @@ export default function MeuRHPage() {
                         {f.points != null && <span>{f.points} pts</span>}
                       </div>
                       {f.notes && <p className="text-xs text-neutral-400 mt-1">{f.notes}</p>}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {tab === "disciplinary" && (
+              <div className="space-y-2">
+                {disciplinary.length === 0 ? (
+                  <EmptyState text="Nenhum registro disciplinar" />
+                ) : (
+                  disciplinary.map((d: any) => (
+                    <div key={d.id} className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid={`card-disciplinary-${d.id}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-bold text-neutral-800">{d.type}</span>
+                        <StatusBadge status={d.status} />
+                      </div>
+                      <p className="text-xs text-neutral-500">{fmtDate(d.date)}</p>
+                      <p className="text-xs text-neutral-600 mt-1 font-medium">{d.reason}</p>
+                      {d.description && <p className="text-xs text-neutral-400 mt-1">{d.description}</p>}
                     </div>
                   ))
                 )}
@@ -194,6 +216,9 @@ function StatusBadge({ status }: { status: string }) {
     rejeitado: "bg-red-50 text-red-700 border-red-200",
     paga: "bg-green-50 text-green-700 border-green-200",
     contestada: "bg-blue-50 text-blue-700 border-blue-200",
+    ativa: "bg-red-50 text-red-700 border-red-200",
+    cumprida: "bg-green-50 text-green-700 border-green-200",
+    revogada: "bg-neutral-50 text-neutral-600 border-neutral-200",
   };
   return (
     <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase border ${colors[status] || "bg-neutral-100 text-neutral-600 border-neutral-200"}`}>

@@ -31,3 +31,30 @@ The system is built on a modern web stack: React with TypeScript and Vite for th
 -   **Google Maps Platform:** Provides mapping services, Places API for autocomplete, and location functionalities.
 -   **Framer Motion:** For animations in the frontend.
 -   **Lucide React / React Icons:** Icon libraries for the user interface.
+
+## Mission Workflow (14 Steps)
+The mobile mission page (`/mobile/missao`) implements a 14-step digital OS workflow for armed escorts:
+1. **Dados da Missão** (aguardando) — Agent must check "Ciente" (acknowledgment) checkbox before proceeding
+2. **Armamento** (checkout_armamento) — Photos of 3 weapons with serial number visible instruction
+3. **Viatura** (checkout_viatura) — 4 vehicle photos + **mandatory checklist**: estepe, chave de roda, macaco, triângulo
+4. **KM de Saída** (checkout_km_saida) — Odometer photo + KM input
+5. **Em Trânsito** (em_transito_origem) — Navigation + status updates + hourly alert banner
+6. **KM Chegada** (checkin_chegada_km) — Odometer photo + KM input + **agent equipped photo** (in front of vehicle)
+7. **Veículo Escoltado** (checkin_veiculo_escoltado) — 2 photos of escorted truck
+8. **Dados do Motorista** (checkin_dados_motorista) — Driver name, phone, plate form (pre-filled from OS)
+9. **Iniciar Missão** (iniciar_missao) — Confirmation + timer start
+10. **Em Trânsito ao Destino** (em_transito_destino) — Navigation + status updates + hourly alert
+11. **Chegada no Destino** (chegada_destino) — **Destination photo** required + option for new delivery or finalize
+12. **KM Final** (checkout_km_final) — Odometer photo + KM input
+13. **Viatura Retorno** (checkout_viatura_retorno) — 4 vehicle photos
+14. **Missão Finalizada** (finalizada) — **Em Prontidão** status + **Retorno à Base** button
+
+## HR Module
+The employee HR module (`/mobile/meu-rh`) provides 5 tabs:
+- **Faltas** — Absences and medical certificates
+- **Multas** — Traffic fines/infractions
+- **Disciplinar** — Advertências (warnings) and suspensões (suspensions) with status tracking (ativa/cumprida/revogada)
+- **Ponto** — Timesheets with clock in/out
+- **Holerite** — Payslips with gross/net/deductions/benefits
+
+Admin manages all HR records via the employee dialog (`/admin/funcionarios`).

@@ -1,0 +1,86 @@
+1. Gestão do Agente
+
+Módulo dedicado às informações e rotinas administrativas do colaborador:
+	•	Cadastro completo de dados pessoais
+	•	Acesso à folha de ponto
+	•	Consulta de holerites
+	•	Registro de faltas e envio de atestados
+	•	Controle disciplinar (suspensões e advertências)
+
+⸻
+
+2. Missões Operacionais
+
+Central de gerenciamento das operações:
+	•	Visualização dos dados da operação
+	•	Informações detalhadas de data e horário da missão
+	•	Definição de origem e destino
+	•	Confirmação de ciência da missão via botão “Ciente”
+
+⸻
+
+3. Check-list de Material e Equipamentos
+
+Garantia de conformidade antes da operação:
+	•	Registro fotográfico do armamento (com número de série visível)
+	•	Inspeção completa da viatura:
+	•	Frente, traseira, lateral esquerda e direita
+	•	Itens obrigatórios: estepe, chave de roda, macaco e triângulo
+
+⸻
+
+4. Saída de Base
+
+Controle preciso do início da operação:
+	•	Registro fotográfico do hodômetro
+	•	Inserção de KM e horário de saída
+
+⸻
+
+5. Chegada ao Cliente
+
+Validação da equipe no ponto de origem:
+	•	Foto do hodômetro na chegada
+	•	Registro fotográfico do agente posicionado à frente da viatura, devidamente equipado
+	•	Inserção de KM e horário
+
+⸻
+
+6. Início da Operação
+
+Formalização do início da escolta:
+	•	Foto completa do veículo escoltado (com placas visíveis)
+	•	Confirmação dos dados do motorista e do caminhão
+	•	Registro do hodômetro (foto + digitação)
+
+⸻
+
+7. Atualizações em Tempo Real
+
+Monitoramento contínuo da missão:
+	•	Atualizações periódicas via aplicativo ou WhatsApp (em caso de contingência)
+	•	Alertas para atualização obrigatória a cada 1 hora por ambos os agentes
+
+⸻
+
+8. Chegada ao Destino
+
+Confirmação da conclusão do trajeto:
+	•	Registro fotográfico do local de destino
+	•	Foto do hodômetro
+
+⸻
+
+9. Finalização da Operação
+
+Encerramento formal da missão:
+	•	Foto do veículo chegando ao destino final
+	•	Registro do hodômetro (foto + KM e horário digitados)
+
+⸻
+
+10. Status Operacional da Equipe
+
+Gestão de disponibilidade:
+	•	Equipe permanece em estado de prontidão para nova missão
+	•	Possibilidade de retorno à base conforme direcionamento operacional
