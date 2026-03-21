@@ -5,13 +5,63 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Shield, Eye, EyeOff, UserPlus, Lock } from "lucide-react";
+import { Shield, Eye, EyeOff, UserPlus, Lock, FileCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
+function formatCpf(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function isCpfInput(value: string) {
+  return /^\d/.test(value.trim()) || value.includes(".");
+}
+
+const TERMS_TEXT = `TERMO DE USO E CONFIDENCIALIDADE DO SISTEMA OPERACIONAL
+TORRES VIGILÂNCIA PATRIMONIAL LTDA
+CNPJ: 36.982.392/0001-89
+
+1. OBJETO
+O presente Termo regula o uso do Sistema Operacional de Gestão de Escoltas ("Sistema") disponibilizado pela TORRES VIGILÂNCIA PATRIMONIAL LTDA ("Empresa") aos seus colaboradores ("Usuário").
+
+2. ACEITE E VINCULAÇÃO
+Ao acessar o Sistema, o Usuário declara ter lido, compreendido e aceito integralmente os termos aqui estabelecidos. O aceite digital possui validade jurídica nos termos da Lei nº 14.063/2020 e do Marco Civil da Internet (Lei nº 12.965/2014).
+
+3. CONFIDENCIALIDADE
+3.1. O Usuário compromete-se a manter sigilo absoluto sobre todas as informações acessadas através do Sistema, incluindo, mas não se limitando a: dados de clientes, rotas de escolta, informações operacionais, dados de veículos, dados pessoais de terceiros e quaisquer informações de caráter estratégico ou comercial.
+3.2. O Usuário reconhece que as informações contidas no Sistema constituem segredo empresarial nos termos da Lei nº 9.279/1996 (Lei de Propriedade Industrial).
+3.3. A obrigação de sigilo permanece vigente mesmo após o encerramento do vínculo empregatício, pelo prazo mínimo de 5 (cinco) anos.
+
+4. USO ADEQUADO DO SISTEMA
+4.1. O acesso ao Sistema é pessoal e intransferível. O Usuário é o único responsável por todas as ações realizadas com suas credenciais.
+4.2. É expressamente proibido: compartilhar credenciais de acesso; capturar, copiar ou reproduzir telas ou dados do Sistema; transferir informações do Sistema para terceiros ou dispositivos pessoais não autorizados; utilizar as informações para finalidades distintas das atividades profissionais.
+4.3. O Sistema registra automaticamente todas as ações do Usuário, incluindo: páginas acessadas, horários de acesso, endereço IP, dispositivo utilizado e localização geográfica.
+
+5. MONITORAMENTO E AUDITORIA
+5.1. O Usuário está ciente e concorda que toda a utilização do Sistema é monitorada e registrada em log de auditoria permanente.
+5.2. O Sistema aplica marca d'água digital com identificação do Usuário em todas as telas, servindo como prova de autoria em caso de captura de tela ou fotografia.
+5.3. A Empresa reserva-se o direito de auditar o uso do Sistema a qualquer momento, sem necessidade de aviso prévio.
+
+6. PROTEÇÃO DE DADOS (LGPD)
+6.1. O Usuário compromete-se a tratar os dados pessoais acessados no Sistema em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018).
+6.2. Qualquer incidente de segurança envolvendo dados pessoais deve ser comunicado imediatamente à Empresa.
+
+7. RESPONSABILIDADE E PENALIDADES
+7.1. O descumprimento de qualquer cláusula deste Termo poderá resultar em: advertência formal; suspensão do acesso ao Sistema; rescisão do contrato de trabalho por justa causa, nos termos do Art. 482 da CLT; responsabilização civil por perdas e danos; responsabilização criminal, quando aplicável.
+7.2. O Usuário responderá por todos os danos causados à Empresa ou a terceiros em decorrência do uso indevido das informações.
+
+8. DISPOSIÇÕES GERAIS
+8.1. Este Termo é regido pela legislação brasileira.
+8.2. Fica eleito o foro da Comarca de São Paulo/SP para dirimir quaisquer questões.
+8.3. O aceite digital deste Termo, com registro de data, hora, IP e identificação do dispositivo, constitui prova válida e eficaz da manifestação de vontade do Usuário.`;
+
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
@@ -20,6 +70,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [termsScrolled, setTermsScrolled] = useState(false);
   const { login, user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -31,7 +83,11 @@ export default function LoginPage() {
   const needsSetup = setupCheck?.needsSetup ?? false;
 
   useEffect(() => {
-    if (user && !user.mustChangePassword) {
+    if (user && !user.mustChangePassword && !showTerms) {
+      if (user.role === "funcionario" && !user.termsAcceptedAt) {
+        setShowTerms(true);
+        return;
+      }
       if (user.role === "funcionario") {
         setLocation("/mobile");
       } else {
@@ -41,13 +97,35 @@ export default function LoginPage() {
     if (user && user.mustChangePassword) {
       setChangingPassword(true);
     }
-  }, [user, setLocation]);
+  }, [user, setLocation, showTerms]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const loggedUser = await login(email.trim(), password);
+      let emailToUse = credential.trim();
+
+      if (isCpfInput(credential)) {
+        const cleanCpf = credential.replace(/\D/g, "");
+        if (cleanCpf.length !== 11) {
+          toast({ title: "CPF inválido", description: "Digite os 11 dígitos do CPF.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const lookupRes = await fetch("/api/auth/cpf-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cpf: cleanCpf }),
+        });
+        if (!lookupRes.ok) {
+          const err = await lookupRes.json().catch(() => ({}));
+          throw new Error(err.message || "CPF não encontrado");
+        }
+        const { email } = await lookupRes.json();
+        emailToUse = email;
+      }
+
+      const loggedUser = await login(emailToUse, password);
       if (loggedUser.mustChangePassword) {
         setChangingPassword(true);
       }
@@ -55,9 +133,24 @@ export default function LoginPage() {
       const msg = err.message || "Credenciais inválidas";
       toast({
         title: "Erro ao entrar",
-        description: msg.includes("Invalid login") ? "E-mail ou senha incorretos" : msg,
+        description: msg.includes("Invalid login") ? "Credenciais incorretas" : msg,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAcceptTerms = async () => {
+    setLoading(true);
+    try {
+      await apiRequest("POST", "/api/auth/accept-terms", {});
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Termo aceito com sucesso!" });
+      setShowTerms(false);
+      setLocation("/mobile");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -80,7 +173,11 @@ export default function LoginPage() {
       toast({ title: "Senha alterada com sucesso!" });
       setChangingPassword(false);
       if (user?.role === "funcionario") {
-        setLocation("/mobile");
+        if (!user.termsAcceptedAt) {
+          setShowTerms(true);
+        } else {
+          setLocation("/mobile");
+        }
       } else {
         setLocation("/admin/dashboard");
       }
@@ -108,15 +205,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await apiRequest("POST", "/api/auth/setup", {
-        email: email.trim(),
+        email: credential.trim(),
         password,
         name,
       });
-
       queryClient.invalidateQueries({ queryKey: ["/api/auth/setup-check"] });
-
-      await login(email.trim(), password);
-
+      await login(credential.trim(), password);
       toast({ title: "Conta criada com sucesso!", description: `Bem-vindo, ${name}!` });
     } catch (err: any) {
       toast({
@@ -129,10 +223,67 @@ export default function LoginPage() {
     }
   };
 
+  const handleTermsScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) {
+      setTermsScrolled(true);
+    }
+  };
+
   if (checkingSetup) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
         <div className="w-8 h-8 border-3 border-white/20 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (showTerms && user) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg bg-neutral-900 border-neutral-800 p-6 max-h-[90vh] flex flex-col" data-testid="card-terms">
+          <div className="flex flex-col items-center mb-4">
+            <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mb-3">
+              <FileCheck className="w-6 h-6 text-blue-400" />
+            </div>
+            <h1 className="text-lg font-bold text-white text-center" data-testid="text-terms-title">
+              Termo de Uso e Confidencialidade
+            </h1>
+            <p className="text-xs text-white/40 mt-1 text-center">
+              Leia atentamente e role até o final para aceitar
+            </p>
+          </div>
+
+          <div
+            className="flex-1 overflow-y-auto bg-white/5 rounded-xl p-4 mb-4 text-xs text-white/70 leading-relaxed whitespace-pre-wrap"
+            onScroll={handleTermsScroll}
+            data-testid="terms-content"
+            style={{ maxHeight: "50vh" }}
+          >
+            {TERMS_TEXT}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[10px] text-white/30 text-center">
+              Ao clicar em "Li e Aceito", você confirma que leu e concorda com todos os termos acima.
+              Este aceite será registrado com data, hora, IP e dispositivo.
+            </p>
+            <div className="flex items-center gap-2 bg-white/5 rounded-lg p-3">
+              <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+              <p className="text-[10px] text-white/50">
+                <strong className="text-white/70">{user.name}</strong> · CPF vinculado · {new Date().toLocaleDateString("pt-BR")} {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+            <Button
+              onClick={handleAcceptTerms}
+              className="w-full bg-green-600 text-white hover:bg-green-500 font-bold uppercase tracking-wider"
+              disabled={loading || !termsScrolled}
+              data-testid="button-accept-terms"
+            >
+              {loading ? "Registrando..." : !termsScrolled ? "Role até o final para aceitar" : "Li e Aceito os Termos"}
+            </Button>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -203,6 +354,8 @@ export default function LoginPage() {
     );
   }
 
+  const isTypingCpf = isCpfInput(credential);
+
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-sm bg-neutral-900 border-neutral-800 p-8" data-testid="card-login">
@@ -242,8 +395,8 @@ export default function LoginPage() {
               <label className="text-xs text-white/40 mb-1.5 block">E-mail</label>
               <Input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={credential}
+                onChange={(e) => setCredential(e.target.value)}
                 className="bg-white/5 border-white/10 text-white placeholder:text-white/20"
                 placeholder="seu@email.com"
                 required
@@ -297,15 +450,18 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="text-xs text-white/40 mb-1.5 block">E-mail</label>
+              <label className="text-xs text-white/40 mb-1.5 block">
+                {isTypingCpf ? "CPF" : "CPF ou E-mail"}
+              </label>
               <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                inputMode={isTypingCpf ? "numeric" : "email"}
+                value={isTypingCpf ? formatCpf(credential) : credential}
+                onChange={(e) => setCredential(e.target.value)}
                 className="bg-white/5 border-white/10 text-white placeholder:text-white/20"
-                placeholder="seu@email.com"
+                placeholder="000.000.000-00 ou email"
                 required
-                data-testid="input-email"
+                data-testid="input-credential"
               />
             </div>
             <div>

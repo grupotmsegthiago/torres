@@ -14,6 +14,7 @@ type AuthUser = {
   avatarUrl: string | null;
   employeeId: number | null;
   mustChangePassword: boolean;
+  termsAcceptedAt: string | null;
 };
 
 type AuthContextType = {

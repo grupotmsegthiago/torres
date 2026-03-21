@@ -14,7 +14,7 @@ import {
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
-  auditLogs,
+  auditLogs, users,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -105,8 +105,50 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/auth/cpf-lookup", async (req, res) => {
+    const { cpf } = req.body;
+    if (!cpf) return res.status(400).json({ message: "CPF obrigatório" });
+    const cleanCpf = cpf.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });
+
+    const allEmployees = await storage.getEmployees();
+    const emp = allEmployees.find((e) => e.cpf?.replace(/\D/g, "") === cleanCpf);
+    if (!emp) return res.status(404).json({ message: "CPF não encontrado no cadastro de funcionários" });
+
+    const allUsers = await storage.getUsers();
+    const user = allUsers.find((u) => u.employeeId === emp.id);
+    if (!user || !user.email) return res.status(404).json({ message: "Nenhum usuário vinculado a este CPF. Contate o administrador." });
+
+    res.json({ email: user.email, name: emp.name });
+  });
+
   app.get("/api/auth/me", requireAuth, (req, res) => {
-    res.json(toSafeUser(req.user));
+    const safe = toSafeUser(req.user);
+    res.json({ ...safe, termsAcceptedAt: req.user!.termsAcceptedAt || null });
+  });
+
+  app.post("/api/auth/accept-terms", requireAuth, async (req, res) => {
+    const user = req.user!;
+    const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
+    const userAgent = req.headers["user-agent"] || null;
+    await db.update(users).set({
+      termsAcceptedAt: new Date(),
+      termsIpAddress: ipAddress,
+      termsUserAgent: userAgent,
+    }).where(eq(users.id, user.id));
+
+    await db.insert(auditLogs).values({
+      userId: user.id,
+      userName: user.name || "—",
+      userRole: user.role || "—",
+      action: "terms_accepted",
+      page: "/auth",
+      details: `Termo de uso aceito. IP: ${ipAddress}`,
+      ipAddress,
+      userAgent,
+    });
+
+    res.json({ ok: true, termsAcceptedAt: new Date() });
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
