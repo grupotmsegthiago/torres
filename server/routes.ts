@@ -1943,7 +1943,7 @@ Para CPF, formate como 000.000.000-00.`
 
     const orders = await storage.getServiceOrdersByEmployee(user.employeeId);
     const active = orders.find(
-      (o) => o.status === "em_andamento" && o.missionStatus !== "finalizada"
+      (o) => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "finalizada"
     );
     if (!active) return res.json(null);
 
