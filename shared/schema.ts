@@ -527,3 +527,20 @@ export const employeePayslips = pgTable("employee_payslips", {
 export const insertEmployeePayslipSchema = createInsertSchema(employeePayslips).omit({ id: true, createdAt: true });
 export type InsertEmployeePayslip = z.infer<typeof insertEmployeePayslipSchema>;
 export type EmployeePayslip = typeof employeePayslips.$inferSelect;
+
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id"),
+  userName: text("user_name"),
+  userRole: text("user_role"),
+  action: text("action").notNull(),
+  page: text("page"),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;

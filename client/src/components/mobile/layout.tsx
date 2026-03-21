@@ -1,6 +1,8 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
+import { useAuditLog } from "@/hooks/use-audit";
+import { useMemo } from "react";
 import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
@@ -13,10 +15,53 @@ const navItems = [
   { path: "/mobile/perfil", label: "Perfil", icon: UserCircle },
 ];
 
+function Watermark({ name }: { name: string }) {
+  const now = useMemo(() => {
+    const d = new Date();
+    return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  }, []);
+
+  const lines = useMemo(() => {
+    const items: { x: number; y: number; r: number }[] = [];
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 4; col++) {
+        items.push({
+          x: col * 260 + (row % 2 === 0 ? 0 : 130),
+          y: row * 180,
+          r: -25,
+        });
+      }
+    }
+    return items;
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] pointer-events-none overflow-hidden" aria-hidden="true">
+      <svg width="100%" height="100%" className="absolute inset-0">
+        {lines.map((l, i) => (
+          <text
+            key={i}
+            x={l.x}
+            y={l.y}
+            transform={`rotate(${l.r}, ${l.x}, ${l.y})`}
+            fill="rgba(0,0,0,0.04)"
+            fontSize="11"
+            fontFamily="Inter, sans-serif"
+            fontWeight="600"
+          >
+            {name} · {now}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { denied, requestPermission } = useGeolocation();
+  useAuditLog(location);
 
   if (denied) {
     return (
@@ -56,6 +101,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col select-none" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
+      {user && <Watermark name={user.name || user.username || "—"} />}
       <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />

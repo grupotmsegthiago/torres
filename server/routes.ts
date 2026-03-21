@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { requireAuth, requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -14,6 +14,7 @@ import {
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
+  auditLogs,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -2222,6 +2223,36 @@ Para CPF, formate como 000.000.000-00.`
       missionStatus: "em_transito_destino",
     });
     res.json(updated);
+  });
+
+  // ====================== AUDIT LOG ======================
+
+  app.post("/api/audit-log", requireAuth, async (req, res) => {
+    const user = req.user!;
+    const { action, page, details } = req.body;
+    if (!action) return res.status(400).json({ message: "action obrigatória" });
+    const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
+    const userAgent = req.headers["user-agent"] || null;
+    await db.insert(auditLogs).values({
+      userId: user.id,
+      userName: user.name || user.username || "—",
+      userRole: user.role || "—",
+      action,
+      page: page || null,
+      details: details || null,
+      ipAddress,
+      userAgent,
+    });
+    res.json({ ok: true });
+  });
+
+  app.get("/api/audit-logs", requireAuth, requireAdmin, async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const offset = Number(req.query.offset) || 0;
+    const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
+    const countResult = await db.execute(sql`SELECT COUNT(*) as total FROM audit_logs`);
+    const total = Number((countResult as any).rows?.[0]?.total || 0);
+    res.json({ logs: rows, total });
   });
 
   // ====================== HR MOBILE (próprio funcionário) ======================
