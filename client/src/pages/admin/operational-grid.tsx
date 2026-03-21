@@ -304,7 +304,15 @@ function getMissionLabel(status: string | null) {
     case "checkout_viatura_retorno":
       return "Término de Missão";
     case "finalizada":
-      return "Finalizada";
+      return "Entregas Finalizadas";
+    case "em_prontidao":
+      return "Em Prontidão";
+    case "retorno_base":
+      return "Retorno à Base";
+    case "chegada_base":
+      return "Chegada na Base";
+    case "encerrada":
+      return "Operação Encerrada";
     default:
       return status;
   }
@@ -313,7 +321,7 @@ function getMissionLabel(status: string | null) {
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
   if (v.activeOs) {
     const ms = v.activeOs.missionStatus;
-    if (ms === "finalizada" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno") {
+    if (ms === "encerrada") {
       return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     }
     return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
@@ -361,7 +369,15 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     case "checkout_viatura_retorno":
       return { label: "Término de Missão", icon: CircleCheckBig, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "finalizada":
-      return { label: "Finalizada", icon: CircleCheckBig, className: "bg-green-50 text-green-700 border-green-200" };
+      return { label: "Entregas Finalizadas", icon: CircleCheckBig, className: "bg-green-50 text-green-700 border-green-200" };
+    case "em_prontidao":
+      return { label: "Em Prontidão", icon: CircleDot, className: "bg-lime-50 text-lime-700 border-lime-200" };
+    case "retorno_base":
+      return { label: "Retorno à Base", icon: Navigation, className: "bg-sky-50 text-sky-700 border-sky-200" };
+    case "chegada_base":
+      return { label: "Chegada na Base", icon: Building2, className: "bg-teal-50 text-teal-700 border-teal-200" };
+    case "encerrada":
+      return { label: "Operação Encerrada", icon: CircleCheckBig, className: "bg-emerald-50 text-emerald-800 border-emerald-300" };
     default:
       return { label: missionStatus || "—", icon: CircleDot, className: "bg-neutral-50 text-neutral-600 border-neutral-200" };
   }

@@ -28,7 +28,11 @@ const MISSION_STATUS_LABELS: Record<string, string> = {
   chegada_destino: "Chegada no Destino",
   checkout_km_final: "Término de Missão",
   checkout_viatura_retorno: "Término de Missão",
-  finalizada: "Finalizada",
+  finalizada: "Entregas Finalizadas",
+  em_prontidao: "Em Prontidão",
+  retorno_base: "Retorno à Base",
+  chegada_base: "Chegada na Base",
+  encerrada: "Operação Encerrada",
 };
 
 function getMissionStatusColor(status: string | null) {
@@ -53,6 +57,14 @@ function getMissionStatusColor(status: string | null) {
       return "bg-emerald-100 text-emerald-700";
     case "finalizada":
       return "bg-green-100 text-green-700";
+    case "em_prontidao":
+      return "bg-lime-100 text-lime-700";
+    case "retorno_base":
+      return "bg-sky-100 text-sky-700";
+    case "chegada_base":
+      return "bg-teal-100 text-teal-700";
+    case "encerrada":
+      return "bg-emerald-100 text-emerald-800";
     default:
       return "bg-slate-100 text-slate-700";
   }

@@ -14,10 +14,11 @@ const steps = [
     subtitle: "Acesso ao sistema",
     phase: "acesso",
     icon: Lock,
-    description: "O vigilante acessa o sistema com seu login e senha pessoal. O sistema identifica automaticamente qual OS está atribuída a ele.",
+    description: "O vigilante acessa o sistema com seu login e senha pessoal. Após o login, deve capturar uma selfie obrigatória antes de acessar qualquer funcionalidade.",
     details: [
       "Login com usuário e senha criados pelo admin",
       "O sistema vincula o login ao cadastro do funcionário",
+      "Selfie obrigatória com câmera frontal (GPS e horário registrados)",
       "Ao entrar, a missão ativa é carregada automaticamente",
     ],
     mockup: "login",
@@ -50,7 +51,7 @@ const steps = [
   {
     number: 3,
     title: "CONFERÊNCIA DE ARMAMENTO",
-    subtitle: "Check-out · Etapa 1/11",
+    subtitle: "Check-out · Etapa 1/15",
     phase: "checkout",
     icon: Crosshair,
     description: "O agente fotografa obrigatoriamente todo o armamento antes de sair da base. Sem as 3 fotos, não é possível avançar.",
@@ -68,7 +69,7 @@ const steps = [
   {
     number: 4,
     title: "CHECK-OUT DA VIATURA",
-    subtitle: "Check-out · Etapa 2/11",
+    subtitle: "Check-out · Etapa 2/15",
     phase: "checkout",
     icon: Car,
     description: "Registro fotográfico completo da viatura em 4 ângulos para documentar o estado do veículo antes da saída.",
@@ -86,7 +87,7 @@ const steps = [
   {
     number: 5,
     title: "KM DE SAÍDA",
-    subtitle: "Check-out · Etapa 3/11",
+    subtitle: "Check-out · Etapa 3/15",
     phase: "checkout",
     icon: Gauge,
     description: "O agente registra a quilometragem de saída com foto do hodômetro e digitação do valor.",
@@ -103,7 +104,7 @@ const steps = [
   {
     number: 6,
     title: "EM TRÂNSITO (ORIGEM)",
-    subtitle: "Deslocamento · Etapa 4/11",
+    subtitle: "Deslocamento · Etapa 4/15",
     phase: "transito",
     icon: Route,
     description: "Tela de deslocamento até o cliente. O veículo animado indica que a viatura está em movimento.",
@@ -119,7 +120,7 @@ const steps = [
   {
     number: 7,
     title: "KM CHEGADA (CLIENTE)",
-    subtitle: "Check-in · Etapa 5/11",
+    subtitle: "Check-in · Etapa 5/15",
     phase: "checkin",
     icon: Gauge,
     description: "Registro da quilometragem de chegada ao local do cliente.",
@@ -136,7 +137,7 @@ const steps = [
   {
     number: 8,
     title: "VEÍCULO ESCOLTADO",
-    subtitle: "Check-in · Etapa 6/11",
+    subtitle: "Check-in · Etapa 6/15",
     phase: "checkin",
     icon: Truck,
     description: "Registro fotográfico do caminhão ou veículo que será escoltado, documentando frente e traseira.",
@@ -153,7 +154,7 @@ const steps = [
   {
     number: 9,
     title: "DADOS DO MOTORISTA",
-    subtitle: "Check-in · Etapa 7/11",
+    subtitle: "Check-in · Etapa 7/15",
     phase: "checkin",
     icon: User,
     description: "O agente registra o nome do motorista do veículo escoltado e a placa do veículo. Dados salvos na OS.",
@@ -170,7 +171,7 @@ const steps = [
   {
     number: 10,
     title: "INICIAR MISSÃO",
-    subtitle: "Execução · Etapa 8/11",
+    subtitle: "Execução · Etapa 8/15",
     phase: "execucao",
     icon: Siren,
     description: "Momento crucial: o agente confirma o início da escolta. O sistema registra o timestamp exato e inicia o cronômetro da missão.",
@@ -187,7 +188,7 @@ const steps = [
   {
     number: 11,
     title: "EM TRÂNSITO (DESTINO)",
-    subtitle: "Execução · Etapa 9/11",
+    subtitle: "Execução · Etapa 9/15",
     phase: "transito",
     icon: Route,
     description: "Deslocamento ao destino final com a escolta ativa. O cronômetro mostra o tempo de missão decorrido.",
@@ -203,7 +204,7 @@ const steps = [
   {
     number: 12,
     title: "KM FINAL",
-    subtitle: "Finalização · Etapa 10/11",
+    subtitle: "Finalização · Etapa 10/15",
     phase: "finalizacao",
     icon: Gauge,
     description: "Registro da quilometragem final no destino. Última medição de odômetro da missão.",
@@ -220,7 +221,7 @@ const steps = [
   {
     number: 13,
     title: "VIATURA RETORNO",
-    subtitle: "Finalização · Etapa 11/11",
+    subtitle: "Finalização · Etapa 11/15",
     phase: "finalizacao",
     icon: Car,
     description: "Registro fotográfico final da viatura para conferência de avarias pós-missão. Compara com as fotos da saída.",
@@ -237,20 +238,86 @@ const steps = [
   },
   {
     number: 14,
-    title: "MISSÃO FINALIZADA",
+    title: "ENTREGAS FINALIZADAS",
+    subtitle: "Operação · Etapa 12/15",
+    phase: "finalizacao",
+    icon: CheckCircle2,
+    description: "Todas as entregas foram realizadas. O agente agora pode indicar que está em prontidão para encerramento logístico.",
+    details: [
+      "Confirmação visual de conclusão das entregas",
+      "Timer da missão continua ativo",
+      "Botão \"Em Prontidão\" para prosseguir",
+    ],
+    mockup: "finalizada",
+    action: "EM PRONTIDÃO",
+  },
+  {
+    number: 15,
+    title: "EM PRONTIDÃO",
+    subtitle: "Operação · Etapa 13/15",
+    phase: "logistico",
+    icon: Shield,
+    description: "A equipe permanece em prontidão aguardando liberação. Quando autorizado, inicia o retorno à base.",
+    details: [
+      "Status visual verde pulsante indicando disponibilidade",
+      "Equipe disponível no local, aguardando liberação",
+      "Botão \"Retorno à Base\" quando liberados",
+    ],
+    mockup: "prontidao",
+    action: "RETORNO À BASE",
+  },
+  {
+    number: 16,
+    title: "RETORNO À BASE",
+    subtitle: "Logístico · Etapa 14/15",
+    phase: "logistico",
+    icon: Route,
+    description: "A equipe está em deslocamento de volta à base. Ao chegar, registra o encerramento logístico da viatura.",
+    details: [
+      "Animação de navegação indicando deslocamento",
+      "Timer da missão visível",
+      "Botão \"Cheguei na Base\" ao chegar",
+    ],
+    mockup: "transito",
+    action: "CHEGUEI NA BASE",
+  },
+  {
+    number: 17,
+    title: "CHEGADA NA BASE",
+    subtitle: "Logístico · Etapa 15/15",
+    phase: "logistico",
+    icon: MapPin,
+    description: "Encerramento logístico completo: checklist da viatura, fotos, KM de retorno e status de limpeza do veículo.",
+    details: [
+      "Checklist obrigatório: estepe, chave de roda, macaco, triângulo",
+      "5 fotos: 4 ângulos da viatura + hodômetro",
+      "Campo numérico para KM de retorno",
+      "Status de limpeza: Limpa ou Suja",
+      "Se suja: campo obrigatório para descrever o motivo",
+      "Dados salvos e validados antes de avançar",
+    ],
+    mockup: "chegada_base",
+    action: "ENCERRAR OPERAÇÃO",
+    mandatory: "Checklist + 5 fotos + KM + Limpeza",
+  },
+  {
+    number: 18,
+    title: "OPERAÇÃO ENCERRADA",
     subtitle: "Status: Concluída",
     phase: "concluida",
     icon: CheckCircle2,
-    description: "A OS é automaticamente marcada como 'Concluída'. Todos os registros ficam salvos no sistema para auditoria.",
+    description: "A OS é automaticamente marcada como 'Concluída'. Kit de armamento liberado. Todos os registros ficam salvos para auditoria.",
     details: [
       "OS muda para status 'Concluída' automaticamente",
+      "Kit de armamento é liberado automaticamente",
       "Todas as fotos ficam no banco de dados",
       "GPS de cada foto registrado para auditoria",
-      "KMs registrados (saída, chegada, final)",
+      "KMs registrados (saída, chegada, final, retorno)",
+      "Status de limpeza da viatura registrado",
       "Timestamp de início e fim da missão salvos",
       "Admin pode consultar todos os dados no painel",
     ],
-    mockup: "finalizada",
+    mockup: "encerrada",
   },
 ];
 
@@ -471,12 +538,69 @@ function PhoneMockup({ step }: { step: typeof steps[0] }) {
                   <CheckCircle2 className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-black text-neutral-900 uppercase tracking-wider">Missão Finalizada</p>
+                  <p className="text-sm font-black text-neutral-900 uppercase tracking-wider">Entregas Finalizadas</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Prossiga para encerramento logístico</p>
+                </div>
+                <div className="bg-neutral-900 rounded-lg py-2 px-6 mt-2">
+                  <p className="text-[10px] font-bold text-white uppercase tracking-wider">Em Prontidão</p>
+                </div>
+              </div>
+            )}
+
+            {step.mockup === "prontidao" && (
+              <div className="text-center space-y-2.5 py-2">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto animate-pulse">
+                  <Shield className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-green-700 uppercase tracking-wider">Em Prontidão</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Equipe aguardando liberação</p>
+                </div>
+                <div className="bg-neutral-900 rounded-lg py-2 px-6 mt-2">
+                  <p className="text-[10px] font-bold text-white uppercase tracking-wider">Retorno à Base</p>
+                </div>
+              </div>
+            )}
+
+            {step.mockup === "chegada_base" && (
+              <div className="space-y-2 py-1">
+                <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">Checklist Viatura</p>
+                <div className="space-y-1">
+                  {["Estepe", "Chave de Roda", "Macaco", "Triângulo"].map(item => (
+                    <div key={item} className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded px-2 py-1">
+                      <CheckCircle2 className="w-3 h-3 text-green-600" />
+                      <span className="text-[9px] font-semibold text-green-700">{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  <div className="flex-1 bg-neutral-50 border border-neutral-200 rounded py-1 px-2 text-center">
+                    <p className="text-[7px] text-neutral-400 uppercase">KM Retorno</p>
+                    <p className="text-[10px] font-bold text-neutral-700">145.320</p>
+                  </div>
+                  <div className="flex-1 bg-green-50 border border-green-200 rounded py-1 px-2 text-center">
+                    <p className="text-[7px] text-green-600 uppercase">Limpeza</p>
+                    <p className="text-[10px] font-bold text-green-700">Limpa</p>
+                  </div>
+                </div>
+                <div className="bg-neutral-900 rounded-lg py-1.5 px-4 text-center">
+                  <p className="text-[9px] font-bold text-white uppercase tracking-wider">Encerrar Operação</p>
+                </div>
+              </div>
+            )}
+
+            {step.mockup === "encerrada" && (
+              <div className="text-center space-y-2.5 py-2">
+                <div className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-neutral-900 uppercase tracking-wider">Operação Encerrada</p>
                   <p className="text-[9px] text-neutral-400 mt-0.5">Todas as etapas concluídas</p>
                 </div>
                 <div className="bg-neutral-50 border border-neutral-200 rounded py-1.5 px-4">
                   <p className="text-[8px] text-neutral-400 uppercase mb-0.5">Tempo de Missão</p>
-                  <p className="font-mono text-sm font-bold text-neutral-900 tracking-wider">02:34:12</p>
+                  <p className="font-mono text-sm font-bold text-neutral-900 tracking-wider">03:12:45</p>
                 </div>
               </div>
             )}
@@ -512,9 +636,9 @@ export default function GuiaMissaoPage() {
 
         <div className="mb-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { value: "14", label: "Etapas", icon: Shield },
-            { value: "18", label: "Fotos Totais", icon: Camera },
-            { value: "3", label: "Leituras KM", icon: Gauge },
+            { value: "18", label: "Etapas", icon: Shield },
+            { value: "23", label: "Fotos Totais", icon: Camera },
+            { value: "4", label: "Leituras KM", icon: Gauge },
             { value: "GPS", label: "Em Cada Foto", icon: MapPin },
           ].map((stat) => (
             <div key={stat.label} className="bg-white border border-neutral-200 rounded-xl p-4 text-center shadow-sm" data-testid={`stat-${stat.label.toLowerCase().replace(/\s/g, '-')}`}>

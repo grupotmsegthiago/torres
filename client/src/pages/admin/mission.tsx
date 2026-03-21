@@ -25,6 +25,10 @@ const MISSION_STEPS = [
   { key: "chegada_destino", label: "Chegada", screenTitle: "Chegada no Destino", screenSub: "ENTREGA / NOVA ENTREGA" },
   { key: "checkout_km_final", label: "KM Final", screenTitle: "KM Final", screenSub: "REGISTRO DE CHEGADA" },
   { key: "checkout_viatura_retorno", label: "Viatura Retorno", screenTitle: "Viatura Retorno", screenSub: "CHECK-OUT FINAL" },
+  { key: "finalizada", label: "Entregas Finalizadas", screenTitle: "Entregas Finalizadas", screenSub: "OPERAÇÃO CONCLUÍDA" },
+  { key: "em_prontidao", label: "Em Prontidão", screenTitle: "Em Prontidão", screenSub: "EQUIPE DISPONÍVEL" },
+  { key: "retorno_base", label: "Retorno à Base", screenTitle: "Retorno à Base", screenSub: "EM DESLOCAMENTO" },
+  { key: "chegada_base", label: "Chegada Base", screenTitle: "Chegada na Base", screenSub: "ENCERRAMENTO LOGÍSTICO" },
 ] as const;
 
 const STEP_PHOTO_SLOTS: Record<string, { key: string; label: string }[]> = {
@@ -51,6 +55,13 @@ const STEP_PHOTO_SLOTS: Record<string, { key: string; label: string }[]> = {
     { key: "viatura_retorno_lateral_esq", label: "Lateral Esq." },
     { key: "viatura_retorno_lateral_dir", label: "Lateral Dir." },
     { key: "viatura_retorno_traseira", label: "Traseira" },
+  ],
+  chegada_base: [
+    { key: "base_viatura_frente", label: "Dianteira" },
+    { key: "base_viatura_lateral_esq", label: "Lateral Esq." },
+    { key: "base_viatura_lateral_dir", label: "Lateral Dir." },
+    { key: "base_viatura_traseira", label: "Traseira" },
+    { key: "base_hodometro", label: "Hodômetro" },
   ],
 };
 
@@ -147,7 +158,7 @@ function MissionTimer({ startedAt }: { startedAt?: string | null }) {
 }
 
 function StepProgress({ currentStatus }: { currentStatus: string }) {
-  const allKeys = ["aguardando", ...MISSION_STEPS.map(s => s.key), "finalizada"];
+  const allKeys = ["aguardando", ...MISSION_STEPS.map(s => s.key), "encerrada"];
   const currentIdx = allKeys.indexOf(currentStatus);
 
   return (
@@ -447,7 +458,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     advanceMutation.mutate();
   };
 
-  if (mission.missionStatus === "finalizada") {
+  if (mission.missionStatus === "encerrada") {
     return (
       <div className="min-h-[80vh] bg-gradient-to-b from-card to-muted relative rounded-2xl overflow-hidden border border-border no-print-zone">
         <ShieldWatermark />
@@ -456,7 +467,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             <Check className="w-10 h-10 text-background" />
           </div>
           <h2 className="text-2xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-mission-complete">
-            Missão Finalizada
+            Operação Encerrada
           </h2>
           <p className="text-muted-foreground font-medium">Todas as etapas foram concluídas com sucesso.</p>
           {mission.missionStartedAt && (
