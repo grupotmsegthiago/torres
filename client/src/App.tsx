@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,6 +31,7 @@ import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
 import MobilePerfilPage from "@/pages/mobile/perfil";
 import MobileRHPage from "@/pages/mobile/meu-rh";
+import MobileSelfiePage from "@/pages/mobile/selfie";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -55,9 +56,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
-function MobileProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function MobileProtectedRoute({ component: Component, skipSelfieCheck }: { component: React.ComponentType; skipSelfieCheck?: boolean }) {
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const [selfieChecked, setSelfieChecked] = useState(false);
+  const [selfieOk, setSelfieOk] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -65,7 +68,29 @@ function MobileProtectedRoute({ component: Component }: { component: React.Compo
     }
   }, [isLoading, user, setLocation]);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (user && user.role === "funcionario" && !skipSelfieCheck) {
+      apiRequest("GET", "/api/auth/login-selfie-today")
+        .then(r => r.ok ? r.json() : { hasSelfieToday: false })
+        .then(data => {
+          if (!data.hasSelfieToday) {
+            setLocation("/mobile/selfie");
+          } else {
+            setSelfieOk(true);
+          }
+          setSelfieChecked(true);
+        })
+        .catch(() => {
+          setSelfieOk(true);
+          setSelfieChecked(true);
+        });
+    } else if (user) {
+      setSelfieOk(true);
+      setSelfieChecked(true);
+    }
+  }, [user, skipSelfieCheck, setLocation]);
+
+  if (isLoading || (!selfieChecked && user)) {
     return (
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-neutral-400">Carregando...</div>
@@ -74,6 +99,10 @@ function MobileProtectedRoute({ component: Component }: { component: React.Compo
   }
 
   if (!user) {
+    return null;
+  }
+
+  if (!selfieOk && !skipSelfieCheck) {
     return null;
   }
 
@@ -107,6 +136,7 @@ function Router() {
       <Route path="/mobile/checklist">{() => <MobileProtectedRoute component={MobileChecklistPage} />}</Route>
       <Route path="/mobile/perfil">{() => <MobileProtectedRoute component={MobilePerfilPage} />}</Route>
       <Route path="/mobile/meu-rh">{() => <MobileProtectedRoute component={MobileRHPage} />}</Route>
+      <Route path="/mobile/selfie">{() => <MobileProtectedRoute component={MobileSelfiePage} skipSelfieCheck />}</Route>
       <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>

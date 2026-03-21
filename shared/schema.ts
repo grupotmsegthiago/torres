@@ -552,6 +552,23 @@ export const insertEmployeePayslipSchema = createInsertSchema(employeePayslips).
 export type InsertEmployeePayslip = z.infer<typeof insertEmployeePayslipSchema>;
 export type EmployeePayslip = typeof employeePayslips.$inferSelect;
 
+export const loginSelfies = pgTable("login_selfies", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  employeeId: integer("employee_id"),
+  userName: text("user_name"),
+  photoData: text("photo_data").notNull(),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLoginSelfieSchema = createInsertSchema(loginSelfies).omit({ id: true, createdAt: true });
+export type InsertLoginSelfie = z.infer<typeof insertLoginSelfieSchema>;
+export type LoginSelfie = typeof loginSelfies.$inferSelect;
+
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"),

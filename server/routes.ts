@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, gte } from "drizzle-orm";
 import { requireAuth, requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -15,7 +15,7 @@ import {
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary,
-  auditLogs, users,
+  auditLogs, users, loginSelfies,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -156,6 +156,93 @@ export async function registerRoutes(
     });
 
     res.json({ ok: true, termsAcceptedAt: new Date() });
+  });
+
+  app.post("/api/auth/login-selfie", requireAuth, async (req, res) => {
+    const user = req.user!;
+    const { photoData, latitude, longitude } = req.body;
+    if (!photoData || typeof photoData !== "string" || photoData.length < 1000) {
+      return res.status(400).json({ message: "Foto obrigatória" });
+    }
+    if (photoData.length > 5_000_000) {
+      return res.status(400).json({ message: "Foto muito grande. Máximo 5MB." });
+    }
+    if (!photoData.startsWith("data:image/")) {
+      return res.status(400).json({ message: "Formato de foto inválido" });
+    }
+
+    const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
+    const userAgent = req.headers["user-agent"] || null;
+
+    await db.insert(loginSelfies).values({
+      userId: user.id,
+      employeeId: user.employeeId,
+      userName: user.name || "—",
+      photoData,
+      latitude: latitude || null,
+      longitude: longitude || null,
+      ipAddress,
+      userAgent,
+    });
+
+    await db.insert(auditLogs).values({
+      userId: user.id,
+      userName: user.name || "—",
+      userRole: user.role || "—",
+      action: "login_selfie",
+      page: "/login",
+      details: `Selfie de login registrada. IP: ${ipAddress}`,
+      ipAddress,
+      userAgent,
+    });
+
+    res.json({ ok: true });
+  });
+
+  app.get("/api/auth/login-selfie-today", requireAuth, async (req, res) => {
+    const user = req.user!;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const result = await db.select({ id: loginSelfies.id })
+      .from(loginSelfies)
+      .where(
+        and(
+          eq(loginSelfies.userId, user.id),
+          gte(loginSelfies.createdAt, today)
+        )
+      )
+      .limit(1);
+
+    res.json({ hasSelfieToday: result.length > 0 });
+  });
+
+  app.get("/api/admin/login-selfies", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "diretoria" && user.role !== "admin") {
+      return res.status(403).json({ message: "Acesso restrito" });
+    }
+    const selfies = await db.select({
+      id: loginSelfies.id,
+      userId: loginSelfies.userId,
+      employeeId: loginSelfies.employeeId,
+      userName: loginSelfies.userName,
+      latitude: loginSelfies.latitude,
+      longitude: loginSelfies.longitude,
+      createdAt: loginSelfies.createdAt,
+    }).from(loginSelfies).orderBy(sql`created_at DESC`).limit(100);
+    res.json(selfies);
+  });
+
+  app.get("/api/admin/login-selfie/:id", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (user.role !== "diretoria" && user.role !== "admin") {
+      return res.status(403).json({ message: "Acesso restrito" });
+    }
+    const id = parseInt(req.params.id);
+    const result = await db.select().from(loginSelfies).where(eq(loginSelfies.id, id)).limit(1);
+    if (!result.length) return res.status(404).json({ message: "Selfie não encontrada" });
+    res.json(result[0]);
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {

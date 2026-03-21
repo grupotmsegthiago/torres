@@ -62,3 +62,11 @@ The employee HR module (`/mobile/meu-rh`) provides 5 tabs:
 - **Holerite** — Payslips with gross/net/deductions/benefits
 
 Admin manages all HR records via the employee dialog (`/admin/funcionarios`).
+
+## Login Selfie (Registro de Presença)
+Every time a `funcionario` user logs in, they must take a selfie before accessing the mobile system. Flow: login → terms (if needed) → selfie capture → mobile home.
+- **Page**: `/mobile/selfie` — camera opens automatically (front-facing), user captures, reviews, and confirms
+- **Enforcement**: `MobileProtectedRoute` checks `/api/auth/login-selfie-today`; if no selfie today, redirects to selfie page. All mobile routes (`/mobile/*`) are protected except `/mobile/selfie` itself.
+- **Storage**: `login_selfies` table stores userId, employeeId, userName, photoData (base64 JPEG), GPS coordinates, IP, user-agent, timestamp
+- **Backend**: `POST /api/auth/login-selfie` (validates format/size), `GET /api/auth/login-selfie-today` (checks if selfie exists for today)
+- **Admin access**: `GET /api/admin/login-selfies` (list, last 100, no photo data), `GET /api/admin/login-selfie/:id` (full detail with photo)

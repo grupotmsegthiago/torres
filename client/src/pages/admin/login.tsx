@@ -89,7 +89,16 @@ export default function LoginPage() {
         return;
       }
       if (user.role === "funcionario") {
-        setLocation("/mobile");
+        apiRequest("GET", "/api/auth/login-selfie-today")
+          .then(r => r.ok ? r.json() : { hasSelfieToday: false })
+          .then(data => {
+            if (!data.hasSelfieToday) {
+              setLocation("/mobile/selfie");
+            } else {
+              setLocation("/mobile");
+            }
+          })
+          .catch(() => setLocation("/mobile"));
       } else {
         setLocation("/admin/dashboard");
       }
@@ -148,7 +157,7 @@ export default function LoginPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({ title: "Termo aceito com sucesso!" });
       setShowTerms(false);
-      setLocation("/mobile");
+      setLocation("/mobile/selfie");
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -176,7 +185,7 @@ export default function LoginPage() {
         if (!user.termsAcceptedAt) {
           setShowTerms(true);
         } else {
-          setLocation("/mobile");
+          setLocation("/mobile/selfie");
         }
       } else {
         setLocation("/admin/dashboard");

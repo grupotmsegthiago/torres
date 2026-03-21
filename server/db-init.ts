@@ -303,6 +303,21 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS login_selfies (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        employee_id INTEGER,
+        user_name TEXT,
+        photo_data TEXT NOT NULL,
+        latitude TEXT,
+        longitude TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
