@@ -103,4 +103,15 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  const shutdown = (signal: string) => {
+    log(`${signal} received, shutting down...`);
+    httpServer.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 3000);
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();
