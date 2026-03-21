@@ -261,7 +261,7 @@ export default function MobileMissaoPage() {
       await apiRequest("POST", "/api/mission/start", {
         serviceOrderId: mission.serviceOrderId,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      await advanceMission();
       toast({ title: "Missão iniciada!" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
