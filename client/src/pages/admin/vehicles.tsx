@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye } from "lucide-react";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
 
 function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => void }) {
@@ -31,6 +31,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     trackerType: (vehicle as any)?.trackerType || "none",
     truckscontrolIdentifier: (vehicle as any)?.truckscontrolIdentifier || "",
     km: vehicle?.km || 0,
+    documentFile: (vehicle as any)?.documentFile || "",
     photoFront: vehicle?.photoFront || "",
     photoLeft: vehicle?.photoLeft || "",
     photoRear: vehicle?.photoRear || "",
@@ -162,6 +163,69 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">RENAVAM</label>
           <Input value={form.renavam} onChange={(e) => setForm({ ...form, renavam: e.target.value })} data-testid="input-vehicle-renavam" />
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Documento (CRLV/CRV)</label>
+          {form.documentFile ? (
+            <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2.5">
+              <FileText className="w-5 h-5 text-neutral-600 shrink-0" />
+              <span className="text-sm text-neutral-700 font-medium truncate flex-1">
+                {form.documentFile.startsWith("data:application/pdf") ? "Documento.pdf" : "Documento anexado"}
+              </span>
+              <a
+                href={form.documentFile}
+                download={`documento-${form.plate || "veiculo"}`}
+                className="p-1 hover:bg-neutral-200 rounded transition-colors"
+                title="Baixar documento"
+                data-testid="button-download-document"
+              >
+                <Download className="w-4 h-4 text-neutral-500" />
+              </a>
+              {form.documentFile.startsWith("data:image") && (
+                <a
+                  href={form.documentFile}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1 hover:bg-neutral-200 rounded transition-colors"
+                  title="Visualizar"
+                  data-testid="button-view-document"
+                >
+                  <Eye className="w-4 h-4 text-neutral-500" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, documentFile: "" })}
+                className="p-1 hover:bg-red-100 rounded transition-colors"
+                title="Remover documento"
+                data-testid="button-remove-document"
+              >
+                <X className="w-4 h-4 text-red-500" />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center gap-3 px-3 py-3 rounded-lg border-2 border-dashed border-neutral-300 bg-white cursor-pointer hover:border-neutral-400 hover:bg-neutral-50 transition-colors">
+              <FileText className="w-5 h-5 text-neutral-400" />
+              <span className="text-sm text-neutral-500">Clique para anexar documento (PDF ou imagem, máx. 10MB)</span>
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 10 * 1024 * 1024) {
+                    toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = () => setForm(prev => ({ ...prev, documentFile: reader.result as string }));
+                  reader.readAsDataURL(file);
+                }}
+                data-testid="input-document-file"
+              />
+            </label>
+          )}
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>

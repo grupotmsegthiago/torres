@@ -122,6 +122,7 @@ export const vehicles = pgTable("vehicles", {
   color: text("color"),
   chassi: text("chassi"),
   renavam: text("renavam"),
+  documentFile: text("document_file"),
   status: text("status").notNull().default("disponível"),
   trackerId: text("tracker_id"),
   trackerApiUrl: text("tracker_api_url"),
