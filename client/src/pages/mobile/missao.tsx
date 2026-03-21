@@ -13,24 +13,25 @@ import {
 const MISSION_STEPS = [
   "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
-  "iniciar_missao", "em_transito_destino", "checkout_km_final", "checkout_viatura_retorno", "finalizada",
+  "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno", "finalizada",
 ] as const;
 
 type MissionStep = typeof MISSION_STEPS[number];
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean }> = {
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e inicie", icon: Lock },
-  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/11", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
-  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/11", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
-  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/11", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/11", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
-  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/11", icon: User, needsForm: true },
-  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/11", icon: Siren },
-  em_transito_destino: { title: "Em Trânsito", subtitle: "Execução · 9/11", icon: Route },
-  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 10/11", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 11/11", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/12", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
+  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/12", icon: Route },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/12", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
+  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/12", icon: User, needsForm: true },
+  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/12", icon: Siren },
+  em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/12", icon: Route },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/12", icon: MapPin },
+  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/12", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/12", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Missão Finalizada", subtitle: "Concluída", icon: CheckCircle2 },
 };
 
@@ -270,6 +271,34 @@ export default function MobileMissaoPage() {
     }
   };
 
+  const handleNovaEntrega = async () => {
+    setSubmitting(true);
+    try {
+      await apiRequest("POST", "/api/mission/nova-entrega", {
+        serviceOrderId: mission.serviceOrderId,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      resetStepState();
+      toast({ title: "Nova entrega registrada!", description: "Prossiga até o próximo destino." });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleFinalizarEntregas = async () => {
+    setSubmitting(true);
+    try {
+      await advanceMission();
+      toast({ title: "Entregas finalizadas!", description: "Prossiga para a finalização." });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleTransitAdvance = async () => {
     setSubmitting(true);
     try {
@@ -462,6 +491,39 @@ export default function MobileMissaoPage() {
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
               Confirmar Chegada
+            </button>
+          </div>
+        )}
+
+        {currentStep === "chegada_destino" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
+              <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-10 h-10 text-green-600" />
+              </div>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Chegou no Destino</h3>
+              <p className="text-xs text-neutral-400 mb-1">Entrega realizada com sucesso</p>
+              <p className="text-xs text-neutral-500 mt-3">Há mais entregas nesta missão?</p>
+            </div>
+
+            <button
+              onClick={handleNovaEntrega}
+              disabled={submitting}
+              className="w-full h-14 bg-white border-2 border-neutral-900 text-neutral-900 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-nova-entrega"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Route className="w-5 h-5" />}
+              Nova Entrega
+            </button>
+
+            <button
+              onClick={handleFinalizarEntregas}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-finalizar-entregas"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              Finalizar Missão
             </button>
           </div>
         )}

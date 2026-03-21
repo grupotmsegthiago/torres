@@ -28,6 +28,7 @@ const MISSION_STEPS = [
   "checkin_dados_motorista",
   "iniciar_missao",
   "em_transito_destino",
+  "chegada_destino",
   "checkout_km_final",
   "checkout_viatura_retorno",
   "finalizada",
@@ -2189,6 +2190,29 @@ Para CPF, formate como 000.000.000-00.`
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
     }
 
+    res.json(updated);
+  });
+
+  app.post("/api/mission/nova-entrega", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+
+    const { serviceOrderId } = req.body;
+    const so = await storage.getServiceOrder(serviceOrderId);
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    const isAssigned =
+      so.assignedEmployeeId === user.employeeId ||
+      so.assignedEmployee2Id === user.employeeId;
+    if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
+
+    if (so.missionStatus !== "chegada_destino") {
+      return res.status(400).json({ message: "Ação disponível apenas na etapa de chegada no destino" });
+    }
+
+    const updated = await storage.updateServiceOrder(serviceOrderId, {
+      missionStatus: "em_transito_destino",
+    });
     res.json(updated);
   });
 
