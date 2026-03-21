@@ -2046,8 +2046,12 @@ Para CPF, formate como 000.000.000-00.`
     const so = await storage.getServiceOrder(serviceOrderId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
-    if (so.status !== "em_andamento") {
+    if (so.status !== "em_andamento" && so.status !== "agendada") {
       return res.status(400).json({ message: "OS não está em andamento" });
+    }
+
+    if (so.status === "agendada") {
+      await storage.updateServiceOrder(so.id, { status: "em_andamento" });
     }
 
     const currentStepPhotos = STEP_REQUIRED_PHOTOS[so.missionStatus as string];
