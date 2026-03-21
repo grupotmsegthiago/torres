@@ -32,6 +32,7 @@ import MobileChecklistPage from "@/pages/mobile/checklist";
 import MobilePerfilPage from "@/pages/mobile/perfil";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
@@ -117,6 +118,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <PWAInstallPrompt />
         </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>
