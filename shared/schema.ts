@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, date, timestamp, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, date, timestamp, serial, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -398,6 +398,25 @@ export const gerenciadoras = pgTable("gerenciadoras", {
 export const insertGerenciadoraSchema = createInsertSchema(gerenciadoras).omit({ id: true, createdAt: true });
 export type InsertGerenciadora = z.infer<typeof insertGerenciadoraSchema>;
 export type Gerenciadora = typeof gerenciadoras.$inferSelect;
+
+export const telemetryEvents = pgTable("telemetry_events", {
+  id: serial("id").primaryKey(),
+  vehicleId: integer("vehicle_id"),
+  plate: text("plate").notNull(),
+  eventType: text("event_type").notNull(),
+  value: real("value"),
+  duration: integer("duration"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  address: text("address"),
+  driverName: text("driver_name"),
+  details: text("details"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTelemetryEventSchema = createInsertSchema(telemetryEvents).omit({ id: true, createdAt: true });
+export type InsertTelemetryEvent = z.infer<typeof insertTelemetryEventSchema>;
+export type TelemetryEvent = typeof telemetryEvents.$inferSelect;
 
 export const apiLogs = pgTable("api_logs", {
   id: serial("id").primaryKey(),

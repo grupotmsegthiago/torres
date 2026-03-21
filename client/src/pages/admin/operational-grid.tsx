@@ -899,7 +899,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
 function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
   const speeding = vehicles.filter(
-    (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 110
+    (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 120
   );
 
   if (speeding.length === 0) return null;
@@ -1734,7 +1734,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const ignitionOnTime = getIgnitionOnTime(v);
                 const stoppedTime = getStoppedTime(v);
                 const noSignalTime = getNoSignalTime(v);
-                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
+                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 120;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
                 const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";

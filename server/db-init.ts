@@ -161,6 +161,27 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS telemetry_events (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER,
+        plate TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        value REAL,
+        duration INTEGER,
+        latitude REAL,
+        longitude REAL,
+        address TEXT,
+        driver_name TEXT,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_event_type ON telemetry_events(event_type)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry_events(created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_plate ON telemetry_events(plate)`);
+
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
     await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_tie INTEGER DEFAULT 0`);

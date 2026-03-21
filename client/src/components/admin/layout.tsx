@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +47,7 @@ const menuItems: MenuItem[] = [
       { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
       { path: "/admin/maintenance", label: "Manutenção", icon: Wrench },
       { path: "/admin/tracker", label: "Rastreador", icon: MapPin },
+      { path: "/admin/telemetria", label: "Telemetria", icon: Gauge },
     ],
   },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },

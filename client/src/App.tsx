@@ -20,6 +20,7 @@ import TimesheetsPage from "@/pages/admin/timesheets";
 import TrackerPage from "@/pages/admin/tracker";
 import MissionPage from "@/pages/admin/mission";
 import OperationalGridPage from "@/pages/admin/operational-grid";
+import TelemetryPage from "@/pages/admin/telemetry";
 
 import GuiaMissaoPage from "@/pages/admin/guia-missao";
 import WeaponsPage from "@/pages/admin/weapons";
@@ -94,6 +95,7 @@ function Router() {
       <Route path="/admin/tracker">{() => <ProtectedRoute component={TrackerPage} />}</Route>
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
+      <Route path="/admin/telemetria">{() => <ProtectedRoute component={TelemetryPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>

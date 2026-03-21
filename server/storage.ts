@@ -4,6 +4,7 @@ import {
   users, clients, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
   perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, weaponKits, weaponKitItems, gerenciadoras,
+  telemetryEvents,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Employee, type InsertEmployee,
@@ -24,6 +25,7 @@ import {
   type WeaponKit, type InsertWeaponKit,
   type WeaponKitItem, type InsertWeaponKitItem,
   type Gerenciadora, type InsertGerenciadora,
+  type TelemetryEvent, type InsertTelemetryEvent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -131,6 +133,9 @@ export interface IStorage {
   createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora>;
   updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined>;
   deleteGerenciadora(id: number): Promise<void>;
+
+  createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent>;
+  getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -568,6 +573,27 @@ export class DatabaseStorage implements IStorage {
 
   async deleteWeaponKitItemsByKit(kitId: number): Promise<void> {
     await db.delete(weaponKitItems).where(eq(weaponKitItems.kitId, kitId));
+  }
+
+  async createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent> {
+    const [created] = await db.insert(telemetryEvents).values(e).returning();
+    return created;
+  }
+
+  async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {
+    const conditions = [];
+    if (filters?.eventType) conditions.push(eq(telemetryEvents.eventType, filters.eventType));
+    if (filters?.plate) conditions.push(eq(telemetryEvents.plate, filters.plate));
+    if (filters?.from) conditions.push(sql`${telemetryEvents.createdAt} >= ${filters.from}`);
+    if (filters?.to) conditions.push(sql`${telemetryEvents.createdAt} <= ${filters.to}`);
+
+    let query = db.select().from(telemetryEvents);
+    if (conditions.length > 0) {
+      query = query.where(sql`${sql.join(conditions, sql` AND `)}`) as any;
+    }
+    query = query.orderBy(desc(telemetryEvents.createdAt)) as any;
+    if (filters?.limit) query = query.limit(filters.limit) as any;
+    return query;
   }
 }
 

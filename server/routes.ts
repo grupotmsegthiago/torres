@@ -10,9 +10,11 @@ import {
   insertVehicleFuelingSchema, insertTimesheetSchema, insertMissionPhotoSchema,
   insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
+  type InsertTelemetryEvent,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
+import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
 const MISSION_STEPS = [
@@ -1621,6 +1623,26 @@ Para CPF, formate como 000.000.000-00.`
       activeOs: null,
     }));
 
+    try {
+      const telemetryData = tracked
+        .filter(t => t.deviceType === "vehicle" && t.tracker && t.tracker.isLiveData !== false)
+        .map(t => ({
+          vehicleId: t.id,
+          plate: t.plate,
+          speed: t.tracker!.speed ?? 0,
+          ignition: t.tracker!.ignition ?? false,
+          latitude: t.tracker!.latitude,
+          longitude: t.tracker!.longitude,
+          address: t.tracker!.address,
+          stoppedSince: t.tracker!.stoppedSince,
+          ignitionOnSince: t.tracker!.ignitionOnSince,
+          driverName: t.activeOs?.employee1?.name || null,
+        }));
+      if (telemetryData.length > 0) {
+        processTelemetry(telemetryData);
+      }
+    } catch (_e) {}
+
     res.json([...tracked, ...spyEntries]);
   });
 
@@ -1784,6 +1806,70 @@ Para CPF, formate como 000.000.000-00.`
         source: "mirror_gerenciadora",
       });
       res.status(502).json({ success: false, message: `Falha na conexão: ${err.message}` });
+    }
+  });
+
+  app.get("/api/telemetry/events", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { eventType, plate, from, to, limit } = req.query;
+      const filters: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number } = {};
+      if (eventType) filters.eventType = String(eventType);
+      if (plate) filters.plate = String(plate);
+      if (from) filters.from = new Date(String(from));
+      if (to) filters.to = new Date(String(to));
+      filters.limit = limit ? parseInt(String(limit)) : 500;
+      const events = await storage.getTelemetryEvents(filters);
+      res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/telemetry/summary", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      const filters: { from?: Date; to?: Date } = {};
+      if (from) filters.from = new Date(String(from));
+      if (to) filters.to = new Date(String(to));
+
+      const [speedEvents, idleEvents] = await Promise.all([
+        storage.getTelemetryEvents({ ...filters, eventType: "excesso_velocidade", limit: 1000 }),
+        storage.getTelemetryEvents({ ...filters, eventType: "idle_excessivo", limit: 1000 }),
+      ]);
+
+      const plateStats = new Map<string, { speedCount: number; maxSpeed: number; idleCount: number; totalIdleMin: number }>();
+
+      for (const e of speedEvents) {
+        const s = plateStats.get(e.plate) || { speedCount: 0, maxSpeed: 0, idleCount: 0, totalIdleMin: 0 };
+        s.speedCount++;
+        s.maxSpeed = Math.max(s.maxSpeed, e.value || 0);
+        plateStats.set(e.plate, s);
+      }
+
+      for (const e of idleEvents) {
+        const s = plateStats.get(e.plate) || { speedCount: 0, maxSpeed: 0, idleCount: 0, totalIdleMin: 0 };
+        s.idleCount++;
+        s.totalIdleMin += e.duration || 0;
+        plateStats.set(e.plate, s);
+      }
+
+      const ranking = Array.from(plateStats.entries())
+        .map(([plate, stats]) => ({ plate, ...stats }))
+        .sort((a, b) => (b.speedCount + b.idleCount) - (a.speedCount + a.idleCount));
+
+      const idleFuelCostEstimate = idleEvents.reduce((acc, e) => acc + (e.duration || 0), 0) * 0.015 * 6.5;
+
+      res.json({
+        totalSpeedEvents: speedEvents.length,
+        totalIdleEvents: idleEvents.length,
+        totalIdleMinutes: idleEvents.reduce((acc, e) => acc + (e.duration || 0), 0),
+        idleFuelCostEstimate: Math.round(idleFuelCostEstimate * 100) / 100,
+        ranking,
+        recentSpeed: speedEvents.slice(0, 20),
+        recentIdle: idleEvents.slice(0, 20),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
