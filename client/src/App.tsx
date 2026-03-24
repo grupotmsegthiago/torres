@@ -27,6 +27,7 @@ import WeaponsPage from "@/pages/admin/weapons";
 import UsersPage from "@/pages/admin/users";
 import ProfilePage from "@/pages/admin/profile";
 import AuditPage from "@/pages/admin/audit";
+import FinanceiroPage from "@/pages/admin/financeiro";
 import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
@@ -132,6 +133,7 @@ function Router() {
       <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>
+      <Route path="/admin/financeiro">{() => <ProtectedRoute component={FinanceiroPage} />}</Route>
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
       <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>

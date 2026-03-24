@@ -79,3 +79,13 @@ Complete tracking of all vigilante actions with security alerting. Page: `/admin
 - **Backend**: `POST /api/audit-log` (log events), `GET /api/audit-logs` (filterable: userId, action, search, dateFrom/dateTo, securityOnly), `GET /api/audit-logs/stats` (totals, today count, security alerts, top users, action distribution)
 - **Admin page**: Stats cards (total, today, security alerts, active users), top users/action types panels, full log table with severity highlighting (red for screenshot attempts, amber for warnings), filters, pagination
 - **Table**: audit_logs (id, userId, userName, userRole, action, page, details, ipAddress, userAgent, createdAt)
+
+## Financial Module (Contas a Pagar / Receber)
+Complete financial management for the company. Page: `/admin/financeiro` (admin/diretoria only).
+- **5 Tabs**: Contas a Pagar (EXPENSE), Contas a Receber (INCOME), Conferência (overdue review), Relatório (analytics), Fechamento (period close)
+- **Features**: CRUD transactions, toggle PENDING/PAID status, installment support (2-36x), period filters (Day/Week/Month/Custom/All), status filters (All/Pending/Paid/Overdue), text search, CSV export, print, category breakdown charts
+- **Transaction Form**: Type toggle (Receita/Despesa), description, amount, due date, category select, bank account select, entity name, status, notes, recurrence (single/installment)
+- **Quick Category Modal**: Create categories inline with DRE group classification
+- **Backend endpoints**: GET/POST /api/financial/transactions, PUT/DELETE /api/financial/transactions/:id, PATCH /api/financial/transactions/:id/toggle-status, GET /api/financial/summary, GET/POST/DELETE /api/financial/categories, GET/POST/PUT/DELETE /api/financial/accounts
+- **Tables (Supabase)**: financial_transactions (id UUID, description, amount, type INCOME/EXPENSE, status PENDING/PAID/CANCELLED, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, installment_group, installment_number, installment_total, created_at, created_by, updated_by), financial_categories (id UUID, name, type, is_deduction, group, recurrence_type, tag, scope), financial_accounts (id UUID, name, initial_balance, bank_name, account_number, status)
+- **Pre-seeded categories**: 17 categories covering Receita de Escolta, Combustível, Folha de Pagamento, ISSQN, PIS/COFINS, etc.

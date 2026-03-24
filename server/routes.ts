@@ -3400,5 +3400,216 @@ Regras:
     res.json(locations);
   });
 
+  // ==================== FINANCIAL MODULE ====================
+
+  // Financial Categories
+  app.get("/api/financial/categories", requireAuth, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("financial_categories").select("*").order("name");
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/financial/categories", requireAdminRole, async (req, res) => {
+    try {
+      const { name, type, group, recurrence_type, tag, scope, is_deduction } = req.body;
+      if (!name || !type || !group) return res.status(400).json({ message: "name, type e group são obrigatórios" });
+      const { data, error } = await supabaseAdmin.from("financial_categories").insert({ name, type, group, recurrence_type: recurrence_type || "VARIAVEL", tag: tag || "OPERACIONAL", scope: scope || "EMPRESA", is_deduction: is_deduction || false }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/financial/categories/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("financial_categories").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Financial Accounts
+  app.get("/api/financial/accounts", requireAuth, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("financial_accounts").select("*").order("name");
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/financial/accounts", requireAdminRole, async (req, res) => {
+    try {
+      const { name, initial_balance, bank_name, account_number, status } = req.body;
+      if (!name) return res.status(400).json({ message: "name é obrigatório" });
+      const { data, error } = await supabaseAdmin.from("financial_accounts").insert({ name, initial_balance: initial_balance || 0, bank_name, account_number, status: status || "Ativo" }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/financial/accounts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { name, initial_balance, bank_name, account_number, status } = req.body;
+      const { data, error } = await supabaseAdmin.from("financial_accounts").update({ name, initial_balance, bank_name, account_number, status }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/financial/accounts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("financial_accounts").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Financial Transactions
+  app.get("/api/financial/transactions", requireAuth, async (req, res) => {
+    try {
+      const { type, status, from, to, search } = req.query;
+      let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
+      if (type) query = query.eq("type", type as string);
+      if (status) query = query.eq("status", status as string);
+      if (from) query = query.gte("due_date", from as string);
+      if (to) query = query.lte("due_date", to as string);
+      if (search) query = query.or(`description.ilike.%${search}%,entity_name.ilike.%${search}%,category_name.ilike.%${search}%`);
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/financial/transactions", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, installments } = req.body;
+      if (!description || !amount || !type || !due_date) return res.status(400).json({ message: "description, amount, type e due_date são obrigatórios" });
+
+      if (installments && installments > 1) {
+        const installmentGroup = crypto.randomUUID();
+        const baseDate = new Date(due_date);
+        const payloads = [];
+        for (let i = 0; i < installments; i++) {
+          const d = new Date(baseDate);
+          d.setMonth(d.getMonth() + i);
+          payloads.push({
+            description: `${description} (${i + 1}/${installments})`,
+            amount: Math.round((amount / installments) * 100) / 100,
+            type, status: status || "PENDING",
+            due_date: d.toISOString().split("T")[0],
+            payment_date: status === "PAID" ? d.toISOString().split("T")[0] : null,
+            category_id, category_name, account_id, account_name,
+            entity_type, entity_name, notes,
+            installment_group: installmentGroup,
+            installment_number: i + 1,
+            installment_total: installments,
+            created_by: user.name,
+          });
+        }
+        const { data, error } = await supabaseAdmin.from("financial_transactions").insert(payloads).select();
+        if (error) throw error;
+        res.json(data);
+      } else {
+        const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
+          description, amount, type, status: status || "PENDING",
+          due_date, payment_date, category_id, category_name,
+          account_id, account_name, entity_type, entity_name, notes,
+          created_by: user.name,
+        }).select().single();
+        if (error) throw error;
+        res.json(data);
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao } = req.body;
+      const { data, error } = await supabaseAdmin.from("financial_transactions").update({
+        description, amount, type, status, due_date, payment_date,
+        category_id, category_name, account_id, account_name,
+        entity_type, entity_name, notes, status_conciliacao,
+        updated_by: user.name,
+      }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/financial/transactions/:id/toggle-status", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
+      const { data, error } = await supabaseAdmin.from("financial_transactions").update({
+        status: newStatus,
+        payment_date: newStatus === "PAID" ? existing.due_date : null,
+        updated_by: user.name,
+      }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/summary", requireAuth, async (req, res) => {
+    try {
+      const { data: all, error } = await supabaseAdmin.from("financial_transactions").select("*");
+      if (error) throw error;
+      const txs = all || [];
+      const today = new Date().toISOString().split("T")[0];
+      const expenses = txs.filter((t: any) => t.type === "EXPENSE");
+      const incomes = txs.filter((t: any) => t.type === "INCOME");
+      res.json({
+        totalExpenses: expenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        paidExpenses: expenses.filter((t: any) => t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        pendingExpenses: expenses.filter((t: any) => t.status === "PENDING").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        overdueExpenses: expenses.filter((t: any) => t.status === "PENDING" && t.due_date < today).length,
+        totalIncomes: incomes.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        paidIncomes: incomes.filter((t: any) => t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        pendingIncomes: incomes.filter((t: any) => t.status === "PENDING").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        overdueIncomes: incomes.filter((t: any) => t.status === "PENDING" && t.due_date < today).length,
+        totalTransactions: txs.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

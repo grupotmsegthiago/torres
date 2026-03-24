@@ -1,0 +1,960 @@
+Módulo Contas a Pagar / Receber
+Documentação completa para importação do módulo financeiro em outro projeto.
+
+1. ESTRUTURA DE BANCO DE DADOS (Supabase / PostgreSQL)
+Tabela: financial_transactions
+CREATE TABLE financial_transactions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    description TEXT NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    type VARCHAR(10) NOT NULL CHECK (type IN ('INCOME', 'EXPENSE')),
+    status VARCHAR(10) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PAID', 'CANCELLED')),
+    due_date DATE NOT NULL,
+    payment_date DATE,
+    category_id UUID REFERENCES financial_categories(id),
+    category_name TEXT,
+    account_id UUID REFERENCES financial_accounts(id),
+    account_name TEXT,
+    entity_type VARCHAR(20) CHECK (entity_type IN ('Client', 'Provider', 'Other', 'Personal')),
+    entity_id TEXT,
+    entity_name TEXT,
+    notes TEXT,
+    status_conciliacao VARCHAR(15) CHECK (status_conciliacao IN ('PENDENTE', 'CONCILIADO', 'DIVERGENTE')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT,
+    updated_by TEXT
+);
+Tabela: financial_categories
+CREATE TABLE financial_categories (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    type VARCHAR(10) NOT NULL CHECK (type IN ('INCOME', 'EXPENSE')),
+    is_deduction BOOLEAN DEFAULT FALSE,
+    group VARCHAR(30) NOT NULL CHECK (group IN ('RECEITA_BRUTA', 'DEDUCOES', 'CUSTOS_VARIAVEIS', 'DESPESAS_FIXAS', 'INVESTIMENTOS', 'NAO_OPERACIONAL')),
+    recurrence_type VARCHAR(10) CHECK (recurrence_type IN ('FIXA', 'VARIAVEL', 'EVENTUAL')),
+    tag VARCHAR(20) CHECK (tag IN ('IMPOSTO', 'CARTAO_CREDITO', 'INVESTIMENTO', 'PESSOAL', 'OPERACIONAL', 'OUTROS')),
+    scope VARCHAR(10) CHECK (scope IN ('EMPRESA', 'PESSOAL'))
+);
+Tabela: financial_accounts
+CREATE TABLE financial_accounts (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    initial_balance NUMERIC(12,2) DEFAULT 0,
+    bank_name TEXT,
+    account_number TEXT,
+    status VARCHAR(10) DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo'))
+);
+Tabela: financial_invoices (Faturas/NF)
+CREATE TABLE financial_invoices (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    client TEXT,
+    number TEXT,
+    amount NUMERIC(12,2),
+    date DATE,
+    status VARCHAR(12) DEFAULT 'EMITIDA' CHECK (status IN ('EMITIDA', 'PAGA', 'CANCELADA')),
+    notes TEXT,
+    nf_image_url TEXT,
+    boleto_image_url TEXT,
+    provider TEXT,
+    issuer_company TEXT,
+    boleto_due_date DATE
+);
+2. TYPES (TypeScript)
+Coloque em types.ts ou em um arquivo de tipos do seu projeto:
+
+export type TransactionType = 'INCOME' | 'EXPENSE';
+export type TransactionStatus = 'PENDING' | 'PAID' | 'CANCELLED';
+export interface FinancialAccount {
+  id: string;
+  name: string;
+  initial_balance: number;
+  bank_name?: string;
+  account_number?: string;
+  status: 'Ativo' | 'Inativo';
+}
+export interface FinancialCategory {
+  id: string;
+  name: string;
+  type: TransactionType;
+  is_deduction: boolean;
+  group: 'RECEITA_BRUTA' | 'DEDUCOES' | 'CUSTOS_VARIAVEIS' | 'DESPESAS_FIXAS' | 'INVESTIMENTOS' | 'NAO_OPERACIONAL';
+  recurrence_type?: 'FIXA' | 'VARIAVEL' | 'EVENTUAL';
+  tag?: 'IMPOSTO' | 'CARTAO_CREDITO' | 'INVESTIMENTO' | 'PESSOAL' | 'OPERACIONAL' | 'OUTROS';
+  scope?: 'EMPRESA' | 'PESSOAL';
+}
+export interface FinancialTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: TransactionType;
+  status: TransactionStatus;
+  due_date: string;
+  payment_date?: string;
+  category_id: string;
+  category_name?: string;
+  account_id?: string;
+  account_name?: string;
+  entity_type?: 'Client' | 'Provider' | 'Other' | 'Personal';
+  entity_id?: string;
+  entity_name?: string;
+  created_at: string;
+  created_by: string;
+  updated_by?: string;
+  notes?: string;
+  status_conciliacao?: 'PENDENTE' | 'CONCILIADO' | 'DIVERGENTE';
+}
+3. DEPENDÊNCIAS (npm)
+npm install @supabase/supabase-js lucide-react recharts
+Opcionais (para conciliação com IA):
+
+npm install @google/generative-ai
+4. COMPONENTES
+4.1 — FinancialTransactionList.tsx (Componente Principal)
+Este é o componente raiz do módulo. Ele contém:
+
+5 abas (Steps): Contas a Pagar, Contas a Receber, Conferência, Relatório, Fechamento
+Filtros por período (Dia, Semana, Mês, Personalizado, Tudo)
+Filtros por status (Tudo, Pendente, Pago, Vencido)
+Busca por texto
+Cards de resumo com totais dinâmicos
+Tabela de lançamentos com toggle de status (Pendente/Pago)
+Exportação CSV
+Impressão
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../lib/supabase';
+import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
+import { 
+  Plus, Search, Edit, Trash2, RefreshCw, 
+  FileText, Calendar, Wallet, ArrowUpCircle, ArrowDownCircle, 
+  DollarSign, Download, Printer, ChevronDown, FileDown,
+  TrendingUp, TrendingDown, Loader2, CheckCircle2, X,
+  ArrowRight, AlertCircle, ClipboardCheck, Receipt, 
+  FileCheck, BarChart3, Lock, ChevronRight, Eye,
+  Building2, Truck, CircleDollarSign, Clock, Filter,
+  Upload
+} from 'lucide-react';
+import FinancialTransactionForm from './FinancialTransactionForm';
+// import BankStatementImporter from './BankStatementImporter'; // Opcional: conciliação IA
+const formatCurrency = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return 'R$ 0,00';
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+type Step = 'PAGAR' | 'RECEBER' | 'CONFERENCIA' | 'RELATORIO' | 'FECHAMENTO';
+type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE';
+const STEPS: { id: Step; label: string; icon: React.ReactNode; description: string; number: number }[] = [
+    { id: 'PAGAR', label: 'Contas a Pagar', icon: <ArrowDownCircle size={18}/>, description: 'Despesas e pagamentos a fornecedores', number: 1 },
+    { id: 'RECEBER', label: 'Contas a Receber', icon: <ArrowUpCircle size={18}/>, description: 'Valores a receber dos clientes', number: 2 },
+    { id: 'CONFERENCIA', label: 'Conferência', icon: <ClipboardCheck size={18}/>, description: 'Revisar lançamentos e pendências', number: 3 },
+    { id: 'RELATORIO', label: 'Relatório de Controle', icon: <BarChart3 size={18}/>, description: 'Relatório de títulos pagos e vencidos', number: 4 },
+    { id: 'FECHAMENTO', label: 'Fechamento', icon: <Lock size={18}/>, description: 'Finalizar o fechamento financeiro', number: 5 },
+];
+const FinancialTransactionList: React.FC = () => {
+    const [activeStep, setActiveStep] = useState<Step>('PAGAR');
+    const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+    const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+    const [viewPeriod, setViewPeriod] = useState<'DAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
+    const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [closingNotes, setClosingNotes] = useState('');
+    const [closingConfirmed, setClosingConfirmed] = useState(false);
+    useEffect(() => { 
+        fetchTransactions();
+        fetchAccounts();
+    }, []);
+    const fetchAccounts = async () => {
+        const { data } = await supabase.from('financial_accounts').select('*');
+        if (data) setAccounts(data as any);
+    };
+    const fetchTransactions = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('financial_transactions')
+                .select('*')
+                .order('due_date', { ascending: false });
+            if (error) throw error;
+            setTransactions(data as FinancialTransaction[]);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
+    };
+    // Filtro por aba (tipo) + período + status + busca
+    const filteredByStep = useMemo(() => {
+        const typeFilter = activeStep === 'PAGAR' ? 'EXPENSE' : activeStep === 'RECEBER' ? 'INCOME' : null;
+        if (!typeFilter && activeStep !== 'CONFERENCIA' && activeStep !== 'RELATORIO') return [];
+        let list = typeFilter ? transactions.filter(t => t.type === typeFilter) : transactions;
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        if (viewPeriod === 'DAY') {
+            list = list.filter(t => t.due_date.split('T')[0] === todayStr);
+        } else if (viewPeriod === 'WEEK') {
+            const day = now.getDay();
+            const sunday = new Date(now);
+            sunday.setDate(now.getDate() - day);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const weekStart = sunday.toISOString().split('T')[0];
+            const weekEnd = saturday.toISOString().split('T')[0];
+            list = list.filter(t => {
+                const d = t.due_date.split('T')[0];
+                return d >= weekStart && d <= weekEnd;
+            });
+        } else if (viewPeriod === 'MONTH') {
+            list = list.filter(t => {
+                const d = new Date(t.due_date);
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            });
+        } else if (viewPeriod === 'CUSTOM') {
+            list = list.filter(t => {
+                const transDate = t.due_date.split('T')[0];
+                return transDate >= customStartDate && transDate <= customEndDate;
+            });
+        }
+        if (statusFilter === 'PENDING') list = list.filter(t => t.status === 'PENDING');
+        else if (statusFilter === 'PAID') list = list.filter(t => t.status === 'PAID');
+        else if (statusFilter === 'OVERDUE') list = list.filter(t => t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase().trim();
+            list = list.filter(t =>
+                t.description.toLowerCase().includes(term) ||
+                (t.entity_name || '').toLowerCase().includes(term) ||
+                (t.category_name || '').toLowerCase().includes(term)
+            );
+        }
+        return list;
+    }, [transactions, activeStep, viewPeriod, customStartDate, customEndDate, statusFilter, searchTerm]);
+    const handleToggleStatus = async (t: FinancialTransaction) => {
+        const newStatus: TransactionStatus = t.status === 'PAID' ? 'PENDING' : 'PAID';
+        const updates = { status: newStatus, payment_date: newStatus === 'PAID' ? t.due_date : null };
+        const original = transactions.find(item => item.id === t.id);
+        setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, ...updates } : item));
+        const { error } = await supabase.from('financial_transactions').update(updates).eq('id', t.id);
+        if (error) {
+            console.error('Erro ao atualizar status:', error);
+            alert('Erro ao atualizar status do lançamento.');
+            if (original) setTransactions(prev => prev.map(item => item.id === t.id ? original : item));
+            else fetchTransactions();
+        }
+    };
+    const handleDeleteTransaction = async (id: string) => {
+        if (!confirm("Excluir este lançamento?")) return;
+        const { error } = await supabase.from('financial_transactions').delete().eq('id', id);
+        if (error) { console.error(error); alert('Erro ao excluir lançamento.'); return; }
+        fetchTransactions();
+    };
+    const exportToCSV = () => {
+        const data = filteredByStep.map(t => ({
+            date: new Date(t.due_date).toLocaleDateString('pt-BR'),
+            description: t.description,
+            entity: t.entity_name || 'Geral',
+            amount: t.amount.toFixed(2),
+            status: t.status === 'PAID' ? 'Pago' : 'Pendente'
+        }));
+        if (data.length === 0) return;
+        const headers = ["Data", "Descrição", "Entidade", "Valor", "Status"];
+        const rows = data.map(d => [d.date, d.description, d.entity, d.amount, d.status]);
+        const csvContent = [headers, ...rows].map(e => e.join(";")).join("\n");
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `FINANCEIRO_${activeStep}_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+    };
+    // Memo para cards de resumo - filtra por período
+    const periodFilteredTransactions = useMemo(() => {
+        let list = [...transactions];
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        if (viewPeriod === 'DAY') {
+            list = list.filter(t => t.due_date.split('T')[0] === todayStr);
+        } else if (viewPeriod === 'WEEK') {
+            const day = now.getDay();
+            const sunday = new Date(now);
+            sunday.setDate(now.getDate() - day);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const weekStart = sunday.toISOString().split('T')[0];
+            const weekEnd = saturday.toISOString().split('T')[0];
+            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= weekStart && d <= weekEnd; });
+        } else if (viewPeriod === 'MONTH') {
+            list = list.filter(t => { const d = new Date(t.due_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+        } else if (viewPeriod === 'CUSTOM') {
+            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= customStartDate && d <= customEndDate; });
+        }
+        return list;
+    }, [transactions, viewPeriod, customStartDate, customEndDate]);
+    const summaryPagar = useMemo(() => {
+        const expenses = periodFilteredTransactions.filter(t => t.type === 'EXPENSE');
+        return { total: expenses.reduce((a, t) => a + t.amount, 0), paid: expenses.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: expenses.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: expenses.length, paidCount: expenses.filter(t => t.status === 'PAID').length };
+    }, [periodFilteredTransactions]);
+    const summaryReceber = useMemo(() => {
+        const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME');
+        return { total: incomes.reduce((a, t) => a + t.amount, 0), paid: incomes.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: incomes.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: incomes.length, paidCount: incomes.filter(t => t.status === 'PAID').length };
+    }, [periodFilteredTransactions]);
+    const overduePagar = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        return periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
+    }, [periodFilteredTransactions]);
+    const overdueReceber = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
+    }, [periodFilteredTransactions]);
+    const renderFilters = () => (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+            <div className="lg:col-span-5">
+                <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Período</label>
+                <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
+                    {[{id: 'DAY', label: 'Dia'}, {id: 'WEEK', label: 'Semana'}, {id: 'MONTH', label: 'Mês'}, {id: 'CUSTOM', label: 'Personalizado'}, {id: 'ALL', label: 'Tudo'}].map(p => (
+                        <button key={p.id} onClick={() => setViewPeriod(p.id as any)}
+                            className={`flex-1 px-2 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === p.id ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >{p.label}</button>
+                    ))}
+                </div>
+            </div>
+            {viewPeriod === 'CUSTOM' && (
+                <div className="lg:col-span-3 flex gap-2">
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-gray-400 mb-1 block">Início</label>
+                        <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} />
+                    </div>
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-gray-400 mb-1 block">Fim</label>
+                        <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
+                    </div>
+                </div>
+            )}
+            <div className={`relative ${viewPeriod === 'CUSTOM' ? 'lg:col-span-1' : 'lg:col-span-4'}`}>
+                <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
+                <input type="text" placeholder="Fornecedor, cliente, descrição..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-red-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
+            </div>
+            <div className="lg:col-span-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
+                {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
+                    <button key={id} onClick={() => setStatusFilter(id)}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
+                            statusFilter === id 
+                                ? id === 'PAID' ? 'bg-green-500 text-white shadow-sm' 
+                                : id === 'OVERDUE' ? 'bg-red-500 text-white shadow-sm' 
+                                : id === 'PENDING' ? 'bg-amber-500 text-white shadow-sm'
+                                : 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500'
+                        }`}
+                    >{label}</button>
+                ))}
+            </div>
+        </div>
+    );
+    const renderTransactionTable = (list: FinancialTransaction[], typeLabel: string) => (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="bg-gray-900 text-white text-[10px] font-black uppercase tracking-widest">
+                            <th className="px-4 py-3">Vencimento</th>
+                            <th className="px-4 py-3">Descrição</th>
+                            <th className="px-4 py-3">Favorecido</th>
+                            <th className="px-4 py-3">Categoria</th>
+                            <th className="px-4 py-3 text-center">Status</th>
+                            <th className="px-4 py-3 text-right">Valor</th>
+                            <th className="px-4 py-3 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {loading ? (
+                            <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
+                        ) : list.length === 0 ? (
+                            <tr><td colSpan={7} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
+                        ) : list.map(t => {
+                            const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < new Date().toISOString().split('T')[0];
+                            return (
+                                <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50' : ''}`}>
+                                    <td className="px-4 py-3">
+                                        <span className={`text-xs font-mono font-bold ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                                            {new Date(t.due_date).toLocaleDateString('pt-BR')}
+                                        </span>
+                                        {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="font-bold text-gray-800 text-sm uppercase">{t.description}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="text-xs font-bold text-gray-600 uppercase">{t.entity_name || 'Geral'}</span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 uppercase">
+                                            {t.category_name}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <button onClick={() => handleToggleStatus(t)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${t.status === 'PAID' ? 'bg-green-100 text-green-800 border-green-200' : isOverdue ? 'bg-red-100 text-red-700 border-red-200 animate-pulse' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                                            {t.status === 'PAID' ? 'Pago' : isOverdue ? 'Vencido' : 'Pendente'}
+                                        </button>
+                                    </td>
+                                    <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {formatCurrency(t.amount)}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                        <div className="flex justify-end gap-1">
+                                            <button onClick={() => { setEditingId(t.id); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit size={14}/></button>
+                                            <button onClick={() => handleDeleteTransaction(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+            <div className="p-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase">
+                <span>{list.length} registro(s)</span>
+                <span className="font-mono font-black text-gray-900">Total: {formatCurrency(list.reduce((a, t) => a + t.amount, 0))}</span>
+            </div>
+        </div>
+    );
+    const renderStepContent = () => {
+        switch (activeStep) {
+            case 'PAGAR':
+            case 'RECEBER': {
+                const isPagar = activeStep === 'PAGAR';
+                const summary = isPagar ? summaryPagar : summaryReceber;
+                return (
+                    <>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Visão Geral ({viewPeriod === 'DAY' ? 'Hoje' : viewPeriod === 'WEEK' ? 'Semana Atual' : viewPeriod === 'MONTH' ? 'Mês Atual' : viewPeriod === 'CUSTOM' ? 'Período Personalizado' : 'Todos os Registros'})</p>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                                <div className={`p-2.5 rounded-full ${isPagar ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                    {isPagar ? <ArrowDownCircle size={18}/> : <ArrowUpCircle size={18}/>}
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total {isPagar ? 'a Pagar' : 'a Receber'}</p>
+                                    <p className={`text-lg font-black font-mono ${isPagar ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(summary.total)}</p>
+                                </div>
+                            </div>
+                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                                <div className="p-2.5 bg-green-50 text-green-600 rounded-full"><CheckCircle2 size={18}/></div>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{isPagar ? 'Pago' : 'Recebido'}</p>
+                                    <p className="text-lg font-black font-mono text-green-600">{formatCurrency(summary.paid)}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold">{summary.paidCount} título(s)</p>
+                                </div>
+                            </div>
+                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+                                <div className="p-2.5 bg-amber-50 text-amber-600 rounded-full"><Clock size={18}/></div>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Pendente</p>
+                                    <p className="text-lg font-black font-mono text-amber-600">{formatCurrency(summary.pending)}</p>
+                                    <p className="text-[9px] text-gray-400 font-bold">{summary.count - summary.paidCount} título(s)</p>
+                                </div>
+                            </div>
+                            <div className={`p-4 rounded-xl border shadow-sm flex items-center gap-3 ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className={`p-2.5 rounded-full ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-400'}`}><AlertCircle size={18}/></div>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Vencidos</p>
+                                    <p className={`text-lg font-black font-mono ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                        {(isPagar ? overduePagar : overdueReceber).length}
+                                    </p>
+                                    <p className="text-[9px] text-red-500 font-bold">{formatCurrency((isPagar ? overduePagar : overdueReceber).reduce((a, t) => a + t.amount, 0))}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {renderFilters()}
+                        {renderTransactionTable(filteredByStep, isPagar ? 'Despesa' : 'Receita')}
+                    </>
+                );
+            }
+            case 'CONFERENCIA':
+                return (
+                    <>
+                        {renderFilters()}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className={`p-5 rounded-xl border-2 ${overduePagar.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
+                                <div className="flex items-center gap-2 mb-3">
+                                    {overduePagar.length > 0 ? <AlertCircle size={20} className="text-red-600"/> : <CheckCircle2 size={20} className="text-green-600"/>}
+                                    <h4 className="text-sm font-black text-gray-900 uppercase">Contas a Pagar</h4>
+                                </div>
+                                {overduePagar.length > 0 ? (
+                                    <div>
+                                        <p className="text-xs text-red-700 font-bold mb-2">{overduePagar.length} título(s) vencido(s) — {formatCurrency(overduePagar.reduce((a, t) => a + t.amount, 0))}</p>
+                                        {overduePagar.slice(0, 5).map(t => (
+                                            <div key={t.id} className="flex justify-between items-center py-1 border-b border-red-200 last:border-0">
+                                                <span className="text-[10px] font-bold text-gray-700 uppercase truncate max-w-[60%]">{t.description}</span>
+                                                <span className="text-[10px] font-black text-red-600 font-mono">{formatCurrency(t.amount)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="text-xs text-green-700 font-bold">Nenhum título vencido. Tudo em dia!</p>}
+                            </div>
+                            <div className={`p-5 rounded-xl border-2 ${overdueReceber.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
+                                <div className="flex items-center gap-2 mb-3">
+                                    {overdueReceber.length > 0 ? <AlertCircle size={20} className="text-red-600"/> : <CheckCircle2 size={20} className="text-green-600"/>}
+                                    <h4 className="text-sm font-black text-gray-900 uppercase">Contas a Receber</h4>
+                                </div>
+                                {overdueReceber.length > 0 ? (
+                                    <div>
+                                        <p className="text-xs text-red-700 font-bold mb-2">{overdueReceber.length} título(s) vencido(s) — {formatCurrency(overdueReceber.reduce((a, t) => a + t.amount, 0))}</p>
+                                        {overdueReceber.slice(0, 5).map(t => (
+                                            <div key={t.id} className="flex justify-between items-center py-1 border-b border-red-200 last:border-0">
+                                                <span className="text-[10px] font-bold text-gray-700 uppercase truncate max-w-[60%]">{t.description}</span>
+                                                <span className="text-[10px] font-black text-red-600 font-mono">{formatCurrency(t.amount)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="text-xs text-green-700 font-bold">Nenhum título vencido. Tudo em dia!</p>}
+                            </div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-900 uppercase mb-3 flex items-center gap-2"><FileCheck size={16}/> Resumo da Conferência</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                <div className="p-3 bg-gray-50 rounded-lg"><p className="text-[9px] font-black text-gray-400 uppercase">Total Pagar</p><p className="text-lg font-black text-red-600 font-mono">{formatCurrency(summaryPagar.total)}</p></div>
+                                <div className="p-3 bg-gray-50 rounded-lg"><p className="text-[9px] font-black text-gray-400 uppercase">Total Receber</p><p className="text-lg font-black text-green-600 font-mono">{formatCurrency(summaryReceber.total)}</p></div>
+                                <div className="p-3 bg-gray-50 rounded-lg"><p className="text-[9px] font-black text-gray-400 uppercase">Despesas Pagas</p><p className="text-lg font-black text-blue-600">{summaryPagar.paidCount}</p></div>
+                                <div className={`p-3 rounded-lg ${summaryReceber.total - summaryPagar.total >= 0 ? 'bg-green-50' : 'bg-red-50'}`}><p className="text-[9px] font-black text-gray-400 uppercase">Saldo Líquido</p><p className={`text-lg font-black font-mono ${summaryReceber.total - summaryPagar.total >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(summaryReceber.total - summaryPagar.total)}</p></div>
+                            </div>
+                        </div>
+                        {renderTransactionTable(filteredByStep, 'Todos')}
+                    </>
+                );
+            case 'RELATORIO': {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const paidExpenses = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PAID');
+                const paidIncomes = transactions.filter(t => t.type === 'INCOME' && t.status === 'PAID');
+                const overdueExpenses = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);
+                const overdueIncomes = transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);
+                return (
+                    <div className="space-y-4">
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16}/> Relatório de Controle Financeiro</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
+                                    <p className="text-[9px] font-black text-green-700 uppercase mb-1">Títulos Pagos (Despesas)</p>
+                                    <p className="text-xl font-black text-green-700 font-mono">{formatCurrency(paidExpenses.reduce((a, t) => a + t.amount, 0))}</p>
+                                    <p className="text-[9px] text-green-600 font-bold">{paidExpenses.length} título(s)</p>
+                                </div>
+                                <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
+                                    <p className="text-[9px] font-black text-green-700 uppercase mb-1">Títulos Recebidos</p>
+                                    <p className="text-xl font-black text-green-700 font-mono">{formatCurrency(paidIncomes.reduce((a, t) => a + t.amount, 0))}</p>
+                                    <p className="text-[9px] text-green-600 font-bold">{paidIncomes.length} título(s)</p>
+                                </div>
+                                <div className="p-4 bg-red-50 rounded-xl border border-red-200 text-center">
+                                    <p className="text-[9px] font-black text-red-700 uppercase mb-1">Despesas Vencidas</p>
+                                    <p className="text-xl font-black text-red-700 font-mono">{formatCurrency(overdueExpenses.reduce((a, t) => a + t.amount, 0))}</p>
+                                    <p className="text-[9px] text-red-600 font-bold">{overdueExpenses.length} título(s)</p>
+                                </div>
+                                <div className="p-4 bg-red-50 rounded-xl border border-red-200 text-center">
+                                    <p className="text-[9px] font-black text-red-700 uppercase mb-1">Recebíveis Vencidos</p>
+                                    <p className="text-xl font-black text-red-700 font-mono">{formatCurrency(overdueIncomes.reduce((a, t) => a + t.amount, 0))}</p>
+                                    <p className="text-[9px] text-red-600 font-bold">{overdueIncomes.length} título(s)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            case 'FECHAMENTO': {
+                const hasPendingPagar = transactions.some(t => t.type === 'EXPENSE' && t.status === 'PENDING');
+                const hasPendingReceber = transactions.some(t => t.type === 'INCOME' && t.status === 'PENDING');
+                const allClear = !hasPendingPagar && !hasPendingReceber;
+                return (
+                    <div className="space-y-4">
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-900 uppercase mb-4 flex items-center gap-2"><Lock size={16}/> Checklist de Fechamento</h4>
+                            <div className="space-y-3">
+                                <div className={`flex items-center gap-3 p-4 rounded-xl border-2 ${!hasPendingPagar ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+                                    {!hasPendingPagar ? <CheckCircle2 size={20} className="text-green-600"/> : <AlertCircle size={20} className="text-amber-600"/>}
+                                    <div>
+                                        <p className="text-sm font-black text-gray-900 uppercase">1. Contas a Pagar</p>
+                                        <p className="text-xs text-gray-500">{!hasPendingPagar ? 'Todos os títulos estão liquidados.' : `Existem títulos pendentes.`}</p>
+                                    </div>
+                                </div>
+                                <div className={`flex items-center gap-3 p-4 rounded-xl border-2 ${!hasPendingReceber ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+                                    {!hasPendingReceber ? <CheckCircle2 size={20} className="text-green-600"/> : <AlertCircle size={20} className="text-amber-600"/>}
+                                    <div>
+                                        <p className="text-sm font-black text-gray-900 uppercase">2. Contas a Receber</p>
+                                        <p className="text-xs text-gray-500">{!hasPendingReceber ? 'Todos os recebíveis confirmados.' : `Existem títulos pendentes.`}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-900 uppercase mb-3">Observações do Fechamento</h4>
+                            <textarea className="w-full p-3 border border-gray-300 rounded-lg text-sm" rows={3} placeholder="Anotações sobre o fechamento financeiro..." value={closingNotes} onChange={e => setClosingNotes(e.target.value)} />
+                            <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                                <input type="checkbox" className="w-4 h-4 rounded text-green-600" checked={closingConfirmed} onChange={e => setClosingConfirmed(e.target.checked)} />
+                                <span className="text-xs font-black text-gray-700 uppercase">Confirmo que todos os lançamentos foram conferidos</span>
+                            </label>
+                            <button 
+                                disabled={!closingConfirmed || !allClear}
+                                onClick={() => { alert('Fechamento financeiro concluído com sucesso!'); setClosingConfirmed(false); setClosingNotes(''); }}
+                                className={`mt-4 w-full py-4 rounded-xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-2 transition-all ${closingConfirmed && allClear ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                            >
+                                <Lock size={18}/> Finalizar Fechamento
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            default: return null;
+        }
+    };
+    return (
+        <div className="space-y-6 pb-10">
+            {isFormOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <FinancialTransactionForm onClose={() => { setIsFormOpen(false); setEditingId(null); }} onSuccess={() => { setIsFormOpen(false); setEditingId(null); fetchTransactions(); }} id={editingId} />
+                </div>
+            )}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                        <span className="w-1.5 h-6 bg-red-700 rounded-full"></span>
+                        Contas a Pagar / Receber
+                    </h2>
+                    <p className="text-xs text-gray-500 mt-1 ml-4.5">Gestão de pagamentos, recebimentos e fechamento financeiro.</p>
+                </div>
+                <div className="flex gap-2">
+                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                        <button onClick={exportToCSV} className="p-2 text-gray-600 hover:text-green-600 transition-colors" title="Exportar CSV"><FileDown size={20}/></button>
+                        <button onClick={() => window.print()} className="p-2 text-gray-600 hover:text-red-600 transition-colors" title="Imprimir"><Printer size={20}/></button>
+                    </div>
+                    <button onClick={fetchTransactions} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/></button>
+                    {(activeStep === 'PAGAR' || activeStep === 'RECEBER') && (
+                        <button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase">
+                            <Plus size={18}/> Novo Lançamento
+                        </button>
+                    )}
+                </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+                <div className="flex gap-1 overflow-x-auto">
+                    {STEPS.map((step) => (
+                        <button 
+                            key={step.id} 
+                            onClick={() => { setActiveStep(step.id); setStatusFilter('ALL'); setSearchTerm(''); }}
+                            className={`flex items-center gap-2 px-4 py-3 rounded-xl text-left transition-all min-w-fit flex-1 ${
+                                activeStep === step.id 
+                                    ? 'bg-gray-900 text-white shadow-lg' 
+                                    : 'hover:bg-gray-50 text-gray-500'
+                            }`}
+                        >
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                                activeStep === step.id ? 'bg-white text-gray-900' : 'bg-gray-200 text-gray-500'
+                            }`}>{step.number}</div>
+                            <div>
+                                <p className={`text-xs font-black uppercase tracking-tight ${activeStep === step.id ? 'text-white' : 'text-gray-700'}`}>{step.label}</p>
+                                <p className={`text-[9px] text-gray-400 hidden md:block`}>{step.description}</p>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {renderStepContent()}
+        </div>
+    );
+};
+export default FinancialTransactionList;
+4.2 — FinancialTransactionForm.tsx (Formulário de Lançamento)
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { X, Save, Loader2, DollarSign, Calendar, Tag, User, Layers, Plus } from 'lucide-react';
+import { FinancialCategory, TransactionType, FinancialAccount } from '../types';
+interface Props {
+  onClose: () => void;
+  onSuccess: () => void;
+  id?: string | null;
+}
+const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) => {
+  const [type, setType] = useState<TransactionType>('EXPENSE');
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [categoryId, setCategoryId] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [status, setStatus] = useState<'PENDING' | 'PAID'>('PENDING');
+  const [entityType, setEntityType] = useState<'Client' | 'Provider' | 'Other' | 'Personal'>('Other');
+  const [entityId, setEntityId] = useState('');
+  const [notes, setNotes] = useState('');
+  const [recurrence, setRecurrence] = useState<'SINGLE' | 'INSTALLMENT'>('SINGLE');
+  const [recurrenceCount, setRecurrenceCount] = useState<number>(2);
+  const [categories, setCategories] = useState<FinancialCategory[]>([]);
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
+  const [entities, setEntities] = useState<{id: string, name: string}[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const installmentOptions = Array.from({ length: 47 }, (_, i) => i + 2);
+  useEffect(() => {
+    fetchAuxData();
+    if (id) loadTransaction();
+  }, [id]);
+  useEffect(() => { fetchEntities(); }, [entityType]);
+  const fetchAuxData = async () => {
+      const [cats, accs] = await Promise.all([
+          supabase.from('financial_categories').select('*').order('name'),
+          supabase.from('financial_accounts').select('*').order('name')
+      ]);
+      if (cats.data) setCategories(cats.data as FinancialCategory[]);
+      if (accs.data) setAccounts(accs.data as FinancialAccount[]);
+  };
+  const fetchEntities = async () => {
+      if (entityType === 'Other' || entityType === 'Personal') { setEntities([]); return; }
+      // Adapte o nome das tabelas conforme seu projeto
+      const table = entityType === 'Client' ? 'clients' : 'providers';
+      const { data } = await supabase.from(table).select('id, name').order('name');
+      if (data) setEntities(data.map((e: any) => ({ id: e.id.toString(), name: e.name })));
+  };
+  const loadTransaction = async () => {
+      if (!id) return;
+      const { data } = await supabase.from('financial_transactions').select('*').eq('id', id).single();
+      if (data) {
+          setType(data.type);
+          setDescription(data.description);
+          setAmount(data.amount.toString());
+          setDueDate(data.due_date.split('T')[0]);
+          setCategoryId(data.category_id);
+          setAccountId(data.account_id || '');
+          setStatus(data.status);
+          setEntityType(data.entity_type || 'Other');
+          setEntityId(data.entity_id || '');
+          setNotes(data.notes || '');
+      }
+  };
+  const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) { alert("Valor inválido."); return; }
+      setIsSaving(true);
+      try {
+          const category = categories.find(c => c.id === categoryId);
+          const account = accounts.find(a => a.id === accountId);
+          const entity = entities.find(en => en.id === entityId);
+          const currentUser = JSON.parse(localStorage.getItem('userData') || '{}').name;
+          let finalEntityName = entityType === 'Client' || entityType === 'Provider' ? entity?.name : entityType === 'Personal' ? 'Pessoal' : 'Outros';
+          const basePayload = {
+              type, category_id: categoryId, category_name: category?.name,
+              account_id: accountId || null, account_name: account?.name,
+              entity_type: entityType, entity_id: entityId || null,
+              entity_name: finalEntityName, notes, updated_by: currentUser, status
+          };
+          if (id) {
+              await supabase.from('financial_transactions').update({
+                  ...basePayload, description, amount: parsedAmount, due_date: dueDate,
+                  payment_date: status === 'PAID' ? dueDate : null,
+              }).eq('id', id);
+          } else {
+              const payloadsToInsert = [];
+              const totalItems = recurrence !== 'SINGLE' ? recurrenceCount : 1;
+              const baseDate = new Date(dueDate);
+              baseDate.setMinutes(baseDate.getMinutes() + baseDate.getTimezoneOffset());
+              for (let i = 0; i < totalItems; i++) {
+                  const itemDate = new Date(baseDate);
+                  itemDate.setMonth(baseDate.getMonth() + i);
+                  const itemDateStr = itemDate.toISOString().split('T')[0];
+                  let finalDesc = description;
+                  if (recurrence === 'INSTALLMENT' && totalItems > 1) finalDesc = `${description} (${i + 1}/${totalItems})`;
+                  const currentStatus = (i === 0) ? status : 'PENDING';
+                  payloadsToInsert.push({
+                      ...basePayload, created_by: currentUser, description: finalDesc,
+                      amount: parsedAmount, due_date: itemDateStr,
+                      status: currentStatus, payment_date: currentStatus === 'PAID' ? itemDateStr : null
+                  });
+              }
+              await supabase.from('financial_transactions').insert(payloadsToInsert);
+          }
+          onSuccess();
+      } catch (e: any) {
+          console.error(e);
+          alert('Erro ao salvar: ' + (e.message || 'Erro desconhecido'));
+      } finally { setIsSaving(false); }
+  };
+  const filteredCategories = categories.filter(c => c.type === type);
+  return (
+    <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden relative">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+            <h3 className="font-bold text-gray-800 uppercase text-xs tracking-widest">{id ? 'Editar Lançamento' : 'Novo Lançamento'}</h3>
+            <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-gray-600"/></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button type="button" onClick={() => setType('INCOME')} className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === 'INCOME' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-500'}`}>Receita</button>
+                <button type="button" onClick={() => setType('EXPENSE')} className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === 'EXPENSE' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500'}`}>Despesa</button>
+            </div>
+            <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><Tag size={12}/> Descrição</label>
+                <input required type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" placeholder="Ex: Pagamento Fornecedor" value={description} onChange={e => setDescription(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><DollarSign size={12}/> Valor</label>
+                    <input required type="number" step="0.01" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-indigo-700" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
+                </div>
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><Calendar size={12}/> Data</label>
+                    <input required type="date" className="w-full p-2.5 border rounded-lg text-sm font-bold" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                </div>
+            </div>
+            {!id && (
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <div className="flex flex-wrap items-center gap-4 mb-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-700 uppercase">
+                            <input type="radio" name="recurrence" checked={recurrence === 'SINGLE'} onChange={() => setRecurrence('SINGLE')} /> Único
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-blue-700 uppercase">
+                            <input type="radio" name="recurrence" checked={recurrence === 'INSTALLMENT'} onChange={() => setRecurrence('INSTALLMENT')} /> Parcelado
+                        </label>
+                    </div>
+                    {recurrence !== 'SINGLE' && (
+                        <div className="flex items-center gap-2">
+                            <Layers size={16} className="text-blue-500" />
+                            <span className="text-xs font-bold text-gray-600">Parcelas:</span>
+                            <select className="p-1 border border-blue-300 rounded text-sm bg-white font-bold" value={recurrenceCount} onChange={(e) => setRecurrenceCount(parseInt(e.target.value))}>
+                                {installmentOptions.map(n => <option key={n} value={n}>{n}x</option>)}
+                            </select>
+                        </div>
+                    )}
+                </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Categoria</label>
+                    <select required className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+                        <option value="">Selecione...</option>
+                        {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Conta Bancária</label>
+                    <select className="w-full p-2.5 border rounded-lg text-xs bg-white uppercase font-bold" value={accountId} onChange={e => setAccountId(e.target.value)}>
+                        <option value="">Opcional</option>
+                        {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Status</label>
+                <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={status} onChange={e => setStatus(e.target.value as any)}>
+                    <option value="PENDING">Aguardando (Agendado)</option>
+                    <option value="PAID">Liquidado (Pago/Recebido)</option>
+                </select>
+            </div>
+            <button disabled={isSaving} type="submit" className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg">
+                {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}
+                {id ? 'Salvar Alteração' : 'Confirmar Lançamento'}
+            </button>
+        </form>
+    </div>
+  );
+};
+export default FinancialTransactionForm;
+4.3 — QuickCategoryModal.tsx (Criação rápida de categoria)
+import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { X, Save, Loader2, Tag } from 'lucide-react';
+import { FinancialCategory, TransactionType } from '../types';
+interface Props {
+  onClose: () => void;
+  onSuccess: (newCategory: FinancialCategory) => void;
+  initialType?: TransactionType;
+}
+const QuickCategoryModal: React.FC<Props> = ({ onClose, onSuccess, initialType = 'EXPENSE' }) => {
+  const [name, setName] = useState('');
+  const [type, setType] = useState<TransactionType>(initialType);
+  const [group, setGroup] = useState('CUSTOS_VARIAVEIS');
+  const [isSaving, setIsSaving] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return alert("Nome é obrigatório");
+    setIsSaving(true);
+    try {
+        const payload = { name, type, group, recurrence_type: 'VARIAVEL', tag: 'OPERACIONAL', scope: 'EMPRESA', is_deduction: group === 'DEDUCOES' };
+        const { data, error } = await supabase.from('financial_categories').insert([payload]).select().single();
+        if (error) throw error;
+        if (data) { onSuccess(data as FinancialCategory); onClose(); }
+    } catch (error: any) { alert("Erro: " + error.message); }
+    finally { setIsSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2"><Tag size={16} className="text-green-600"/> Nova Categoria</h3>
+                <button onClick={onClose}><X size={18} className="text-gray-400 hover:text-gray-600"/></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome</label>
+                    <input autoFocus type="text" required className="w-full p-2 border rounded-lg text-sm" placeholder="Ex: Material de Escritório" value={name} onChange={e => setName(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Tipo</label>
+                        <select className="w-full p-2 border rounded-lg text-xs bg-white" value={type} onChange={e => setType(e.target.value as TransactionType)}>
+                            <option value="EXPENSE">Despesa</option>
+                            <option value="INCOME">Receita</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Grupo DRE</label>
+                        <select className="w-full p-2 border rounded-lg text-xs bg-white" value={group} onChange={e => setGroup(e.target.value)}>
+                            <option value="CUSTOS_VARIAVEIS">Custos Variáveis</option>
+                            <option value="DESPESAS_FIXAS">Despesas Fixas</option>
+                            <option value="RECEITA_BRUTA">Receita</option>
+                            <option value="DEDUCOES">Impostos/Deduções</option>
+                            <option value="INVESTIMENTOS">Investimentos</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" disabled={isSaving} className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                    {isSaving ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>} Salvar e Usar
+                </button>
+            </form>
+        </div>
+    </div>
+  );
+};
+export default QuickCategoryModal;
+5. COMO INTEGRAR NO SEU PROJETO
+Passo 1 — Banco de Dados
+Execute os SQLs da Seção 1 no seu Supabase.
+
+Passo 2 — Types
+Adicione os types da Seção 2 no arquivo de tipos do seu projeto.
+
+Passo 3 — Componentes
+Copie os 3 componentes (Seções 4.1, 4.2, 4.3) para a pasta de componentes do seu projeto.
+
+Passo 4 — Rota
+No seu roteador (App.tsx), adicione:
+
+import FinancialTransactionList from './components/FinancialTransactionList';
+// Na sua estrutura de rotas:
+<Route path="/financeiro" component={FinancialTransactionList} />
+Passo 5 — Menu
+Adicione um item de menu apontando para /financeiro.
+
+Passo 6 — Supabase Client
+Certifique-se de ter o arquivo lib/supabase.ts:
+
+import { createClient } from '@supabase/supabase-js';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+Passo 7 — Variáveis de Ambiente
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-anon
+6. FUNCIONALIDADES INCLUÍDAS
+Funcionalidade	Descrição
+Contas a Pagar	Lista, cria, edita e exclui despesas
+Contas a Receber	Lista, cria, edita e exclui receitas
+Filtro por Período	Dia, Semana, Mês, Personalizado, Tudo
+Filtro por Status	Tudo, Pendente, Pago, Vencido
+Busca	Por descrição, entidade ou categoria
+Toggle de Status	Clique para alternar Pendente/Pago
+Parcelamento	Cria múltiplas parcelas automaticamente
+Categorias	CRUD de categorias com grupo DRE
+Contas Bancárias	Vinculação opcional a conta bancária
+Conferência	Painel de vencidos (pagar e receber)
+Relatório	Resumo de títulos pagos e vencidos
+Fechamento	Checklist de pendências + confirmação
+Exportação CSV	Download dos dados filtrados
+Impressão	Impressão nativa do navegador
