@@ -525,6 +525,60 @@ Para CPF, formate como 000.000.000-00.`
     res.json(data);
   });
 
+  app.get("/api/boletim-medicao/os-concluidas", requireAuth, async (_req, res) => {
+    try {
+      const allOrders = await storage.getServiceOrders();
+      const concluidas = allOrders.filter(o => o.status === "concluida" || o.missionStatus === "encerrada");
+
+      const enriched = await Promise.all(concluidas.map(async (os) => {
+        const [client, vehicle, emp1, emp2, kit] = await Promise.all([
+          os.clientId ? storage.getClient(os.clientId) : null,
+          os.vehicleId ? storage.getVehicle(os.vehicleId) : null,
+          os.assignedEmployeeId ? storage.getEmployee(os.assignedEmployeeId) : null,
+          os.assignedEmployee2Id ? storage.getEmployee(os.assignedEmployee2Id) : null,
+          os.kitId ? storage.getWeaponKit(os.kitId) : null,
+        ]);
+
+        const photos = await storage.getMissionPhotosByOS(os.id);
+        const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
+        const kmFinalPhoto = photos.find(p => p.step === "km_final");
+
+        const { data: billing } = await supabaseAdmin.from("escort_billings")
+          .select("*").eq("service_order_id", os.id).limit(1);
+
+        let clientContract: any = null;
+        if (os.clientId) {
+          const { data: contracts } = await supabaseAdmin.from("escort_contracts")
+            .select("*").eq("client_id", os.clientId).eq("status", "Ativo").limit(1);
+          if (contracts?.length) clientContract = contracts[0];
+        }
+
+        return {
+          ...os,
+          clientName: client?.name || "—",
+          clientCnpj: client?.cnpj || null,
+          vehiclePlate: vehicle?.plate || null,
+          vehicleModel: vehicle?.model || null,
+          employee1Name: emp1?.name || null,
+          employee2Name: emp2?.name || null,
+          kitName: kit?.name || null,
+          km_inicial: kmSaidaPhoto?.kmValue || 0,
+          km_final: kmFinalPhoto?.kmValue || 0,
+          km_total: (kmFinalPhoto?.kmValue || 0) - (kmSaidaPhoto?.kmValue || 0),
+          billing: billing?.[0] || null,
+          hasContract: !!clientContract,
+          contractId: clientContract?.id || null,
+          contractValues: clientContract ? {
+            valor_km_carregado: clientContract.valor_km_carregado,
+            franquia_minima_km: clientContract.franquia_minima_km,
+          } : null,
+        };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/service-orders/:id", requireAuth, async (req, res) => {
     const data = await storage.getServiceOrder(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "OS não encontrada" });

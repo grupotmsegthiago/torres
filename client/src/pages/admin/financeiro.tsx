@@ -13,12 +13,12 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Moon, Shield, AlertTriangle, Eye,
+  Shield, AlertTriangle, Eye,
 } from "lucide-react";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED";
-type Step = "PAGAR" | "RECEBER" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO" | "BOLETIM";
+type Step = "PAGAR" | "RECEBER" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO";
 type StatusFilter = "ALL" | "PENDING" | "PAID" | "OVERDUE";
 type ViewPeriod = "DAY" | "WEEK" | "MONTH" | "CUSTOM" | "ALL";
 
@@ -77,7 +77,6 @@ const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; descriptio
   { id: "CONFERENCIA", label: "Conferência", icon: ClipboardCheck, description: "Revisar pendências", number: 3 },
   { id: "RELATORIO", label: "Relatório", icon: BarChart3, description: "Controle financeiro", number: 4 },
   { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 5 },
-  { id: "BOLETIM", label: "Boletim Medição", icon: Calculator, description: "Boletim de escolta", number: 6 },
 ];
 
 function TransactionFormModal({ onClose, editingTransaction, categories, accounts }: {
@@ -313,7 +312,7 @@ export default function FinanceiroPage() {
   const [closingNotes, setClosingNotes] = useState("");
   const [closingConfirmed, setClosingConfirmed] = useState(false);
   const [calcResult, setCalcResult] = useState<any>(null);
-  const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+  const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
   const [viewBoletim, setViewBoletim] = useState<any>(null);
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
@@ -348,7 +347,7 @@ export default function FinanceiroPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
       toast({ title: "Boletim salvo com sucesso", description: "BO gerado automaticamente" });
       setCalcResult(null);
-      setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+      setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
@@ -824,12 +823,11 @@ export default function FinanceiroPage() {
       km_vazio: parseFloat(boCalc.km_vazio) || 0,
       horas_missao: parseFloat(boCalc.horas_missao) || 0,
       horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
-      teve_pernoite: boCalc.teve_pernoite,
       horario_agendado: boCalc.horario_agendado || undefined,
       horario_inicio: boCalc.horario_inicio || undefined,
       horario_fim: boCalc.horario_fim || undefined,
       contract_id: boCalc.contract_id || undefined,
-      despesas: { pedagio: parseFloat(boCalc.despesas_pedagio) || 0, combustivel: parseFloat(boCalc.despesas_combustivel) || 0, outras: parseFloat(boCalc.despesas_outras) || 0 },
+      despesas: { pedagio: parseFloat(boCalc.despesas_pedagio) || 0 },
     });
   };
 
@@ -849,7 +847,6 @@ export default function FinanceiroPage() {
       horas_missao: parseFloat(boCalc.horas_missao) || 0,
       horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
       is_noturno: calcResult.is_noturno,
-      teve_pernoite: boCalc.teve_pernoite,
       fat_km_carregado: calcResult.faturamento.km_carregado,
       fat_km_vazio: calcResult.faturamento.km_vazio,
       fat_estadia: calcResult.faturamento.estadia,
@@ -861,8 +858,8 @@ export default function FinanceiroPage() {
       pag_adicional_noturno: calcResult.pagamento.adicional_noturno,
       pag_total: calcResult.pagamento.total,
       desp_pedagio: parseFloat(boCalc.despesas_pedagio) || 0,
-      desp_combustivel: parseFloat(boCalc.despesas_combustivel) || 0,
-      desp_outras: parseFloat(boCalc.despesas_outras) || 0,
+      desp_combustivel: 0,
+      desp_outras: 0,
       desp_total: calcResult.despesas.total,
       resultado_bruto: calcResult.resultado.bruto,
       resultado_liquido: calcResult.resultado.liquido,
@@ -943,15 +940,9 @@ export default function FinanceiroPage() {
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer bg-indigo-50 p-3 rounded-lg border border-indigo-100"><input type="checkbox" checked={boCalc.teve_pernoite} onChange={e => setBo("teve_pernoite", e.target.checked)} className="rounded" data-testid="checkbox-pernoite" /><Moon size={14} className="text-indigo-600" /><span className="text-xs font-bold text-neutral-700 uppercase">Teve Pernoite</span></label>
-
                 <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                   <p className="text-[10px] font-black text-red-700 uppercase mb-3 flex items-center gap-1"><DollarSign size={12} /> Despesas</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_pedagio} onChange={e => setBo("despesas_pedagio", e.target.value)} /></div>
-                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Combustível</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_combustivel} onChange={e => setBo("despesas_combustivel", e.target.value)} /></div>
-                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Outras</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_outras} onChange={e => setBo("despesas_outras", e.target.value)} /></div>
-                  </div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_pedagio} onChange={e => setBo("despesas_pedagio", e.target.value)} /></div>
                 </div>
 
                 <button onClick={handleCalcEscort} disabled={calcEscortMutation.isPending || !boCalc.km_inicial || !boCalc.km_final || (!boCalc.horas_missao && !boCalc.horario_inicio)} data-testid="button-calc-escort"
@@ -1224,7 +1215,6 @@ export default function FinanceiroPage() {
         {activeStep === "CONFERENCIA" && renderConferencia()}
         {activeStep === "RELATORIO" && renderRelatorio()}
         {activeStep === "FECHAMENTO" && renderFechamento()}
-        {activeStep === "BOLETIM" && renderBoletim()}
 
         {isFormOpen && (
           <TransactionFormModal

@@ -28,6 +28,7 @@ import UsersPage from "@/pages/admin/users";
 import ProfilePage from "@/pages/admin/profile";
 import AuditPage from "@/pages/admin/audit";
 import FinanceiroPage from "@/pages/admin/financeiro";
+import BoletimMedicaoPage from "@/pages/admin/boletim-medicao";
 import EscortBillingPage from "@/pages/admin/escort-billing";
 import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
@@ -122,6 +123,7 @@ function Router() {
       <Route path="/admin/employees">{() => <ProtectedRoute component={EmployeesPage} />}</Route>
       <Route path="/admin/vehicles">{() => <ProtectedRoute component={VehiclesPage} />}</Route>
       <Route path="/admin/service-orders">{() => <ProtectedRoute component={ServiceOrdersPage} />}</Route>
+      <Route path="/admin/boletim-medicao">{() => <ProtectedRoute component={BoletimMedicaoPage} />}</Route>
       <Route path="/admin/trips">{() => <ProtectedRoute component={TripsPage} />}</Route>
       <Route path="/admin/fueling">{() => <ProtectedRoute component={FuelingPage} />}</Route>
       <Route path="/admin/maintenance">{() => <ProtectedRoute component={MaintenancePage} />}</Route>

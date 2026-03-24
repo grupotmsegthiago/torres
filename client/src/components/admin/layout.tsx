@@ -20,6 +20,7 @@ const menuItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
   { path: "/admin/clients", label: "Clientes", icon: Building2 },
   { path: "/admin/service-orders", label: "Ordens de Serviço", icon: FileText },
+  { path: "/admin/boletim-medicao", label: "Boletim de Medição", icon: Calculator },
   {
     label: "Funcionários",
     icon: Users,
