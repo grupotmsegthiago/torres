@@ -1,0 +1,103 @@
+import os
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+app = Flask(__name__)
+
+# Configuração do Banco de Dados SQLite (gera um arquivo chamado escolta.db)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///escolta.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# --- MODELOS DE BANCO DE DADOS ---
+
+class Missao(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.String(50), nullable=False)
+    km_inicial = db.Column(db.Float, nullable=False)
+    km_final = db.Column(db.Float, nullable=False)
+    horas_estadia = db.Column(db.Float, default=0)
+    teve_pernoite = db.Column(db.Boolean, default=False)
+    despesas = db.Column(db.Float, default=0)
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Valores Calculados Salvos para Auditoria
+    total_faturamento = db.Column(db.Float)
+    pagamento_vigilante = db.Column(db.Float)
+
+# Criar o banco de dados
+with app.app_context():
+    db.create_all()
+
+# --- LÓGICA DE CÁLCULO (O "PROMPT" TRANSFORMADO EM FUNÇÃO) ---
+
+def processar_calculo_escolta(dados):
+    # Tabelas de preços (Pode ser movido para outra tabela no DB depois)
+    PRECOS = {
+        "valor_km": 2.80,
+        "valor_hora_estadia": 50.00,
+        "valor_diaria": 200.00,
+        "vrp_base": 150.00
+    }
+    
+    km_rodado = dados['km_final'] - dados['km_inicial']
+    
+    # Faturamento Cliente
+    fat_km = km_rodado * PRECOS['valor_km']
+    fat_estadia = dados['horas_estadia'] * PRECOS['valor_hora_estadia']
+    fat_pernoite = PRECOS['valor_diaria'] if dados['teve_pernoite'] else 0
+    
+    total_cliente = fat_km + fat_estadia + fat_pernoite + dados['despesas']
+    
+    # Pagamento Vigilante (VRP + Reembolsos)
+    total_vigilante = PRECOS['vrp_base'] + dados['despesas']
+    
+    return total_cliente, total_vigilante
+
+# --- ROTAS DA API ---
+
+@app.route('/nova_missao', methods=['POST'])
+def nova_missao():
+    data = request.json
+    
+    # 1. Executa o Cálculo
+    faturamento, pagamento = processar_calculo_escolta(data)
+    
+    # 2. Salva no Banco de Dados
+    nova = Missao(
+        cliente_id=data['cliente_id'],
+        km_inicial=data['km_inicial'],
+        km_final=data['km_final'],
+        horas_estadia=data.get('horas_estadia', 0),
+        teve_pernoite=data.get('teve_pernoite', False),
+        despesas=data.get('despesas', 0),
+        total_faturamento=faturamento,
+        pagamento_vigilante=pagamento
+    )
+    
+    db.session.add(nova)
+    db.session.commit()
+    
+    return jsonify({
+        "mensagem": "Missão registrada e calculada com sucesso",
+        "id_registro": nova.id,
+        "valor_a_cobrar": faturamento,
+        "valor_a_pagar_operacional": pagamento
+    })
+
+@app.route('/historico', methods=['GET'])
+def ver_historico():
+    missoes = Missao.query.all()
+    resultado = []
+    for m in missoes:
+        resultado.append({
+            "id": m.id,
+            "cliente": m.cliente_id,
+            "data": m.data_criacao.strftime("%d/%m/%Y"),
+            "faturamento": m.total_faturamento
+        })
+    return jsonify(resultado)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)

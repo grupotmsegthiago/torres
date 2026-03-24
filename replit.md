@@ -89,3 +89,18 @@ Complete financial management for the company. Page: `/admin/financeiro` (admin/
 - **Backend endpoints**: GET/POST /api/financial/transactions, PUT/DELETE /api/financial/transactions/:id, PATCH /api/financial/transactions/:id/toggle-status, GET /api/financial/summary, GET/POST/DELETE /api/financial/categories, GET/POST/PUT/DELETE /api/financial/accounts
 - **Tables (Supabase)**: financial_transactions (id UUID, description, amount, type INCOME/EXPENSE, status PENDING/PAID/CANCELLED, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, installment_group, installment_number, installment_total, created_at, created_by, updated_by), financial_categories (id UUID, name, type, is_deduction, group, recurrence_type, tag, scope), financial_accounts (id UUID, name, initial_balance, bank_name, account_number, status)
 - **Pre-seeded categories**: 17 categories covering Receita de Escolta, Combustível, Folha de Pagamento, ISSQN, PIS/COFINS, etc.
+
+## Escort Calculation Engine (Motor de Cálculo de Escolta)
+Complete escort billing calculation with differentiated KM, hazard pay, and night premium. Page: `/admin/calculo-escolta` (admin/diretoria only).
+- **4 Tabs**: Calculadora (live calculation), Faturamentos (billing history), Contratos (client contract management), Relatório (monthly client report)
+- **Calculation rules**:
+  - KM carregado vs KM vazio (retorno) with different rates
+  - Franquia mínima de KM (minimum KM billing floor)
+  - Periculosidade: 30% additional on base hourly rate when mission exceeds 8 hours
+  - Adicional noturno: 20% on VRP + 15% on billed KM when mission occurs between 22:00-05:00
+  - Validation: KM final must be >= KM inicial; photo required if difference > 500 KM
+- **Contracts**: Per-client customizable rates (valor_km_carregado, valor_km_vazio, VRP, hazard/night percentages, hour limits)
+- **Output**: Split view — client billing (faturamento) vs operational payment (vigilante VRP + extras + reimbursements) + gross profit
+- **Report**: Monthly per-client summary with total missions, KM, billing, operational costs, profit, tolls, fuel, night missions count
+- **Backend endpoints**: POST /api/escort/calculate, GET/POST/PUT/DELETE /api/escort/contracts, GET/POST/PUT /api/escort/billings, GET /api/escort/relatorio/:clientId
+- **Tables (Supabase)**: escort_contracts (client rates, percentages, limits), escort_billings (full calculation breakdown per mission)

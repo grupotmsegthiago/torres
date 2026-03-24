@@ -3611,5 +3611,211 @@ Regras:
     }
   });
 
+  // ==================== ESCORT CALCULATION ENGINE ====================
+
+  function calcularEscolta(dados: {
+    km_inicial: number; km_final: number; km_vazio: number;
+    horas_missao: number; horas_estadia: number; teve_pernoite: boolean;
+    horario_inicio?: string; horario_fim?: string;
+    despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
+    contrato: {
+      valor_km_carregado: number; valor_km_vazio: number; franquia_minima_km: number;
+      valor_hora_estadia: number; valor_diaria: number; vrp_base: number;
+      adicional_noturno_vrp_pct: number; adicional_noturno_km_pct: number;
+      adicional_periculosidade_pct: number; periculosidade_horas_limite: number;
+    };
+  }) {
+    const { km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
+
+    if (km_final < km_inicial) throw new Error("KM final não pode ser menor que KM inicial");
+
+    const km_total = km_final - km_inicial;
+    const km_carregado = Math.max(0, km_total - km_vazio);
+    const km_faturado_carregado = Math.max(km_carregado, contrato.franquia_minima_km);
+    const require_photo = km_total > 500;
+
+    const isNoturno = (() => {
+      if (!horario_inicio && !horario_fim) return false;
+      const parseHour = (t: string) => { const [h] = t.split(":").map(Number); return h; };
+      if (horario_inicio) { const h = parseHour(horario_inicio); if (h >= 22 || h < 5) return true; }
+      if (horario_fim) { const h = parseHour(horario_fim); if (h >= 22 || h < 5) return true; }
+      return false;
+    })();
+
+    const despesas_total = despesas_pedagio + despesas_combustivel + despesas_outras;
+
+    let fat_km = (km_faturado_carregado * contrato.valor_km_carregado) + (km_vazio * contrato.valor_km_vazio);
+    const fat_estadia = horas_estadia * contrato.valor_hora_estadia;
+    const fat_pernoite = teve_pernoite ? contrato.valor_diaria : 0;
+    let fat_adicional_noturno = 0;
+    if (isNoturno) {
+      fat_adicional_noturno = fat_km * (contrato.adicional_noturno_km_pct / 100);
+    }
+    const fat_total = fat_km + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total;
+
+    let pag_vrp = contrato.vrp_base;
+    let pag_periculosidade = 0;
+    if (horas_missao > contrato.periculosidade_horas_limite) {
+      const horas_extras = horas_missao - contrato.periculosidade_horas_limite;
+      const valor_hora_base = contrato.vrp_base / contrato.periculosidade_horas_limite;
+      pag_periculosidade = horas_extras * valor_hora_base * (contrato.adicional_periculosidade_pct / 100);
+    }
+    let pag_adicional_noturno = 0;
+    if (isNoturno) {
+      pag_adicional_noturno = pag_vrp * (contrato.adicional_noturno_vrp_pct / 100);
+    }
+    const pag_reembolsos = despesas_total;
+    const pag_total = pag_vrp + pag_periculosidade + pag_adicional_noturno + pag_reembolsos;
+
+    return {
+      km_carregado, km_vazio, km_total, km_faturado: km_faturado_carregado, require_photo, is_noturno: isNoturno,
+      fat_km: Math.round(fat_km * 100) / 100, fat_estadia: Math.round(fat_estadia * 100) / 100,
+      fat_pernoite, fat_adicional_noturno: Math.round(fat_adicional_noturno * 100) / 100,
+      fat_total: Math.round(fat_total * 100) / 100,
+      pag_vrp, pag_periculosidade: Math.round(pag_periculosidade * 100) / 100,
+      pag_adicional_noturno: Math.round(pag_adicional_noturno * 100) / 100,
+      pag_reembolsos, pag_total: Math.round(pag_total * 100) / 100,
+    };
+  }
+
+  // Escort Contracts CRUD
+  app.get("/api/escort/contracts", requireAuth, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").order("client_name");
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/escort/contracts", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_contracts").insert(req.body).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/escort/contracts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_contracts").update(req.body).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/escort/contracts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("escort_contracts").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Escort Calculation (simulate)
+  app.post("/api/escort/calculate", requireAuth, async (req, res) => {
+    try {
+      const { contract_id, km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, despesas_pedagio, despesas_combustivel, despesas_outras } = req.body;
+
+      if (km_final < km_inicial) return res.status(400).json({ message: "KM final não pode ser menor que KM inicial" });
+
+      let contrato: any;
+      if (contract_id) {
+        const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", contract_id).single();
+        if (error || !data) return res.status(404).json({ message: "Contrato não encontrado" });
+        contrato = data;
+      } else {
+        contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+      }
+
+      const resultado = calcularEscolta({
+        km_inicial: Number(km_inicial || 0), km_final: Number(km_final || 0), km_vazio: Number(km_vazio || 0),
+        horas_missao: Number(horas_missao || 0), horas_estadia: Number(horas_estadia || 0),
+        teve_pernoite: !!teve_pernoite, horario_inicio, horario_fim,
+        despesas_pedagio: Number(despesas_pedagio || 0), despesas_combustivel: Number(despesas_combustivel || 0),
+        despesas_outras: Number(despesas_outras || 0), contrato,
+      });
+
+      res.json({ status: "sucesso", ...resultado, require_foto_hodometro: resultado.require_photo });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Escort Billing - Save
+  app.post("/api/escort/billings", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const body = req.body;
+      if (Number(body.km_final) < Number(body.km_inicial)) return res.status(400).json({ message: "KM final não pode ser menor que KM inicial" });
+      const km_total = Number(body.km_final) - Number(body.km_inicial);
+      if (km_total > 500 && !body.foto_hodometro_fim) return res.status(400).json({ message: "Foto do hodômetro é obrigatória para diferença maior que 500 KM" });
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").insert({ ...body, created_by: user.name }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Escort Billings - List
+  app.get("/api/escort/billings", requireAuth, async (req, res) => {
+    try {
+      const { client_id, status, from, to } = req.query;
+      let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
+      if (client_id) query = query.eq("client_id", client_id);
+      if (status) query = query.eq("status", status as string);
+      if (from) query = query.gte("created_at", from as string);
+      if (to) query = query.lte("created_at", to as string);
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_billings").update(req.body).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Client Billing Report (monthly)
+  app.get("/api/escort/relatorio/:clientId", requireAuth, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.clientId);
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+      const { data: billings, error } = await supabaseAdmin.from("escort_billings").select("*")
+        .eq("client_id", clientId).gte("created_at", startOfMonth).lte("created_at", endOfMonth)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+
+      const items = billings || [];
+      const totais = {
+        total_missoes: items.length,
+        total_km: items.reduce((a: number, b: any) => a + Number(b.km_total || 0), 0),
+        total_faturamento: items.reduce((a: number, b: any) => a + Number(b.fat_total || 0), 0),
+        total_pagamento_operacional: items.reduce((a: number, b: any) => a + Number(b.pag_total || 0), 0),
+        total_pedagio: items.reduce((a: number, b: any) => a + Number(b.despesas_pedagio || 0), 0),
+        total_combustivel: items.reduce((a: number, b: any) => a + Number(b.despesas_combustivel || 0), 0),
+        lucro_bruto: 0,
+        missoes_noturnas: items.filter((b: any) => b.is_noturno).length,
+        periodo: `${now.toLocaleString("pt-BR", { month: "long", year: "numeric" })}`,
+      };
+      totais.lucro_bruto = Math.round((totais.total_faturamento - totais.total_pagamento_operacional) * 100) / 100;
+
+      const { data: client } = await supabaseAdmin.from("clients").select("name").eq("id", clientId).single();
+
+      res.json({
+        client_name: client?.name || `Cliente #${clientId}`,
+        periodo: totais.periodo,
+        totais,
+        missoes: items,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   return httpServer;
 }

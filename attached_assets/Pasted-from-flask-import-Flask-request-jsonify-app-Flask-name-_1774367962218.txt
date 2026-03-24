@@ -1,0 +1,68 @@
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# Simulação de Banco de Dados de Contratos
+# Em um sistema real, isso viria de um SQL
+CONTRATOS = {
+    "cliente_padrao": {
+        "valor_km": 2.50,
+        "franquia_minima_km": 50,
+        "valor_diaria": 180.00,
+        "valor_hora_estadia": 45.00,
+        "vrp_vigilante": 120.00  # Valor fixo por missão para o operacional
+    }
+}
+
+@app.route('/calcular_pagamento', methods=['POST'])
+def calcular():
+    data = request.json
+    
+    # Dados de entrada da missão
+    id_cliente = data.get("id_cliente", "cliente_padrao")
+    km_inicial = data.get("km_inicial", 0)
+    km_final = data.get("km_final", 0)
+    horas_estadia = data.get("horas_estadia", 0)
+    teve_pernoite = data.get("pernoite", False)
+    despesas_comprovadas = data.get("despesas", 0) # Pedágios, etc.
+
+    contrato = CONTRATOS.get(id_cliente)
+
+    # Lógica de Cálculo de KM
+    km_rodado = km_final - km_inicial
+    km_faturado = max(km_rodado, contrato["franquia_minima_km"])
+    total_km = km_faturado * contrato["valor_km"]
+
+    # Lógica de Estadia e Diária
+    total_estadia = horas_estadia * contrato["valor_hora_estadia"]
+    diaria = contrato["valor_diaria"] if teve_pernoite else 0
+
+    # Faturamento Total (O que cobrar do cliente)
+    faturamento_total = total_km + total_estadia + diaria + despesas_comprovadas
+
+    # Pagamento do Operacional (O que pagar ao vigilante)
+    # Exemplo: VRP + Reembolso de Despesas
+    pagamento_vigilante = contrato["vrp_vigilante"] + despesas_comprovadas
+
+    return jsonify({
+        "status": "sucesso",
+        "resumo_missao": {
+            "km_percorrido": km_rodado,
+            "km_faturado": km_faturado,
+            "horas_estadia": horas_estadia
+        },
+        "financeiro_cliente": {
+            "total_faturamento": round(faturamento_total, 2),
+            "detalhes": {
+                "valor_km": total_km,
+                "valor_estadia": total_estadia,
+                "reembolsos": despesas_comprovadas
+            }
+        },
+        "financeiro_operacional": {
+            "total_a_pagar_vigilante": round(pagamento_vigilante, 2)
+        }
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
