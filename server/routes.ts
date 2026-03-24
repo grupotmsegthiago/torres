@@ -3611,6 +3611,43 @@ Regras:
     }
   });
 
+  // ==================== SERVICE CONTRACTS ====================
+  app.get("/api/service-contracts", requireAuth, async (req, res) => {
+    try {
+      const { client_id } = req.query;
+      let query = supabaseAdmin.from("service_contracts").select("*").order("created_at", { ascending: false });
+      if (client_id) query = query.eq("client_id", client_id);
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/service-contracts", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data, error } = await supabaseAdmin.from("service_contracts").insert({ ...req.body, created_by: user.name }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/service-contracts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("service_contracts").update({ ...req.body, updated_at: new Date().toISOString() }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/service-contracts/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("service_contracts").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ==================== ESCORT CALCULATION ENGINE ====================
 
   function calcularEscolta(dados: {

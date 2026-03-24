@@ -24,6 +24,9 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 -   **Audit System:** Comprehensive tracking of vigilante actions, page views, and security events (e.g., screenshot attempts, tab visibility changes) with an admin dashboard for monitoring and alerting.
 -   **Financial Module:** Manages accounts payable/receivable with transaction CRUD, installment support, reporting, and category breakdown.
 -   **Escort Calculation Engine:** Manages escort billing, client-specific price tables, frequent routes, and generates numbered Mission Bulletins (Boletim de Missão) with detailed calculation rules (KM, minimums, nocturnal/hazardous additions).
+-   **Client "Pasta" System:** `/admin/calculo-escolta` is a client-centric management page. Selecting a client opens their "pasta" with 3 tabs: Contrato de Prestação de Serviço (with validity/signature control), Tabela de Preços/Rotas (price table + frequent routes per client), and Relatório de OS (day/fortnight/month filter with billing totals).
+-   **Service Contracts:** Full CRUD for `service_contracts` table with vigência (indeterminado/determinado), multa/juros mora, aviso prévio, armamento, and contratante details.
+-   **Boletim de Medição in Financeiro:** The escort calculator and billing history are available as the 6th tab ("Boletim Medição") in `/admin/financeiro`, allowing financial staff to calculate and track escort billing within the financial module.
 
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.

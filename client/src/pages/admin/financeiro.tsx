@@ -11,12 +11,13 @@ import {
   RefreshCw, Calendar, DollarSign, Download, Printer,
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
-  Building2, Wallet, ChevronRight,
+  Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
+  Moon, Shield, AlertTriangle, Eye,
 } from "lucide-react";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED";
-type Step = "PAGAR" | "RECEBER" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO";
+type Step = "PAGAR" | "RECEBER" | "CONFERENCIA" | "RELATORIO" | "FECHAMENTO" | "BOLETIM";
 type StatusFilter = "ALL" | "PENDING" | "PAID" | "OVERDUE";
 type ViewPeriod = "DAY" | "WEEK" | "MONTH" | "CUSTOM" | "ALL";
 
@@ -74,6 +75,7 @@ const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; descriptio
   { id: "CONFERENCIA", label: "Conferência", icon: ClipboardCheck, description: "Revisar pendências", number: 3 },
   { id: "RELATORIO", label: "Relatório", icon: BarChart3, description: "Controle financeiro", number: 4 },
   { id: "FECHAMENTO", label: "Fechamento", icon: Lock, description: "Fechar período", number: 5 },
+  { id: "BOLETIM", label: "Boletim Medição", icon: Calculator, description: "Boletim de escolta", number: 6 },
 ];
 
 function TransactionFormModal({ onClose, editingTransaction, categories, accounts }: {
@@ -308,6 +310,9 @@ export default function FinanceiroPage() {
   const [editingTransaction, setEditingTransaction] = useState<FinancialTransaction | null>(null);
   const [closingNotes, setClosingNotes] = useState("");
   const [closingConfirmed, setClosingConfirmed] = useState(false);
+  const [calcResult, setCalcResult] = useState<any>(null);
+  const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+  const [viewBoletim, setViewBoletim] = useState<any>(null);
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
     queryKey: ["/api/financial/transactions"],
@@ -319,6 +324,31 @@ export default function FinanceiroPage() {
 
   const { data: accounts = [] } = useQuery<FinancialAccount[]>({
     queryKey: ["/api/financial/accounts"],
+  });
+
+  const { data: escortContracts = [] } = useQuery<any[]>({ queryKey: ["/api/escort/contracts"] });
+  const { data: escortBillings = [] } = useQuery<any[]>({ queryKey: ["/api/escort/billings"] });
+  const { data: escortRoutes = [] } = useQuery<any[]>({ queryKey: ["/api/escort/routes"] });
+  const { data: escortClients = [] } = useQuery<any[]>({ queryKey: ["/api/clients"] });
+
+  const calcEscortMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/escort/calculate", data),
+    onSuccess: async (res: any) => {
+      const d = await res.json();
+      setCalcResult(d);
+    },
+    onError: (err: Error) => toast({ title: "Erro no cálculo", description: err.message, variant: "destructive" }),
+  });
+
+  const saveBoletimMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/escort/billings", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      toast({ title: "Boletim salvo com sucesso", description: "BO gerado automaticamente" });
+      setCalcResult(null);
+      setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
 
   const toggleMutation = useMutation({
@@ -785,6 +815,264 @@ export default function FinanceiroPage() {
     );
   };
 
+  const handleCalcEscort = () => {
+    const isNoturno = (() => {
+      if (!boCalc.horario_inicio) return false;
+      const h = parseInt(boCalc.horario_inicio.split(":")[0]);
+      return h >= 22 || h < 5;
+    })();
+    const contract = escortContracts.find(c => c.id === boCalc.contract_id);
+    calcEscortMutation.mutate({
+      km_inicial: parseFloat(boCalc.km_inicial) || 0,
+      km_final: parseFloat(boCalc.km_final) || 0,
+      km_vazio: parseFloat(boCalc.km_vazio) || 0,
+      horas_missao: parseFloat(boCalc.horas_missao) || 0,
+      horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
+      teve_pernoite: boCalc.teve_pernoite,
+      is_noturno: isNoturno,
+      contract_id: boCalc.contract_id || undefined,
+      despesas: { pedagio: parseFloat(boCalc.despesas_pedagio) || 0, combustivel: parseFloat(boCalc.despesas_combustivel) || 0, outras: parseFloat(boCalc.despesas_outras) || 0 },
+    });
+  };
+
+  const handleSaveBoletim = () => {
+    if (!calcResult) return;
+    const contract = escortContracts.find(c => c.id === boCalc.contract_id);
+    saveBoletimMutation.mutate({
+      contract_id: boCalc.contract_id || null,
+      client_id: contract?.client_id || null,
+      client_name: boCalc.client_name || contract?.client_name || null,
+      vigilante_name: boCalc.vigilante_name || null,
+      km_inicial: parseFloat(boCalc.km_inicial) || 0,
+      km_final: parseFloat(boCalc.km_final) || 0,
+      km_carregado: calcResult.km_carregado,
+      km_vazio: parseFloat(boCalc.km_vazio) || 0,
+      km_total: calcResult.km_total,
+      horas_missao: parseFloat(boCalc.horas_missao) || 0,
+      horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
+      is_noturno: calcResult.is_noturno,
+      teve_pernoite: boCalc.teve_pernoite,
+      fat_km_carregado: calcResult.faturamento.km_carregado,
+      fat_km_vazio: calcResult.faturamento.km_vazio,
+      fat_estadia: calcResult.faturamento.estadia,
+      fat_diaria: calcResult.faturamento.diaria,
+      fat_adicional_noturno: calcResult.faturamento.adicional_noturno,
+      fat_total: calcResult.faturamento.total,
+      pag_vrp: calcResult.pagamento.vrp,
+      pag_periculosidade: calcResult.pagamento.periculosidade,
+      pag_adicional_noturno: calcResult.pagamento.adicional_noturno,
+      pag_total: calcResult.pagamento.total,
+      desp_pedagio: parseFloat(boCalc.despesas_pedagio) || 0,
+      desp_combustivel: parseFloat(boCalc.despesas_combustivel) || 0,
+      desp_outras: parseFloat(boCalc.despesas_outras) || 0,
+      desp_total: calcResult.despesas.total,
+      resultado_bruto: calcResult.resultado.bruto,
+      resultado_liquido: calcResult.resultado.liquido,
+      margem_percentual: calcResult.resultado.margem_pct,
+      origem: boCalc.origem || null,
+      destino: boCalc.destino || null,
+      placa_viatura: boCalc.placa_viatura || null,
+      placa_escoltado: boCalc.placa_escoltado || null,
+      motorista_escoltado: boCalc.motorista_escoltado || null,
+      status: "Concluído",
+    });
+  };
+
+  const setBo = (k: string, v: any) => setBoCalc(p => ({ ...p, [k]: v }));
+
+  const renderBoletim = () => {
+    const sortedBillings = [...escortBillings].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return (
+      <div className="space-y-6" data-testid="panel-boletim">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <Card className="p-5 border-neutral-200 shadow-sm">
+              <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><Calculator size={16} /> Calculadora de Escolta</h4>
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                  <p className="text-[10px] font-black text-blue-700 uppercase mb-3">Contrato / Cliente</p>
+                  <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold bg-white mb-2" value={boCalc.contract_id} onChange={e => { const c = escortContracts.find(c => c.id === e.target.value); setBo("contract_id", e.target.value); if (c) setBo("client_name", c.client_name || ""); }} data-testid="select-bo-contract">
+                    <option value="">Valores padrão (sem contrato)</option>
+                    {escortContracts.filter(c => c.status === "Ativo").map(c => <option key={c.id} value={c.id}>{c.client_name || "Cliente sem nome"} — {fmt(Number(c.valor_km_carregado))}/km</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Vigilante</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-bold uppercase" placeholder="Nome" value={boCalc.vigilante_name} onChange={e => setBo("vigilante_name", e.target.value)} data-testid="input-bo-vigilante" /></div>
+                    <div>
+                      <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Rota</label>
+                      <select className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-bold bg-white" value={boCalc.route_id} onChange={e => { const r = escortRoutes.find(r => r.id === e.target.value); if (r) { setBo("route_id", e.target.value); setBo("origem", r.origin); setBo("destino", r.destination); } else { setBo("route_id", ""); } }} data-testid="select-bo-route">
+                        <option value="">Manual</option>
+                        {escortRoutes.filter(r => r.status === "Ativo").map(r => <option key={r.id} value={r.id}>{r.name} ({r.estimated_km}km)</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 flex items-center gap-1"><MapPin size={12} /> Rota & Veículos</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Origem</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={boCalc.origem} onChange={e => setBo("origem", e.target.value)} data-testid="input-bo-origem" /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Destino</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={boCalc.destino} onChange={e => setBo("destino", e.target.value)} data-testid="input-bo-destino" /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Placa Viatura</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold uppercase" placeholder="ABC-1234" value={boCalc.placa_viatura} onChange={e => setBo("placa_viatura", e.target.value)} data-testid="input-bo-placa-viatura" /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Placa Escoltado</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold uppercase" placeholder="ABC-1234" value={boCalc.placa_escoltado} onChange={e => setBo("placa_escoltado", e.target.value)} data-testid="input-bo-placa-escoltado" /></div>
+                  </div>
+                  <div className="mt-2"><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Motorista Escoltado</label><input type="text" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={boCalc.motorista_escoltado} onChange={e => setBo("motorista_escoltado", e.target.value)} data-testid="input-bo-motorista" /></div>
+                </div>
+
+                <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
+                  <p className="text-[10px] font-black text-amber-700 uppercase mb-3 flex items-center gap-1"><Truck size={12} /> Quilometragem</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">KM Inicial</label><input type="number" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.km_inicial} onChange={e => setBo("km_inicial", e.target.value)} data-testid="input-bo-km-ini" /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">KM Final</label><input type="number" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.km_final} onChange={e => setBo("km_final", e.target.value)} data-testid="input-bo-km-fin" /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">KM Vazio</label><input type="number" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.km_vazio} onChange={e => setBo("km_vazio", e.target.value)} data-testid="input-bo-km-vazio" /></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
+                    <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 flex items-center gap-1"><Clock size={12} /> Horas</p>
+                    <div className="space-y-2">
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Horas Missão</label><input type="number" step="0.5" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horas_missao} onChange={e => setBo("horas_missao", e.target.value)} data-testid="input-bo-horas" /></div>
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Horas Estadia</label><input type="number" step="0.5" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horas_estadia} onChange={e => setBo("horas_estadia", e.target.value)} /></div>
+                    </div>
+                  </div>
+                  <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
+                    <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 flex items-center gap-1"><Clock size={12} /> Horários</p>
+                    <div className="space-y-2">
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Início</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_inicio} onChange={e => setBo("horario_inicio", e.target.value)} data-testid="input-bo-hora-ini" /></div>
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Fim</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_fim} onChange={e => setBo("horario_fim", e.target.value)} /></div>
+                    </div>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer bg-indigo-50 p-3 rounded-lg border border-indigo-100"><input type="checkbox" checked={boCalc.teve_pernoite} onChange={e => setBo("teve_pernoite", e.target.checked)} className="rounded" data-testid="checkbox-pernoite" /><Moon size={14} className="text-indigo-600" /><span className="text-xs font-bold text-neutral-700 uppercase">Teve Pernoite</span></label>
+
+                <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+                  <p className="text-[10px] font-black text-red-700 uppercase mb-3 flex items-center gap-1"><DollarSign size={12} /> Despesas</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_pedagio} onChange={e => setBo("despesas_pedagio", e.target.value)} /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Combustível</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_combustivel} onChange={e => setBo("despesas_combustivel", e.target.value)} /></div>
+                    <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Outras</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_outras} onChange={e => setBo("despesas_outras", e.target.value)} /></div>
+                  </div>
+                </div>
+
+                <button onClick={handleCalcEscort} disabled={calcEscortMutation.isPending || !boCalc.km_inicial || !boCalc.km_final || !boCalc.horas_missao} data-testid="button-calc-escort"
+                  className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-30 disabled:cursor-not-allowed">
+                  {calcEscortMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Calculator size={18} />}
+                  Calcular Escolta
+                </button>
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            {calcResult && (
+              <Card className="p-5 border-green-200 shadow-md bg-gradient-to-br from-green-50 to-white" data-testid="card-calc-result">
+                <h4 className="text-sm font-black text-green-800 uppercase mb-4 flex items-center gap-2"><CheckCircle2 size={16} /> Resultado do Cálculo</h4>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 bg-white rounded-lg border border-green-100 text-center"><p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p><p className="text-lg font-black text-green-700 font-mono">{fmt(calcResult.faturamento?.total)}</p></div>
+                    <div className="p-3 bg-white rounded-lg border border-red-100 text-center"><p className="text-[9px] font-black text-red-700 uppercase">Pagamento</p><p className="text-lg font-black text-red-700 font-mono">{fmt(calcResult.pagamento?.total)}</p></div>
+                    <div className="p-3 bg-white rounded-lg border border-neutral-200 text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Lucro</p><p className={`text-lg font-black font-mono ${(calcResult.resultado?.liquido || 0) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(calcResult.resultado?.liquido)}</p></div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-neutral-100">
+                    <p className="text-[9px] font-black text-neutral-400 uppercase mb-2">Detalhamento Faturamento</p>
+                    <div className="grid grid-cols-2 gap-1 text-[10px]">
+                      <span className="font-bold text-neutral-600">KM Carregado:</span><span className="font-mono font-bold text-right">{fmt(calcResult.faturamento?.km_carregado)}</span>
+                      <span className="font-bold text-neutral-600">KM Vazio:</span><span className="font-mono font-bold text-right">{fmt(calcResult.faturamento?.km_vazio)}</span>
+                      <span className="font-bold text-neutral-600">Estadia:</span><span className="font-mono font-bold text-right">{fmt(calcResult.faturamento?.estadia)}</span>
+                      <span className="font-bold text-neutral-600">Diária:</span><span className="font-mono font-bold text-right">{fmt(calcResult.faturamento?.diaria)}</span>
+                      <span className="font-bold text-neutral-600">Ad. Noturno:</span><span className="font-mono font-bold text-right">{fmt(calcResult.faturamento?.adicional_noturno)}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-neutral-100">
+                    <p className="text-[9px] font-black text-neutral-400 uppercase mb-2">Pagamento ao Vigilante</p>
+                    <div className="grid grid-cols-2 gap-1 text-[10px]">
+                      <span className="font-bold text-neutral-600">VRP:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.vrp)}</span>
+                      <span className="font-bold text-neutral-600">Periculosidade:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.periculosidade)}</span>
+                      <span className="font-bold text-neutral-600">Ad. Noturno:</span><span className="font-mono font-bold text-right">{fmt(calcResult.pagamento?.adicional_noturno)}</span>
+                    </div>
+                  </div>
+
+                  {calcResult.resultado?.margem_pct !== undefined && (
+                    <div className={`p-3 rounded-lg border text-center ${calcResult.resultado.margem_pct >= 20 ? "bg-green-50 border-green-200" : calcResult.resultado.margem_pct >= 0 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"}`}>
+                      <p className="text-[9px] font-black uppercase text-neutral-500">Margem</p>
+                      <p className="text-2xl font-black font-mono">{calcResult.resultado.margem_pct.toFixed(1)}%</p>
+                    </div>
+                  )}
+
+                  <button onClick={handleSaveBoletim} disabled={saveBoletimMutation.isPending} data-testid="button-save-boletim"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50">
+                    {saveBoletimMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                    Salvar Boletim de Medição
+                  </button>
+                </div>
+              </Card>
+            )}
+
+            <Card className="p-5 border-neutral-200 shadow-sm">
+              <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} /> Histórico de Boletins</h4>
+              {sortedBillings.length === 0 ? (
+                <div className="p-8 text-center"><Calculator size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhum boletim gerado</p></div>
+              ) : (
+                <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                  {sortedBillings.slice(0, 25).map((b: any) => (
+                    <div key={b.id} className="p-3 bg-neutral-50 rounded-lg border border-neutral-100 hover:bg-neutral-100 transition-colors cursor-pointer" onClick={() => setViewBoletim(b)} data-testid={`card-billing-${b.id}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span>
+                        <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR")}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-neutral-600 truncate">{b.client_name || "Sem cliente"} {b.origem && b.destino ? `· ${b.origem}→${b.destino}` : ""}</span>
+                        <div className="flex gap-3">
+                          <span className="text-[10px] font-black font-mono text-green-600">{fmt(Number(b.fat_total))}</span>
+                          <span className={`text-[10px] font-black font-mono ${Number(b.resultado_liquido) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(b.resultado_liquido))}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        {viewBoletim && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setViewBoletim(null)}>
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-testid="modal-view-boletim">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-neutral-800 uppercase text-xs tracking-widest">Boletim {viewBoletim.boletim_numero}</h3>
+                <button onClick={() => setViewBoletim(null)}><X size={20} className="text-neutral-400" /></button>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Cliente</p><p className="text-xs font-bold">{viewBoletim.client_name || "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigilante</p><p className="text-xs font-bold">{viewBoletim.vigilante_name || "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Rota</p><p className="text-xs font-bold">{viewBoletim.origem && viewBoletim.destino ? `${viewBoletim.origem} → ${viewBoletim.destino}` : "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">KM Total</p><p className="text-xs font-mono font-bold">{viewBoletim.km_total} km</p></div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-green-50 rounded-lg text-center"><p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p><p className="text-sm font-black font-mono text-green-700">{fmt(Number(viewBoletim.fat_total))}</p></div>
+                  <div className="p-3 bg-red-50 rounded-lg text-center"><p className="text-[9px] font-black text-red-700 uppercase">Pag. Vig.</p><p className="text-sm font-black font-mono text-red-700">{fmt(Number(viewBoletim.pag_total))}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Lucro</p><p className={`text-sm font-black font-mono ${Number(viewBoletim.resultado_liquido) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(viewBoletim.resultado_liquido))}</p></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Placa Viatura</p><p className="text-xs font-mono font-bold">{viewBoletim.placa_viatura || "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Placa Escoltado</p><p className="text-xs font-mono font-bold">{viewBoletim.placa_escoltado || "—"}</p></div>
+                </div>
+                <div className={`p-3 rounded-lg text-center ${Number(viewBoletim.margem_percentual) >= 20 ? "bg-green-50" : Number(viewBoletim.margem_percentual) >= 0 ? "bg-amber-50" : "bg-red-50"}`}>
+                  <p className="text-[9px] font-black uppercase text-neutral-500">Margem</p>
+                  <p className="text-xl font-black font-mono">{Number(viewBoletim.margem_percentual || 0).toFixed(1)}%</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6" data-testid="page-financeiro">
@@ -830,6 +1118,7 @@ export default function FinanceiroPage() {
         {activeStep === "CONFERENCIA" && renderConferencia()}
         {activeStep === "RELATORIO" && renderRelatorio()}
         {activeStep === "FECHAMENTO" && renderFechamento()}
+        {activeStep === "BOLETIM" && renderBoletim()}
 
         {isFormOpen && (
           <TransactionFormModal
