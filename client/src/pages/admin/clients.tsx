@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
+import { generateContractPDF } from "@/lib/contractPdf";
 
 const fmt = (val: number | null | undefined) => {
   if (val === null || val === undefined) return "R$ 0,00";
@@ -956,6 +957,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                     <p className="text-[10px] text-neutral-500">Prestação de Serviços de Escolta Armada</p>
                   </div>
                   <div className="flex gap-1">
+                    <button onClick={async () => { try { await generateContractPDF(sc); toast({ title: "Contrato gerado", description: "O download do PDF foi iniciado." }); } catch { toast({ title: "Erro ao gerar contrato", variant: "destructive" }); } }} title="Baixar PDF do Contrato" className="p-1.5 rounded hover:bg-blue-50" data-testid={`button-download-contract-${sc.id}`}><FileDown size={14} className="text-blue-500" /></button>
                     <button onClick={() => { setEditingSC(sc); setShowContractModal(true); }} className="p-1.5 rounded hover:bg-neutral-100"><Edit size={14} className="text-neutral-500" /></button>
                     <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>
                   </div>
