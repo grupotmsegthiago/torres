@@ -2347,6 +2347,74 @@ Para CPF, formate como 000.000.000-00.`
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
     }
 
+    if (nextStep === "encerrada") {
+      try {
+        const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+        const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
+        const kmFinalPhoto = photos.find(p => p.step === "km_final");
+        const kmInicial = kmSaidaPhoto?.kmValue || 0;
+        const kmFinal = kmFinalPhoto?.kmValue || 0;
+
+        const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
+        const startTime = so.missionStartedAt ? new Date(so.missionStartedAt).toTimeString().slice(0, 5) : undefined;
+        const endTime = updates.completedDate ? new Date(updates.completedDate).toTimeString().slice(0, 5) : undefined;
+
+        let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+
+        if (so.clientId) {
+          const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).limit(1);
+          if (clientContracts?.length) contrato = clientContracts[0];
+        }
+
+        if (kmFinal > kmInicial) {
+          const resultado = calcularEscolta({
+            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+            horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+            horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+          });
+
+          const client = so.clientId ? await storage.getClient(so.clientId) : null;
+          const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+
+          await supabaseAdmin.from("escort_billings").insert({
+            service_order_id: serviceOrderId,
+            client_id: so.clientId, client_name: client?.name || "—",
+            contract_id: contrato.id || null,
+            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+            km_carregado: resultado.km_carregado, km_total: resultado.km_total,
+            km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
+            km_excedente: resultado.km_excedente,
+            horario_agendado: scheduledTime || null,
+            horario_inicio: startTime || null, horario_fim: endTime || null,
+            horario_inicio_considerado: resultado.horario_inicio_considerado,
+            horas_missao: resultado.horas_trabalhadas, horas_trabalhadas: resultado.horas_trabalhadas,
+            horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
+            fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
+            fat_km_vazio: resultado.faturamento.km_vazio,
+            fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
+            fat_diaria: resultado.fat_pernoite, fat_adicional_noturno: resultado.fat_adicional_noturno,
+            fat_total: resultado.fat_total,
+            valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
+            pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
+            pag_adicional_noturno: resultado.pag_adicional_noturno,
+            pag_reembolsos: resultado.pag_reembolsos, pag_total: resultado.pag_total,
+            resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
+            margem_percentual: resultado.resultado.margem_pct,
+            vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
+            origem: so.origin || null, destino: so.destination || null,
+            placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
+            placa_escoltado: so.escortedVehiclePlate || null,
+            motorista_escoltado: so.escortedDriverName || null,
+            data_missao: so.scheduledDate || new Date().toISOString(),
+            status: "A_VERIFICAR", created_by: user.name,
+          });
+        }
+      } catch (billingErr: any) {
+        console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
+      }
+    }
+
     res.json(updated);
   });
 
@@ -3650,10 +3718,30 @@ Regras:
 
   // ==================== ESCORT CALCULATION ENGINE ====================
 
+  function calcularInicioCobranca(agendado?: string, chegadaReal?: string): { inicio_considerado: string; usou_agendado: boolean } {
+    if (!agendado && !chegadaReal) return { inicio_considerado: "00:00", usou_agendado: false };
+    if (!agendado) return { inicio_considerado: chegadaReal!, usou_agendado: false };
+    if (!chegadaReal) return { inicio_considerado: agendado, usou_agendado: true };
+    const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+    const minAg = toMin(agendado);
+    const minReal = toMin(chegadaReal);
+    if (minReal <= minAg) return { inicio_considerado: agendado, usou_agendado: true };
+    return { inicio_considerado: chegadaReal, usou_agendado: false };
+  }
+
+  function calcularHorasTrabalhadas(inicio: string, fim?: string): number {
+    if (!fim) return 0;
+    const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+    let diff = toMin(fim) - toMin(inicio);
+    if (diff < 0) diff += 24 * 60;
+    return Math.round((diff / 60) * 100) / 100;
+  }
+
   function calcularEscolta(dados: {
     km_inicial: number; km_final: number; km_vazio: number;
     horas_missao: number; horas_estadia: number; teve_pernoite: boolean;
     horario_inicio?: string; horario_fim?: string;
+    horario_agendado?: string;
     despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
     contrato: {
       valor_km_carregado: number; valor_km_vazio: number; franquia_minima_km: number;
@@ -3662,26 +3750,39 @@ Regras:
       adicional_periculosidade_pct: number; periculosidade_horas_limite: number;
     };
   }) {
-    const { km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
+    const { km_inicial, km_final, km_vazio, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
 
     if (km_final < km_inicial) throw new Error("KM final não pode ser menor que KM inicial");
 
+    const { inicio_considerado, usou_agendado } = calcularInicioCobranca(horario_agendado, horario_inicio);
+    const horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
+    const horas_missao = horas_trabalhadas_calc > 0 ? horas_trabalhadas_calc : dados.horas_missao;
+
     const km_total = km_final - km_inicial;
     const km_carregado = Math.max(0, km_total - km_vazio);
-    const km_faturado_carregado = Math.max(km_carregado, contrato.franquia_minima_km);
+
+    const km_franquia = contrato.franquia_minima_km;
+    const km_excedente = Math.max(0, km_carregado - km_franquia);
+    const km_faturado_carregado = Math.max(km_carregado, km_franquia);
     const require_photo = km_total > 500;
 
     const isNoturno = (() => {
-      if (!horario_inicio && !horario_fim) return false;
-      const parseHour = (t: string) => { const [h] = t.split(":").map(Number); return h; };
-      if (horario_inicio) { const h = parseHour(horario_inicio); if (h >= 22 || h < 5) return true; }
-      if (horario_fim) { const h = parseHour(horario_fim); if (h >= 22 || h < 5) return true; }
-      return false;
+      const checkHour = (t?: string) => {
+        if (!t) return false;
+        const h = parseInt(t.split(":")[0]);
+        return h >= 22 || h < 5;
+      };
+      return checkHour(inicio_considerado) || checkHour(horario_fim);
     })();
 
     const despesas_total = despesas_pedagio + despesas_combustivel + despesas_outras;
 
-    let fat_km = (km_faturado_carregado * contrato.valor_km_carregado) + (km_vazio * contrato.valor_km_vazio);
+    const fat_km_carregado = km_faturado_carregado * contrato.valor_km_carregado;
+    const fat_km_vazio = km_vazio * contrato.valor_km_vazio;
+    const fat_km = fat_km_carregado + fat_km_vazio;
+    const valor_franquia = Math.min(km_carregado, km_franquia) * contrato.valor_km_carregado;
+    const valor_km_extra = km_excedente * contrato.valor_km_carregado;
+
     const fat_estadia = horas_estadia * contrato.valor_hora_estadia;
     const fat_pernoite = teve_pernoite ? contrato.valor_diaria : 0;
     let fat_adicional_noturno = 0;
@@ -3704,14 +3805,32 @@ Regras:
     const pag_reembolsos = despesas_total;
     const pag_total = pag_vrp + pag_periculosidade + pag_adicional_noturno + pag_reembolsos;
 
+    const resultado_bruto = fat_total - pag_total;
+    const resultado_liquido = resultado_bruto - despesas_total;
+    const margem_pct = fat_total > 0 ? (resultado_liquido / fat_total) * 100 : 0;
+
+    const r = (v: number) => Math.round(v * 100) / 100;
+
     return {
       km_carregado, km_vazio, km_total, km_faturado: km_faturado_carregado, require_photo, is_noturno: isNoturno,
-      fat_km: Math.round(fat_km * 100) / 100, fat_estadia: Math.round(fat_estadia * 100) / 100,
-      fat_pernoite, fat_adicional_noturno: Math.round(fat_adicional_noturno * 100) / 100,
-      fat_total: Math.round(fat_total * 100) / 100,
-      pag_vrp, pag_periculosidade: Math.round(pag_periculosidade * 100) / 100,
-      pag_adicional_noturno: Math.round(pag_adicional_noturno * 100) / 100,
-      pag_reembolsos, pag_total: Math.round(pag_total * 100) / 100,
+      km_franquia, km_excedente: r(km_excedente), valor_franquia: r(valor_franquia), valor_km_extra: r(valor_km_extra),
+      horario_inicio_considerado: inicio_considerado, usou_agendado, horas_trabalhadas: r(horas_missao),
+      faturamento: {
+        km_carregado: r(fat_km_carregado), km_vazio: r(fat_km_vazio),
+        estadia: r(fat_estadia), diaria: fat_pernoite, adicional_noturno: r(fat_adicional_noturno),
+        total: r(fat_total),
+      },
+      pagamento: {
+        vrp: pag_vrp, periculosidade: r(pag_periculosidade),
+        adicional_noturno: r(pag_adicional_noturno), reembolsos: pag_reembolsos,
+        total: r(pag_total),
+      },
+      despesas: { pedagio: despesas_pedagio, combustivel: despesas_combustivel, outras: despesas_outras, total: despesas_total },
+      resultado: { bruto: r(resultado_bruto), liquido: r(resultado_liquido), margem_pct: r(margem_pct) },
+      fat_km: r(fat_km), fat_estadia: r(fat_estadia), fat_pernoite,
+      fat_adicional_noturno: r(fat_adicional_noturno), fat_total: r(fat_total),
+      pag_vrp, pag_periculosidade: r(pag_periculosidade),
+      pag_adicional_noturno: r(pag_adicional_noturno), pag_reembolsos, pag_total: r(pag_total),
     };
   }
 
@@ -3748,12 +3867,13 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  // Escort Calculation (simulate)
   app.post("/api/escort/calculate", requireAuth, async (req, res) => {
     try {
-      const { contract_id, km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, despesas_pedagio, despesas_combustivel, despesas_outras } = req.body;
+      const { contract_id, km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, is_noturno, despesas } = req.body;
 
-      if (km_final < km_inicial) return res.status(400).json({ message: "KM final não pode ser menor que KM inicial" });
+      const kmIni = Number(km_inicial || 0);
+      const kmFin = Number(km_final || 0);
+      if (kmFin < kmIni) return res.status(400).json({ message: "KM final não pode ser menor que KM inicial" });
 
       let contrato: any;
       if (contract_id) {
@@ -3764,12 +3884,14 @@ Regras:
         contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
       }
 
+      const desp = despesas || {};
       const resultado = calcularEscolta({
-        km_inicial: Number(km_inicial || 0), km_final: Number(km_final || 0), km_vazio: Number(km_vazio || 0),
+        km_inicial: kmIni, km_final: kmFin, km_vazio: Number(km_vazio || 0),
         horas_missao: Number(horas_missao || 0), horas_estadia: Number(horas_estadia || 0),
-        teve_pernoite: !!teve_pernoite, horario_inicio, horario_fim,
-        despesas_pedagio: Number(despesas_pedagio || 0), despesas_combustivel: Number(despesas_combustivel || 0),
-        despesas_outras: Number(despesas_outras || 0), contrato,
+        teve_pernoite: !!teve_pernoite, horario_inicio, horario_fim, horario_agendado,
+        despesas_pedagio: Number(desp.pedagio || despesas_pedagio || 0),
+        despesas_combustivel: Number(desp.combustivel || despesas_combustivel || 0),
+        despesas_outras: Number(desp.outras || despesas_outras || 0), contrato,
       });
 
       res.json({ status: "sucesso", ...resultado, require_foto_hodometro: resultado.require_photo });
@@ -3826,6 +3948,122 @@ Regras:
       const { data, error } = await supabaseAdmin.from("escort_billings").update(req.body).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/escort/billings/submit-os", requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const body = req.body;
+
+      const kmIni = Number(body.km_inicial || 0);
+      const kmFin = Number(body.km_final || 0);
+      if (kmFin < kmIni) return res.status(400).json({ message: "KM final não pode ser menor que KM inicial" });
+
+      let clientId = body.client_id;
+      let clientName = body.client_name;
+      if (!clientId && body.route_id) {
+        const { data: route } = await supabaseAdmin.from("escort_routes").select("client_id, client_name").eq("id", body.route_id).single();
+        if (route?.client_id) { clientId = route.client_id; clientName = clientName || route.client_name; }
+      }
+
+      let contrato: any = null;
+      if (body.contract_id) {
+        const { data } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", body.contract_id).single();
+        contrato = data;
+      }
+      if (!contrato) {
+        contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+      }
+
+      const resultado = calcularEscolta({
+        km_inicial: kmIni, km_final: kmFin, km_vazio: Number(body.km_vazio || 0),
+        horas_missao: Number(body.horas_missao || 0), horas_estadia: Number(body.horas_estadia || 0),
+        teve_pernoite: !!body.teve_pernoite, horario_inicio: body.horario_inicio, horario_fim: body.horario_fim,
+        horario_agendado: body.horario_agendado,
+        despesas_pedagio: Number(body.despesas_pedagio || 0), despesas_combustivel: Number(body.despesas_combustivel || 0),
+        despesas_outras: Number(body.despesas_outras || 0), contrato,
+      });
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+        client_id: clientId, client_name: clientName,
+        contract_id: body.contract_id, route_id: body.route_id,
+        service_order_id: body.service_order_id,
+        km_inicial: kmIni, km_final: kmFin, km_vazio: Number(body.km_vazio || 0),
+        km_carregado: resultado.km_carregado, km_total: resultado.km_total,
+        km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
+        km_excedente: resultado.km_excedente,
+        horario_agendado: body.horario_agendado || null,
+        horario_inicio: body.horario_inicio || null, horario_fim: body.horario_fim || null,
+        horario_inicio_considerado: resultado.horario_inicio_considerado,
+        horas_missao: resultado.horas_trabalhadas, horas_estadia: Number(body.horas_estadia || 0),
+        horas_trabalhadas: resultado.horas_trabalhadas,
+        teve_pernoite: !!body.teve_pernoite, is_noturno: resultado.is_noturno,
+        despesas_pedagio: Number(body.despesas_pedagio || 0), despesas_combustivel: Number(body.despesas_combustivel || 0),
+        despesas_outras: Number(body.despesas_outras || 0),
+        desp_total: resultado.despesas.total,
+        fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
+        fat_km_vazio: resultado.faturamento.km_vazio,
+        fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
+        fat_diaria: resultado.fat_pernoite,
+        fat_adicional_noturno: resultado.fat_adicional_noturno, fat_total: resultado.fat_total,
+        valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
+        pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
+        pag_adicional_noturno: resultado.pag_adicional_noturno, pag_reembolsos: resultado.pag_reembolsos,
+        pag_total: resultado.pag_total,
+        resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
+        margem_percentual: resultado.resultado.margem_pct,
+        vigilante_id: body.vigilante_id || user.id, vigilante_name: body.vigilante_name || user.name,
+        origem: body.origem, destino: body.destino,
+        placa_viatura: body.placa_viatura, placa_escoltado: body.placa_escoltado,
+        motorista_escoltado: body.motorista_escoltado,
+        data_missao: body.data_missao || new Date().toISOString(),
+        observacoes: body.observacoes, notas: body.notas,
+        status: "A_VERIFICAR", created_by: user.name,
+      }).select().single();
+      if (error) throw error;
+
+      res.json({ ...data, resumo_calculo: resultado });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/escort/billings/:id/revisar", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { acao, motivo_rejeicao } = req.body;
+
+      if (!["APROVADA", "REJEITADA"].includes(acao)) {
+        return res.status(400).json({ message: "Ação deve ser APROVADA ou REJEITADA" });
+      }
+
+      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (billing.status !== "A_VERIFICAR") return res.status(400).json({ message: "Somente OS com status 'A Verificar' podem ser revisadas" });
+
+      const updateData: any = {
+        status: acao === "APROVADA" ? "APROVADA" : "REJEITADA",
+        revisado_por: user.name,
+        revisado_em: new Date().toISOString(),
+      };
+      if (acao === "REJEITADA" && motivo_rejeicao) updateData.motivo_rejeicao = motivo_rejeicao;
+
+      if (acao === "APROVADA") {
+        const now = new Date();
+        updateData.boletim_numero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
+        updateData.boletim_gerado = true;
+      }
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/escort/billings/pendentes", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_billings").select("*").eq("status", "A_VERIFICAR").order("created_at", { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

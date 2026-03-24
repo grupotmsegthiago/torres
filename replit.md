@@ -24,9 +24,17 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 -   **Audit System:** Comprehensive tracking of vigilante actions, page views, and security events (e.g., screenshot attempts, tab visibility changes) with an admin dashboard for monitoring and alerting.
 -   **Financial Module:** Manages accounts payable/receivable with transaction CRUD, installment support, reporting, and category breakdown.
 -   **Escort Calculation Engine:** Manages escort billing, client-specific price tables, frequent routes, and generates numbered Mission Bulletins (Boletim de Missão) with detailed calculation rules (KM, minimums, nocturnal/hazardous additions).
+-   **OS Logic (Ordem de Serviço):** Implements the complete OS processing flow:
+    - **Status Flow:** Funcionário fills OS data → status "A_VERIFICAR" → Administrativo reviews → "APROVADA" (auto-generates BO) or "REJEITADA" (solicita correção com motivo).
+    - **Horário de Início Rule:** `Inicio_Missao = max(Horario_Agendado, Horario_Chegada_Real)` — if vigilante arrives early, scheduled time is used; if late, real arrival time is used.
+    - **Franchise-Based Billing:** KM excedente is calculated as `max(0, KM_Carregado - Franquia_Cliente)`. Value breakdown shows franchise vs excess KM charges.
+    - **Auto-Submit on Mission Close:** When a mission reaches "encerrada" status, the system automatically creates an `escort_billings` record with status "A_VERIFICAR", pulling KM from mission photos and times from mission lifecycle.
+    - **Admin Review Panel:** In Financeiro > Boletim Medição tab, pending OS ("A Verificar") are displayed with full summary (horário considerado, horas trabalhadas, KM, franquia, excedente, valor total) and Aprovar/Rejeitar buttons.
+    - **API Endpoints:** `POST /api/escort/billings/submit-os` (mobile submit), `POST /api/escort/billings/:id/revisar` (admin review), `GET /api/escort/billings/pendentes` (pending list).
+    - **DB Columns Added:** `horario_agendado`, `horario_inicio_considerado`, `horas_trabalhadas`, `km_franquia`, `km_excedente`, `valor_franquia`, `valor_km_extra`, `revisado_por`, `revisado_em`, `motivo_rejeicao`, margin/result fields.
 -   **Client "Pasta" System:** `/admin/calculo-escolta` is a client-centric management page. Selecting a client opens their "pasta" with 3 tabs: Contrato de Prestação de Serviço (with validity/signature control), Tabela de Preços/Rotas (price table + frequent routes per client), and Relatório de OS (day/fortnight/month filter with billing totals).
 -   **Service Contracts:** Full CRUD for `service_contracts` table with vigência (indeterminado/determinado), multa/juros mora, aviso prévio, armamento, and contratante details.
--   **Boletim de Medição in Financeiro:** The escort calculator and billing history are available as the 6th tab ("Boletim Medição") in `/admin/financeiro`, allowing financial staff to calculate and track escort billing within the financial module.
+-   **Boletim de Medição in Financeiro:** The escort calculator and billing history are available as the 6th tab ("Boletim Medição") in `/admin/financeiro`, allowing financial staff to calculate and track escort billing within the financial module. Includes "Horário Agendado" field for start time rule, franchise breakdown display, and OS review panel.
 
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.

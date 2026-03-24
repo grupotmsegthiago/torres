@@ -5,6 +5,7 @@ import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowDownCircle, ArrowUpCircle, Plus, Search, Edit, Trash2,
@@ -68,6 +69,7 @@ const formatCurrency = (val: number | null | undefined) => {
   if (val === null || val === undefined) return "R$ 0,00";
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
+const fmt = formatCurrency;
 
 const STEPS: { id: Step; label: string; icon: typeof ArrowDownCircle; description: string; number: number }[] = [
   { id: "PAGAR", label: "Contas a Pagar", icon: ArrowDownCircle, description: "Despesas e pagamentos", number: 1 },
@@ -311,7 +313,7 @@ export default function FinanceiroPage() {
   const [closingNotes, setClosingNotes] = useState("");
   const [closingConfirmed, setClosingConfirmed] = useState(false);
   const [calcResult, setCalcResult] = useState<any>(null);
-  const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+  const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
   const [viewBoletim, setViewBoletim] = useState<any>(null);
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
@@ -346,7 +348,7 @@ export default function FinanceiroPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
       toast({ title: "Boletim salvo com sucesso", description: "BO gerado automaticamente" });
       setCalcResult(null);
-      setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
+      setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", teve_pernoite: false, horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", despesas_combustivel: "0", despesas_outras: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
@@ -816,12 +818,6 @@ export default function FinanceiroPage() {
   };
 
   const handleCalcEscort = () => {
-    const isNoturno = (() => {
-      if (!boCalc.horario_inicio) return false;
-      const h = parseInt(boCalc.horario_inicio.split(":")[0]);
-      return h >= 22 || h < 5;
-    })();
-    const contract = escortContracts.find(c => c.id === boCalc.contract_id);
     calcEscortMutation.mutate({
       km_inicial: parseFloat(boCalc.km_inicial) || 0,
       km_final: parseFloat(boCalc.km_final) || 0,
@@ -829,7 +825,9 @@ export default function FinanceiroPage() {
       horas_missao: parseFloat(boCalc.horas_missao) || 0,
       horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
       teve_pernoite: boCalc.teve_pernoite,
-      is_noturno: isNoturno,
+      horario_agendado: boCalc.horario_agendado || undefined,
+      horario_inicio: boCalc.horario_inicio || undefined,
+      horario_fim: boCalc.horario_fim || undefined,
       contract_id: boCalc.contract_id || undefined,
       despesas: { pedagio: parseFloat(boCalc.despesas_pedagio) || 0, combustivel: parseFloat(boCalc.despesas_combustivel) || 0, outras: parseFloat(boCalc.despesas_outras) || 0 },
     });
@@ -938,7 +936,8 @@ export default function FinanceiroPage() {
                   <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
                     <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 flex items-center gap-1"><Clock size={12} /> Horários</p>
                     <div className="space-y-2">
-                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Início</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_inicio} onChange={e => setBo("horario_inicio", e.target.value)} data-testid="input-bo-hora-ini" /></div>
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Agendado</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_agendado} onChange={e => setBo("horario_agendado", e.target.value)} data-testid="input-bo-hora-ag" /></div>
+                      <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Chegada Real</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_inicio} onChange={e => setBo("horario_inicio", e.target.value)} data-testid="input-bo-hora-ini" /></div>
                       <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Fim</label><input type="time" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.horario_fim} onChange={e => setBo("horario_fim", e.target.value)} /></div>
                     </div>
                   </div>
@@ -955,7 +954,7 @@ export default function FinanceiroPage() {
                   </div>
                 </div>
 
-                <button onClick={handleCalcEscort} disabled={calcEscortMutation.isPending || !boCalc.km_inicial || !boCalc.km_final || !boCalc.horas_missao} data-testid="button-calc-escort"
+                <button onClick={handleCalcEscort} disabled={calcEscortMutation.isPending || !boCalc.km_inicial || !boCalc.km_final || (!boCalc.horas_missao && !boCalc.horario_inicio)} data-testid="button-calc-escort"
                   className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-30 disabled:cursor-not-allowed">
                   {calcEscortMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Calculator size={18} />}
                   Calcular Escolta
@@ -969,10 +968,37 @@ export default function FinanceiroPage() {
               <Card className="p-5 border-green-200 shadow-md bg-gradient-to-br from-green-50 to-white" data-testid="card-calc-result">
                 <h4 className="text-sm font-black text-green-800 uppercase mb-4 flex items-center gap-2"><CheckCircle2 size={16} /> Resultado do Cálculo</h4>
                 <div className="space-y-4">
+                  {calcResult.horario_inicio_considerado && (
+                    <div className={`p-3 rounded-lg border ${calcResult.usou_agendado ? "bg-blue-50 border-blue-200" : "bg-amber-50 border-amber-200"}`}>
+                      <p className="text-[9px] font-black uppercase mb-1 text-neutral-500">Horário Considerado para Cobrança</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-black font-mono">{calcResult.horario_inicio_considerado}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${calcResult.usou_agendado ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                          {calcResult.usou_agendado ? "Horário Agendado" : "Chegada Real (atrasou)"}
+                        </span>
+                      </div>
+                      {calcResult.horas_trabalhadas > 0 && (
+                        <p className="text-[10px] font-bold text-neutral-500 mt-1">Horas trabalhadas: <span className="font-mono">{calcResult.horas_trabalhadas}h</span></p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-3">
                     <div className="p-3 bg-white rounded-lg border border-green-100 text-center"><p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p><p className="text-lg font-black text-green-700 font-mono">{fmt(calcResult.faturamento?.total)}</p></div>
                     <div className="p-3 bg-white rounded-lg border border-red-100 text-center"><p className="text-[9px] font-black text-red-700 uppercase">Pagamento</p><p className="text-lg font-black text-red-700 font-mono">{fmt(calcResult.pagamento?.total)}</p></div>
                     <div className="p-3 bg-white rounded-lg border border-neutral-200 text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Lucro</p><p className={`text-lg font-black font-mono ${(calcResult.resultado?.liquido || 0) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(calcResult.resultado?.liquido)}</p></div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-neutral-100">
+                    <p className="text-[9px] font-black text-neutral-400 uppercase mb-2">Franquia & KM</p>
+                    <div className="grid grid-cols-2 gap-1 text-[10px]">
+                      <span className="font-bold text-neutral-600">KM Total:</span><span className="font-mono font-bold text-right">{calcResult.km_total} km</span>
+                      <span className="font-bold text-neutral-600">KM Carregado:</span><span className="font-mono font-bold text-right">{calcResult.km_carregado} km</span>
+                      <span className="font-bold text-neutral-600">Franquia:</span><span className="font-mono font-bold text-right">{calcResult.km_franquia} km</span>
+                      <span className="font-bold text-neutral-600">KM Excedente:</span><span className={`font-mono font-bold text-right ${calcResult.km_excedente > 0 ? "text-red-600" : ""}`}>{calcResult.km_excedente} km</span>
+                      <span className="font-bold text-neutral-600">Valor Franquia:</span><span className="font-mono font-bold text-right">{fmt(calcResult.valor_franquia)}</span>
+                      {calcResult.km_excedente > 0 && (<><span className="font-bold text-red-600">Valor KM Extra:</span><span className="font-mono font-bold text-right text-red-600">{fmt(calcResult.valor_km_extra)}</span></>)}
+                    </div>
                   </div>
 
                   <div className="bg-white p-3 rounded-lg border border-neutral-100">
@@ -1011,6 +1037,81 @@ export default function FinanceiroPage() {
               </Card>
             )}
 
+            {(() => {
+              const pendentes = escortBillings.filter((b: any) => b.status === "A_VERIFICAR");
+              if (pendentes.length === 0) return null;
+              return (
+                <Card className="p-5 border-amber-200 shadow-md bg-gradient-to-br from-amber-50 to-white" data-testid="panel-os-pendentes">
+                  <h4 className="text-sm font-black text-amber-800 uppercase mb-4 flex items-center gap-2"><AlertTriangle size={16} /> OS Pendentes de Revisão ({pendentes.length})</h4>
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                    {pendentes.map((b: any) => (
+                      <div key={b.id} className="p-4 bg-white rounded-xl border border-amber-200 hover:border-amber-300 transition-colors" data-testid={`card-pendente-${b.id}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-amber-100 text-amber-800 text-[10px] font-black border-0">A VERIFICAR</Badge>
+                            <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR")}</span>
+                          </div>
+                          <span className="text-[10px] font-bold text-neutral-500">{b.vigilante_name || "—"}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <div className="bg-neutral-50 p-2 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Cliente</p><p className="text-[10px] font-bold">{b.client_name || "—"}</p></div>
+                          <div className="bg-neutral-50 p-2 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Rota</p><p className="text-[10px] font-bold">{b.origem && b.destino ? `${b.origem} → ${b.destino}` : "—"}</p></div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 mb-3">
+                          <div className="bg-blue-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-blue-600 uppercase">H. Agendado</p><p className="text-[10px] font-mono font-bold">{b.horario_agendado || "—"}</p></div>
+                          <div className="bg-blue-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-blue-600 uppercase">Início Cons.</p><p className="text-[10px] font-mono font-bold">{b.horario_inicio_considerado || b.horario_inicio || "—"}</p></div>
+                          <div className="bg-blue-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-blue-600 uppercase">Horas Trab.</p><p className="text-[10px] font-mono font-bold">{b.horas_trabalhadas || b.horas_missao || 0}h</p></div>
+                          <div className="bg-blue-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-blue-600 uppercase">KM Total</p><p className="text-[10px] font-mono font-bold">{b.km_total || 0} km</p></div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                          <div className="bg-neutral-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-neutral-400 uppercase">Franquia</p><p className="text-[10px] font-mono font-bold">{b.km_franquia || 0} km</p></div>
+                          <div className={`p-2 rounded-lg text-center ${Number(b.km_excedente) > 0 ? "bg-red-50" : "bg-neutral-50"}`}><p className="text-[9px] font-black text-neutral-400 uppercase">KM Excedente</p><p className={`text-[10px] font-mono font-bold ${Number(b.km_excedente) > 0 ? "text-red-600" : ""}`}>{b.km_excedente || 0} km</p></div>
+                          <div className="bg-green-50 p-2 rounded-lg text-center"><p className="text-[9px] font-black text-green-700 uppercase">Valor Total</p><p className="text-[10px] font-mono font-bold text-green-700">{fmt(Number(b.fat_total))}</p></div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await apiRequest("POST", `/api/escort/billings/${b.id}/revisar`, { acao: "APROVADA" });
+                                queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+                                toast({ title: "OS Aprovada", description: "Boletim gerado automaticamente." });
+                              } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+                            }}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
+                            data-testid={`button-aprovar-${b.id}`}
+                          >
+                            <CheckCircle2 size={14} /> Aprovar
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const motivo = prompt("Motivo da rejeição:");
+                              if (!motivo) return;
+                              try {
+                                await apiRequest("POST", `/api/escort/billings/${b.id}/revisar`, { acao: "REJEITADA", motivo_rejeicao: motivo });
+                                queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+                                toast({ title: "OS Rejeitada", description: "Correção solicitada." });
+                              } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+                            }}
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
+                            data-testid={`button-rejeitar-${b.id}`}
+                          >
+                            <X size={14} /> Solicitar Correção
+                          </button>
+                          <button
+                            onClick={() => setViewBoletim(b)}
+                            className="bg-neutral-200 hover:bg-neutral-300 text-neutral-700 font-black uppercase text-[10px] tracking-widest py-2.5 px-3 rounded-lg flex items-center justify-center gap-1 transition-colors"
+                            data-testid={`button-detalhe-${b.id}`}
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })()}
+
             <Card className="p-5 border-neutral-200 shadow-sm">
               <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} /> Histórico de Boletins</h4>
               {sortedBillings.length === 0 ? (
@@ -1020,7 +1121,12 @@ export default function FinanceiroPage() {
                   {sortedBillings.slice(0, 25).map((b: any) => (
                     <div key={b.id} className="p-3 bg-neutral-50 rounded-lg border border-neutral-100 hover:bg-neutral-100 transition-colors cursor-pointer" onClick={() => setViewBoletim(b)} data-testid={`card-billing-${b.id}`}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span>
+                          {b.status === "A_VERIFICAR" && <Badge className="bg-amber-100 text-amber-800 text-[9px] font-black border-0">Pendente</Badge>}
+                          {b.status === "APROVADA" && <Badge className="bg-green-100 text-green-800 text-[9px] font-black border-0">Aprovada</Badge>}
+                          {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Rejeitada</Badge>}
+                        </div>
                         <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR")}</span>
                       </div>
                       <div className="flex items-center justify-between">
