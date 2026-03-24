@@ -1,12 +1,13 @@
 import { eq, desc, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
-  users, clients, employees, vehicles, serviceOrders, trips,
+  users, clients, clientVehicles, employees, vehicles, serviceOrders, trips,
   vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
   perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, weaponKits, weaponKitItems, gerenciadoras,
   telemetryEvents,
   type User, type InsertUser,
   type Client, type InsertClient,
+  type ClientVehicle, type InsertClientVehicle,
   type Employee, type InsertEmployee,
   type Vehicle, type InsertVehicle,
   type ServiceOrder, type InsertServiceOrder,
@@ -48,6 +49,13 @@ export interface IStorage {
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined>;
   deleteClient(id: number): Promise<void>;
+
+  getClientVehicles(clientId: number): Promise<ClientVehicle[]>;
+  getClientVehicle(id: number): Promise<ClientVehicle | undefined>;
+  getClientVehicleByPlate(clientId: number, plate: string): Promise<ClientVehicle | undefined>;
+  createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle>;
+  updateClientVehicle(id: number, v: Partial<InsertClientVehicle>): Promise<ClientVehicle | undefined>;
+  deleteClientVehicle(id: number): Promise<void>;
 
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
@@ -231,6 +239,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteClient(id: number): Promise<void> {
     await db.delete(clients).where(eq(clients.id, id));
+  }
+
+  async getClientVehicles(clientId: number): Promise<ClientVehicle[]> {
+    return db.select().from(clientVehicles).where(eq(clientVehicles.clientId, clientId)).orderBy(desc(clientVehicles.createdAt));
+  }
+
+  async getClientVehicle(id: number): Promise<ClientVehicle | undefined> {
+    const [v] = await db.select().from(clientVehicles).where(eq(clientVehicles.id, id));
+    return v;
+  }
+
+  async getClientVehicleByPlate(clientId: number, plate: string): Promise<ClientVehicle | undefined> {
+    const [v] = await db.select().from(clientVehicles).where(sql`${clientVehicles.clientId} = ${clientId} AND UPPER(${clientVehicles.plate}) = UPPER(${plate})`);
+    return v;
+  }
+
+  async createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle> {
+    const [created] = await db.insert(clientVehicles).values(v).returning();
+    return created;
+  }
+
+  async updateClientVehicle(id: number, v: Partial<InsertClientVehicle>): Promise<ClientVehicle | undefined> {
+    const [updated] = await db.update(clientVehicles).set(v).where(eq(clientVehicles.id, id)).returning();
+    return updated;
+  }
+
+  async deleteClientVehicle(id: number): Promise<void> {
+    await db.delete(clientVehicles).where(eq(clientVehicles.id, id));
   }
 
   async getEmployees(): Promise<Employee[]> {

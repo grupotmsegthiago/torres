@@ -13,6 +13,7 @@ import {
   MapPin, Phone, Mail, Calendar, Banknote, BadgeCheck,
   FileText, DollarSign, BarChart3, ChevronLeft, Save,
   Moon, Route, Navigation, ChevronRight, Shield, Edit,
+  Car, Wallet, ClipboardList,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
@@ -68,7 +69,13 @@ interface EscortBilling {
   origem: string | null; destino: string | null; created_at: string;
 }
 
-type ClientTab = "CONTRATO" | "TABELA" | "RELATORIO_OS";
+interface ClientVehicle {
+  id: number; clientId: number; plate: string; model: string | null;
+  brand: string | null; color: string | null; driverName: string | null;
+  driverPhone: string | null; notes: string | null; createdAt: string;
+}
+
+type ClientTab = "VEICULOS" | "TABELA" | "CONTRATO" | "RELATORIO_MISSOES" | "RELATORIO_FATURAMENTO";
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
@@ -694,28 +701,43 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
 
 function ClientPastaView({ client, onBack }: { client: Client; onBack: () => void }) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<ClientTab>("CONTRATO");
+  const [activeTab, setActiveTab] = useState<ClientTab>("VEICULOS");
   const [showContractModal, setShowContractModal] = useState(false);
   const [editingSC, setEditingSC] = useState<ServiceContract | null>(null);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [editingPrice, setEditingPrice] = useState<EscortContract | null>(null);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState<EscortRoute | null>(null);
-  const [osPeriod, setOsPeriod] = useState<"DAY" | "FORTNIGHT" | "MONTH">("MONTH");
+  const [osPeriod, setOsPeriod] = useState<"FORTNIGHT" | "MONTH">("MONTH");
+  const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<ClientVehicle | null>(null);
+  const [vForm, setVForm] = useState({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" });
 
   const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/service-contracts?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: priceContracts = [] } = useQuery<EscortContract[]>({ queryKey: ["/api/escort/contracts"] });
   const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/escort/routes?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: allBillings = [] } = useQuery<EscortBilling[]>({ queryKey: ["/api/escort/billings"] });
+  const { data: clientVehiclesList = [] } = useQuery<ClientVehicle[]>({ queryKey: ["/api/clients", client.id, "vehicles"], queryFn: async () => { const r = await fetch(`/api/clients/${client.id}/vehicles`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
+  const { data: allServiceOrders = [] } = useQuery<any[]>({ queryKey: ["/api/service-orders"], queryFn: async () => { const r = await fetch("/api/service-orders", { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
 
   const clientPrices = priceContracts.filter(c => c.client_id === client.id);
   const clientBillings = allBillings.filter(b => b.client_id === client.id);
+  const clientOrders = allServiceOrders.filter(o => o.clientId === client.id);
 
   const filteredOS = (() => {
     const now = new Date();
     return clientBillings.filter(b => {
       const d = new Date(b.created_at);
-      if (osPeriod === "DAY") return d.toDateString() === now.toDateString();
+      if (osPeriod === "FORTNIGHT") { const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24); return diff <= 15; }
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+  })();
+
+  const filteredMissions = (() => {
+    const now = new Date();
+    return clientOrders.filter(o => {
+      if (o.status !== "concluida" && o.missionStatus !== "encerrada") return false;
+      const d = new Date(o.completedDate || o.createdAt);
       if (osPeriod === "FORTNIGHT") { const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24); return diff <= 15; }
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
@@ -726,10 +748,32 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-contracts"] }); toast({ title: "Contrato excluído" }); },
   });
 
+  const saveVehicleMutation = useMutation({
+    mutationFn: () => {
+      if (editingVehicle) return apiRequest("PATCH", `/api/client-vehicles/${editingVehicle.id}`, vForm);
+      return apiRequest("POST", `/api/clients/${client.id}/vehicles`, vForm);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", client.id, "vehicles"] });
+      toast({ title: editingVehicle ? "Veículo atualizado" : "Veículo cadastrado" });
+      setShowVehicleForm(false); setEditingVehicle(null);
+      setVForm({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteVehicleMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/client-vehicles/${id}`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients", client.id, "vehicles"] }); toast({ title: "Veículo removido" }); },
+    onError: (err: Error) => toast({ title: "Erro ao remover veículo", description: err.message, variant: "destructive" }),
+  });
+
   const TABS: { id: ClientTab; label: string; icon: typeof FileText }[] = [
-    { id: "CONTRATO", label: "Contrato", icon: FileText },
-    { id: "TABELA", label: "Preços / Rotas", icon: DollarSign },
-    { id: "RELATORIO_OS", label: "Relatório de OS", icon: BarChart3 },
+    { id: "VEICULOS", label: "Veículos", icon: Car },
+    { id: "TABELA", label: "Tabelas", icon: DollarSign },
+    { id: "CONTRATO", label: "Contratos", icon: FileText },
+    { id: "RELATORIO_MISSOES", label: "Missões", icon: ClipboardList },
+    { id: "RELATORIO_FATURAMENTO", label: "Faturamento", icon: Wallet },
   ];
 
   const getVigenciaStatus = (sc: ServiceContract) => {
@@ -746,6 +790,9 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     return { label: "Vigente", color: "bg-green-100 text-green-700" };
   };
 
+  const openBillings = clientBillings.filter(b => b.boletim_gerado && !["FATURADO", "PAGO"].includes((b as any).status || ""));
+  const closedBillings = clientBillings.filter(b => ["FATURADO", "PAGO"].includes((b as any).status || ""));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -757,58 +804,85 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-client-${tab.id.toLowerCase()}`}
-              className={`flex items-center gap-2 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap flex-1 justify-center ${
+              className={`flex items-center gap-2 px-3 py-3 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all whitespace-nowrap flex-1 justify-center ${
                 activeTab === tab.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
               }`}>
-              <tab.icon size={16} />
-              {tab.label}
+              <tab.icon size={14} />
+              <span className="hidden md:inline">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {activeTab === "CONTRATO" && (
+      {activeTab === "VEICULOS" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-sm text-neutral-500">Contratos de Prestação de Serviço com validade e controle</p>
-            <Button onClick={() => { setEditingSC(null); setShowContractModal(true); }} className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-service-contract"><Plus size={14} className="mr-1" /> Novo Contrato</Button>
+            <div>
+              <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><Car size={16} /> Veículos do Cliente</h3>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Veículos cadastrados automaticamente nas missões ou manualmente</p>
+            </div>
+            <Button onClick={() => { setEditingVehicle(null); setVForm({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" }); setShowVehicleForm(true); }} className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-client-vehicle"><Plus size={14} className="mr-1" /> Novo Veículo</Button>
           </div>
-          {serviceContracts.length === 0 ? (
-            <Card className="p-12 border-neutral-200 shadow-sm text-center"><FileText size={40} className="mx-auto text-neutral-300 mb-3" /><p className="text-sm font-bold text-neutral-400 uppercase">Nenhum contrato cadastrado para este cliente</p></Card>
-          ) : serviceContracts.map(sc => {
-            const vig = getVigenciaStatus(sc);
-            return (
-              <Card key={sc.id} className="p-5 border-neutral-200 shadow-sm" data-testid={`card-service-contract-${sc.id}`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-sm font-black text-neutral-800 uppercase">{sc.contract_number || "Sem número"}</h4>
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${vig.color}`}>{vig.label}</span>
-                    </div>
-                    <p className="text-[10px] text-neutral-500">Prestação de Serviços de Escolta Armada</p>
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditingSC(sc); setShowContractModal(true); }} className="p-1.5 rounded hover:bg-neutral-100"><Edit size={14} className="text-neutral-500" /></button>
-                    <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>
-                  </div>
-                </div>
+
+          {showVehicleForm && (
+            <Card className="p-5 border-blue-200 shadow-md bg-blue-50/30">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-xs font-black text-neutral-800 uppercase">{editingVehicle ? "Editar Veículo" : "Cadastrar Veículo"}</h4>
+                <button onClick={() => { setShowVehicleForm(false); setEditingVehicle(null); }}><X size={18} className="text-neutral-400" /></button>
+              </div>
+              <form onSubmit={e => { e.preventDefault(); saveVehicleMutation.mutate(); }} className="space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Contratante</p><p className="text-xs font-bold text-neutral-800">{sc.contratante_razao || "—"}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">CNPJ</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.contratante_cnpj || "—"}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Assinatura</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.data_assinatura ? new Date(sc.data_assinatura).toLocaleDateString("pt-BR") : "—"}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigência</p><p className="text-xs font-bold text-neutral-800">{sc.vigencia_tipo === "indeterminado" ? "Indeterminado" : `Até ${sc.vigencia_fim ? new Date(sc.vigencia_fim).toLocaleDateString("pt-BR") : "—"}`}</p></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Placa *</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold uppercase" placeholder="ABC1D23" value={vForm.plate} onChange={e => setVForm(p => ({ ...p, plate: e.target.value.toUpperCase() }))} required data-testid="input-vehicle-plate" /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Modelo</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" placeholder="Sprinter" value={vForm.model} onChange={e => setVForm(p => ({ ...p, model: e.target.value }))} data-testid="input-vehicle-model" /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Marca</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" placeholder="Mercedes" value={vForm.brand} onChange={e => setVForm(p => ({ ...p, brand: e.target.value }))} /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Cor</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" placeholder="Branca" value={vForm.color} onChange={e => setVForm(p => ({ ...p, color: e.target.value }))} /></div>
                 </div>
-                <div className="grid grid-cols-3 gap-3 mt-3">
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigilantes</p><p className="text-xs font-bold text-neutral-800">{sc.num_vigilantes}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Aviso Prévio</p><p className="text-xs font-bold text-neutral-800">{sc.aviso_previo_dias} dias</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Correção</p><p className="text-xs font-bold text-neutral-800">{sc.indice_correcao}</p></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Motorista</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" placeholder="Nome do motorista" value={vForm.driverName} onChange={e => setVForm(p => ({ ...p, driverName: e.target.value }))} data-testid="input-vehicle-driver" /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Telefone Motorista</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" placeholder="(21) 99999-0000" value={vForm.driverPhone} onChange={e => setVForm(p => ({ ...p, driverPhone: e.target.value }))} /></div>
                 </div>
-              </Card>
-            );
-          })}
+                <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Observações</label><textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm" rows={2} value={vForm.notes} onChange={e => setVForm(p => ({ ...p, notes: e.target.value }))} /></div>
+                <button type="submit" disabled={saveVehicleMutation.isPending || !vForm.plate} className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors disabled:opacity-50" data-testid="button-save-client-vehicle">
+                  {saveVehicleMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar Veículo
+                </button>
+              </form>
+            </Card>
+          )}
+
+          {clientVehiclesList.length === 0 && !showVehicleForm ? (
+            <Card className="p-12 border-neutral-200 shadow-sm text-center"><Car size={40} className="mx-auto text-neutral-300 mb-3" /><p className="text-sm font-bold text-neutral-400 uppercase">Nenhum veículo cadastrado</p><p className="text-[10px] text-neutral-300 mt-1">Veículos escoltados serão registrados automaticamente ao preencher uma OS</p></Card>
+          ) : (
+            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+              <table className="w-full text-left border-collapse" data-testid="table-client-vehicles">
+                <thead>
+                  <tr className="bg-neutral-50 border-b border-neutral-100">
+                    <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Placa</th>
+                    <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Modelo</th>
+                    <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Motorista</th>
+                    <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Telefone</th>
+                    <th className="text-right px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientVehiclesList.map(v => (
+                    <tr key={v.id} className="border-b border-neutral-50 hover:bg-neutral-50" data-testid={`row-client-vehicle-${v.id}`}>
+                      <td className="px-4 py-3 font-mono font-black text-neutral-800 text-sm">{v.plate}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-neutral-600">{v.model ? `${v.brand || ""} ${v.model}`.trim() : "—"}{v.color ? ` · ${v.color}` : ""}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-neutral-700">{v.driverName || "—"}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-neutral-500">{v.driverPhone || "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditingVehicle(v); setVForm({ plate: v.plate, model: v.model || "", brand: v.brand || "", color: v.color || "", driverName: v.driverName || "", driverPhone: v.driverPhone || "", notes: v.notes || "" }); setShowVehicleForm(true); }} className="p-1.5 rounded hover:bg-neutral-100 mr-1" data-testid={`button-edit-vehicle-${v.id}`}><Pencil size={14} className="text-neutral-500" /></button>
+                        <button onClick={() => { if (confirm("Remover veículo?")) deleteVehicleMutation.mutate(v.id); }} className="p-1.5 rounded hover:bg-red-50" data-testid={`button-delete-vehicle-${v.id}`}><Trash2 size={14} className="text-red-400" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -861,12 +935,54 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
         </div>
       )}
 
-      {activeTab === "RELATORIO_OS" && (
+      {activeTab === "CONTRATO" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-neutral-500">Contratos de Prestação de Serviço com validade e controle</p>
+            <Button onClick={() => { setEditingSC(null); setShowContractModal(true); }} className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-service-contract"><Plus size={14} className="mr-1" /> Novo Contrato</Button>
+          </div>
+          {serviceContracts.length === 0 ? (
+            <Card className="p-12 border-neutral-200 shadow-sm text-center"><FileText size={40} className="mx-auto text-neutral-300 mb-3" /><p className="text-sm font-bold text-neutral-400 uppercase">Nenhum contrato cadastrado para este cliente</p></Card>
+          ) : serviceContracts.map(sc => {
+            const vig = getVigenciaStatus(sc);
+            return (
+              <Card key={sc.id} className="p-5 border-neutral-200 shadow-sm" data-testid={`card-service-contract-${sc.id}`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-sm font-black text-neutral-800 uppercase">{sc.contract_number || "Sem número"}</h4>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${vig.color}`}>{vig.label}</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500">Prestação de Serviços de Escolta Armada</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => { setEditingSC(sc); setShowContractModal(true); }} className="p-1.5 rounded hover:bg-neutral-100"><Edit size={14} className="text-neutral-500" /></button>
+                    <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Contratante</p><p className="text-xs font-bold text-neutral-800">{sc.contratante_razao || "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">CNPJ</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.contratante_cnpj || "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Assinatura</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.data_assinatura ? new Date(sc.data_assinatura).toLocaleDateString("pt-BR") : "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigência</p><p className="text-xs font-bold text-neutral-800">{sc.vigencia_tipo === "indeterminado" ? "Indeterminado" : `Até ${sc.vigencia_fim ? new Date(sc.vigencia_fim).toLocaleDateString("pt-BR") : "—"}`}</p></div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigilantes</p><p className="text-xs font-bold text-neutral-800">{sc.num_vigilantes}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Aviso Prévio</p><p className="text-xs font-bold text-neutral-800">{sc.aviso_previo_dias} dias</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Correção</p><p className="text-xs font-bold text-neutral-800">{sc.indice_correcao}</p></div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === "RELATORIO_MISSOES" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><BarChart3 size={16} /> Relatório de OS</h3>
+            <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><ClipboardList size={16} /> Relatório de Missões</h3>
             <div className="flex gap-1 bg-white rounded-lg border border-neutral-200 p-0.5">
-              {([["DAY", "Dia"], ["FORTNIGHT", "Quinzena"], ["MONTH", "Mês"]] as const).map(([k, label]) => (
+              {([["FORTNIGHT", "Quinzena"], ["MONTH", "Mês"]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setOsPeriod(k)} data-testid={`button-period-${k.toLowerCase()}`}
                   className={`px-3 py-1.5 rounded text-[10px] font-black uppercase transition-all ${osPeriod === k ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"}`}>{label}</button>
               ))}
@@ -874,44 +990,120 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card className="p-4 text-center"><p className="text-[9px] font-black text-neutral-400 uppercase">OS no Período</p><p className="text-2xl font-black text-neutral-900">{filteredOS.length}</p></Card>
+            <Card className="p-4 text-center"><p className="text-[9px] font-black text-neutral-400 uppercase">Missões</p><p className="text-2xl font-black text-neutral-900">{filteredMissions.length}</p></Card>
             <Card className="p-4 text-center bg-green-50"><p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p><p className="text-xl font-black text-green-700 font-mono">{fmt(filteredOS.reduce((a, b) => a + Number(b.fat_total), 0))}</p></Card>
             <Card className="p-4 text-center bg-red-50"><p className="text-[9px] font-black text-red-700 uppercase">Operacional</p><p className="text-xl font-black text-red-700 font-mono">{fmt(filteredOS.reduce((a, b) => a + Number(b.pag_total), 0))}</p></Card>
             <Card className="p-4 text-center"><p className="text-[9px] font-black text-neutral-400 uppercase">KM Total</p><p className="text-xl font-black text-neutral-700 font-mono">{filteredOS.reduce((a, b) => a + Number(b.km_total), 0)}</p></Card>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse" data-testid="table-missions">
               <thead>
                 <tr className="bg-neutral-900 text-white text-[10px] font-black uppercase tracking-widest">
-                  <th className="px-3 py-3">BO</th>
+                  <th className="px-3 py-3">OS</th>
                   <th className="px-3 py-3">Data</th>
                   <th className="px-3 py-3">Rota</th>
-                  <th className="px-3 py-3">KM</th>
-                  <th className="px-3 py-3 text-center">Not.</th>
+                  <th className="px-3 py-3">Veículo Escoltado</th>
+                  <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3 text-right">Faturamento</th>
-                  <th className="px-3 py-3 text-right">Operacional</th>
-                  <th className="px-3 py-3 text-right">Lucro</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {filteredOS.length === 0 ? (
-                  <tr><td colSpan={8} className="p-8 text-center text-neutral-400 font-bold uppercase text-sm">Nenhuma OS neste período</td></tr>
-                ) : filteredOS.map(b => (
-                  <tr key={b.id} className="hover:bg-neutral-50">
-                    <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span></td>
-                    <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(b.created_at).toLocaleDateString("pt-BR")}</td>
-                    <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{b.origem && b.destino ? `${b.origem}→${b.destino}` : "—"}</td>
-                    <td className="px-3 py-3 text-xs font-mono font-bold">{b.km_total}</td>
-                    <td className="px-3 py-3 text-center">{b.is_noturno ? <Moon size={14} className="mx-auto text-indigo-600" /> : <span className="text-neutral-300">—</span>}</td>
-                    <td className="px-3 py-3 text-right font-black font-mono text-sm text-green-600">{fmt(Number(b.fat_total))}</td>
-                    <td className="px-3 py-3 text-right font-black font-mono text-sm text-red-600">{fmt(Number(b.pag_total))}</td>
-                    <td className={`px-3 py-3 text-right font-black font-mono text-sm ${Number(b.fat_total) - Number(b.pag_total) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(b.fat_total) - Number(b.pag_total))}</td>
-                  </tr>
-                ))}
+                {filteredMissions.length === 0 ? (
+                  <tr><td colSpan={6} className="p-8 text-center text-neutral-400 font-bold uppercase text-sm">Nenhuma missão neste período</td></tr>
+                ) : filteredMissions.map(o => {
+                  const billing = clientBillings.find(b => (b as any).service_order_id === o.id);
+                  return (
+                    <tr key={o.id} className="hover:bg-neutral-50" data-testid={`row-mission-${o.id}`}>
+                      <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{o.osNumber}</span></td>
+                      <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(o.completedDate || o.createdAt).toLocaleDateString("pt-BR")}</td>
+                      <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{o.origin && o.destination ? `${o.origin} → ${o.destination}` : "—"}</td>
+                      <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-600">{o.escortedVehiclePlate || "—"}</td>
+                      <td className="px-3 py-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${o.status === "concluida" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{o.status === "concluida" ? "Concluída" : o.status}</span></td>
+                      <td className="px-3 py-3 text-right font-black font-mono text-sm text-green-600">{billing ? fmt(Number(billing.fat_total)) : "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === "RELATORIO_FATURAMENTO" && (
+        <div className="space-y-6">
+          <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2"><Wallet size={16} /> Relatório de Faturamento</h3>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="p-4 text-center"><p className="text-[9px] font-black text-neutral-400 uppercase">Total Boletins</p><p className="text-2xl font-black text-neutral-900">{clientBillings.length}</p></Card>
+            <Card className="p-4 text-center bg-green-50"><p className="text-[9px] font-black text-green-700 uppercase">Faturamento Total</p><p className="text-xl font-black text-green-700 font-mono">{fmt(clientBillings.reduce((a, b) => a + Number(b.fat_total), 0))}</p></Card>
+            <Card className="p-4 text-center bg-amber-50"><p className="text-[9px] font-black text-amber-700 uppercase">Em Aberto</p><p className="text-xl font-black text-amber-700 font-mono">{fmt(openBillings.reduce((a, b) => a + Number(b.fat_total), 0))}</p><p className="text-[9px] text-amber-600 mt-0.5">{openBillings.length} boletim(ns)</p></Card>
+            <Card className="p-4 text-center bg-blue-50"><p className="text-[9px] font-black text-blue-700 uppercase">Fechados</p><p className="text-xl font-black text-blue-700 font-mono">{fmt(closedBillings.reduce((a, b) => a + Number(b.fat_total), 0))}</p><p className="text-[9px] text-blue-600 mt-0.5">{closedBillings.length} boletim(ns)</p></Card>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-neutral-500 uppercase mb-3 flex items-center gap-2"><AlertTriangle size={14} /> Boletins em Aberto / Pendentes</h4>
+            {clientBillings.filter(b => !["FATURADO", "PAGO"].includes((b as any).status || "")).length === 0 ? (
+              <Card className="p-8 text-center"><CheckCircle2 size={32} className="mx-auto text-green-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Todos os boletins estão fechados</p></Card>
+            ) : (
+              <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+                <table className="w-full text-left border-collapse" data-testid="table-billing-open">
+                  <thead>
+                    <tr className="bg-amber-50 border-b border-amber-100 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      <th className="px-3 py-3">BO</th>
+                      <th className="px-3 py-3">Data</th>
+                      <th className="px-3 py-3">Rota</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {clientBillings.filter(b => !["FATURADO", "PAGO"].includes((b as any).status || "")).map(b => (
+                      <tr key={b.id} className="hover:bg-neutral-50">
+                        <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span></td>
+                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(b.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{b.origem && b.destino ? `${b.origem}→${b.destino}` : "—"}</td>
+                        <td className="px-3 py-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${(b as any).status === "A_VERIFICAR" ? "bg-amber-100 text-amber-700" : (b as any).status === "APROVADA" ? "bg-green-100 text-green-700" : (b as any).status === "REJEITADA" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-600"}`}>{(b as any).status || "—"}</span></td>
+                        <td className="px-3 py-3 text-right font-black font-mono text-sm text-amber-700">{fmt(Number(b.fat_total))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {closedBillings.length > 0 && (
+            <div>
+              <h4 className="text-xs font-black text-neutral-500 uppercase mb-3 flex items-center gap-2"><CheckCircle2 size={14} /> Boletins Fechados / Pagos</h4>
+              <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+                <table className="w-full text-left border-collapse" data-testid="table-billing-closed">
+                  <thead>
+                    <tr className="bg-green-50 border-b border-green-100 text-[10px] font-black uppercase tracking-widest text-green-700">
+                      <th className="px-3 py-3">BO</th>
+                      <th className="px-3 py-3">Data</th>
+                      <th className="px-3 py-3">Rota</th>
+                      <th className="px-3 py-3">KM</th>
+                      <th className="px-3 py-3 text-right">Faturamento</th>
+                      <th className="px-3 py-3 text-right">Lucro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {closedBillings.map(b => (
+                      <tr key={b.id} className="hover:bg-neutral-50">
+                        <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span></td>
+                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(b.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{b.origem && b.destino ? `${b.origem}→${b.destino}` : "—"}</td>
+                        <td className="px-3 py-3 text-xs font-mono font-bold">{b.km_total}</td>
+                        <td className="px-3 py-3 text-right font-black font-mono text-sm text-green-600">{fmt(Number(b.fat_total))}</td>
+                        <td className={`px-3 py-3 text-right font-black font-mono text-sm ${Number(b.fat_total) - Number(b.pag_total) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(b.fat_total) - Number(b.pag_total))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

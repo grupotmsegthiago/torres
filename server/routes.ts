@@ -313,6 +313,37 @@ export async function registerRoutes(
     res.json({ message: "Cliente removido" });
   });
 
+  app.get("/api/clients/:id/vehicles", requireAuth, async (req, res) => {
+    const data = await storage.getClientVehicles(Number(req.params.id));
+    res.json(data);
+  });
+
+  app.post("/api/clients/:id/vehicles", requireAuth, async (req, res) => {
+    const clientId = Number(req.params.id);
+    const { plate, model, brand, color, driverName, driverPhone, notes } = req.body;
+    if (!plate) return res.status(400).json({ message: "Placa é obrigatória" });
+    const existing = await storage.getClientVehicleByPlate(clientId, plate);
+    if (existing) return res.status(409).json({ message: "Placa já cadastrada para este cliente", vehicle: existing });
+    const data = await storage.createClientVehicle({ clientId, plate: plate.toUpperCase(), model, brand, color, driverName, driverPhone, notes });
+    res.status(201).json(data);
+  });
+
+  app.patch("/api/client-vehicles/:id", requireAuth, async (req, res) => {
+    const existing = await storage.getClientVehicle(Number(req.params.id));
+    if (!existing) return res.status(404).json({ message: "Veículo não encontrado" });
+    if (req.body.plate && req.body.plate.toUpperCase() !== existing.plate) {
+      const dup = await storage.getClientVehicleByPlate(existing.clientId, req.body.plate.toUpperCase());
+      if (dup) return res.status(400).json({ message: "Placa já cadastrada para este cliente" });
+    }
+    const data = await storage.updateClientVehicle(Number(req.params.id), req.body);
+    res.json(data);
+  });
+
+  app.delete("/api/client-vehicles/:id", requireAuth, async (req, res) => {
+    await storage.deleteClientVehicle(Number(req.params.id));
+    res.json({ message: "Veículo removido" });
+  });
+
   app.get("/api/employees", requireAuth, async (req, res) => {
     const data = await storage.getEmployees();
     if (req.user!.role !== "diretoria") {
@@ -2305,6 +2336,26 @@ Para CPF, formate como 000.000.000-00.`
       escortedDriverPhone: driverPhone || null,
       escortedVehiclePlate: vehiclePlate,
     });
+
+    if (vehiclePlate && so.clientId) {
+      try {
+        const existing = await storage.getClientVehicleByPlate(so.clientId, vehiclePlate);
+        if (!existing) {
+          await storage.createClientVehicle({
+            clientId: so.clientId,
+            plate: vehiclePlate.toUpperCase(),
+            driverName: driverName || null,
+            driverPhone: driverPhone || null,
+          });
+        } else {
+          const updates: any = {};
+          if (driverName && driverName !== existing.driverName) updates.driverName = driverName;
+          if (driverPhone && driverPhone !== existing.driverPhone) updates.driverPhone = driverPhone;
+          if (Object.keys(updates).length > 0) await storage.updateClientVehicle(existing.id, updates);
+        }
+      } catch (_) {}
+    }
+
     res.json(updated);
   });
 

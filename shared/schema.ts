@@ -55,6 +55,23 @@ export const insertClientSchema = createInsertSchema(clients).omit({ id: true, c
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
 
+export const clientVehicles = pgTable("client_vehicles", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull().references(() => clients.id),
+  plate: text("plate").notNull(),
+  model: text("model"),
+  brand: text("brand"),
+  color: text("color"),
+  driverName: text("driver_name"),
+  driverPhone: text("driver_phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertClientVehicleSchema = createInsertSchema(clientVehicles).omit({ id: true, createdAt: true });
+export type InsertClientVehicle = z.infer<typeof insertClientVehicleSchema>;
+export type ClientVehicle = typeof clientVehicles.$inferSelect;
+
 export const employees = pgTable("employees", {
   id: serial("id").primaryKey(),
   matricula: text("matricula").notNull().unique(),
