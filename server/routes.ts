@@ -3741,7 +3741,7 @@ Regras:
     }
   });
 
-  // Escort Billing - Save
+  // Escort Billing - Save (with auto BO generation)
   app.post("/api/escort/billings", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
@@ -3750,7 +3750,20 @@ Regras:
       const km_total = Number(body.km_final) - Number(body.km_inicial);
       if (km_total > 500 && !body.foto_hodometro_fim) return res.status(400).json({ message: "Foto do hodômetro é obrigatória para diferença maior que 500 KM" });
 
-      const { data, error } = await supabaseAdmin.from("escort_billings").insert({ ...body, created_by: user.name }).select().single();
+      let clientId = body.client_id;
+      let clientName = body.client_name;
+      if (!clientId && body.route_id) {
+        const { data: route } = await supabaseAdmin.from("escort_routes").select("client_id, client_name").eq("id", body.route_id).single();
+        if (route?.client_id) { clientId = route.client_id; clientName = clientName || route.client_name; }
+      }
+
+      const now = new Date();
+      const boletimNumero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+        ...body, client_id: clientId, client_name: clientName,
+        created_by: user.name, boletim_numero: boletimNumero, boletim_gerado: true,
+      }).select().single();
       if (error) throw error;
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -3775,6 +3788,62 @@ Regras:
     try {
       const { data, error } = await supabaseAdmin.from("escort_billings").update(req.body).eq("id", req.params.id).select().single();
       if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Escort Routes (Rotas Frequentes) CRUD
+  app.get("/api/escort/routes", requireAuth, async (req, res) => {
+    try {
+      const { client_id } = req.query;
+      let query = supabaseAdmin.from("escort_routes").select("*").order("name");
+      if (client_id) query = query.eq("client_id", client_id);
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/escort/routes", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_routes").insert(req.body).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/escort/routes/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("escort_routes").update(req.body).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/escort/routes/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("escort_routes").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Gerar Boletim de Missão
+  app.post("/api/escort/billings/:id/gerar-boletim", requireAdminRole, async (req, res) => {
+    try {
+      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !billing) return res.status(404).json({ message: "Faturamento não encontrado" });
+
+      if (billing.boletim_gerado) return res.json({ ...billing, message: "Boletim já gerado anteriormente" });
+
+      const now = new Date();
+      const boletimNumero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(billing.id).slice(-4).toUpperCase()}`;
+
+      const { data, error } = await supabaseAdmin.from("escort_billings")
+        .update({ boletim_numero: boletimNumero, boletim_gerado: true })
+        .eq("id", req.params.id).select().single();
+      if (error) throw error;
+
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
