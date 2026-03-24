@@ -340,9 +340,9 @@ function ClientDetailView({ client, onBack }: { client: any; onBack: () => void 
   const [editingRoute, setEditingRoute] = useState<EscortRoute | null>(null);
   const [osPeriod, setOsPeriod] = useState<"DAY" | "FORTNIGHT" | "MONTH">("MONTH");
 
-  const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/service-contracts?client_id=${client.id}`, { credentials: "include" }); return r.json(); } });
+  const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/service-contracts?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: priceContracts = [] } = useQuery<EscortContract[]>({ queryKey: ["/api/escort/contracts"] });
-  const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/escort/routes?client_id=${client.id}`, { credentials: "include" }); return r.json(); } });
+  const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/escort/routes?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: allBillings = [] } = useQuery<EscortBilling[]>({ queryKey: ["/api/escort/billings"] });
 
   const clientPrices = priceContracts.filter(c => c.client_id === client.id);
