@@ -13,7 +13,7 @@ import {
   MapPin, Phone, Mail, Calendar, Banknote, BadgeCheck,
   FileText, DollarSign, BarChart3, ChevronLeft, Save,
   Moon, Route, Navigation, ChevronRight, Shield, Edit,
-  Car, Wallet, ClipboardList,
+  Car, Wallet, ClipboardList, Clock, Eye, User, Camera, Truck,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
@@ -709,6 +709,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState<EscortRoute | null>(null);
   const [osPeriod, setOsPeriod] = useState<"FORTNIGHT" | "MONTH">("MONTH");
+  const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<ClientVehicle | null>(null);
   const [vForm, setVForm] = useState({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" });
@@ -1014,7 +1015,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                 ) : filteredMissions.map(o => {
                   const billing = clientBillings.find(b => (b as any).service_order_id === o.id);
                   return (
-                    <tr key={o.id} className="hover:bg-neutral-50" data-testid={`row-mission-${o.id}`}>
+                    <tr key={o.id} className="hover:bg-neutral-50 cursor-pointer" onClick={() => setSelectedMissionId(o.id)} data-testid={`row-mission-${o.id}`}>
                       <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{o.osNumber}</span></td>
                       <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(o.completedDate || o.createdAt).toLocaleDateString("pt-BR")}</td>
                       <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{o.origin && o.destination ? `${o.origin} → ${o.destination}` : "—"}</td>
@@ -1110,6 +1111,301 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
       {showContractModal && <ServiceContractModal onClose={() => { setShowContractModal(false); setEditingSC(null); }} editing={editingSC} clientId={client.id} clientName={client.name} />}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}
       {showRouteModal && <RouteFormModal onClose={() => { setShowRouteModal(false); setEditingRoute(null); }} editing={editingRoute} clientId={client.id} clientName={client.name} />}
+      {selectedMissionId && <MissionDetailModal osId={selectedMissionId} onClose={() => setSelectedMissionId(null)} />}
+    </div>
+  );
+}
+
+function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => void }) {
+  const { data: os, isLoading } = useQuery<any>({
+    queryKey: ["/api/service-orders", osId, "enriched"],
+    queryFn: async () => {
+      const r = await fetch(`/api/service-orders/${osId}/enriched`, { credentials: "include" });
+      return r.json();
+    },
+  });
+
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+  const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+
+  const b = os?.billing;
+  const photos = os?.photos || [];
+  const kmSaida = photos.find((p: any) => p.step === "km_saida");
+  const kmFinal = photos.find((p: any) => p.step === "km_final");
+  const stepsOrder = ["checkin_selfie", "km_saida", "checkin_viatura", "checkin_armamento", "checkin_dados_motorista", "km_final", "checkout_viatura", "checkout_armamento", "checkout_selfie"];
+  const stepLabels: Record<string, string> = {
+    checkin_selfie: "Selfie Check-in", km_saida: "KM Saída", checkin_viatura: "Vistoria Viatura (Saída)",
+    checkin_armamento: "Vistoria Armamento (Saída)", checkin_dados_motorista: "Dados Motorista Escoltado",
+    km_final: "KM Final", checkout_viatura: "Vistoria Viatura (Retorno)", checkout_armamento: "Vistoria Armamento (Retorno)",
+    checkout_selfie: "Selfie Check-out",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose} data-testid="modal-mission-detail">
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {isLoading || !os ? (
+          <div className="p-12 text-center"><Loader2 size={32} className="mx-auto animate-spin text-neutral-300" /><p className="text-xs text-neutral-400 mt-3 font-bold uppercase">Carregando dados da OS...</p></div>
+        ) : (
+          <>
+            <div className="sticky top-0 bg-white border-b border-neutral-100 px-6 py-4 flex justify-between items-center z-10">
+              <div>
+                <h3 className="font-black text-neutral-800 uppercase text-sm tracking-widest flex items-center gap-2">
+                  <FileText size={18} /> OS {os.osNumber}
+                </h3>
+                <p className="text-[10px] text-neutral-400 mt-0.5">Detalhes completos da missão</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${os.status === "concluida" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  {os.status === "concluida" ? "Concluída" : os.status}
+                </span>
+                {os.missionStatus && (
+                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${os.missionStatus === "encerrada" ? "bg-blue-100 text-blue-700" : "bg-neutral-100 text-neutral-500"}`}>
+                    {os.missionStatus}
+                  </span>
+                )}
+                <button onClick={onClose} className="p-1 rounded-lg hover:bg-neutral-100"><X size={20} className="text-neutral-400" /></button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-100">
+                <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><FileText size={12} /> Dados Iniciais da OS</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Tipo</p><p className="text-xs font-bold text-neutral-800">{os.type || "—"}</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Prioridade</p><p className="text-xs font-bold text-neutral-800">{os.priority || "—"}</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Agendamento</p><p className="text-xs font-mono font-bold text-neutral-800">{fmtDate(os.scheduledDate)}</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Conclusão</p><p className="text-xs font-mono font-bold text-neutral-800">{fmtDate(os.completedDate)}</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Criação</p><p className="text-xs font-mono font-bold text-neutral-800">{fmtDate(os.createdAt)}</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Solicitante</p><p className="text-xs font-bold text-neutral-800">{os.requesterName || "—"}</p></div>
+                </div>
+                {os.description && (
+                  <div className="mt-3"><p className="text-[9px] font-black text-neutral-400 uppercase">Descrição</p><p className="text-xs text-neutral-700">{os.description}</p></div>
+                )}
+                {os.notes && (
+                  <div className="mt-2"><p className="text-[9px] font-black text-neutral-400 uppercase">Observações</p><p className="text-xs text-neutral-700">{os.notes}</p></div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                  <p className="text-[9px] font-black text-blue-600 uppercase flex items-center gap-1"><User size={10} /> Agente 1</p>
+                  <p className="text-xs font-bold text-neutral-800">{os.employee1Name || "—"}</p>
+                </div>
+                {os.employee2Name && (
+                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                    <p className="text-[9px] font-black text-blue-600 uppercase flex items-center gap-1"><User size={10} /> Agente 2</p>
+                    <p className="text-xs font-bold text-neutral-800">{os.employee2Name}</p>
+                  </div>
+                )}
+                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                  <p className="text-[9px] font-black text-neutral-500 uppercase flex items-center gap-1"><Car size={10} /> Viatura</p>
+                  <p className="text-xs font-mono font-bold text-neutral-800">{os.vehiclePlate || "—"}</p>
+                  {os.vehicleModel && <p className="text-[10px] text-neutral-500">{os.vehicleModel}</p>}
+                </div>
+                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                  <p className="text-[9px] font-black text-neutral-500 uppercase flex items-center gap-1"><Shield size={10} /> Kit</p>
+                  <p className="text-xs font-bold text-neutral-800">{os.kitName || "—"}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                  <p className="text-[9px] font-black text-neutral-500 uppercase flex items-center gap-1"><MapPin size={10} /> Origem</p>
+                  <p className="text-xs font-bold text-neutral-800">{os.origin || "—"}</p>
+                </div>
+                <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                  <p className="text-[9px] font-black text-neutral-500 uppercase flex items-center gap-1"><MapPin size={10} /> Destino</p>
+                  <p className="text-xs font-bold text-neutral-800">{os.destination || "—"}</p>
+                </div>
+              </div>
+
+              {(os.escortedVehiclePlate || os.escortedDriverName) && (
+                <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                  <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3 flex items-center gap-1"><Truck size={12} /> Veículo Escoltado</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Placa</p><p className="text-sm font-mono font-black text-neutral-800">{os.escortedVehiclePlate || "—"}</p></div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Motorista</p><p className="text-xs font-bold text-neutral-800">{os.escortedDriverName || "—"}</p></div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Telefone</p><p className="text-xs font-mono font-bold text-neutral-800">{os.escortedDriverPhone || "—"}</p></div>
+                  </div>
+                </div>
+              )}
+
+              {os.missionStartedAt && (
+                <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-100">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><Clock size={12} /> Horários da Missão</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Início Real</p><p className="text-sm font-mono font-black text-neutral-800">{fmtTime(os.missionStartedAt)}</p></div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Conclusão</p><p className="text-sm font-mono font-black text-neutral-800">{os.completedDate ? fmtTime(os.completedDate) : "—"}</p></div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Rota</p><p className="text-xs font-bold text-neutral-800">{os.route || "—"}</p></div>
+                  </div>
+                </div>
+              )}
+
+              {photos.length > 0 && (
+                <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-100">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><Camera size={12} /> Vistoria do Agente ({photos.length} registros)</p>
+                  <div className="space-y-2">
+                    {stepsOrder.map(step => {
+                      const photo = photos.find((p: any) => p.step === step);
+                      if (!photo) return null;
+                      return (
+                        <div key={step} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-neutral-100">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 size={14} className="text-green-500" />
+                            <span className="text-[10px] font-black text-neutral-700 uppercase">{stepLabels[step] || step}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-right">
+                            {photo.kmValue && <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{photo.kmValue} km</span>}
+                            {photo.notes && <span className="text-[10px] text-neutral-500 max-w-[150px] truncate">{photo.notes}</span>}
+                            <span className="text-[9px] text-neutral-400 font-mono">{photo.createdAt ? fmtTime(photo.createdAt) : ""}</span>
+                            {photo.latitude && <span className="text-[9px] text-neutral-300">GPS ✓</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {kmSaida?.kmValue && kmFinal?.kmValue && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-between">
+                      <span className="text-[10px] font-black text-blue-700 uppercase">KM Percorrido (Hodômetro)</span>
+                      <span className="text-sm font-black font-mono text-blue-800">{kmFinal.kmValue - kmSaida.kmValue} km</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(os.baseReturnKm || os.baseCleanStatus) && (
+                <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-100">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><Eye size={12} /> Vistoria Interna (Retorno à Base)</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">KM Retorno</p><p className="text-xs font-mono font-bold text-neutral-800">{os.baseReturnKm || "—"}</p></div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Estado Viatura</p>
+                      <p className={`text-xs font-bold ${os.baseCleanStatus === "ok" ? "text-green-700" : "text-red-700"}`}>{os.baseCleanStatus === "ok" ? "OK / Limpa" : os.baseCleanStatus || "—"}</p>
+                    </div>
+                    <div><p className="text-[9px] font-black text-neutral-400 uppercase">Checklist Conferido</p>
+                      <p className={`text-xs font-bold ${os.baseChecklistConfirmed ? "text-green-700" : "text-red-700"}`}>{os.baseChecklistConfirmed ? "Sim ✓" : "Não"}</p>
+                    </div>
+                  </div>
+                  {os.baseCleanNotes && (
+                    <div className="mt-2"><p className="text-[9px] font-black text-neutral-400 uppercase">Observações da Vistoria</p><p className="text-xs text-neutral-700">{os.baseCleanNotes}</p></div>
+                  )}
+                </div>
+              )}
+
+              {b && (
+                <div className="border-t border-neutral-200 pt-5">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><DollarSign size={12} /> Cálculo de Faturamento</p>
+
+                  {b.horario_inicio_considerado && (
+                    <div className={`p-3 rounded-xl border mb-3 ${b.horario_agendado && b.horario_inicio && b.horario_inicio_considerado !== b.horario_agendado ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[9px] font-black text-neutral-500 uppercase">Horário para Cobrança</p>
+                          <p className="text-lg font-black font-mono">{b.horario_inicio_considerado}</p>
+                        </div>
+                        <div className="text-right">
+                          {b.horario_agendado && <p className="text-[9px] text-neutral-400">Agendado: <span className="font-mono font-bold">{b.horario_agendado}</span></p>}
+                          {b.horario_inicio && <p className="text-[9px] text-neutral-400">Chegada Real: <span className="font-mono font-bold">{b.horario_inicio}</span></p>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-4 gap-3 mb-3">
+                    <div className="bg-blue-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-blue-600 uppercase">KM Total</p><p className="text-lg font-black font-mono text-blue-800">{Number(b.km_total || 0)}</p></div>
+                    <div className="bg-blue-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-blue-600 uppercase">Carregado</p><p className="text-lg font-black font-mono text-blue-800">{Number(b.km_carregado || 0)}</p></div>
+                    <div className="bg-neutral-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Franquia</p><p className="text-lg font-black font-mono text-neutral-800">{Number(b.km_franquia || 0)}</p></div>
+                    <div className={`p-3 rounded-xl text-center ${Number(b.km_excedente) > 0 ? "bg-red-50" : "bg-neutral-50"}`}><p className="text-[9px] font-black text-neutral-500 uppercase">Excedente</p><p className={`text-lg font-black font-mono ${Number(b.km_excedente) > 0 ? "text-red-600" : "text-neutral-600"}`}>{Number(b.km_excedente || 0)}</p></div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                    <div className="bg-neutral-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">KM Vazio</p><p className="text-sm font-black font-mono">{Number(b.km_vazio || 0)}</p></div>
+                    <div className="bg-neutral-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p><p className="text-sm font-black font-mono">{Number(b.horas_trabalhadas || b.horas_missao || 0)}h</p></div>
+                    <div className="bg-neutral-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Estadia</p><p className="text-sm font-black font-mono">{Number(b.horas_estadia || 0)}h</p></div>
+                    <div className="bg-neutral-50 p-3 rounded-xl text-center"><p className="text-[9px] font-black text-neutral-500 uppercase">Noturno</p><p className="text-sm font-black font-mono">{b.is_noturno ? "Sim" : "Não"}</p></div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                      <p className="text-[9px] font-black text-green-700 uppercase mb-2">Faturamento (Cliente)</p>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px]"><span className="text-neutral-500">KM Carregado</span><span className="font-mono font-bold">{fmt(Number(b.fat_km_carregado || b.fat_km || 0))}</span></div>
+                        {Number(b.fat_km_vazio || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">KM Vazio</span><span className="font-mono font-bold">{fmt(Number(b.fat_km_vazio))}</span></div>}
+                        {Number(b.fat_estadia || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Estadia</span><span className="font-mono font-bold">{fmt(Number(b.fat_estadia))}</span></div>}
+                        {Number(b.fat_pernoite || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Pernoite</span><span className="font-mono font-bold">{fmt(Number(b.fat_pernoite))}</span></div>}
+                        {Number(b.fat_diaria || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Diária</span><span className="font-mono font-bold">{fmt(Number(b.fat_diaria))}</span></div>}
+                        {Number(b.fat_adicional_noturno || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Ad. Noturno</span><span className="font-mono font-bold">{fmt(Number(b.fat_adicional_noturno))}</span></div>}
+                        <div className="border-t border-green-200 pt-1 mt-1 flex justify-between text-xs"><span className="font-black text-green-800">TOTAL</span><span className="font-black font-mono text-green-800">{fmt(Number(b.fat_total))}</span></div>
+                      </div>
+                    </div>
+
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                      <p className="text-[9px] font-black text-red-700 uppercase mb-2">Pagamento (Vigilante)</p>
+                      <div className="space-y-1">
+                        {Number(b.pag_vrp || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">VRP</span><span className="font-mono font-bold">{fmt(Number(b.pag_vrp))}</span></div>}
+                        {Number(b.pag_periculosidade || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Periculosidade</span><span className="font-mono font-bold">{fmt(Number(b.pag_periculosidade))}</span></div>}
+                        {Number(b.pag_adicional_noturno || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Ad. Noturno</span><span className="font-mono font-bold">{fmt(Number(b.pag_adicional_noturno))}</span></div>}
+                        {Number(b.pag_reembolsos || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-neutral-500">Reembolsos</span><span className="font-mono font-bold">{fmt(Number(b.pag_reembolsos))}</span></div>}
+                        <div className="border-t border-red-200 pt-1 mt-1 flex justify-between text-xs"><span className="font-black text-red-800">TOTAL</span><span className="font-black font-mono text-red-800">{fmt(Number(b.pag_total))}</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {Number(b.desp_pedagio || b.despesas_pedagio || 0) > 0 && (
+                    <div className="bg-neutral-50 p-3 rounded-xl mb-3">
+                      <p className="text-[9px] font-black text-neutral-500 uppercase">Despesas</p>
+                      <div className="flex gap-4 mt-1">
+                        <span className="text-[10px] text-neutral-500">Pedágio: <span className="font-mono font-bold">{fmt(Number(b.desp_pedagio || b.despesas_pedagio || 0))}</span></span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={`p-4 rounded-xl text-center border ${Number(b.resultado_liquido) >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                    <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado Líquido</p>
+                    <p className={`text-2xl font-black font-mono ${Number(b.resultado_liquido) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(b.resultado_liquido))}</p>
+                    {Number(b.margem_percentual) !== 0 && <p className="text-[10px] font-mono text-neutral-500 mt-0.5">Margem: {Number(b.margem_percentual).toFixed(1)}%</p>}
+                  </div>
+
+                  {b.status && (
+                    <div className="mt-3 flex items-center justify-center gap-2">
+                      <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-full ${
+                        b.status === "A_VERIFICAR" ? "bg-amber-100 text-amber-800" :
+                        b.status === "APROVADA" ? "bg-green-100 text-green-800" :
+                        b.status === "REJEITADA" ? "bg-red-100 text-red-800" :
+                        b.status === "FATURADO" ? "bg-blue-100 text-blue-800" :
+                        b.status === "PAGO" ? "bg-emerald-100 text-emerald-800" :
+                        "bg-neutral-100 text-neutral-600"
+                      }`}>Billing: {b.status}</span>
+                      {b.boletim_numero && <span className="text-[9px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{b.boletim_numero}</span>}
+                    </div>
+                  )}
+
+                  {b.revisado_por && (
+                    <div className="mt-3 bg-neutral-50 p-3 rounded-xl">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Revisado por</p>
+                      <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR") : "—"}</p>
+                    </div>
+                  )}
+
+                  {b.motivo_rejeicao && (
+                    <div className="mt-2 bg-red-50 p-3 rounded-xl border border-red-200">
+                      <p className="text-[9px] font-black text-red-700 uppercase">Motivo da Rejeição</p>
+                      <p className="text-xs font-bold text-red-800">{b.motivo_rejeicao}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!b && (
+                <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 text-center">
+                  <AlertTriangle size={24} className="mx-auto text-amber-500 mb-2" />
+                  <p className="text-xs font-black text-amber-700 uppercase">OS sem cálculo de faturamento</p>
+                  <p className="text-[10px] text-amber-600 mt-1">Esta OS foi concluída mas não possui dados de KM válidos para gerar o boletim automaticamente.</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

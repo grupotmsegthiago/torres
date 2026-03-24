@@ -616,6 +616,40 @@ Para CPF, formate como 000.000.000-00.`
     res.json(data);
   });
 
+  app.get("/api/service-orders/:id/enriched", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+      const os = await storage.getServiceOrder(Number(req.params.id));
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const [client, vehicle, emp1, emp2, kit] = await Promise.all([
+        os.clientId ? storage.getClient(os.clientId) : null,
+        os.vehicleId ? storage.getVehicle(os.vehicleId) : null,
+        os.assignedEmployeeId ? storage.getEmployee(os.assignedEmployeeId) : null,
+        os.assignedEmployee2Id ? storage.getEmployee(os.assignedEmployee2Id) : null,
+        os.kitId ? storage.getWeaponKit(os.kitId) : null,
+      ]);
+
+      const photos = await storage.getMissionPhotosByOS(os.id);
+
+      const { data: billing } = await supabaseAdmin.from("escort_billings")
+        .select("*").eq("service_order_id", os.id).limit(1);
+
+      res.json({
+        ...os,
+        clientName: client?.name || "—",
+        clientCnpj: client?.cnpj || null,
+        vehiclePlate: vehicle?.plate || null,
+        vehicleModel: vehicle?.model || null,
+        employee1Name: emp1?.name || null,
+        employee2Name: emp2?.name || null,
+        kitName: kit?.name || null,
+        photos: photos.map(p => ({ step: p.step, kmValue: p.kmValue, notes: p.notes, createdAt: p.createdAt, latitude: p.latitude, longitude: p.longitude })),
+        billing: billing?.[0] || null,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/service-orders", requireAuth, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
