@@ -628,6 +628,9 @@ Para CPF, formate como 000.000.000-00.`
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
     }
+    if (data.vehicleId) {
+      await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
+    }
     res.status(201).json(data);
   });
 
@@ -661,6 +664,18 @@ Para CPF, formate como 000.000.000-00.`
       await storage.updateWeaponKit(data.kitId, { status: "disponível" });
     }
 
+    if (existing && existing.vehicleId && existing.vehicleId !== data.vehicleId) {
+      await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
+    }
+    if (data.vehicleId && (!existing || existing.vehicleId !== data.vehicleId)) {
+      await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
+    }
+    const isFinished = data.missionStatus === "encerrada" || data.missionStatus === "finalizada" ||
+      data.status === "concluida" || data.status === "concluída" || data.status === "cancelada";
+    if (data.vehicleId && isFinished) {
+      await storage.updateVehicle(data.vehicleId, { status: "disponível" });
+    }
+
     res.json(data);
   });
 
@@ -668,6 +683,9 @@ Para CPF, formate como 000.000.000-00.`
     const existing = await storage.getServiceOrder(Number(req.params.id));
     if (existing?.kitId) {
       await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
+    }
+    if (existing?.vehicleId) {
+      await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
     }
     await storage.deleteServiceOrder(Number(req.params.id));
     res.json({ message: "OS removida" });
