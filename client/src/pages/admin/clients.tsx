@@ -531,16 +531,6 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
             </div>
           </div>
 
-          <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
-            <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><Shield size={12} /> Operacional</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nº Vigilantes</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.num_vigilantes} onChange={e => sf("num_vigilantes", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Índice Correção</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={form.indice_correcao} onChange={e => sf("indice_correcao", e.target.value)} /></div>
-            </div>
-            <div className="mt-3"><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Armamento</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" value={form.armamento_descricao} onChange={e => sf("armamento_descricao", e.target.value)} /></div>
-            <div className="mt-3"><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Equipamentos</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" value={form.equipamentos} onChange={e => sf("equipamentos", e.target.value)} /></div>
-          </div>
-
           <div className="bg-red-50 p-4 rounded-lg border border-red-100">
             <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Penalidades</p>
             <div className="grid grid-cols-2 gap-3">
