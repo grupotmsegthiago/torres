@@ -286,6 +286,8 @@ function getLastPositionInfo(lastPositionTime?: string) {
 function getMissionLabel(status: string | null) {
   if (!status) return "—";
   switch (status) {
+    case "missao_paga":
+      return "Missão Paga";
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":
@@ -350,6 +352,8 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     return { label: "Aguardando Despacho", icon: Clock, className: "bg-slate-50 text-slate-600 border-slate-200" };
   }
   switch (missionStatus) {
+    case "missao_paga":
+      return { label: "Missão Paga", icon: Clock, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":

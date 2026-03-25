@@ -23,6 +23,7 @@ import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
 const MISSION_STEPS = [
+  "missao_paga",
   "aguardando",
   "checkout_armamento",
   "checkout_viatura",
@@ -672,7 +673,7 @@ Para CPF, formate como 000.000.000-00.`
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
 
-    if (parsed.data.status === "em_andamento" && parsed.data.missionStatus === "aguardando") {
+    if (parsed.data.status === "em_andamento" && (parsed.data.missionStatus === "missao_paga" || parsed.data.missionStatus === "aguardando")) {
       const existing = await storage.getServiceOrder(Number(req.params.id));
       if (existing && !existing.assignedEmployeeId) {
         return res.status(400).json({ message: "Atribua pelo menos um funcionário antes de iniciar a missão" });
@@ -680,6 +681,13 @@ Para CPF, formate como 000.000.000-00.`
     }
 
     const existing = await storage.getServiceOrder(Number(req.params.id));
+
+    if (parsed.data.missionStatus && existing?.missionStatus === "missao_paga" && parsed.data.missionStatus !== "missao_paga") {
+      const user = req.user!;
+      if (user.role !== "admin" && user.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas administradores podem confirmar o pagamento da missão" });
+      }
+    }
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
@@ -2457,6 +2465,10 @@ Para CPF, formate como 000.000.000-00.`
     }
 
     const currentStep = MISSION_STEPS[currentIdx];
+
+    if (currentStep === "missao_paga") {
+      return res.status(403).json({ message: "Aguardando confirmação de pagamento pela administração" });
+    }
     const requiredPhotos = STEP_REQUIRED_PHOTOS[currentStep];
     if (requiredPhotos) {
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);

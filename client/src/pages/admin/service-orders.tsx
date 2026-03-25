@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
 const MISSION_STATUS_LABELS: Record<string, string> = {
+  missao_paga: "Missão Paga",
   aguardando: "Saída da Base",
   checkout_armamento: "Saída da Base",
   checkout_viatura: "Saída da Base",
@@ -38,6 +39,8 @@ const MISSION_STATUS_LABELS: Record<string, string> = {
 function getMissionStatusColor(status: string | null) {
   if (!status) return "bg-neutral-100 text-neutral-600";
   switch (status) {
+    case "missao_paga":
+      return "bg-emerald-100 text-emerald-700";
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":
@@ -614,12 +617,27 @@ export default function ServiceOrdersPage() {
     mutationFn: async (id: number) => {
       await apiRequest("PATCH", `/api/service-orders/${id}`, {
         status: "em_andamento",
+        missionStatus: "missao_paga",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      toast({ title: "Missão iniciada — aguardando confirmação de pagamento" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/service-orders/${id}`, {
         missionStatus: "aguardando",
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      toast({ title: "Missão iniciada" });
+      toast({ title: "Pagamento confirmado — agente liberado para saída" });
     },
     onError: (err: any) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -740,6 +758,18 @@ export default function ServiceOrdersPage() {
                             data-testid={`button-start-mission-${o.id}`}
                           >
                             <Play className="w-4 h-4 text-green-600" />
+                          </Button>
+                        )}
+                        {o.missionStatus === "missao_paga" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => confirmPaymentMutation.mutate(o.id)}
+                            disabled={confirmPaymentMutation.isPending}
+                            title="Confirmar Pagamento"
+                            data-testid={`button-confirm-payment-${o.id}`}
+                          >
+                            <DollarSign className="w-4 h-4 text-emerald-600" />
                           </Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={async () => {
