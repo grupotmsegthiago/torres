@@ -34,14 +34,21 @@ function formatCnpj(value: string): string {
 
 interface ServiceContract {
   id: string; client_id: number | null; client_name: string | null;
-  contract_number: string | null; contratante_razao: string | null;
-  contratante_cnpj: string | null; contratante_endereco: string | null;
-  contratante_representante: string | null; vigencia_tipo: string;
-  vigencia_inicio: string | null; vigencia_fim: string | null;
+  contract_number: string | null; object: string | null;
+  contratante_razao: string | null; contratante_cnpj: string | null;
+  contratante_endereco: string | null; contratante_representante: string | null;
+  contratante_email: string | null; contratante_telefone: string | null;
+  vigencia_tipo: string; vigencia_inicio: string | null; vigencia_fim: string | null;
   data_assinatura: string | null; aviso_previo_dias: number;
   num_vigilantes: number; armamento_descricao: string | null;
   equipamentos: string | null; multa_mora_pct: number;
   juros_mora_pct: number; indice_correcao: string;
+  reajuste_periodicidade: string | null; reajuste_indice: string | null;
+  reajuste_observacoes: string | null; renovacao_automatica: boolean;
+  testemunha1_nome: string | null; testemunha1_rg: string | null;
+  testemunha1_cpf: string | null; testemunha1_telefone: string | null;
+  testemunha2_nome: string | null; testemunha2_rg: string | null;
+  testemunha2_cpf: string | null; testemunha2_telefone: string | null;
   observacoes: string | null; status: string; created_at: string;
 }
 
@@ -429,128 +436,246 @@ function InfoRow({ label, value, icon, highlight, full }: { label: string; value
 }
 
 function ServiceContractModal({ onClose, editing, client }: { onClose: () => void; editing: ServiceContract | null; client: Client }) {
-  const { toast } = useToast();
-  const fullAddress = [client.address, client.city, client.state, client.zip].filter(Boolean).join(", ");
-  const [form, setForm] = useState({
-    contract_number: editing?.contract_number || "",
-    contratante_razao: editing?.contratante_razao || client.name,
-    contratante_cnpj: editing?.contratante_cnpj || client.cnpj || "",
-    contratante_endereco: editing?.contratante_endereco || fullAddress,
-    contratante_representante: editing?.contratante_representante || client.contactPerson || "",
-    vigencia_tipo: editing?.vigencia_tipo || "indeterminado",
-    vigencia_inicio: editing?.vigencia_inicio?.split("T")[0] || new Date().toISOString().split("T")[0],
-    vigencia_fim: editing?.vigencia_fim?.split("T")[0] || "",
-    data_assinatura: editing?.data_assinatura?.split("T")[0] || new Date().toISOString().split("T")[0],
-    aviso_previo_dias: editing?.aviso_previo_dias?.toString() || "30",
-    num_vigilantes: editing?.num_vigilantes?.toString() || "2",
-    armamento_descricao: editing?.armamento_descricao || "01 Revolver Cal. 38 + 01 Espingarda Cal. 12 Pump",
-    equipamentos: editing?.equipamentos || "02 Coletes nível II-A, Rádio, Viatura identificada com rastreamento",
-    multa_mora_pct: editing?.multa_mora_pct?.toString() || "2.00",
-    juros_mora_pct: editing?.juros_mora_pct?.toString() || "1.00",
-    indice_correcao: editing?.indice_correcao || "INPC",
-    observacoes: editing?.observacoes || "",
-  });
-  const sf = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+    const { toast } = useToast();
+    const fullAddress = [client.address, client.city, client.state, client.zip].filter(Boolean).join(", ");
+    const oneYearLater = (() => {
+      const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0];
+    })();
+    const [form, setForm] = useState({
+      contract_number: editing?.contract_number || "",
+      data_assinatura: editing?.data_assinatura?.split("T")[0] || new Date().toISOString().split("T")[0],
+      contratante_razao: editing?.contratante_razao || client.name,
+      contratante_cnpj: editing?.contratante_cnpj || client.cnpj || "",
+      contratante_endereco: editing?.contratante_endereco || fullAddress,
+      contratante_representante: editing?.contratante_representante || client.contactPerson || "",
+      contratante_email: editing?.contratante_email || client.email || "",
+      contratante_telefone: editing?.contratante_telefone || client.phone || "",
+      vigencia_tipo: editing?.vigencia_tipo || "determinado",
+      vigencia_inicio: editing?.vigencia_inicio?.split("T")[0] || new Date().toISOString().split("T")[0],
+      vigencia_fim: editing?.vigencia_fim?.split("T")[0] || oneYearLater,
+      aviso_previo_dias: editing?.aviso_previo_dias?.toString() || "30",
+      renovacao_automatica: editing?.renovacao_automatica ?? true,
+      num_vigilantes: editing?.num_vigilantes?.toString() || "2",
+      armamento_descricao: editing?.armamento_descricao || "01 Revolver Cal. 38 + 01 Espingarda Cal. 12 Pump",
+      equipamentos: editing?.equipamentos || "02 Coletes nível II-A, Rádio, Viatura identificada com rastreamento",
+      reajuste_periodicidade: editing?.reajuste_periodicidade || "anual",
+      reajuste_indice: editing?.reajuste_indice || "INPC",
+      reajuste_observacoes: editing?.reajuste_observacoes || "Reajuste anual pelo INPC acumulado no período, aplicável a cada aniversário do contrato.",
+      multa_mora_pct: editing?.multa_mora_pct?.toString() || "2.00",
+      juros_mora_pct: editing?.juros_mora_pct?.toString() || "1.00",
+      indice_correcao: editing?.indice_correcao || "INPC",
+      testemunha1_nome: editing?.testemunha1_nome || "",
+      testemunha1_rg: editing?.testemunha1_rg || "",
+      testemunha1_cpf: editing?.testemunha1_cpf || "",
+      testemunha1_telefone: editing?.testemunha1_telefone || "",
+      testemunha2_nome: editing?.testemunha2_nome || "",
+      testemunha2_rg: editing?.testemunha2_rg || "",
+      testemunha2_cpf: editing?.testemunha2_cpf || "",
+      testemunha2_telefone: editing?.testemunha2_telefone || "",
+      observacoes: editing?.observacoes || "",
+    });
+    const sf = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const payload = {
-        client_id: client.id, client_name: client.name,
-        contract_number: form.contract_number || null,
-        contratante_razao: form.contratante_razao || null,
-        contratante_cnpj: form.contratante_cnpj || null,
-        contratante_endereco: form.contratante_endereco || null,
-        contratante_representante: form.contratante_representante || null,
-        vigencia_tipo: form.vigencia_tipo,
-        vigencia_inicio: form.vigencia_inicio || null,
-        vigencia_fim: form.vigencia_tipo === "determinado" ? (form.vigencia_fim || null) : null,
-        data_assinatura: form.data_assinatura || null,
-        aviso_previo_dias: parseInt(form.aviso_previo_dias),
-        num_vigilantes: parseInt(form.num_vigilantes),
-        armamento_descricao: form.armamento_descricao || null,
-        equipamentos: form.equipamentos || null,
-        multa_mora_pct: parseFloat(form.multa_mora_pct),
-        juros_mora_pct: parseFloat(form.juros_mora_pct),
-        indice_correcao: form.indice_correcao,
-        observacoes: form.observacoes || null,
-        status: "Ativo",
-      };
-      if (editing) return apiRequest("PUT", `/api/service-contracts/${editing.id}`, payload);
-      return apiRequest("POST", "/api/service-contracts", payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-contracts"] });
-      toast({ title: editing ? "Contrato atualizado" : "Contrato cadastrado" });
-      onClose();
-    },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
-  });
+    const saveMutation = useMutation({
+      mutationFn: () => {
+        const payload = {
+          client_id: client.id, client_name: client.name,
+          contract_number: form.contract_number || null,
+          object: "Prestação de Serviços de Escolta Armada",
+          data_assinatura: form.data_assinatura || null,
+          contratante_razao: form.contratante_razao || null,
+          contratante_cnpj: form.contratante_cnpj || null,
+          contratante_endereco: form.contratante_endereco || null,
+          contratante_representante: form.contratante_representante || null,
+          contratante_email: form.contratante_email || null,
+          contratante_telefone: form.contratante_telefone || null,
+          vigencia_tipo: form.vigencia_tipo,
+          vigencia_inicio: form.vigencia_inicio || null,
+          vigencia_fim: form.vigencia_tipo === "determinado" ? (form.vigencia_fim || null) : null,
+          aviso_previo_dias: parseInt(form.aviso_previo_dias),
+          renovacao_automatica: form.renovacao_automatica,
+          num_vigilantes: parseInt(form.num_vigilantes),
+          armamento_descricao: form.armamento_descricao || null,
+          equipamentos: form.equipamentos || null,
+          reajuste_periodicidade: form.reajuste_periodicidade || null,
+          reajuste_indice: form.reajuste_indice || null,
+          reajuste_observacoes: form.reajuste_observacoes || null,
+          multa_mora_pct: parseFloat(form.multa_mora_pct),
+          juros_mora_pct: parseFloat(form.juros_mora_pct),
+          indice_correcao: form.indice_correcao,
+          testemunha1_nome: form.testemunha1_nome || null,
+          testemunha1_rg: form.testemunha1_rg || null,
+          testemunha1_cpf: form.testemunha1_cpf || null,
+          testemunha1_telefone: form.testemunha1_telefone || null,
+          testemunha2_nome: form.testemunha2_nome || null,
+          testemunha2_rg: form.testemunha2_rg || null,
+          testemunha2_cpf: form.testemunha2_cpf || null,
+          testemunha2_telefone: form.testemunha2_telefone || null,
+          observacoes: form.observacoes || null,
+          status: "Ativo",
+        };
+        if (editing) return apiRequest("PUT", `/api/service-contracts/${editing.id}`, payload);
+        return apiRequest("POST", "/api/service-contracts", payload);
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/service-contracts"] });
+        toast({ title: editing ? "Contrato atualizado" : "Contrato cadastrado" });
+        onClose();
+      },
+      onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    });
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-service-contract">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 sticky top-0 z-10">
-          <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest">{editing ? "Editar Contrato" : "Novo Contrato de Prestação de Serviço"}</h3>
-          <button onClick={onClose}><X size={20} className="text-neutral-400 hover:text-neutral-600" /></button>
-        </div>
-        <form onSubmit={e => { e.preventDefault(); saveMutation.mutate(); }} className="p-6 space-y-4">
-          <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
-            <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><FileText size={12} /> Identificação</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nº Contrato</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold uppercase" placeholder="CT-2026/001" value={form.contract_number} onChange={e => sf("contract_number", e.target.value)} data-testid="input-contract-number" /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Data Assinatura</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
-            </div>
+    const inputCls = "w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold focus:outline-none focus:border-neutral-400";
+    const monoCls = "w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:border-neutral-400";
+    const labelCls = "text-[10px] font-black text-neutral-400 uppercase mb-1 block";
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-service-contract">
+        <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+          <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50 sticky top-0 z-10">
+            <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest">{editing ? "Editar Contrato" : "Novo Contrato de Prestação de Serviço"}</h3>
+            <button onClick={onClose} data-testid="button-close-contract"><X size={20} className="text-neutral-400 hover:text-neutral-600" /></button>
           </div>
-
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-            <p className="text-[10px] font-black text-blue-700 uppercase mb-3 tracking-widest flex items-center gap-1"><Building2 size={12} /> Contratante</p>
-            <div className="space-y-3">
+          <form onSubmit={e => { e.preventDefault(); saveMutation.mutate(); }} className="p-6 space-y-4">
+            <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
+              <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><FileText size={12} /> Identificação</p>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Razão Social</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" value={form.contratante_razao} onChange={e => sf("contratante_razao", e.target.value)} /></div>
-                <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">CNPJ</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" placeholder="00.000.000/0000-00" value={form.contratante_cnpj} onChange={e => sf("contratante_cnpj", e.target.value)} data-testid="input-contratante-cnpj" /></div>
+                <div><label className={labelCls}>Nº Contrato</label><input type="text" className={`${monoCls} uppercase`} placeholder="CT-2026/001" value={form.contract_number} onChange={e => sf("contract_number", e.target.value)} data-testid="input-contract-number" /></div>
+                <div><label className={labelCls}>Data Assinatura / Registro</label><input type="date" className={monoCls} value={form.data_assinatura} onChange={e => sf("data_assinatura", e.target.value)} /></div>
               </div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Endereço</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold" value={form.contratante_endereco} onChange={e => sf("contratante_endereco", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Representante Legal</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={form.contratante_representante} onChange={e => sf("contratante_representante", e.target.value)} /></div>
-            </div>
-          </div>
-
-          <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
-            <p className="text-[10px] font-black text-amber-700 uppercase mb-3 tracking-widest flex items-center gap-1"><Calendar size={12} /> Vigência</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Tipo</label>
-                <select className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold bg-white" value={form.vigencia_tipo} onChange={e => sf("vigencia_tipo", e.target.value)} data-testid="select-vigencia-tipo">
-                  <option value="indeterminado">Indeterminado</option>
-                  <option value="determinado">Determinado</option>
-                </select>
+              <div className="mt-3">
+                <label className={labelCls}>Objeto</label>
+                <input type="text" className={inputCls} value="Prestação de Serviços de Escolta Armada" readOnly />
               </div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Início</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_inicio} onChange={e => sf("vigencia_inicio", e.target.value)} /></div>
-              {form.vigencia_tipo === "determinado" && (
-                <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Término</label><input type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
-              )}
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Aviso Prévio (dias)</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.aviso_previo_dias} onChange={e => sf("aviso_previo_dias", e.target.value)} /></div>
             </div>
-          </div>
 
-          <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-            <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Penalidades</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Multa Mora (%)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.multa_mora_pct} onChange={e => sf("multa_mora_pct", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Juros Mora (% mês)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.juros_mora_pct} onChange={e => sf("juros_mora_pct", e.target.value)} /></div>
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+              <p className="text-[10px] font-black text-blue-700 uppercase mb-3 tracking-widest flex items-center gap-1"><Building2 size={12} /> Contratante</p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={labelCls}>Razão Social</label><input type="text" className={inputCls} value={form.contratante_razao} onChange={e => sf("contratante_razao", e.target.value)} /></div>
+                  <div><label className={labelCls}>CNPJ</label><input type="text" className={monoCls} placeholder="00.000.000/0000-00" value={form.contratante_cnpj} onChange={e => sf("contratante_cnpj", e.target.value)} data-testid="input-contratante-cnpj" /></div>
+                </div>
+                <div><label className={labelCls}>Endereço Completo</label><input type="text" className={inputCls} value={form.contratante_endereco} onChange={e => sf("contratante_endereco", e.target.value)} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={labelCls}>E-mail</label><input type="email" className={inputCls} value={form.contratante_email} onChange={e => sf("contratante_email", e.target.value)} /></div>
+                  <div><label className={labelCls}>Telefone</label><input type="text" className={monoCls} value={form.contratante_telefone} onChange={e => sf("contratante_telefone", e.target.value)} /></div>
+                </div>
+                <div><label className={labelCls}>Representante Legal</label><input type="text" className={`${inputCls} uppercase`} value={form.contratante_representante} onChange={e => sf("contratante_representante", e.target.value)} /></div>
+              </div>
             </div>
-          </div>
 
-          <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Observações</label><textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm" rows={3} value={form.observacoes} onChange={e => sf("observacoes", e.target.value)} /></div>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
+              <p className="text-[10px] font-black text-amber-700 uppercase mb-3 tracking-widest flex items-center gap-1"><Calendar size={12} /> Vigência (Padrão: 1 ano, renovável)</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={labelCls}>Tipo</label>
+                  <select className={`${inputCls} bg-white`} value={form.vigencia_tipo} onChange={e => {
+                    sf("vigencia_tipo", e.target.value);
+                    if (e.target.value === "determinado" && !form.vigencia_fim) {
+                      const d = new Date(form.vigencia_inicio || Date.now());
+                      d.setFullYear(d.getFullYear() + 1);
+                      sf("vigencia_fim", d.toISOString().split("T")[0]);
+                    }
+                  }} data-testid="select-vigencia-tipo">
+                    <option value="determinado">Determinado (1 ano)</option>
+                    <option value="indeterminado">Indeterminado</option>
+                  </select>
+                </div>
+                <div><label className={labelCls}>Início</label><input type="date" className={monoCls} value={form.vigencia_inicio} onChange={e => {
+                  sf("vigencia_inicio", e.target.value);
+                  if (form.vigencia_tipo === "determinado") {
+                    const d = new Date(e.target.value); d.setFullYear(d.getFullYear() + 1);
+                    sf("vigencia_fim", d.toISOString().split("T")[0]);
+                  }
+                }} /></div>
+                {form.vigencia_tipo === "determinado" && (
+                  <div><label className={labelCls}>Término</label><input type="date" className={monoCls} value={form.vigencia_fim} onChange={e => sf("vigencia_fim", e.target.value)} /></div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div><label className={labelCls}>Aviso Prévio (dias)</label><input type="number" className={monoCls} value={form.aviso_previo_dias} onChange={e => sf("aviso_previo_dias", e.target.value)} /></div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.renovacao_automatica} onChange={e => sf("renovacao_automatica", e.target.checked)} className="w-4 h-4 rounded accent-neutral-900" />
+                    <span className="text-xs font-bold text-neutral-700 uppercase">Renovação automática</span>
+                  </label>
+                </div>
+              </div>
+            </div>
 
-          <button type="submit" disabled={saveMutation.isPending} data-testid="button-save-service-contract"
-            className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50">
-            {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            Salvar Contrato
-          </button>
-        </form>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+              <p className="text-[10px] font-black text-green-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Reajuste</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Periodicidade</label>
+                  <select className={`${inputCls} bg-white`} value={form.reajuste_periodicidade} onChange={e => sf("reajuste_periodicidade", e.target.value)}>
+                    <option value="anual">Anual</option>
+                    <option value="semestral">Semestral</option>
+                    <option value="nenhum">Sem reajuste</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Índice</label>
+                  <select className={`${inputCls} bg-white`} value={form.reajuste_indice} onChange={e => sf("reajuste_indice", e.target.value)}>
+                    <option value="INPC">INPC</option>
+                    <option value="IGPM">IGP-M</option>
+                    <option value="IPCA">IPCA</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3"><label className={labelCls}>Cláusula de Reajuste</label><textarea className={`${inputCls} resize-none`} rows={2} value={form.reajuste_observacoes} onChange={e => sf("reajuste_observacoes", e.target.value)} /></div>
+            </div>
+
+            <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
+              <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest flex items-center gap-1"><Shield size={12} /> Operacional</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={labelCls}>Nº Vigilantes</label><input type="number" className={monoCls} value={form.num_vigilantes} onChange={e => sf("num_vigilantes", e.target.value)} /></div>
+                <div><label className={labelCls}>Índice Correção</label><input type="text" className={`${inputCls} uppercase`} value={form.indice_correcao} onChange={e => sf("indice_correcao", e.target.value)} /></div>
+              </div>
+              <div className="mt-3"><label className={labelCls}>Armamento</label><input type="text" className={inputCls} value={form.armamento_descricao} onChange={e => sf("armamento_descricao", e.target.value)} /></div>
+              <div className="mt-3"><label className={labelCls}>Equipamentos</label><input type="text" className={inputCls} value={form.equipamentos} onChange={e => sf("equipamentos", e.target.value)} /></div>
+            </div>
+
+            <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+              <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Penalidades</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={labelCls}>Multa Mora (%)</label><input type="number" step="0.01" className={monoCls} value={form.multa_mora_pct} onChange={e => sf("multa_mora_pct", e.target.value)} /></div>
+                <div><label className={labelCls}>Juros Mora (% mês)</label><input type="number" step="0.01" className={monoCls} value={form.juros_mora_pct} onChange={e => sf("juros_mora_pct", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+              <p className="text-[10px] font-black text-purple-700 uppercase mb-3 tracking-widest flex items-center gap-1"><User size={12} /> Testemunha 1</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2"><label className={labelCls}>Nome Completo</label><input type="text" className={`${inputCls} uppercase`} value={form.testemunha1_nome} onChange={e => sf("testemunha1_nome", e.target.value)} data-testid="input-testemunha1-nome" /></div>
+                <div><label className={labelCls}>RG</label><input type="text" className={monoCls} value={form.testemunha1_rg} onChange={e => sf("testemunha1_rg", e.target.value)} /></div>
+                <div><label className={labelCls}>CPF</label><input type="text" className={monoCls} placeholder="000.000.000-00" value={form.testemunha1_cpf} onChange={e => sf("testemunha1_cpf", e.target.value)} /></div>
+                <div className="col-span-2"><label className={labelCls}>Telefone</label><input type="text" className={monoCls} placeholder="(00) 00000-0000" value={form.testemunha1_telefone} onChange={e => sf("testemunha1_telefone", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+              <p className="text-[10px] font-black text-purple-700 uppercase mb-3 tracking-widest flex items-center gap-1"><User size={12} /> Testemunha 2</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2"><label className={labelCls}>Nome Completo</label><input type="text" className={`${inputCls} uppercase`} value={form.testemunha2_nome} onChange={e => sf("testemunha2_nome", e.target.value)} data-testid="input-testemunha2-nome" /></div>
+                <div><label className={labelCls}>RG</label><input type="text" className={monoCls} value={form.testemunha2_rg} onChange={e => sf("testemunha2_rg", e.target.value)} /></div>
+                <div><label className={labelCls}>CPF</label><input type="text" className={monoCls} placeholder="000.000.000-00" value={form.testemunha2_cpf} onChange={e => sf("testemunha2_cpf", e.target.value)} /></div>
+                <div className="col-span-2"><label className={labelCls}>Telefone</label><input type="text" className={monoCls} placeholder="(00) 00000-0000" value={form.testemunha2_telefone} onChange={e => sf("testemunha2_telefone", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div><label className={labelCls}>Observações</label><textarea className={`${inputCls} resize-none`} rows={3} value={form.observacoes} onChange={e => sf("observacoes", e.target.value)} /></div>
+
+            <button type="submit" disabled={saveMutation.isPending} data-testid="button-save-service-contract"
+              className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50">
+              {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              Salvar Contrato
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
-  );
+    );
 }
 
 function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: () => void; editing: EscortContract | null; clientId: number; clientName: string }) {
@@ -692,7 +817,7 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
 
 function ClientPastaView({ client, onBack }: { client: Client; onBack: () => void }) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<ClientTab>("VEICULOS");
+  const [activeTab, setActiveTab] = useState<ClientTab>("CONTRATO");
   const [showContractModal, setShowContractModal] = useState(false);
   const [editingSC, setEditingSC] = useState<ServiceContract | null>(null);
   const [showPriceModal, setShowPriceModal] = useState(false);
@@ -782,6 +907,9 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     return { label: "Vigente", color: "bg-green-100 text-green-700" };
   };
 
+  const hasActiveContract = serviceContracts.some(sc => sc.status === "Ativo");
+  const contractBlockedTabs: ClientTab[] = ["VEICULOS", "TABELA", "RELATORIO_MISSOES", "RELATORIO_FATURAMENTO"];
+
   const openBillings = clientBillings.filter(b => b.boletim_gerado && !["FATURADO", "PAGO"].includes((b as any).status || ""));
   const closedBillings = clientBillings.filter(b => ["FATURADO", "PAGO"].includes((b as any).status || ""));
 
@@ -795,17 +923,31 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
         </div>
       </div>
 
+      {!hasActiveContract && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3" data-testid="alert-no-contract">
+          <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-800">Contrato obrigatório</p>
+            <p className="text-xs text-amber-600 mt-0.5">Este cliente não possui contrato ativo. Cadastre um contrato de prestação de serviço antes de realizar qualquer operação.</p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
         <div className="flex gap-1 overflow-x-auto">
-          {TABS.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-client-${tab.id.toLowerCase()}`}
-              className={`flex items-center gap-2 px-3 py-3 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all whitespace-nowrap flex-1 justify-center ${
-                activeTab === tab.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
-              }`}>
-              <tab.icon size={14} />
-              <span className="hidden md:inline">{tab.label}</span>
-            </button>
-          ))}
+          {TABS.map(tab => {
+            const isBlocked = !hasActiveContract && contractBlockedTabs.includes(tab.id);
+            return (
+              <button key={tab.id} onClick={() => { if (!isBlocked) setActiveTab(tab.id); }} data-testid={`tab-client-${tab.id.toLowerCase()}`}
+                className={`flex items-center gap-2 px-3 py-3 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all whitespace-nowrap flex-1 justify-center ${
+                  isBlocked ? "text-neutral-300 cursor-not-allowed opacity-50" :
+                  activeTab === tab.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                }`} disabled={isBlocked}>
+                <tab.icon size={14} />
+                <span className="hidden md:inline">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
