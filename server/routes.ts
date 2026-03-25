@@ -4576,7 +4576,7 @@ Regras:
 
       const { data: priceTable } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", sc.client_id).eq("status", "ativo").maybeSingle();
 
-      const doc = new PDFDocument({ size: "A4", margins: { top: 60, bottom: 60, left: 65, right: 65 }, bufferPages: true });
+      const doc = new PDFDocument({ size: "A4", margins: { top: 60, bottom: 60, left: 65, right: 65 }, autoFirstPage: false });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=MINUTA_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
@@ -4612,7 +4612,11 @@ Regras:
       const CONTENT_TOP = HEADER_H + 16;
       const CONTENT_BOTTOM = 795 - FOOTER_H - 20;
 
-      const drawHeader = () => {
+      let currentPage = 0;
+
+      const startNewPage = () => {
+        doc.addPage({ size: "A4", margins: { top: 60, bottom: 60, left: 65, right: 65 } });
+        currentPage++;
         doc.save().rect(0, 0, 595.28, HEADER_H).fill(BRAND).restore();
         const hasLogo = !!logoBuffer;
         if (hasLogo) { try { doc.image(logoBuffer!, LM + 4, 6, { height: 34 }); } catch {} }
@@ -4622,20 +4626,16 @@ Regras:
           .text("TORRES VIGILÂNCIA PATRIMONIAL", textX, 12, { width: textW, lineBreak: false });
         doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa")
           .text("CNPJ: 36.982.392/0001-89", textX, 24, { width: textW, lineBreak: false });
-      };
-
-      const drawFooter = () => {
         const fY = 795 - FOOTER_H;
         doc.save().rect(0, fY, 595.28, FOOTER_H + 10).fill(BRAND).restore();
         doc.font("Helvetica").fontSize(6).fillColor("#cccccc")
           .text("www.torresseguranca.com.br  •  @grupotorres.seguranca  •  (11) 96369-6699  •  escolta@torresseguranca.com.br", LM, fY + 8, { width: W, align: "center", lineBreak: false });
+        y = CONTENT_TOP;
       };
 
-      drawHeader();
-      y = CONTENT_TOP;
+      startNewPage();
 
-      let contentPageCount = 1;
-      const checkPage = (need = 80) => { if (y > CONTENT_BOTTOM - need) { doc.addPage(); drawHeader(); y = CONTENT_TOP; contentPageCount++; } };
+      const checkPage = (need = 80) => { if (y > CONTENT_BOTTOM - need) { startNewPage(); } };
       const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.6).strokeColor(ACCENT_LINE).stroke().restore(); };
       const thinLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.3).strokeColor("#dddddd").stroke().restore(); };
 
@@ -4826,7 +4826,7 @@ Regras:
       y += 35;
 
       const SIG_BLOCK_H = 220;
-      if (y + SIG_BLOCK_H > CONTENT_BOTTOM) { doc.addPage(); drawHeader(); y = CONTENT_TOP; contentPageCount++; }
+      if (y + SIG_BLOCK_H > CONTENT_BOTTOM) { startNewPage(); }
       y += 15;
       const sigW = W / 2 - 20;
       const sigY = y;
@@ -4866,13 +4866,6 @@ Regras:
 
       drawWitness(1, sc.testemunha1_rg || "", sc.testemunha1_cpf || "");
       drawWitness(2, sc.testemunha2_rg || "", sc.testemunha2_cpf || "");
-
-      for (let i = 0; i < contentPageCount; i++) {
-        doc.switchToPage(i);
-        drawFooter();
-        doc.font("Helvetica").fontSize(6).fillColor("#999999")
-          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${contentPageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center", lineBreak: false });
-      }
 
       doc.end();
     } catch (err: any) {
