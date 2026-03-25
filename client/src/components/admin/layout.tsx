@@ -52,7 +52,6 @@ const menuItems: MenuItem[] = [
     ],
   },
   { path: "/admin/financeiro", label: "Financeiro", icon: Wallet, adminOnly: true },
-  { path: "/admin/calculo-escolta", label: "Cálculo Escolta", icon: Calculator, adminOnly: true },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];
