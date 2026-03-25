@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
@@ -601,6 +601,8 @@ export default function ServiceOrdersPage() {
   const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
   const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
+  const [pdfViewerTitle, setPdfViewerTitle] = useState("");
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -778,6 +780,18 @@ export default function ServiceOrdersPage() {
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);
+                            setPdfViewerUrl(url);
+                            setPdfViewerTitle(`OS ${o.osNumber}`);
+                          } catch {
+                            toast({ title: "Erro ao visualizar PDF", variant: "destructive" });
+                          }
+                        }} title="Visualizar OS" data-testid={`button-view-order-${o.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
+                        <Button variant="ghost" size="icon" onClick={async () => {
+                          try {
+                            const res = await authFetch(`/api/service-orders/${o.id}/pdf`);
+                            if (!res.ok) throw new Error("Falha ao gerar PDF");
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
                             const a = document.createElement("a");
                             a.href = url;
                             a.download = `OS_${o.osNumber}.pdf`;
@@ -798,6 +812,32 @@ export default function ServiceOrdersPage() {
           </div>
         )}
       </Card>
+
+      {pdfViewerUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }}>
+          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-2xl w-[95vw] max-w-4xl h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
+              <h3 className="font-bold text-sm" data-testid="text-pdf-viewer-title">{pdfViewerTitle}</h3>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = pdfViewerUrl;
+                  a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
+                  a.click();
+                }} data-testid="button-download-from-viewer">
+                  <Download className="w-4 h-4 mr-1" /> Baixar
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="button-close-pdf-viewer">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <iframe src={pdfViewerUrl} className="w-full h-full border-0" title={pdfViewerTitle} data-testid="iframe-pdf-viewer" />
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
