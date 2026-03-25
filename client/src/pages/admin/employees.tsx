@@ -1866,6 +1866,9 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={scanningDoc} data-testid="button-upload-doc-pasta">
                     {scanningDoc ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Processando OCR...</> : <><Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo"}</>}
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => { setDocForm({ type: docForm.type, documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" }); if (fileRef.current) fileRef.current.value = ""; }} data-testid="button-clear-doc-pasta">
+                    <X className="w-3.5 h-3.5 mr-1" /> Limpar
+                  </Button>
                   <Button size="sm" onClick={() => createDoc.mutate()} disabled={createDoc.isPending} data-testid="button-save-doc-pasta">Salvar</Button>
                 </div>
               </div>
