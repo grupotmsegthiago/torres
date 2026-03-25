@@ -4634,7 +4634,8 @@ Regras:
       drawHeader();
       y = CONTENT_TOP;
 
-      const checkPage = (need = 80) => { if (y > CONTENT_BOTTOM - need) { doc.addPage(); drawHeader(); y = CONTENT_TOP; } };
+      let contentPageCount = 1;
+      const checkPage = (need = 80) => { if (y > CONTENT_BOTTOM - need) { doc.addPage(); drawHeader(); y = CONTENT_TOP; contentPageCount++; } };
       const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.6).strokeColor(ACCENT_LINE).stroke().restore(); };
       const thinLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.3).strokeColor("#dddddd").stroke().restore(); };
 
@@ -4825,7 +4826,7 @@ Regras:
       y += 35;
 
       const SIG_BLOCK_H = 220;
-      if (y + SIG_BLOCK_H > CONTENT_BOTTOM) { doc.addPage(); drawHeader(); y = CONTENT_TOP; }
+      if (y + SIG_BLOCK_H > CONTENT_BOTTOM) { doc.addPage(); drawHeader(); y = CONTENT_TOP; contentPageCount++; }
       y += 15;
       const sigW = W / 2 - 20;
       const sigY = y;
@@ -4866,13 +4867,11 @@ Regras:
       drawWitness(1, sc.testemunha1_rg || "", sc.testemunha1_cpf || "");
       drawWitness(2, sc.testemunha2_rg || "", sc.testemunha2_cpf || "");
 
-      const range = doc.bufferedPageRange();
-      const pageCount = range.count;
-      for (let i = 0; i < pageCount; i++) {
+      for (let i = 0; i < contentPageCount; i++) {
         doc.switchToPage(i);
         drawFooter();
         doc.font("Helvetica").fontSize(6).fillColor("#999999")
-          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${pageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center", lineBreak: false });
+          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${contentPageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center", lineBreak: false });
       }
 
       doc.end();
