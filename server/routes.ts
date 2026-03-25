@@ -4576,7 +4576,7 @@ Regras:
 
       const { data: priceTable } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", sc.client_id).eq("status", "ativo").maybeSingle();
 
-      const doc = new PDFDocument({ size: "A4", margins: { top: 50, bottom: 50, left: 50, right: 50 } });
+      const doc = new PDFDocument({ size: "A4", margins: { top: 50, bottom: 50, left: 50, right: 50 }, bufferPages: true });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=CONTRATO_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
@@ -4817,7 +4817,13 @@ Regras:
       }
 
       doc.end();
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ message: err.message });
+      } else {
+        res.end();
+      }
+    }
   });
 
   // Client Billing Report (monthly)
