@@ -520,6 +520,56 @@ Para CPF, formate como 000.000.000-00.`
     }
   });
 
+  app.post("/api/employees/ocr-document", requireAdminRole, async (req, res) => {
+    try {
+      const { imageData, docType } = req.body;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ message: "Envie imageData (base64 data URL)" });
+      }
+
+      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+      if (!apiKey) return res.status(500).json({ message: "Chave de API de IA não configurada" });
+
+      const openai = new OpenAI({ apiKey, baseURL });
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um sistema especializado em extrair dados de documentos brasileiros.
+O documento sendo analisado é do tipo: "${docType || 'Documento geral'}".
+Extraia os seguintes campos e retorne APENAS um JSON válido (sem markdown):
+{
+  "documentNumber": "número do documento (registro, matrícula, protocolo, etc)",
+  "issueDate": "data de emissão no formato YYYY-MM-DD",
+  "expiryDate": "data de validade no formato YYYY-MM-DD",
+  "notes": "tipo do documento identificado e informações relevantes (nome do titular, órgão emissor, etc)"
+}
+Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.
+Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `Extraia os dados deste documento (${docType || "documento"}):` },
+              { type: "image_url", image_url: { url: imageData } },
+            ],
+          },
+        ],
+      });
+
+      const text = response.choices?.[0]?.message?.content || "";
+      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+      res.json(parsed);
+    } catch (err: any) {
+      console.error("[ocr-document] Error:", err.message || err);
+      res.status(500).json({ message: "Erro ao processar documento" });
+    }
+  });
+
   app.get("/api/vehicles", requireAuth, async (_req, res) => {
     const data = await storage.getVehicles();
     res.json(data);
