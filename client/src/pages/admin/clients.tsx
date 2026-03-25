@@ -1285,6 +1285,7 @@ const DOC_TYPES = [
   { key: "certificado_seguranca", label: "Certificado de Segurança (PF)" },
   { key: "certificado_regularidade", label: "Certificado Regularidade (Polícia Civil)" },
   { key: "certidao_trabalhista", label: "Certidão Trabalhista" },
+  { key: "lista_documentos_registro", label: "Lista de Documentos para Registro" },
   { key: "seguro_responsabilidade", label: "Seguro Responsabilidade Civil" },
   { key: "certidao_negativa", label: "Certidões Negativas" },
 ];
