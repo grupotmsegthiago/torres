@@ -14,6 +14,7 @@ import {
   FileText, DollarSign, BarChart3, ChevronLeft, Save,
   Moon, Route, Navigation, ChevronRight, Shield, Edit,
   Car, Wallet, ClipboardList, Clock, Eye, User, Camera, Truck,
+  Upload, Send, Check, Paperclip, History, Settings2,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
@@ -82,7 +83,7 @@ interface ClientVehicle {
   driverPhone: string | null; notes: string | null; createdAt: string;
 }
 
-type ClientTab = "VEICULOS" | "TABELA" | "CONTRATO" | "RELATORIO_MISSOES" | "RELATORIO_FATURAMENTO";
+type ClientTab = "VEICULOS" | "TABELA" | "CONTRATO" | "RELATORIO_MISSOES" | "RELATORIO_FATURAMENTO" | "HOMOLOGACAO";
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
@@ -891,6 +892,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     { id: "CONTRATO", label: "Contratos", icon: FileText },
     { id: "RELATORIO_MISSOES", label: "Missões", icon: ClipboardList },
     { id: "RELATORIO_FATURAMENTO", label: "Faturamento", icon: Wallet },
+    { id: "HOMOLOGACAO", label: "Homologação", icon: BadgeCheck },
   ];
 
   const getVigenciaStatus = (sc: ServiceContract) => {
@@ -1242,10 +1244,361 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
         </div>
       )}
 
+      {activeTab === "HOMOLOGACAO" && (
+        <HomologacaoTab client={client} />
+      )}
+
       {showContractModal && <ServiceContractModal onClose={() => { setShowContractModal(false); setEditingSC(null); }} editing={editingSC} client={client} />}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}
       {showRouteModal && <RouteFormModal onClose={() => { setShowRouteModal(false); setEditingRoute(null); }} editing={editingRoute} clientId={client.id} clientName={client.name} />}
       {selectedMissionId && <MissionDetailModal osId={selectedMissionId} onClose={() => setSelectedMissionId(null)} />}
+    </div>
+  );
+}
+
+interface CompanyDoc {
+  id: number;
+  docType: string;
+  label: string;
+  fileName: string;
+  mimeType: string;
+  uploadedAt: string;
+}
+
+interface HomologLog {
+  id: number;
+  clientId: number;
+  clientName: string | null;
+  recipientEmail: string;
+  recipientName: string | null;
+  documentsSent: string[] | null;
+  sentBy: string | null;
+  status: string;
+  sentAt: string;
+}
+
+const DOC_TYPES = [
+  { key: "alvara", label: "Alvará de Funcionamento" },
+  { key: "cartao_cnpj", label: "Cartão CNPJ" },
+  { key: "contrato_social", label: "Contrato Social" },
+  { key: "certificado_registro", label: "Certificado de Registro (PF)" },
+  { key: "seguro_responsabilidade", label: "Seguro Responsabilidade Civil" },
+  { key: "certidao_negativa", label: "Certidões Negativas" },
+];
+
+function HomologacaoTab({ client }: { client: Client }) {
+  const { toast } = useToast();
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientName, setRecipientName] = useState(client.contactPerson || "");
+  const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+  const [includePresentation, setIncludePresentation] = useState(true);
+  const [includeValues, setIncludeValues] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [showSmtpConfig, setShowSmtpConfig] = useState(false);
+  const [smtpConfig, setSmtpConfig] = useState({ host: "", port: "587", user: "", pass: "", from: "" });
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+
+  const { data: companyDocs = [], refetch: refetchDocs } = useQuery<CompanyDoc[]>({
+    queryKey: ["/api/company-documents"],
+    queryFn: async () => { const r = await fetch("/api/company-documents", { credentials: "include" }); return r.json(); },
+  });
+
+  const { data: logs = [], refetch: refetchLogs } = useQuery<HomologLog[]>({
+    queryKey: ["/api/homologation-logs", client.id],
+    queryFn: async () => { const r = await fetch(`/api/homologation-logs/${client.id}`, { credentials: "include" }); return r.json(); },
+  });
+
+  const { data: emailConfig } = useQuery<{ configured: boolean; host: string; port: string; user: string }>({
+    queryKey: ["/api/email-config"],
+    queryFn: async () => { const r = await fetch("/api/email-config", { credentials: "include" }); return r.json(); },
+  });
+
+  const handleUploadDoc = (docType: string, label: string) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,.jpg,.jpeg,.png";
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" });
+        return;
+      }
+      setUploadingDoc(docType);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          await apiRequest("POST", "/api/company-documents", {
+            docType,
+            label,
+            fileName: file.name,
+            fileData: reader.result as string,
+            mimeType: file.type,
+          });
+          toast({ title: `${label} enviado` });
+          refetchDocs();
+        } catch (err: any) {
+          toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+        } finally {
+          setUploadingDoc(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
+
+  const handleDeleteDoc = async (docType: string) => {
+    try {
+      await apiRequest("DELETE", `/api/company-documents/${docType}`);
+      toast({ title: "Documento removido" });
+      refetchDocs();
+      setSelectedDocs(prev => prev.filter(d => d !== docType));
+    } catch (err: any) {
+      toast({ title: "Erro ao remover", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const toggleDoc = (docType: string) => {
+    setSelectedDocs(prev => prev.includes(docType) ? prev.filter(d => d !== docType) : [...prev, docType]);
+  };
+
+  const handleSend = async () => {
+    if (!recipientEmail) {
+      toast({ title: "Informe o e-mail do destinatário", variant: "destructive" });
+      return;
+    }
+    if (selectedDocs.length === 0 && !includePresentation && !includeValues) {
+      toast({ title: "Selecione ao menos um documento", variant: "destructive" });
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await apiRequest("POST", "/api/homologation/send", {
+        clientId: client.id,
+        clientName: client.name,
+        recipientEmail,
+        recipientName,
+        documentTypes: selectedDocs,
+        includePresentation,
+        includeValues,
+        sentBy: "Admin",
+        ...(showSmtpConfig ? {
+          smtpHost: smtpConfig.host,
+          smtpPort: smtpConfig.port,
+          smtpUser: smtpConfig.user,
+          smtpPass: smtpConfig.pass,
+          smtpFrom: smtpConfig.from,
+        } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      toast({ title: "E-mail enviado com sucesso!", description: `Documentação enviada para ${recipientEmail}` });
+      refetchLogs();
+      setRecipientEmail("");
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar e-mail", description: err.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-black text-neutral-700 uppercase flex items-center gap-2" data-testid="text-homologacao-title">
+            <BadgeCheck size={16} /> Homologação
+          </h3>
+          <p className="text-[10px] text-neutral-400 mt-0.5">Envie documentação da empresa para fins de homologação no cliente</p>
+        </div>
+        <button
+          onClick={() => setShowSmtpConfig(!showSmtpConfig)}
+          className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-600 transition-colors"
+          data-testid="button-toggle-smtp"
+        >
+          <Settings2 size={12} />
+          <span>Config. SMTP</span>
+        </button>
+      </div>
+
+      {showSmtpConfig && (
+        <Card className="p-4 bg-neutral-50 border-dashed space-y-3">
+          <p className="text-[10px] font-black text-neutral-500 uppercase">Configuração SMTP {emailConfig?.configured && <span className="text-green-600 normal-case font-medium ml-2">(Variáveis de ambiente detectadas)</span>}</p>
+          <p className="text-[10px] text-neutral-400">Preencha apenas se quiser usar um servidor SMTP diferente das variáveis de ambiente.</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 block mb-1">Host SMTP</label>
+              <Input value={smtpConfig.host} onChange={e => setSmtpConfig(p => ({ ...p, host: e.target.value }))} placeholder={emailConfig?.host || "smtp.gmail.com"} className="h-8 text-xs" data-testid="input-smtp-host" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 block mb-1">Porta</label>
+              <Input value={smtpConfig.port} onChange={e => setSmtpConfig(p => ({ ...p, port: e.target.value }))} placeholder="587" className="h-8 text-xs" data-testid="input-smtp-port" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 block mb-1">Usuário / E-mail</label>
+              <Input value={smtpConfig.user} onChange={e => setSmtpConfig(p => ({ ...p, user: e.target.value }))} placeholder={emailConfig?.user || "email@exemplo.com"} className="h-8 text-xs" data-testid="input-smtp-user" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 block mb-1">Senha / App Password</label>
+              <Input type="password" value={smtpConfig.pass} onChange={e => setSmtpConfig(p => ({ ...p, pass: e.target.value }))} placeholder="••••••••" className="h-8 text-xs" data-testid="input-smtp-pass" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 block mb-1">Remetente (From)</label>
+              <Input value={smtpConfig.from} onChange={e => setSmtpConfig(p => ({ ...p, from: e.target.value }))} placeholder="escolta@torresseguranca.com.br" className="h-8 text-xs" data-testid="input-smtp-from" />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <Card className="p-4 space-y-4">
+            <p className="text-[10px] font-black text-neutral-500 uppercase flex items-center gap-2"><Paperclip size={12} /> Documentos da Empresa</p>
+            <p className="text-[10px] text-neutral-400">Faça upload dos documentos fixos. Cada tipo aceita um arquivo (PDF, JPG ou PNG).</p>
+            <div className="space-y-2">
+              {DOC_TYPES.map(dt => {
+                const uploaded = companyDocs.find(d => d.docType === dt.key);
+                const isUploading = uploadingDoc === dt.key;
+                return (
+                  <div key={dt.key} className="flex items-center gap-3 p-2.5 rounded-lg border border-neutral-100 bg-white hover:border-neutral-200 transition-colors" data-testid={`doc-row-${dt.key}`}>
+                    <button
+                      onClick={() => uploaded && toggleDoc(dt.key)}
+                      disabled={!uploaded}
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                        !uploaded ? "border-neutral-200 bg-neutral-50 cursor-not-allowed" :
+                        selectedDocs.includes(dt.key) ? "border-neutral-900 bg-neutral-900" : "border-neutral-300 hover:border-neutral-500"
+                      }`}
+                      data-testid={`checkbox-doc-${dt.key}`}
+                    >
+                      {selectedDocs.includes(dt.key) && <Check size={12} className="text-white" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-neutral-700">{dt.label}</p>
+                      {uploaded ? (
+                        <p className="text-[10px] text-green-600 truncate flex items-center gap-1"><CheckCircle2 size={10} /> {uploaded.fileName}</p>
+                      ) : (
+                        <p className="text-[10px] text-neutral-400">Nenhum arquivo enviado</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {uploaded && (
+                        <button onClick={() => handleDeleteDoc(dt.key)} className="p-1.5 rounded hover:bg-red-50 text-neutral-300 hover:text-red-500 transition-colors" data-testid={`button-delete-doc-${dt.key}`}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleUploadDoc(dt.key, dt.label)}
+                        disabled={isUploading}
+                        className="p-1.5 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
+                        data-testid={`button-upload-doc-${dt.key}`}
+                      >
+                        {isUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t border-neutral-100 pt-3 space-y-2">
+              <div className="flex items-center gap-3 p-2.5 rounded-lg border border-neutral-100 bg-white">
+                <button
+                  onClick={() => setIncludePresentation(!includePresentation)}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    includePresentation ? "border-neutral-900 bg-neutral-900" : "border-neutral-300 hover:border-neutral-500"
+                  }`}
+                  data-testid="checkbox-presentation"
+                >
+                  {includePresentation && <Check size={12} className="text-white" />}
+                </button>
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-neutral-700">Apresentação Institucional</p>
+                  <p className="text-[10px] text-neutral-400">PDF gerado automaticamente com dados da empresa</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-2.5 rounded-lg border border-neutral-100 bg-white">
+                <button
+                  onClick={() => setIncludeValues(!includeValues)}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    includeValues ? "border-neutral-900 bg-neutral-900" : "border-neutral-300 hover:border-neutral-500"
+                  }`}
+                  data-testid="checkbox-values"
+                >
+                  {includeValues && <Check size={12} className="text-white" />}
+                </button>
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-neutral-700">Tabela de Valores</p>
+                  <p className="text-[10px] text-neutral-400">Inclui valores cadastrados do cliente (se houver)</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card className="p-4 space-y-4">
+            <p className="text-[10px] font-black text-neutral-500 uppercase flex items-center gap-2"><Send size={12} /> Enviar para o Cliente</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 block mb-1">Nome do Destinatário</label>
+                <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="Nome do responsável na empresa" className="h-9 text-xs" data-testid="input-recipient-name" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 block mb-1">E-mail do Destinatário *</label>
+                <Input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="homologacao@empresa.com.br" className="h-9 text-xs" data-testid="input-recipient-email" />
+              </div>
+            </div>
+            <div className="bg-neutral-50 rounded-lg p-3">
+              <p className="text-[10px] font-bold text-neutral-500 mb-2">Documentos selecionados:</p>
+              {selectedDocs.length === 0 && !includePresentation && !includeValues ? (
+                <p className="text-[10px] text-neutral-400 italic">Nenhum documento selecionado</p>
+              ) : (
+                <ul className="space-y-1">
+                  {selectedDocs.map(d => {
+                    const dt = DOC_TYPES.find(t => t.key === d);
+                    return <li key={d} className="text-[10px] text-neutral-600 flex items-center gap-1"><Check size={10} className="text-green-600" /> {dt?.label || d}</li>;
+                  })}
+                  {includePresentation && <li className="text-[10px] text-neutral-600 flex items-center gap-1"><Check size={10} className="text-green-600" /> Apresentação Institucional</li>}
+                  {includeValues && <li className="text-[10px] text-neutral-600 flex items-center gap-1"><Check size={10} className="text-green-600" /> Tabela de Valores</li>}
+                </ul>
+              )}
+            </div>
+            <Button
+              onClick={handleSend}
+              disabled={sending || !recipientEmail || (selectedDocs.length === 0 && !includePresentation && !includeValues)}
+              className="w-full bg-neutral-900 hover:bg-black text-white font-black uppercase text-xs"
+              data-testid="button-send-homologation"
+            >
+              {sending ? <><Loader2 size={14} className="mr-2 animate-spin" /> Enviando...</> : <><Send size={14} className="mr-2" /> Disparar E-mail de Homologação</>}
+            </Button>
+          </Card>
+
+          {logs.length > 0 && (
+            <Card className="p-4 space-y-3">
+              <p className="text-[10px] font-black text-neutral-500 uppercase flex items-center gap-2"><History size={12} /> Histórico de Envios</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {logs.map(log => (
+                  <div key={log.id} className="p-3 rounded-lg border border-neutral-100 bg-white" data-testid={`log-entry-${log.id}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-neutral-700 truncate">{log.recipientEmail}</p>
+                        {log.recipientName && <p className="text-[10px] text-neutral-400">{log.recipientName}</p>}
+                      </div>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${log.status === "enviado" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{log.status}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {log.documentsSent?.map((d, i) => (
+                        <span key={i} className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">{d}</span>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-neutral-400 mt-1.5">{new Date(log.sentAt).toLocaleString("pt-BR")}{log.sentBy ? ` • por ${log.sentBy}` : ""}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -16,7 +16,9 @@ import {
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary,
   auditLogs, users, loginSelfies,
+  companyDocuments, homologationLogs,
 } from "@shared/schema";
+import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
 import { processTelemetry } from "./telemetry-engine";
@@ -5010,6 +5012,166 @@ Regras:
         missoes: items,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/company-documents", requireAuth, async (_req, res) => {
+    try {
+      const docs = await db.select({
+        id: companyDocuments.id,
+        docType: companyDocuments.docType,
+        label: companyDocuments.label,
+        fileName: companyDocuments.fileName,
+        mimeType: companyDocuments.mimeType,
+        uploadedAt: companyDocuments.uploadedAt,
+      }).from(companyDocuments).orderBy(companyDocuments.docType);
+      res.json(docs);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/company-documents", requireAuth, async (req, res) => {
+    try {
+      const { docType, label, fileName, fileData, mimeType } = req.body;
+      if (!docType || !fileName || !fileData || !mimeType) return res.status(400).json({ message: "Campos obrigatórios ausentes" });
+      const existing = await db.select().from(companyDocuments).where(eq(companyDocuments.docType, docType));
+      if (existing.length > 0) {
+        await db.update(companyDocuments).set({ label, fileName, fileData, mimeType }).where(eq(companyDocuments.docType, docType));
+      } else {
+        await db.insert(companyDocuments).values({ docType, label, fileName, fileData, mimeType });
+      }
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/company-documents/:docType", requireAuth, async (req, res) => {
+    try {
+      await db.delete(companyDocuments).where(eq(companyDocuments.docType, req.params.docType));
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/homologation-logs/:clientId", requireAuth, async (req, res) => {
+    try {
+      const logs = await db.select().from(homologationLogs)
+        .where(eq(homologationLogs.clientId, Number(req.params.clientId)))
+        .orderBy(desc(homologationLogs.sentAt));
+      res.json(logs);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/email-config", requireAuth, async (_req, res) => {
+    const configured = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    res.json({ configured, host: process.env.SMTP_HOST || "", port: process.env.SMTP_PORT || "587", user: process.env.SMTP_USER || "" });
+  });
+
+  app.post("/api/homologation/send", requireAuth, async (req, res) => {
+    try {
+      const { clientId, clientName, recipientEmail, recipientName, documentTypes, includePresentation, includeValues, sentBy, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
+      if (!recipientEmail) {
+        return res.status(400).json({ message: "E-mail do destinatário é obrigatório" });
+      }
+      if ((!documentTypes || documentTypes.length === 0) && !includePresentation && !includeValues) {
+        return res.status(400).json({ message: "Selecione ao menos um documento para enviar" });
+      }
+
+      const host = smtpHost || process.env.SMTP_HOST;
+      const port = parseInt(smtpPort || process.env.SMTP_PORT || "587");
+      const user = smtpUser || process.env.SMTP_USER;
+      const pass = smtpPass || process.env.SMTP_PASS;
+      const from = smtpFrom || process.env.SMTP_FROM || user;
+
+      if (!host || !user || !pass) {
+        return res.status(400).json({ message: "Configurações SMTP não definidas. Configure as variáveis de ambiente SMTP_HOST, SMTP_USER e SMTP_PASS ou preencha os campos de configuração." });
+      }
+
+      const docs = documentTypes && documentTypes.length > 0
+        ? await db.select().from(companyDocuments).where(
+            sql`${companyDocuments.docType} IN (${sql.join(documentTypes.map((d: string) => sql`${d}`), sql`, `)})`
+          )
+        : [];
+
+      const attachments: { filename: string; content: Buffer; contentType: string }[] = [];
+      const docLabels: string[] = [];
+
+      for (const doc of docs) {
+        const base64Match = doc.fileData.match(/^data:[^;]+;base64,(.+)$/);
+        const base64Data = base64Match ? base64Match[1] : doc.fileData;
+        attachments.push({
+          filename: doc.fileName,
+          content: Buffer.from(base64Data, "base64"),
+          contentType: doc.mimeType,
+        });
+        docLabels.push(doc.label);
+      }
+
+      if (includePresentation) {
+        docLabels.push("Apresentação Institucional");
+      }
+      if (includeValues) {
+        docLabels.push("Tabela de Valores");
+      }
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false },
+      });
+
+      const greeting = recipientName ? `Prezado(a) ${recipientName}` : "Prezado(a)";
+
+      const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+  <div style="background: #1a1a1a; padding: 20px 30px; text-align: center;">
+    <h1 style="color: #fff; font-size: 18px; margin: 0;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</h1>
+    <p style="color: #999; font-size: 12px; margin: 4px 0 0;">CNPJ: 36.982.392/0001-89</p>
+  </div>
+  <div style="padding: 30px; border: 1px solid #e0e0e0; border-top: none;">
+    <p>${greeting},</p>
+    <p>É com satisfação que nos apresentamos. A <strong>Torres Vigilância Patrimonial LTDA</strong> é uma empresa especializada em <strong>escolta armada</strong> e <strong>vigilância patrimonial</strong>, atuando com excelência, comprometimento e total conformidade com as exigências legais do setor.</p>
+    <p>Para fins de <strong>homologação junto à sua empresa</strong>, seguem em anexo os seguintes documentos:</p>
+    <ul style="margin: 15px 0;">
+      ${docLabels.map(l => `<li style="margin: 5px 0;">${l}</li>`).join("")}
+    </ul>
+    <p>Estamos à disposição para quaisquer esclarecimentos ou informações adicionais que se façam necessários.</p>
+    <p style="margin-top: 25px;">Atenciosamente,</p>
+    <p style="margin: 5px 0;"><strong>Torres Vigilância Patrimonial LTDA</strong></p>
+    <p style="color: #666; font-size: 13px; margin: 2px 0;">Tel: (11) 96369-6699</p>
+    <p style="color: #666; font-size: 13px; margin: 2px 0;">escolta@torresseguranca.com.br</p>
+    <p style="color: #666; font-size: 13px; margin: 2px 0;">www.torresseguranca.com.br</p>
+  </div>
+  <div style="background: #f5f5f5; padding: 15px 30px; text-align: center; border: 1px solid #e0e0e0; border-top: none;">
+    <p style="color: #999; font-size: 11px; margin: 0;">Este e-mail foi enviado automaticamente pelo sistema Torres Gestão.</p>
+  </div>
+</body>
+</html>`;
+
+      await transporter.sendMail({
+        from: `"Torres Vigilância Patrimonial" <${from}>`,
+        to: recipientEmail,
+        subject: `Documentação para Homologação — Torres Vigilância Patrimonial LTDA`,
+        html: htmlBody,
+        attachments,
+      });
+
+      await db.insert(homologationLogs).values({
+        clientId,
+        clientName: clientName || null,
+        recipientEmail,
+        recipientName: recipientName || null,
+        documentsSent: docLabels,
+        sentBy: sentBy || null,
+        status: "enviado",
+      });
+
+      res.json({ success: true, message: "E-mail enviado com sucesso" });
+    } catch (err: any) {
+      console.error("Erro ao enviar e-mail de homologação:", err);
+      res.status(500).json({ message: `Erro ao enviar e-mail: ${err.message}` });
+    }
   });
 
   return httpServer;

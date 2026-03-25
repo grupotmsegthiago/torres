@@ -603,3 +603,33 @@ export const auditLogs = pgTable("audit_logs", {
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const companyDocuments = pgTable("company_documents", {
+  id: serial("id").primaryKey(),
+  docType: text("doc_type").notNull(),
+  label: text("label").notNull(),
+  fileName: text("file_name").notNull(),
+  fileData: text("file_data").notNull(),
+  mimeType: text("mime_type").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+});
+
+export const insertCompanyDocumentSchema = createInsertSchema(companyDocuments).omit({ id: true, uploadedAt: true });
+export type InsertCompanyDocument = z.infer<typeof insertCompanyDocumentSchema>;
+export type CompanyDocument = typeof companyDocuments.$inferSelect;
+
+export const homologationLogs = pgTable("homologation_logs", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull(),
+  clientName: text("client_name"),
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name"),
+  documentsSent: text("documents_sent").array(),
+  sentBy: text("sent_by"),
+  status: text("status").notNull().default("enviado"),
+  sentAt: timestamp("sent_at").defaultNow(),
+});
+
+export const insertHomologationLogSchema = createInsertSchema(homologationLogs).omit({ id: true, sentAt: true });
+export type InsertHomologationLog = z.infer<typeof insertHomologationLogSchema>;
+export type HomologationLog = typeof homologationLogs.$inferSelect;
