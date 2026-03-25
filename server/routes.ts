@@ -939,44 +939,53 @@ Para CPF, formate como 000.000.000-00.`
         sectionHeader(`Identifica\u00e7\u00e3o do Agente : ${roleLabel}`);
 
         const photoSize = 72;
+        const photoMargin = 8;
         const hasPhoto = emp?.photoUrl && emp.photoUrl.startsWith("data:");
         const photoBuffer = hasPhoto ? parseDataUri(emp.photoUrl) : null;
-        const showPhoto = !!photoBuffer;
 
-        const photoX = LM + W - photoSize - 8;
+        const photoX = LM + photoMargin;
         const photoY = y + 2;
-        const dataW = showPhoto ? W - photoSize - 20 : W;
+        const dataStartX = LM + photoSize + photoMargin * 2 + 4;
+        const dataW = W - photoSize - photoMargin * 2 - 4;
 
-        if (showPhoto) {
+        doc.save().roundedRect(photoX, photoY, photoSize, photoSize, 4).lineWidth(0.8).strokeColor("#cccccc").stroke().restore();
+
+        if (photoBuffer) {
           try {
             doc.save()
               .roundedRect(photoX, photoY, photoSize, photoSize, 4).clip()
-              .image(photoBuffer!, photoX, photoY, { width: photoSize, height: photoSize })
+              .image(photoBuffer, photoX, photoY, { width: photoSize, height: photoSize })
               .restore();
-            doc.save().roundedRect(photoX, photoY, photoSize, photoSize, 4).lineWidth(1).strokeColor("#cccccc").stroke().restore();
           } catch {}
+        } else {
+          doc.save();
+          doc.font("Helvetica").fontSize(7).fillColor(LIGHT_GRAY).text("SEM", photoX, photoY + 26, { width: photoSize, align: "center", lineBreak: false });
+          doc.text("FOTO", photoX, photoY + 35, { width: photoSize, align: "center", lineBreak: false });
+          doc.restore();
         }
 
-        const vOff = 120;
-        const rightCol = Math.floor(dataW * 0.55);
         const rH = 16;
         const vPad = Math.floor((rH - 8) / 2);
+        const labelX = dataStartX + 4;
+        const labelW = 55;
+        const valX = labelX + labelW;
+        const rightCol = Math.floor(dataW * 0.55);
 
         const agentRow = (l1: string, v1: string, l2: string, v2: string) => {
-          hLine(LM, y + rH, W);
+          hLine(dataStartX, y + rH, dataW);
           doc.save();
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + vPad, { width: 50, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LABEL_X + 50, y + vPad, { width: rightCol - 55, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LABEL_X + rightCol, y + vPad, { width: 70, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LABEL_X + rightCol + 70, y + vPad, { width: dataW - rightCol - 75, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", labelX, y + vPad, { width: labelW, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", valX, y + vPad, { width: rightCol - labelW - 5, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", labelX + rightCol, y + vPad, { width: labelW, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", valX + rightCol, y + vPad, { width: dataW - rightCol - labelW - 5, lineBreak: false });
           doc.restore();
           y += rH;
         };
 
-        hLine(LM, y + rH, W);
+        hLine(dataStartX, y + rH, dataW);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("NOME:", LABEL_X, y + vPad, { width: 45, lineBreak: false });
-        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), LABEL_X + 50, y + vPad - 1, { width: dataW - 55, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("NOME:", labelX, y + vPad, { width: labelW, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), valX, y + vPad - 1, { width: dataW - labelW - 10, lineBreak: false });
         doc.restore();
         y += rH;
 
@@ -989,9 +998,7 @@ Para CPF, formate como 000.000.000-00.`
           agentRow("Colete", `${emp.vestNumber} ${emp.vestBrand || ""}`.trim(), "Val Colete", emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "\u2014");
         }
 
-        if (showPhoto) {
-          y = Math.max(y, photoY + photoSize + 4);
-        }
+        y = Math.max(y, photoY + photoSize + 4);
         y += 6;
       };
 
