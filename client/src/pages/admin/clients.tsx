@@ -1278,10 +1278,12 @@ interface HomologLog {
 }
 
 const DOC_TYPES = [
-  { key: "alvara", label: "Alvará de Funcionamento" },
+  { key: "alvara", label: "Alvará de Funcionamento (PF)" },
+  { key: "alvara_razao_social", label: "Alvará Alteração Razão Social" },
   { key: "cartao_cnpj", label: "Cartão CNPJ" },
   { key: "contrato_social", label: "Contrato Social" },
-  { key: "certificado_registro", label: "Certificado de Registro (PF)" },
+  { key: "certificado_seguranca", label: "Certificado de Segurança (PF)" },
+  { key: "certificado_regularidade", label: "Certificado Regularidade (Polícia Civil)" },
   { key: "seguro_responsabilidade", label: "Seguro Responsabilidade Civil" },
   { key: "certidao_negativa", label: "Certidões Negativas" },
 ];
