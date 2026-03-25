@@ -1300,17 +1300,17 @@ function HomologacaoTab({ client }: { client: Client }) {
 
   const { data: companyDocs = [], refetch: refetchDocs } = useQuery<CompanyDoc[]>({
     queryKey: ["/api/company-documents"],
-    queryFn: async () => { const r = await fetch("/api/company-documents", { credentials: "include" }); return r.json(); },
+    queryFn: async () => { const r = await authFetch("/api/company-documents"); const d = await r.json(); return Array.isArray(d) ? d : []; },
   });
 
   const { data: logs = [], refetch: refetchLogs } = useQuery<HomologLog[]>({
     queryKey: ["/api/homologation-logs", client.id],
-    queryFn: async () => { const r = await fetch(`/api/homologation-logs/${client.id}`, { credentials: "include" }); return r.json(); },
+    queryFn: async () => { const r = await authFetch(`/api/homologation-logs/${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; },
   });
 
   const { data: emailConfig } = useQuery<{ configured: boolean; host: string; port: string; user: string }>({
     queryKey: ["/api/email-config"],
-    queryFn: async () => { const r = await fetch("/api/email-config", { credentials: "include" }); return r.json(); },
+    queryFn: async () => { const r = await authFetch("/api/email-config"); return r.json(); },
   });
 
   const handleUploadDoc = (docType: string, label: string) => {
