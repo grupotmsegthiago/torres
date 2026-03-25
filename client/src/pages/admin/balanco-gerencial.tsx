@@ -1,0 +1,684 @@
+import AdminLayout from "@/components/admin/layout";
+import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
+  Calendar, ChevronLeft, ChevronRight, BarChart3, ArrowUpRight,
+  ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck,
+} from "lucide-react";
+import { queryClient } from "@/lib/queryClient";
+
+const fmt = (val: number) =>
+  val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const fmtPct = (val: number) => `${val.toFixed(1)}%`;
+
+const META_MENSAL_CARRO = 35000;
+
+type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR";
+
+const PERIOD_LABELS: Record<Period, string> = {
+  DAY: "Diário",
+  WEEK: "Semanal",
+  MONTH: "Mensal",
+  QUARTER: "Trimestral",
+  SEMESTER: "Semestral",
+  YEAR: "Anual",
+};
+
+function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; label: string } {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const d = refDate.getDate();
+
+  switch (period) {
+    case "DAY":
+      return { start: new Date(y, m, d), end: new Date(y, m, d, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) };
+    case "WEEK": {
+      const dow = refDate.getDay();
+      const start = new Date(y, m, d - dow);
+      const end = new Date(y, m, d + (6 - dow), 23, 59, 59);
+      return { start, end, label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}` };
+    }
+    case "MONTH":
+      return { start: new Date(y, m, 1), end: new Date(y, m + 1, 0, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
+    case "QUARTER": {
+      const q = Math.floor(m / 3);
+      return { start: new Date(y, q * 3, 1), end: new Date(y, q * 3 + 3, 0, 23, 59, 59), label: `${q + 1}º Trimestre ${y}` };
+    }
+    case "SEMESTER": {
+      const s = m < 6 ? 0 : 1;
+      return { start: new Date(y, s * 6, 1), end: new Date(y, s * 6 + 6, 0, 23, 59, 59), label: `${s + 1}º Semestre ${y}` };
+    }
+    case "YEAR":
+      return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59), label: String(y) };
+  }
+}
+
+function navigatePeriod(period: Period, refDate: Date, direction: number): Date {
+  const d = new Date(refDate);
+  switch (period) {
+    case "DAY": d.setDate(d.getDate() + direction); break;
+    case "WEEK": d.setDate(d.getDate() + 7 * direction); break;
+    case "MONTH": d.setMonth(d.getMonth() + direction); break;
+    case "QUARTER": d.setMonth(d.getMonth() + 3 * direction); break;
+    case "SEMESTER": d.setMonth(d.getMonth() + 6 * direction); break;
+    case "YEAR": d.setFullYear(d.getFullYear() + direction); break;
+  }
+  return d;
+}
+
+interface DashboardData {
+  byVehicle: { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }[];
+  byAgent: { id: number; name: string; fat_total: number; pag_total: number; missions: number }[];
+  byMission: {
+    id: string; data: string; origem: string; destino: string;
+    placa_viatura: string; vigilante: string; vigilante_id: number; fat_total: number;
+    pag_total: number; despesas: number; lucro: number; margem: number;
+    km_total: number; boletim: string; status: string; client_name: string;
+  }[];
+  billings: any[];
+  missionsByDay: Record<string, any[]>;
+  expensesByDay: Record<string, number>;
+  totals: {
+    faturamento: number; custos_operacionais: number; despesas_missao: number;
+    despesas_gerais: number; receitas_gerais: number; total_missoes: number; total_km: number;
+  };
+}
+
+type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES";
+
+export default function BalancoGerencialPage() {
+  const [period, setPeriod] = useState<Period>("MONTH");
+  const [refDate, setRefDate] = useState(new Date());
+  const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
+
+  const { data, isLoading } = useQuery<DashboardData>({
+    queryKey: ["/api/financial/dashboard"],
+  });
+
+  const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
+
+  const filtered = useMemo(() => {
+    if (!data) return { missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[] };
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
+    const endStr = `${range.end.getFullYear()}-${pad(range.end.getMonth() + 1)}-${pad(range.end.getDate())}`;
+
+    const missions = data.byMission.filter(m => {
+      if (!m.data) return false;
+      const dt = new Date(m.data);
+      const d = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+      return d >= startStr && d <= endStr;
+    });
+
+    const vehicleMap: Record<string, typeof data.byVehicle[0]> = {};
+    missions.forEach(m => {
+      const plate = m.placa_viatura || "SEM PLACA";
+      if (!vehicleMap[plate]) {
+        const orig = data.byVehicle.find(v => v.plate === plate);
+        vehicleMap[plate] = { plate, model: orig?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
+      }
+      vehicleMap[plate].fat_total += m.fat_total;
+      vehicleMap[plate].pag_total += m.pag_total;
+      vehicleMap[plate].missions += 1;
+      vehicleMap[plate].despesas += m.despesas;
+    });
+
+    const agentMap: Record<string, typeof data.byAgent[0]> = {};
+    missions.forEach(m => {
+      const name = m.vigilante || "SEM AGENTE";
+      const agentKey = m.vigilante_id ? String(m.vigilante_id) : name;
+      if (!agentMap[agentKey]) agentMap[agentKey] = { id: m.vigilante_id || 0, name, fat_total: 0, pag_total: 0, missions: 0 };
+      agentMap[agentKey].fat_total += m.fat_total;
+      agentMap[agentKey].pag_total += m.pag_total;
+      agentMap[agentKey].missions += 1;
+    });
+
+    return {
+      missions,
+      vehicles: Object.values(vehicleMap).sort((a, b) => b.fat_total - a.fat_total),
+      agents: Object.values(agentMap).sort((a, b) => b.fat_total - a.fat_total),
+      missionDetails: missions.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
+    };
+  }, [data, range]);
+
+  const totals = useMemo(() => {
+    const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
+    const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
+    const desp = filtered.missions.reduce((a, m) => a + m.despesas, 0);
+    const lucro = fat - pag - desp;
+    const margem = fat > 0 ? (lucro / fat) * 100 : 0;
+    const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
+    return { fat, pag, desp, lucro, margem, km, total: filtered.missions.length };
+  }, [filtered]);
+
+  const monthsInPeriod = useMemo(() => {
+    const diff = (range.end.getFullYear() - range.start.getFullYear()) * 12 + (range.end.getMonth() - range.start.getMonth()) + 1;
+    return Math.max(1, diff);
+  }, [range]);
+
+  const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
+    { id: "BALANCO", label: "Balanço", icon: BarChart3 },
+    { id: "VEICULOS", label: "Viaturas", icon: Car },
+    { id: "AGENTES", label: "Agentes", icon: Users },
+    { id: "MISSOES", label: "Missões", icon: Crosshair },
+  ];
+
+  if (isLoading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-96" data-testid="loading-dashboard">
+          <Loader2 className="animate-spin text-neutral-400" size={32} />
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div className="space-y-4" data-testid="page-balanco-gerencial">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-neutral-900 uppercase tracking-tight" data-testid="title-balanco">Balanço Gerencial</h2>
+            <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] })} data-testid="button-refresh-dashboard">
+              <RefreshCw size={14} />
+            </Button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-3">
+          <div className="flex flex-col md:flex-row items-center gap-3">
+            <div className="flex gap-1 overflow-x-auto">
+              {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
+                <button key={p} onClick={() => setPeriod(p)} data-testid={`period-${p.toLowerCase()}`}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide whitespace-nowrap transition-all ${
+                    period === p ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-50"
+                  }`}>
+                  {PERIOD_LABELS[p]}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, -1))} data-testid="button-prev-period">
+                <ChevronLeft size={16} />
+              </Button>
+              <span className="text-xs font-black text-neutral-700 uppercase min-w-[180px] text-center" data-testid="text-period-label">
+                {range.label}
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setRefDate(navigatePeriod(period, refDate, 1))} data-testid="button-next-period">
+                <ChevronRight size={16} />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setRefDate(new Date())} className="text-[10px] font-black uppercase" data-testid="button-today">
+                Hoje
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="p-4 border-neutral-200" data-testid="card-faturamento">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                <ArrowUpRight size={16} className="text-green-700" />
+              </div>
+              <span className="text-[9px] font-black text-neutral-400 uppercase">Faturamento</span>
+            </div>
+            <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
+            <p className="text-[9px] text-neutral-500 font-bold mt-1">{totals.total} missões</p>
+          </Card>
+          <Card className="p-4 border-neutral-200" data-testid="card-custos">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                <ArrowDownRight size={16} className="text-red-700" />
+              </div>
+              <span className="text-[9px] font-black text-neutral-400 uppercase">Custos Operacionais</span>
+            </div>
+            <p className="text-xl font-black text-red-700 font-mono">{fmt(totals.pag + totals.desp)}</p>
+            <p className="text-[9px] text-neutral-500 font-bold mt-1">VRP + Despesas</p>
+          </Card>
+          <Card className="p-4 border-neutral-200" data-testid="card-lucro">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <DollarSign size={16} className="text-blue-700" />
+              </div>
+              <span className="text-[9px] font-black text-neutral-400 uppercase">Lucro Bruto</span>
+            </div>
+            <p className={`text-xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
+            <p className="text-[9px] text-neutral-500 font-bold mt-1">{totals.km.toLocaleString("pt-BR")} km rodados</p>
+          </Card>
+          <Card className="p-4 border-neutral-200" data-testid="card-margem">
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${totals.margem >= 30 ? "bg-green-100" : totals.margem >= 15 ? "bg-amber-100" : "bg-red-100"}`}>
+                {totals.margem >= 15
+                  ? <TrendingUp size={16} className={totals.margem >= 30 ? "text-green-700" : "text-amber-700"} />
+                  : <TrendingDown size={16} className="text-red-700" />}
+              </div>
+              <span className="text-[9px] font-black text-neutral-400 uppercase">Margem</span>
+            </div>
+            <p className={`text-xl font-black font-mono ${totals.margem >= 30 ? "text-green-700" : totals.margem >= 15 ? "text-amber-700" : "text-red-700"}`}>
+              {fmtPct(totals.margem)}
+            </p>
+            <p className="text-[9px] text-neutral-500 font-bold mt-1">
+              {totals.margem >= 30 ? "Saudável" : totals.margem >= 15 ? "Atenção" : "Crítico"}
+            </p>
+          </Card>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
+          <div className="flex overflow-x-auto gap-1">
+            {TABS.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-${tab.id.toLowerCase()}`}
+                className={`flex items-center gap-2 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-wide whitespace-nowrap transition-all ${
+                  activeTab === tab.id ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                }`}>
+                <tab.icon size={16} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} />}
+        {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} monthsInPeriod={monthsInPeriod} period={period} />}
+        {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} />}
+        {activeTab === "MISSOES" && <MissoesTab missions={filtered.missionDetails} />}
+      </div>
+    </AdminLayout>
+  );
+}
+
+function BalancoTab({ missions, vehicles, agents, totals, range, period }: {
+  missions: any[]; vehicles: any[]; agents: any[];
+  totals: { fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; total: number };
+  range: { start: Date; end: Date; label: string }; period: Period;
+}) {
+  const dailyData = useMemo(() => {
+    const map: Record<string, { date: string; fat: number; custo: number; missions: number }> = {};
+    missions.forEach(m => {
+      const d = m.data?.split("T")[0];
+      if (!d) return;
+      if (!map[d]) map[d] = { date: d, fat: 0, custo: 0, missions: 0 };
+      map[d].fat += m.fat_total;
+      map[d].custo += m.pag_total + m.despesas;
+      map[d].missions += 1;
+    });
+    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
+  }, [missions]);
+
+  const maxVal = useMemo(() => Math.max(...dailyData.map(d => Math.max(d.fat, d.custo)), 1), [dailyData]);
+
+  return (
+    <div className="space-y-4" data-testid="panel-balanco">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+        <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
+          <Calendar size={16} /> Balanço {period === "DAY" ? "do Dia" : "por Dia"}
+        </h4>
+        {dailyData.length === 0 ? (
+          <div className="text-center py-12 text-neutral-400">
+            <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-bold uppercase">Nenhuma missão no período</p>
+            <p className="text-xs mt-1">Selecione outro período ou aguarde novos dados</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            {dailyData.map(d => {
+              const lucro = d.fat - d.custo;
+              const pct = d.fat > 0 ? (lucro / d.fat) * 100 : 0;
+              return (
+                <div key={d.date} className="flex items-center gap-3 p-2 rounded-lg hover:bg-neutral-50" data-testid={`row-day-${d.date}`}>
+                  <span className="text-[10px] font-black text-neutral-500 w-20 shrink-0">
+                    {new Date(d.date + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                  </span>
+                  <div className="flex-1 flex flex-col gap-1">
+                    <div className="flex gap-1 items-center h-4">
+                      <div className="bg-green-500 rounded h-full transition-all" style={{ width: `${(d.fat / maxVal) * 100}%` }} />
+                      <span className="text-[9px] font-bold text-green-700 font-mono shrink-0">{fmt(d.fat)}</span>
+                    </div>
+                    <div className="flex gap-1 items-center h-4">
+                      <div className="bg-red-400 rounded h-full transition-all" style={{ width: `${(d.custo / maxVal) * 100}%` }} />
+                      <span className="text-[9px] font-bold text-red-600 font-mono shrink-0">{fmt(d.custo)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 w-24">
+                    <p className={`text-xs font-black font-mono ${lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucro)}</p>
+                    <p className="text-[9px] font-bold text-neutral-400">{fmtPct(pct)} | {d.missions} OS</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+          <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
+            <Car size={16} /> Top Viaturas
+          </h4>
+          {vehicles.length === 0 ? (
+            <p className="text-xs text-neutral-400 font-bold text-center py-6">Sem dados</p>
+          ) : (
+            <div className="space-y-3">
+              {vehicles.slice(0, 5).map((v, i) => {
+                const lucro = v.fat_total - v.pag_total - v.despesas;
+                const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
+                return (
+                  <div key={v.plate} className="flex items-center gap-3" data-testid={`top-vehicle-${i}`}>
+                    <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
+                    <div className="flex-1">
+                      <p className="text-xs font-black text-neutral-900">{v.plate} <span className="text-neutral-400 font-bold">{v.model}</span></p>
+                      <p className="text-[9px] font-bold text-neutral-500">{v.missions} missões | {fmt(v.fat_total)} fat.</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-xs font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
+                      <p className="text-[9px] font-bold text-neutral-400 font-mono">{fmt(lucro)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+          <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
+            <Users size={16} /> Top Agentes
+          </h4>
+          {agents.length === 0 ? (
+            <p className="text-xs text-neutral-400 font-bold text-center py-6">Sem dados</p>
+          ) : (
+            <div className="space-y-3">
+              {agents.slice(0, 5).map((a, i) => {
+                const lucro = a.fat_total - a.pag_total;
+                const pct = a.fat_total > 0 ? (lucro / a.fat_total) * 100 : 0;
+                return (
+                  <div key={a.name} className="flex items-center gap-3" data-testid={`top-agent-${i}`}>
+                    <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
+                    <div className="flex-1">
+                      <p className="text-xs font-black text-neutral-900">{a.name}</p>
+                      <p className="text-[9px] font-bold text-neutral-500">{a.missions} missões | {fmt(a.fat_total)} fat.</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-xs font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
+                      <p className="text-[9px] font-bold text-neutral-400 font-mono">{fmt(lucro)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VeiculosTab({ vehicles, monthsInPeriod, period }: { vehicles: any[]; monthsInPeriod: number; period: Period }) {
+  const metaPeriodo = META_MENSAL_CARRO * monthsInPeriod;
+
+  return (
+    <div className="space-y-4" data-testid="panel-veiculos">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-black text-neutral-900 uppercase flex items-center gap-2">
+            <Target size={16} /> Meta por Viatura
+          </h4>
+          <Badge variant="outline" className="text-[9px] font-black uppercase" data-testid="badge-meta">
+            Meta: {fmt(metaPeriodo)} / {PERIOD_LABELS[period].toLowerCase()}
+          </Badge>
+        </div>
+
+        {vehicles.length === 0 ? (
+          <div className="text-center py-12 text-neutral-400">
+            <Truck size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-bold uppercase">Nenhuma viatura com dados no período</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {vehicles.map(v => {
+              const lucro = v.fat_total - v.pag_total - v.despesas;
+              const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
+              const metaPct = (v.fat_total / metaPeriodo) * 100;
+              const atingiuMeta = v.fat_total >= metaPeriodo;
+
+              return (
+                <div key={v.plate} className="p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-all" data-testid={`vehicle-card-${v.plate}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${atingiuMeta ? "bg-green-100" : "bg-neutral-100"}`}>
+                        <Car size={20} className={atingiuMeta ? "text-green-700" : "text-neutral-400"} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-neutral-900">{v.plate}</p>
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">{v.model} | {v.missions} missões</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <Badge className={`text-[9px] font-black uppercase ${atingiuMeta ? "bg-green-100 text-green-800 hover:bg-green-100" : "bg-amber-100 text-amber-800 hover:bg-amber-100"}`}>
+                        {atingiuMeta ? "META ATINGIDA" : `${fmtPct(metaPct)} da meta`}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-neutral-100 rounded-full h-3 mb-3 relative overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${atingiuMeta ? "bg-green-500" : metaPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
+                      style={{ width: `${Math.min(metaPct, 100)}%` }} />
+                    {metaPct > 100 && (
+                      <div className="absolute right-1 top-0 h-full flex items-center">
+                        <span className="text-[8px] font-black text-white">{fmtPct(metaPct)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Faturamento</p>
+                      <p className="text-sm font-black text-green-700 font-mono">{fmt(v.fat_total)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Custos</p>
+                      <p className="text-sm font-black text-red-600 font-mono">{fmt(v.pag_total + v.despesas)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Lucro</p>
+                      <p className={`text-sm font-black font-mono ${lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucro)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Margem</p>
+                      <p className={`text-sm font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentesTab({ agents, monthsInPeriod, period }: { agents: any[]; monthsInPeriod: number; period: Period }) {
+  const metaPeriodo = META_MENSAL_CARRO * monthsInPeriod;
+
+  return (
+    <div className="space-y-4" data-testid="panel-agentes">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-black text-neutral-900 uppercase flex items-center gap-2">
+            <Users size={16} /> Desempenho por Agente
+          </h4>
+          <Badge variant="outline" className="text-[9px] font-black uppercase" data-testid="badge-meta-agente">
+            Meta: {fmt(metaPeriodo)} / {PERIOD_LABELS[period].toLowerCase()}
+          </Badge>
+        </div>
+
+        {agents.length === 0 ? (
+          <div className="text-center py-12 text-neutral-400">
+            <Users size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-bold uppercase">Nenhum agente com dados no período</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {agents.map(a => {
+              const lucro = a.fat_total - a.pag_total;
+              const pct = a.fat_total > 0 ? (lucro / a.fat_total) * 100 : 0;
+              const metaPct = (a.fat_total / metaPeriodo) * 100;
+              const atingiuMeta = a.fat_total >= metaPeriodo;
+
+              return (
+                <div key={a.name} className="p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-all" data-testid={`agent-card-${a.name}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${atingiuMeta ? "bg-green-100 text-green-700" : "bg-neutral-100 text-neutral-400"}`}>
+                        {a.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-neutral-900">{a.name}</p>
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">{a.missions} missões</p>
+                      </div>
+                    </div>
+                    <Badge className={`text-[9px] font-black uppercase ${atingiuMeta ? "bg-green-100 text-green-800 hover:bg-green-100" : "bg-amber-100 text-amber-800 hover:bg-amber-100"}`}>
+                      {atingiuMeta ? "META ATINGIDA" : `${fmtPct(metaPct)} da meta`}
+                    </Badge>
+                  </div>
+
+                  <div className="w-full bg-neutral-100 rounded-full h-3 mb-3 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${atingiuMeta ? "bg-green-500" : metaPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
+                      style={{ width: `${Math.min(metaPct, 100)}%` }} />
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Faturamento</p>
+                      <p className="text-sm font-black text-green-700 font-mono">{fmt(a.fat_total)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">VRP Pago</p>
+                      <p className="text-sm font-black text-red-600 font-mono">{fmt(a.pag_total)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Lucro</p>
+                      <p className={`text-sm font-black font-mono ${lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(lucro)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-neutral-400 uppercase">Margem</p>
+                      <p className={`text-sm font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MissoesTab({ missions }: { missions: any[] }) {
+  return (
+    <div className="space-y-4" data-testid="panel-missoes">
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-neutral-200">
+          <h4 className="text-sm font-black text-neutral-900 uppercase flex items-center gap-2">
+            <Crosshair size={16} /> Lucratividade por Missão
+          </h4>
+          <p className="text-[10px] text-neutral-400 font-bold uppercase mt-1">{missions.length} missões no período</p>
+        </div>
+
+        {missions.length === 0 ? (
+          <div className="text-center py-12 text-neutral-400">
+            <Crosshair size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-bold uppercase">Nenhuma missão no período</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full" data-testid="table-missoes">
+              <thead>
+                <tr className="bg-neutral-50 border-b border-neutral-200">
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Data</th>
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Boletim</th>
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Cliente</th>
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Rota</th>
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Viatura</th>
+                  <th className="px-3 py-2 text-left text-[9px] font-black text-neutral-500 uppercase">Agente</th>
+                  <th className="px-3 py-2 text-right text-[9px] font-black text-neutral-500 uppercase">Faturamento</th>
+                  <th className="px-3 py-2 text-right text-[9px] font-black text-neutral-500 uppercase">Custo</th>
+                  <th className="px-3 py-2 text-right text-[9px] font-black text-neutral-500 uppercase">Lucro</th>
+                  <th className="px-3 py-2 text-right text-[9px] font-black text-neutral-500 uppercase">Margem</th>
+                  <th className="px-3 py-2 text-right text-[9px] font-black text-neutral-500 uppercase">KM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {missions.map(m => {
+                  const custoTotal = m.pag_total + m.despesas;
+                  return (
+                    <tr key={m.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-colors" data-testid={`row-mission-${m.id}`}>
+                      <td className="px-3 py-2.5 text-[10px] font-bold text-neutral-600">
+                        {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
+                      </td>
+                      <td className="px-3 py-2.5 text-[10px] font-black text-neutral-900">{m.boletim || "-"}</td>
+                      <td className="px-3 py-2.5 text-[10px] font-bold text-neutral-600 max-w-[120px] truncate">{m.client_name || "-"}</td>
+                      <td className="px-3 py-2.5 text-[10px] font-bold text-neutral-600">
+                        <span className="max-w-[100px] truncate block">{m.origem || "-"} → {m.destino || "-"}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[10px] font-black text-neutral-700">{m.placa_viatura || "-"}</td>
+                      <td className="px-3 py-2.5 text-[10px] font-bold text-neutral-600 max-w-[100px] truncate">{m.vigilante || "-"}</td>
+                      <td className="px-3 py-2.5 text-[10px] font-black text-green-700 font-mono text-right">{fmt(m.fat_total)}</td>
+                      <td className="px-3 py-2.5 text-[10px] font-black text-red-600 font-mono text-right">{fmt(custoTotal)}</td>
+                      <td className={`px-3 py-2.5 text-[10px] font-black font-mono text-right ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Badge className={`text-[8px] font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                          {fmtPct(m.margem)}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 text-[10px] font-bold text-neutral-500 font-mono text-right">{m.km_total.toLocaleString("pt-BR")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-neutral-50 border-t-2 border-neutral-300">
+                  <td colSpan={6} className="px-3 py-3 text-[10px] font-black text-neutral-700 uppercase">Total ({missions.length} missões)</td>
+                  <td className="px-3 py-3 text-[10px] font-black text-green-700 font-mono text-right">
+                    {fmt(missions.reduce((a: number, m: any) => a + m.fat_total, 0))}
+                  </td>
+                  <td className="px-3 py-3 text-[10px] font-black text-red-600 font-mono text-right">
+                    {fmt(missions.reduce((a: number, m: any) => a + m.pag_total + m.despesas, 0))}
+                  </td>
+                  <td className="px-3 py-3 text-[10px] font-black text-blue-700 font-mono text-right">
+                    {fmt(missions.reduce((a: number, m: any) => a + m.lucro, 0))}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    {(() => {
+                      const totalFat = missions.reduce((a: number, m: any) => a + m.fat_total, 0);
+                      const totalLucro = missions.reduce((a: number, m: any) => a + m.lucro, 0);
+                      const avgMargem = totalFat > 0 ? (totalLucro / totalFat) * 100 : 0;
+                      return (
+                        <Badge className={`text-[8px] font-black ${avgMargem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : avgMargem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                          {fmtPct(avgMargem)}
+                        </Badge>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-3 py-3 text-[10px] font-black text-neutral-500 font-mono text-right">
+                    {missions.reduce((a: number, m: any) => a + m.km_total, 0).toLocaleString("pt-BR")}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

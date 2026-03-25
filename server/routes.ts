@@ -4472,6 +4472,102 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/financial/dashboard", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: billings, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
+      if (bErr) throw bErr;
+
+      const { data: transactions, error: tErr } = await supabaseAdmin.from("financial_transactions").select("*");
+      if (tErr) throw tErr;
+
+      const { data: vehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model");
+      const { data: employees } = await supabaseAdmin.from("employees").select("id, name");
+
+      const items = billings || [];
+      const txns = transactions || [];
+
+      const missionsByDay: Record<string, any[]> = {};
+      items.forEach((b: any) => {
+        const d = b.data_missao ? new Date(b.data_missao).toISOString().split("T")[0] : b.created_at?.split("T")[0];
+        if (!d) return;
+        if (!missionsByDay[d]) missionsByDay[d] = [];
+        missionsByDay[d].push(b);
+      });
+
+      const expensesByDay: Record<string, number> = {};
+      txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").forEach((t: any) => {
+        const d = (t.payment_date || t.due_date)?.split("T")[0];
+        if (!d) return;
+        expensesByDay[d] = (expensesByDay[d] || 0) + Number(t.amount || 0);
+      });
+
+      const byVehicle: Record<string, { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }> = {};
+      items.forEach((b: any) => {
+        const plate = b.placa_viatura || "SEM PLACA";
+        if (!byVehicle[plate]) {
+          const v = (vehicles || []).find((v: any) => v.plate === plate);
+          byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
+        }
+        byVehicle[plate].fat_total += Number(b.fat_total || 0);
+        byVehicle[plate].pag_total += Number(b.pag_total || 0);
+        byVehicle[plate].missions += 1;
+        byVehicle[plate].despesas += Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
+      });
+
+      const byAgent: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number }> = {};
+      items.forEach((b: any) => {
+        const name = b.vigilante_name || "SEM AGENTE";
+        const id = b.vigilante_id || 0;
+        const key = String(id || name);
+        if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0 };
+        byAgent[key].fat_total += Number(b.fat_total || 0);
+        byAgent[key].pag_total += Number(b.pag_total || 0);
+        byAgent[key].missions += 1;
+      });
+
+      const byMission = items.map((b: any) => ({
+        id: b.id,
+        data: b.data_missao || b.created_at,
+        origem: b.origem,
+        destino: b.destino,
+        placa_viatura: b.placa_viatura,
+        vigilante: b.vigilante_name,
+        vigilante_id: b.vigilante_id || 0,
+        fat_total: Number(b.fat_total || 0),
+        pag_total: Number(b.pag_total || 0),
+        despesas: Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0),
+        lucro: Number(b.fat_total || 0) - Number(b.pag_total || 0) - Number(b.despesas_pedagio || 0) - Number(b.despesas_combustivel || 0) - Number(b.despesas_outras || 0),
+        margem: Number(b.fat_total || 0) > 0
+          ? Math.round(((Number(b.fat_total || 0) - Number(b.pag_total || 0) - Number(b.despesas_pedagio || 0) - Number(b.despesas_combustivel || 0) - Number(b.despesas_outras || 0)) / Number(b.fat_total || 0)) * 10000) / 100
+          : 0,
+        km_total: Number(b.km_total || 0),
+        boletim: b.boletim_numero,
+        status: b.status,
+        client_name: b.client_name,
+      }));
+
+      res.json({
+        billings: items,
+        missionsByDay,
+        expensesByDay,
+        byVehicle: Object.values(byVehicle),
+        byAgent: Object.values(byAgent),
+        byMission,
+        vehicles: vehicles || [],
+        employees: employees || [],
+        totals: {
+          faturamento: items.reduce((a: number, b: any) => a + Number(b.fat_total || 0), 0),
+          custos_operacionais: items.reduce((a: number, b: any) => a + Number(b.pag_total || 0), 0),
+          despesas_missao: items.reduce((a: number, b: any) => a + Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0), 0),
+          despesas_gerais: txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0),
+          receitas_gerais: txns.filter((t: any) => t.type === "INCOME" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0),
+          total_missoes: items.length,
+          total_km: items.reduce((a: number, b: any) => a + Number(b.km_total || 0), 0),
+        },
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // Client Billing Report (monthly)
   app.get("/api/escort/relatorio/:clientId", requireAuth, async (req, res) => {
     try {

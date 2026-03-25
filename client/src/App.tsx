@@ -29,6 +29,7 @@ import ProfilePage from "@/pages/admin/profile";
 import AuditPage from "@/pages/admin/audit";
 import FinanceiroPage from "@/pages/admin/financeiro";
 import BoletimMedicaoPage from "@/pages/admin/boletim-medicao";
+import BalancoGerencialPage from "@/pages/admin/balanco-gerencial";
 import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
@@ -136,6 +137,7 @@ function Router() {
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>
       <Route path="/admin/financeiro">{() => <ProtectedRoute component={FinanceiroPage} />}</Route>
+      <Route path="/admin/balanco-gerencial">{() => <ProtectedRoute component={BalancoGerencialPage} />}</Route>
 
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>

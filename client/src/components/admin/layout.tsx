@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -51,14 +51,22 @@ const menuItems: MenuItem[] = [
       { path: "/admin/telemetria", label: "Telemetria", icon: Gauge },
     ],
   },
-  { path: "/admin/financeiro", label: "Financeiro", icon: Wallet, adminOnly: true },
+  {
+    label: "Financeiro",
+    icon: Wallet,
+    adminOnly: true,
+    children: [
+      { path: "/admin/financeiro", label: "Contas", icon: Wallet },
+      { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
+    ],
+  },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const { user, logout } = useAuth();
   const [location] = useLocation();
 
