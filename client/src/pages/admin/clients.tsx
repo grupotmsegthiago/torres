@@ -428,14 +428,15 @@ function InfoRow({ label, value, icon, highlight, full }: { label: string; value
   );
 }
 
-function ServiceContractModal({ onClose, editing, clientId, clientName }: { onClose: () => void; editing: ServiceContract | null; clientId: number; clientName: string }) {
+function ServiceContractModal({ onClose, editing, client }: { onClose: () => void; editing: ServiceContract | null; client: Client }) {
   const { toast } = useToast();
+  const fullAddress = [client.address, client.city, client.state, client.zip].filter(Boolean).join(", ");
   const [form, setForm] = useState({
     contract_number: editing?.contract_number || "",
-    contratante_razao: editing?.contratante_razao || clientName,
-    contratante_cnpj: editing?.contratante_cnpj || "",
-    contratante_endereco: editing?.contratante_endereco || "",
-    contratante_representante: editing?.contratante_representante || "",
+    contratante_razao: editing?.contratante_razao || client.name,
+    contratante_cnpj: editing?.contratante_cnpj || client.cnpj || "",
+    contratante_endereco: editing?.contratante_endereco || fullAddress,
+    contratante_representante: editing?.contratante_representante || client.contactPerson || "",
     vigencia_tipo: editing?.vigencia_tipo || "indeterminado",
     vigencia_inicio: editing?.vigencia_inicio?.split("T")[0] || new Date().toISOString().split("T")[0],
     vigencia_fim: editing?.vigencia_fim?.split("T")[0] || "",
@@ -454,7 +455,7 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = {
-        client_id: clientId, client_name: clientName,
+        client_id: client.id, client_name: client.name,
         contract_number: form.contract_number || null,
         contratante_razao: form.contratante_razao || null,
         contratante_cnpj: form.contratante_cnpj || null,
@@ -1098,7 +1099,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
         </div>
       )}
 
-      {showContractModal && <ServiceContractModal onClose={() => { setShowContractModal(false); setEditingSC(null); }} editing={editingSC} clientId={client.id} clientName={client.name} />}
+      {showContractModal && <ServiceContractModal onClose={() => { setShowContractModal(false); setEditingSC(null); }} editing={editingSC} client={client} />}
       {showPriceModal && <PriceTableModal onClose={() => { setShowPriceModal(false); setEditingPrice(null); }} editing={editingPrice} clientId={client.id} clientName={client.name} />}
       {showRouteModal && <RouteFormModal onClose={() => { setShowRouteModal(false); setEditingRoute(null); }} editing={editingRoute} clientId={client.id} clientName={client.name} />}
       {selectedMissionId && <MissionDetailModal osId={selectedMissionId} onClose={() => setSelectedMissionId(null)} />}
