@@ -9,6 +9,7 @@ import {
   Camera, Check, ChevronRight,
   Shield, Car, Users, Clock, Crosshair,
   AlertTriangle, CheckCircle2, Truck, User, Siren,
+  DollarSign, Loader2,
 } from "lucide-react";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
@@ -402,6 +403,22 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
   });
 
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/service-orders/${mission.id}`, {
+        missionStatus: "aguardando",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      toast({ title: "Pagamento confirmado!", description: "Missão liberada para os agentes." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
   const handlePhotoUpload = useCallback(async (slotKey: string, file: File) => {
     setUploadingSlot(slotKey);
     try {
@@ -474,6 +491,52 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             <div className="mt-4 bg-muted/60 rounded-xl border border-border px-6 py-3">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Tempo de Missão</p>
               <MissionTimer startedAt={mission.missionStartedAt} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (mission.missionStatus === "missao_paga") {
+    const isAdmin = user?.role === "admin" || user?.role === "diretoria";
+    return (
+      <div className="min-h-[80vh] bg-gradient-to-b from-card to-muted relative rounded-2xl overflow-hidden border border-border no-print-zone">
+        <ShieldWatermark />
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] p-6 text-center">
+          <div className="w-20 h-20 rounded-full bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center mb-4">
+            <DollarSign className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-awaiting-payment">
+            Aguardando Pagamento
+          </h2>
+          <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
+            {isAdmin
+              ? "Confirme o recebimento do pagamento para liberar a missão aos agentes."
+              : "Aguarde a confirmação de pagamento pela administração."}
+          </p>
+
+          <div className="bg-muted/60 rounded-xl border border-border p-4 w-full mb-6 space-y-2">
+            <p className="text-sm text-foreground"><span className="font-bold">OS:</span> {mission.osNumber}</p>
+            <p className="text-sm text-foreground"><span className="font-bold">Cliente:</span> {mission.clientName}</p>
+            <p className="text-sm text-foreground"><span className="font-bold">Viatura:</span> {mission.vehiclePlate}</p>
+          </div>
+
+          {isAdmin ? (
+            <button
+              onClick={() => confirmPaymentMutation.mutate()}
+              disabled={confirmPaymentMutation.isPending}
+              className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base uppercase tracking-wider shadow-lg transition-all disabled:opacity-50"
+              data-testid="button-confirm-payment"
+            >
+              {confirmPaymentMutation.isPending
+                ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                : "CONFIRMAR PAGAMENTO"}
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">Atualizando automaticamente...</span>
             </div>
           )}
         </div>
