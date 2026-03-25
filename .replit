@@ -75,6 +75,10 @@ VITE_GOOGLE_MAPS_API_KEY = "AIzaSyChk1MTCwEUTB4k6MrsrtP13S6fMcY9bJc"
 TRUCKSCONTROL_CHAVE = "36982392000189"
 TRUCKSCONTROL_SENHA = "211784"
 WDAPI_TOKEN = "df33776079bee01ffff73467880719dd"
+SMTP_HOST = "smtp.office365.com"
+SMTP_PORT = "587"
+SMTP_USER = "escolta@torresseguranca.com.br"
+SMTP_FROM = "escolta@torresseguranca.com.br"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0"]
