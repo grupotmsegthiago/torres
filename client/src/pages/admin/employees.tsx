@@ -1565,51 +1565,13 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const [docForm, setDocForm] = useState({ type: "RG", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" });
   const [showDocForm, setShowDocForm] = useState(false);
-  const [scanningDoc, setScanningDoc] = useState(false);
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 10MB", variant: "destructive" }); return; }
+    if (file.size > 2 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 2MB", variant: "destructive" }); return; }
     const reader = new FileReader();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      reader.onload = (ev) => resolve(ev.target!.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    setDocForm(p => ({ ...p, fileData: dataUrl, fileName: file.name }));
-
-    setScanningDoc(true);
-    try {
-      const res = await authFetch("/api/employees/ocr-document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageData: dataUrl, docType: docForm.type }),
-      });
-      if (res.ok) {
-        const extracted = await res.json();
-        const filledFields: string[] = [];
-        setDocForm(prev => {
-          const updated = { ...prev };
-          if (extracted.documentNumber && !prev.documentNumber) { updated.documentNumber = extracted.documentNumber; filledFields.push("Nº Documento"); }
-          if (extracted.issueDate && !prev.issueDate) { updated.issueDate = extracted.issueDate; filledFields.push("Emissão"); }
-          if (extracted.expiryDate && !prev.expiryDate) { updated.expiryDate = extracted.expiryDate; filledFields.push("Validade"); }
-          if (extracted.notes) { updated.notes = prev.notes ? prev.notes : extracted.notes; filledFields.push("Obs"); }
-          return updated;
-        });
-        if (filledFields.length > 0) {
-          toast({ title: "Documento processado", description: `Extraído: ${filledFields.join(", ")}` });
-        } else {
-          toast({ title: "Documento anexado", description: "Nenhum dado novo extraído automaticamente" });
-        }
-      } else {
-        toast({ title: "Documento anexado", description: "Leitura automática não disponível para este formato" });
-      }
-    } catch (err) {
-      console.error("OCR doc error:", err);
-      toast({ title: "Documento anexado", description: "Erro na leitura automática" });
-    } finally {
-      setScanningDoc(false);
-    }
+    reader.onload = (ev) => setDocForm(p => ({ ...p, fileData: ev.target!.result as string, fileName: file.name }));
+    reader.readAsDataURL(file);
   };
   const createDoc = useMutation({
     mutationFn: async () => { await apiRequest("POST", "/api/employee-documents", { employeeId: employee.id, ...docForm }); },
@@ -1863,8 +1825,8 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
                 <div className="flex gap-2 items-center">
                   <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFile} />
-                  <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={scanningDoc} data-testid="button-upload-doc-pasta">
-                    {scanningDoc ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Processando OCR...</> : <><Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo"}</>}
+                  <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc-pasta">
+                    <Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo (máx 2MB)"}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => { setDocForm({ type: docForm.type, documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" }); if (fileRef.current) fileRef.current.value = ""; }} data-testid="button-clear-doc-pasta">
                     <X className="w-3.5 h-3.5 mr-1" /> Limpar
