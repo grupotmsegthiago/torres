@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1081,6 +1081,18 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato";
+const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
+  { key: "documentos", label: "Documentos", icon: FileText },
+  { key: "contrato", label: "Contrato", icon: ClipboardList },
+  { key: "multas", label: "Multas", icon: Ban },
+  { key: "disciplinar", label: "Disciplinar", icon: Shield },
+  { key: "faltas", label: "Faltas", icon: AlertTriangle },
+  { key: "ponto", label: "Ponto", icon: Clock },
+  { key: "holerite", label: "Holerite", icon: DollarSign },
+  { key: "salarios", label: "Salários", icon: DollarSign },
+];
+
 const ABSENCE_TYPES = ["Falta", "Atestado Médico", "Licença", "Suspensão", "Outro"];
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -1492,13 +1504,564 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
   );
 }
 
+function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; onClose: () => void; onEdit: () => void }) {
+  const { toast } = useToast();
+  const [tab, setTab] = useState<PastaTab>("documentos");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: docs = [], isLoading: loadingDocs } = useQuery<EmployeeDocument[]>({
+    queryKey: ["/api/employee-documents", employee.id],
+    queryFn: async () => { const r = await authFetch(`/api/employee-documents/${employee.id}`); return r.json(); },
+  });
+  const { data: absences = [], isLoading: loadingAbs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "absences"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/absences`); return r.json(); },
+  });
+  const { data: fines = [], isLoading: loadingFines } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "fines"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/fines`); return r.json(); },
+  });
+  const { data: disciplinary = [], isLoading: loadingDisc } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "disciplinary"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/disciplinary`); return r.json(); },
+  });
+  const { data: timesheets = [], isLoading: loadingTs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "timesheets"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/timesheets`); return r.json(); },
+  });
+  const { data: payslips = [], isLoading: loadingPs } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "payslips"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/payslips`); return r.json(); },
+  });
+  const { data: salaries = [], isLoading: loadingSal } = useQuery<EmployeeSalary[]>({
+    queryKey: ["/api/employees", employee.id, "salaries"],
+    queryFn: async () => { const r = await authFetch(`/api/employees/${employee.id}/salaries`); return r.json(); },
+  });
+
+  const [docForm, setDocForm] = useState({ type: "CNH", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" });
+  const [showDocForm, setShowDocForm] = useState(false);
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" }); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => setDocForm(p => ({ ...p, fileData: ev.target!.result as string, fileName: file.name }));
+    reader.readAsDataURL(file);
+  };
+  const createDoc = useMutation({
+    mutationFn: async () => { await apiRequest("POST", "/api/employee-documents", { employeeId: employee.id, ...docForm }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employee-documents", employee.id] }); setDocForm({ type: "CNH", documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" }); setShowDocForm(false); toast({ title: "Documento salvo" }); },
+  });
+  const deleteDoc = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-documents/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employee-documents", employee.id] }); toast({ title: "Documento removido" }); },
+  });
+
+  const [showAbsForm, setShowAbsForm] = useState(false);
+  const [absForm, setAbsForm] = useState({ type: "Falta", startDate: "", endDate: "", reason: "", status: "pendente" });
+  const addAbsence = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/absences`, absForm); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "absences"] }); setShowAbsForm(false); setAbsForm({ type: "Falta", startDate: "", endDate: "", reason: "", status: "pendente" }); toast({ title: "Registrado" }); },
+  });
+  const deleteAbsence = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/absences/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "absences"] }); toast({ title: "Removido" }); },
+  });
+
+  const [showFineForm, setShowFineForm] = useState(false);
+  const [fineForm, setFineForm] = useState({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" });
+  const addFine = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? Number(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); setShowFineForm(false); setFineForm({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" }); toast({ title: "Multa registrada" }); },
+  });
+  const deleteFine = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fines/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); toast({ title: "Multa removida" }); },
+  });
+
+  const [showDiscForm, setShowDiscForm] = useState(false);
+  const [discForm, setDiscForm] = useState({ type: "Advertência", date: "", reason: "", description: "", status: "ativa" });
+  const addDisciplinary = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/disciplinary`, discForm); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "disciplinary"] }); setShowDiscForm(false); setDiscForm({ type: "Advertência", date: "", reason: "", description: "", status: "ativa" }); toast({ title: "Registrado" }); },
+  });
+  const deleteDisciplinary = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/disciplinary/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "disciplinary"] }); toast({ title: "Removido" }); },
+  });
+
+  const [showTsForm, setShowTsForm] = useState(false);
+  const [tsForm, setTsForm] = useState({ date: "", clockIn: "", clockOut: "", lunchOut: "", lunchIn: "", overtime: "", notes: "" });
+  const addTimesheet = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/timesheets`, { ...tsForm, overtime: tsForm.overtime ? Number(tsForm.overtime) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); setShowTsForm(false); setTsForm({ date: "", clockIn: "", clockOut: "", lunchOut: "", lunchIn: "", overtime: "", notes: "" }); toast({ title: "Ponto registrado" }); },
+  });
+  const deleteTimesheet = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/timesheets/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); toast({ title: "Removido" }); },
+  });
+
+  const [showPsForm, setShowPsForm] = useState(false);
+  const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
+  const addPayslip = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? Number(psForm.grossSalary) : null, netSalary: psForm.netSalary ? Number(psForm.netSalary) : null, deductions: psForm.deductions ? Number(psForm.deductions) : null, benefits: psForm.benefits ? Number(psForm.benefits) : null }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); setShowPsForm(false); setPsForm({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" }); toast({ title: "Holerite registrado" }); },
+  });
+  const deletePayslip = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/payslips/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); toast({ title: "Removido" }); },
+  });
+
+  const [showSalForm, setShowSalForm] = useState(false);
+  const [salForm, setSalForm] = useState({ baseSalary: "", effectiveDate: "", reason: "" });
+  const addSalary = useMutation({
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/salaries`, salForm); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); setShowSalForm(false); setSalForm({ baseSalary: "", effectiveDate: "", reason: "" }); toast({ title: "Salário cadastrado" }); },
+  });
+  const deleteSalary = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employee-salaries/${id}`); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); toast({ title: "Registro removido" }); },
+  });
+
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "-";
+  const fmtCurrency = (v: number | null) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-";
+  const docExpiryStatus = (dateStr: string | null): "expired" | "warning" | "ok" => {
+    if (!dateStr) return "ok";
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffDays = (d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays < 0) return "expired";
+    if (diffDays < 30) return "warning";
+    return "ok";
+  };
+
+  const generateContract = () => {
+    const esc = (s: string | null | undefined) => (s || "N/A").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const contractHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato - ${esc(employee.name)}</title><style>body{font-family:'Times New Roman',serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.8;color:#000}h1{text-align:center;font-size:18px;margin-bottom:30px;text-transform:uppercase}h2{text-align:center;font-size:14px;margin-bottom:20px}.header{text-align:center;margin-bottom:40px;border-bottom:2px solid #000;padding-bottom:20px}.header h3{margin:0}p{text-align:justify;margin:10px 0;font-size:13px}.field{font-weight:bold}.section{margin-top:25px}.signatures{margin-top:60px;display:flex;justify-content:space-between}.sig-block{text-align:center;width:45%}.sig-line{border-top:1px solid #000;padding-top:5px;margin-top:60px;font-size:12px}table{width:100%;border-collapse:collapse;margin:15px 0}td{padding:6px 10px;border:1px solid #ccc;font-size:12px}td:first-child{font-weight:bold;background:#f5f5f5;width:35%}@media print{body{margin:0}}</style></head><body><div class="header"><h3>TORRES VIGILÂNCIA PATRIMONIAL LTDA</h3><p style="font-size:11px;text-align:center;">CNPJ: 36.982.392/0001-89</p></div><h1>CONTRATO DE TRABALHO</h1><h2>CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO INDETERMINADO</h2><div class="section"><p>Pelo presente instrumento particular de contrato individual de trabalho, de um lado <span class="field">TORRES VIGILÂNCIA PATRIMONIAL LTDA</span>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 36.982.392/0001-89, doravante denominada <span class="field">EMPREGADORA</span>, e de outro lado:</p><table><tr><td>Nome Completo</td><td>${esc(employee.name)}</td></tr><tr><td>CPF</td><td>${esc(employee.cpf)}</td></tr><tr><td>RG</td><td>${esc(employee.rg)}</td></tr><tr><td>CNH</td><td>${esc(employee.cnhNumber)}</td></tr><tr><td>Matrícula</td><td>${esc(employee.matricula)}</td></tr><tr><td>Cargo</td><td>${esc(employee.role)}</td></tr><tr><td>Categoria</td><td>${employee.category ? esc(employee.category) : "Mensalista"}</td></tr><tr><td>Data de Admissão</td><td>${employee.hireDate ? esc(employee.hireDate) : new Date().toLocaleDateString("pt-BR")}</td></tr></table></div><div class="signatures"><div class="sig-block"><div class="sig-line">TORRES VIGILÂNCIA PATRIMONIAL LTDA<br/>CNPJ: 36.982.392/0001-89</div></div><div class="sig-block"><div class="sig-line">${esc(employee.name)}<br/>CPF: ${esc(employee.cpf)}</div></div></div></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(contractHtml); w.document.close(); w.print(); }
+  };
+
+  const DOC_TYPES = ["CNH", "CNV", "RG", "CPF", "Comprovante de Residência", "Certidão", "ASO", "Curso NR", "Certificado", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
+
+  const tabCounts: Record<PastaTab, number> = {
+    documentos: docs.length,
+    contrato: 0,
+    multas: fines.length,
+    disciplinar: disciplinary.length,
+    faltas: absences.length,
+    ponto: timesheets.length,
+    holerite: payslips.length,
+    salarios: salaries.length,
+  };
+
+  return (
+    <div data-testid="employee-pasta-view">
+      <div className="flex items-center gap-4 mb-6">
+        <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-back-employees">
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+        <div className="flex items-center gap-3 flex-1">
+          <div className="w-12 h-12 rounded-full bg-neutral-100 overflow-hidden border-2 border-neutral-200">
+            {employee.photoUrl ? (
+              <img src={employee.photoUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-neutral-400 text-lg font-bold">
+                {employee.name.charAt(0)}
+              </div>
+            )}
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-neutral-900" data-testid="text-pasta-employee-name">{employee.name}</h1>
+            <div className="flex items-center gap-3 text-xs text-neutral-500">
+              <span className="font-mono">{employee.matricula}</span>
+              <span>•</span>
+              <span>{employee.role}</span>
+              <span>•</span>
+              <span className="font-mono">{employee.cpf}</span>
+              <span className={`ml-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                employee.status === "ativo" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                employee.status === "bloqueado_definitivo" ? "bg-red-50 text-red-700 border border-red-200" :
+                "bg-neutral-100 text-neutral-600 border border-neutral-200"
+              }`}>{employee.status === "bloqueado_definitivo" ? "BLOQUEADO" : employee.status?.toUpperCase()}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onEdit} data-testid="button-edit-from-pasta">
+            <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex gap-1 border-b border-neutral-200 mb-4 overflow-x-auto">
+        {PASTA_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`}
+            data-testid={`tab-pasta-${t.key}`}
+          >
+            <t.icon className="w-3.5 h-3.5" />
+            {t.label}
+            {tabCounts[t.key] > 0 && (
+              <span className="ml-1 bg-neutral-100 text-neutral-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">{tabCounts[t.key]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <Card className="bg-white border-neutral-200 p-4">
+        {tab === "documentos" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Documentos Arquivados</h3>
+              <Button size="sm" onClick={() => setShowDocForm(!showDocForm)} data-testid="button-add-doc-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showDocForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-doc-type-pasta">
+                  {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Nº do documento" data-testid="input-doc-number-pasta" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Emissão</label><Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue-pasta" /></div>
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
+                </div>
+                <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
+                <div className="flex gap-2 items-center">
+                  <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFile} />
+                  <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc-pasta">
+                    <Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo"}
+                  </Button>
+                  <Button size="sm" onClick={() => createDoc.mutate()} disabled={createDoc.isPending} data-testid="button-save-doc-pasta">Salvar</Button>
+                </div>
+              </div>
+            )}
+            {loadingDocs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : docs.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum documento arquivado</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Tipo</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Número</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Emissão</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Validade</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Arquivo</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {docs.map((d: any) => (
+                    <tr key={d.id} className="border-b border-neutral-100" data-testid={`row-doc-${d.id}`}>
+                      <td className="px-3 py-2 font-semibold">{d.type}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{d.documentNumber || "-"}</td>
+                      <td className="px-3 py-2">{fmtDate(d.issueDate)}</td>
+                      <td className="px-3 py-2">{d.expiryDate ? (() => { const st = docExpiryStatus(d.expiryDate); return (<span className={`inline-flex items-center gap-1 ${st === "expired" ? "text-red-600 font-bold" : st === "warning" ? "text-amber-600 font-semibold" : ""}`}>{fmtDate(d.expiryDate)}{st === "expired" && <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-bold uppercase">Vencido</span>}{st === "warning" && <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold uppercase">Vencendo</span>}</span>); })() : "-"}</td>
+                      <td className="px-3 py-2">
+                        {d.fileData ? (<a href={d.fileData} download={d.fileName || "doc"} className="text-blue-600 text-xs underline" data-testid={`link-download-doc-${d.id}`}><Eye className="w-3.5 h-3.5 inline mr-1" />{d.fileName || "Ver"}</a>) : "-"}
+                      </td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteDoc.mutate(d.id)} data-testid={`button-delete-doc-${d.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "contrato" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Contrato de Trabalho</h3>
+              <Button size="sm" onClick={generateContract} data-testid="button-generate-contract-pasta">
+                <FileText className="w-4 h-4 mr-1" /> Gerar Contrato
+              </Button>
+            </div>
+            <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome</span><span className="font-medium">{employee.name}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">CPF</span><span className="font-mono">{employee.cpf}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Cargo</span><span>{employee.role}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Categoria</span><span>{employee.category || "Mensalista"}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Admissão</span><span>{employee.hireDate || "-"}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Pagamento</span><span>{employee.paymentMethod || "PIX"}</span></div>
+              </div>
+              <p className="text-xs text-neutral-400 mt-2">Clique em "Gerar Contrato" para visualizar e imprimir o contrato de trabalho completo.</p>
+            </div>
+          </div>
+        )}
+
+        {tab === "multas" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Multas de Trânsito</h3>
+              <Button size="sm" onClick={() => setShowFineForm(!showFineForm)} data-testid="button-add-fine-pasta"><Plus className="w-4 h-4 mr-1" />Nova</Button>
+            </div>
+            {showFineForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <Input type="date" value={fineForm.date} onChange={(e) => setFineForm({ ...fineForm, date: e.target.value })} placeholder="Data" data-testid="input-fine-date-pasta" />
+                <Input value={fineForm.infraction} onChange={(e) => setFineForm({ ...fineForm, infraction: e.target.value })} placeholder="Infração" data-testid="input-fine-infraction-pasta" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" value={fineForm.amount} onChange={(e) => setFineForm({ ...fineForm, amount: e.target.value })} placeholder="Valor (R$)" data-testid="input-fine-amount-pasta" />
+                  <Input type="number" value={fineForm.points} onChange={(e) => setFineForm({ ...fineForm, points: e.target.value })} placeholder="Pontos" data-testid="input-fine-points-pasta" />
+                </div>
+                <select value={fineForm.status} onChange={(e) => setFineForm({ ...fineForm, status: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-fine-status-pasta">
+                  <option value="pendente">Pendente</option><option value="paga">Paga</option><option value="contestada">Contestada</option>
+                </select>
+                <Input value={fineForm.notes} onChange={(e) => setFineForm({ ...fineForm, notes: e.target.value })} placeholder="Observações" data-testid="input-fine-notes-pasta" />
+                <Button size="sm" onClick={() => addFine.mutate()} disabled={!fineForm.date || !fineForm.infraction || addFine.isPending} data-testid="button-save-fine-pasta">Salvar</Button>
+              </div>
+            )}
+            {loadingFines ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : fines.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhuma multa registrada</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Infração</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Valor</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Pontos</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Status</th><th className="px-3 py-2"></th></tr></thead>
+                <tbody>
+                  {fines.map((f: any) => (
+                    <tr key={f.id} className="border-b border-neutral-100" data-testid={`row-fine-${f.id}`}>
+                      <td className="px-3 py-2">{fmtDate(f.date)}</td>
+                      <td className="px-3 py-2">{f.infraction}</td>
+                      <td className="px-3 py-2">{fmtCurrency(f.amount)}</td>
+                      <td className="px-3 py-2">{f.points ?? "-"}</td>
+                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${f.status === "paga" ? "bg-green-50 text-green-700" : f.status === "contestada" ? "bg-blue-50 text-blue-700" : "bg-yellow-50 text-yellow-700"}`}>{f.status}</span></td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteFine.mutate(f.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "disciplinar" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Advertências e Suspensões</h3>
+              <Button size="sm" variant="outline" onClick={() => setShowDiscForm(!showDiscForm)} data-testid="button-add-disc-pasta"><Plus className="w-3.5 h-3.5 mr-1" />Novo</Button>
+            </div>
+            {showDiscForm && (
+              <div className="bg-neutral-50 rounded-xl p-4 space-y-3 border border-neutral-200">
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Tipo</label><select value={discForm.type} onChange={(e) => setDiscForm({...discForm, type: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-type-pasta"><option value="Advertência">Advertência</option><option value="Suspensão">Suspensão</option></select></div>
+                  <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Data</label><Input type="date" value={discForm.date} onChange={(e) => setDiscForm({...discForm, date: e.target.value})} data-testid="input-disc-date-pasta" /></div>
+                  <div><label className="text-xs font-semibold text-neutral-500 block mb-1">Status</label><select value={discForm.status} onChange={(e) => setDiscForm({...discForm, status: e.target.value})} className="w-full h-9 border border-neutral-200 rounded-lg px-2 text-sm" data-testid="select-disc-status-pasta"><option value="ativa">Ativa</option><option value="cumprida">Cumprida</option><option value="revogada">Revogada</option></select></div>
+                </div>
+                <Input value={discForm.reason} onChange={(e) => setDiscForm({...discForm, reason: e.target.value})} placeholder="Motivo" data-testid="input-disc-reason-pasta" />
+                <Textarea value={discForm.description} onChange={(e) => setDiscForm({...discForm, description: e.target.value})} placeholder="Descrição (opcional)" data-testid="input-disc-description-pasta" />
+                <Button size="sm" onClick={() => addDisciplinary.mutate()} disabled={!discForm.date || !discForm.reason || addDisciplinary.isPending} data-testid="button-save-disc-pasta">Salvar</Button>
+              </div>
+            )}
+            {loadingDisc ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : disciplinary.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum registro disciplinar</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead><tr className="border-b text-neutral-400 uppercase tracking-wider"><th className="text-left py-2 font-medium">Tipo</th><th className="text-left py-2 font-medium">Data</th><th className="text-left py-2 font-medium">Motivo</th><th className="text-left py-2 font-medium">Status</th><th className="py-2"></th></tr></thead>
+                <tbody>
+                  {disciplinary.map((d: any) => (
+                    <tr key={d.id} className="border-b border-neutral-100" data-testid={`row-disc-pasta-${d.id}`}>
+                      <td className="py-2 font-semibold">{d.type}</td>
+                      <td className="py-2">{fmtDate(d.date)}</td>
+                      <td className="py-2">{d.reason}</td>
+                      <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${d.status === "ativa" ? "bg-red-50 text-red-700" : d.status === "cumprida" ? "bg-green-50 text-green-700" : "bg-neutral-100 text-neutral-500"}`}>{d.status}</span></td>
+                      <td className="py-2 text-right"><Button variant="ghost" size="icon" onClick={() => deleteDisciplinary.mutate(d.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "faltas" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Faltas e Atestados</h3>
+              <Button size="sm" onClick={() => setShowAbsForm(!showAbsForm)} data-testid="button-add-absence-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showAbsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={absForm.type} onChange={(e) => setAbsForm({ ...absForm, type: e.target.value })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-absence-type-pasta">
+                    {ABSENCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select value={absForm.status} onChange={(e) => setAbsForm({ ...absForm, status: e.target.value })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-absence-status-pasta">
+                    <option value="pendente">Pendente</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" value={absForm.startDate} onChange={(e) => setAbsForm({ ...absForm, startDate: e.target.value })} placeholder="Data Início" data-testid="input-absence-start-pasta" />
+                  <Input type="date" value={absForm.endDate} onChange={(e) => setAbsForm({ ...absForm, endDate: e.target.value })} placeholder="Data Fim" data-testid="input-absence-end-pasta" />
+                </div>
+                <Input value={absForm.reason} onChange={(e) => setAbsForm({ ...absForm, reason: e.target.value })} placeholder="Motivo" data-testid="input-absence-reason-pasta" />
+                <Button size="sm" onClick={() => addAbsence.mutate()} disabled={!absForm.startDate || addAbsence.isPending} data-testid="button-save-absence-pasta">Salvar</Button>
+              </div>
+            )}
+            {loadingAbs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : absences.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum registro</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Tipo</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Início</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Fim</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Motivo</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Status</th><th className="px-3 py-2"></th></tr></thead>
+                <tbody>
+                  {absences.map((a: any) => (
+                    <tr key={a.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{a.type}</td>
+                      <td className="px-3 py-2">{fmtDate(a.startDate)}</td>
+                      <td className="px-3 py-2">{fmtDate(a.endDate)}</td>
+                      <td className="px-3 py-2 text-neutral-500">{a.reason || "-"}</td>
+                      <td className="px-3 py-2"><span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${a.status === "aprovado" ? "bg-green-50 text-green-700" : a.status === "rejeitado" ? "bg-red-50 text-red-700" : "bg-yellow-50 text-yellow-700"}`}>{a.status}</span></td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteAbsence.mutate(a.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "ponto" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Folha de Ponto</h3>
+              <Button size="sm" onClick={() => setShowTsForm(!showTsForm)} data-testid="button-add-timesheet-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showTsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <Input type="date" value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date-pasta" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="time" value={tsForm.clockIn} onChange={(e) => setTsForm({ ...tsForm, clockIn: e.target.value })} placeholder="Entrada" data-testid="input-ts-clockin-pasta" />
+                  <Input type="time" value={tsForm.clockOut} onChange={(e) => setTsForm({ ...tsForm, clockOut: e.target.value })} placeholder="Saída" data-testid="input-ts-clockout-pasta" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="time" value={tsForm.lunchOut} onChange={(e) => setTsForm({ ...tsForm, lunchOut: e.target.value })} placeholder="Saída Almoço" data-testid="input-ts-lunchout-pasta" />
+                  <Input type="time" value={tsForm.lunchIn} onChange={(e) => setTsForm({ ...tsForm, lunchIn: e.target.value })} placeholder="Retorno Almoço" data-testid="input-ts-lunchin-pasta" />
+                </div>
+                <Input type="number" step="0.5" value={tsForm.overtime} onChange={(e) => setTsForm({ ...tsForm, overtime: e.target.value })} placeholder="Horas extras" data-testid="input-ts-overtime-pasta" />
+                <Input value={tsForm.notes} onChange={(e) => setTsForm({ ...tsForm, notes: e.target.value })} placeholder="Observações" data-testid="input-ts-notes-pasta" />
+                <Button size="sm" onClick={() => addTimesheet.mutate()} disabled={!tsForm.date || addTimesheet.isPending} data-testid="button-save-timesheet-pasta">Salvar</Button>
+              </div>
+            )}
+            {loadingTs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : timesheets.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum ponto registrado</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">S. Almoço</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th><th className="px-3 py-2"></th></tr></thead>
+                <tbody>
+                  {timesheets.map((t: any) => (
+                    <tr key={t.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{fmtDate(t.date)}</td>
+                      <td className="px-3 py-2">{t.clockIn || "-"}</td>
+                      <td className="px-3 py-2">{t.lunchOut || "-"}</td>
+                      <td className="px-3 py-2">{t.lunchIn || "-"}</td>
+                      <td className="px-3 py-2">{t.clockOut || "-"}</td>
+                      <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "holerite" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Holerites</h3>
+              <Button size="sm" onClick={() => setShowPsForm(!showPsForm)} data-testid="button-add-payslip-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showPsForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={psForm.month} onChange={(e) => setPsForm({ ...psForm, month: Number(e.target.value) })} className="border border-neutral-200 rounded px-2 py-1.5 text-sm" data-testid="select-payslip-month-pasta">
+                    {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <Input type="number" value={psForm.year} onChange={(e) => setPsForm({ ...psForm, year: Number(e.target.value) })} placeholder="Ano" data-testid="input-payslip-year-pasta" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" step="0.01" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross-pasta" />
+                  <Input type="number" step="0.01" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net-pasta" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" step="0.01" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions-pasta" />
+                  <Input type="number" step="0.01" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits-pasta" />
+                </div>
+                <Input value={psForm.notes} onChange={(e) => setPsForm({ ...psForm, notes: e.target.value })} placeholder="Observações" data-testid="input-payslip-notes-pasta" />
+                <Button size="sm" onClick={() => addPayslip.mutate()} disabled={addPayslip.isPending} data-testid="button-save-payslip-pasta">Salvar</Button>
+              </div>
+            )}
+            {loadingPs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : payslips.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum holerite registrado</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Mês/Ano</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Bruto</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Descontos</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Benefícios</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Líquido</th><th className="px-3 py-2"></th></tr></thead>
+                <tbody>
+                  {payslips.map((p: any) => (
+                    <tr key={p.id} className="border-b border-neutral-100">
+                      <td className="px-3 py-2">{MONTHS[p.month - 1]}/{p.year}</td>
+                      <td className="px-3 py-2">{fmtCurrency(p.grossSalary)}</td>
+                      <td className="px-3 py-2 text-red-600">{fmtCurrency(p.deductions)}</td>
+                      <td className="px-3 py-2 text-green-600">{fmtCurrency(p.benefits)}</td>
+                      <td className="px-3 py-2 font-bold">{fmtCurrency(p.netSalary)}</td>
+                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deletePayslip.mutate(p.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === "salarios" && (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-neutral-700">Histórico Salarial</h3>
+              <Button size="sm" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+            </div>
+            {showSalForm && (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Salário Base (R$) *</label><Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="Ex: 2500.00" data-testid="input-salary-value-pasta" /></div>
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data Vigência *</label><Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} data-testid="input-salary-date-pasta" /></div>
+                </div>
+                <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste)" data-testid="input-salary-reason-pasta" />
+                <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} data-testid="button-save-salary-pasta">
+                  {addSalary.isPending ? "Salvando..." : "Adicionar"}
+                </Button>
+              </div>
+            )}
+            {loadingSal ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : salaries.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-4">Nenhum salário registrado</p>
+            ) : (
+              <div className="space-y-2">
+                {salaries.map((s: any) => (
+                  <div key={s.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-salary-pasta-${s.id}`}>
+                    <div>
+                      <span className="text-sm font-semibold text-neutral-900">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      <span className="text-xs text-neutral-500 ml-2">{s.effectiveDate}</span>
+                      {s.reason && <span className="text-xs text-neutral-400 ml-2">({s.reason})</span>}
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => deleteSalary.mutate(s.id)} data-testid={`button-delete-salary-pasta-${s.id}`}>
+                      <Trash2 className="w-3 h-3 text-red-500" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export default function EmployeesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Employee | undefined>();
   const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
-  const [salaryEmployee, setSalaryEmployee] = useState<Employee | null>(null);
-  const [docEmployee, setDocEmployee] = useState<Employee | null>(null);
-  const [hrEmployee, setHrEmployee] = useState<Employee | null>(null);
+  const [pastaEmployee, setPastaEmployee] = useState<Employee | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -1507,10 +2070,10 @@ export default function EmployeesPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const empId = params.get("id");
-    if (empId && employees.length > 0 && !docEmployee) {
+    if (empId && employees.length > 0 && !pastaEmployee) {
       const found = employees.find((e) => e.id === Number(empId));
       if (found) {
-        setDocEmployee(found);
+        setPastaEmployee(found);
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
@@ -1523,115 +2086,98 @@ export default function EmployeesPage() {
 
   return (
     <AdminLayout>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-employees-title">Funcionários</h1>
-          <p className="text-sm text-neutral-500 mt-1">Cadastro e gestão de funcionários</p>
-        </div>
-        <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-employee">
-          <Plus className="w-4 h-4 mr-2" /> Novo Funcionário
-        </Button>
-      </div>
+      {pastaEmployee ? (
+        <EmployeePastaView
+          employee={pastaEmployee}
+          onClose={() => setPastaEmployee(null)}
+          onEdit={() => { setEditItem(pastaEmployee); setShowForm(true); }}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-employees-title">Funcionários</h1>
+              <p className="text-sm text-neutral-500 mt-1">Cadastro e gestão de funcionários</p>
+            </div>
+            <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-employee">
+              <Plus className="w-4 h-4 mr-2" /> Novo Funcionário
+            </Button>
+          </div>
+
+          <Card className="bg-white border-neutral-200 overflow-hidden">
+            {isLoading ? (
+              <div className="p-8 text-center text-neutral-400">Carregando...</div>
+            ) : (employees || []).length === 0 ? (
+              <div className="p-8 text-center text-neutral-400">Nenhum funcionário cadastrado</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="table-employees">
+                  <thead className="bg-neutral-50 border-b border-neutral-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Foto</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Matrícula</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(employees || []).map((e) => (
+                      <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(e)} data-testid={`row-employee-${e.id}`}>
+                        <td className="p-3">
+                          <div className="w-8 h-8 rounded-full bg-neutral-100 overflow-hidden">
+                            {e.photoUrl ? (
+                              <img src={e.photoUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-neutral-300 text-xs font-bold">
+                                {e.name.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono text-xs text-neutral-500">{e.matricula}</td>
+                        <td className="p-3 font-medium text-neutral-900">{e.name}</td>
+                        <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
+                        <td className="p-3 text-neutral-600">{e.role}</td>
+                        <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
+                        <td className="p-3">
+                          <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide inline-block w-fit ${
+                            e.status === "ativo" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                            e.status === "férias" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                            e.status === "bloqueado_definitivo" ? "bg-red-50 text-red-700 border border-red-200" :
+                            "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                          }`}>{e.status === "bloqueado_definitivo" ? "BLOQUEADO" : e.status === "ativo" ? "ATIVO" : e.status === "férias" ? "FÉRIAS" : e.status?.toUpperCase()}</span>
+                        </td>
+                        <td className="p-3 text-right" onClick={(ev) => ev.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => setPastaEmployee(e)} title="Abrir Pasta" data-testid={`button-pasta-${e.id}`}>
+                              <FolderOpen className="w-4 h-4 text-neutral-700" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => setAccessEmployee(e)} title="Criar Acesso" data-testid={`button-create-access-${e.id}`}>
+                              <KeyRound className="w-4 h-4 text-blue-600" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }} data-testid={`button-edit-employee-${e.id}`}><Pencil className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(e.id)} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
 
       {showForm && <EmployeeForm employee={editItem} onClose={() => { setShowForm(false); setEditItem(undefined); }} />}
 
       {accessEmployee && (
         <CreateAccessModal employee={accessEmployee} open={!!accessEmployee} onClose={() => setAccessEmployee(null)} />
       )}
-
-      {salaryEmployee && (
-        <SalaryModal employee={salaryEmployee} open={!!salaryEmployee} onClose={() => setSalaryEmployee(null)} />
-      )}
-
-      {docEmployee && (
-        <DocumentsModal employee={docEmployee} open={!!docEmployee} onClose={() => setDocEmployee(null)} />
-      )}
-
-      {hrEmployee && (
-        <HRDialog employee={hrEmployee} open={!!hrEmployee} onClose={() => setHrEmployee(null)} />
-      )}
-
-      <Card className="bg-white border-neutral-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-neutral-400">Carregando...</div>
-        ) : (employees || []).length === 0 ? (
-          <div className="p-8 text-center text-neutral-400">Nenhum funcionário cadastrado</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-employees">
-              <thead className="bg-neutral-50 border-b border-neutral-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Foto</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Matrícula</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Telefone</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(employees || []).map((e) => (
-                  <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-employee-${e.id}`}>
-                    <td className="p-3">
-                      <div className="w-8 h-8 rounded-full bg-neutral-100 overflow-hidden">
-                        {e.photoUrl ? (
-                          <img src={e.photoUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-neutral-300 text-xs font-bold">
-                            {e.name.charAt(0)}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3 font-mono text-xs text-neutral-500">{e.matricula}</td>
-                    <td className="p-3 font-medium text-neutral-900">{e.name}</td>
-                    <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
-                    <td className="p-3 text-neutral-600">{e.role}</td>
-                    <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
-                    <td className="p-3 text-neutral-600">{e.phone || "-"}</td>
-                    <td className="p-3">
-                      <div className="flex flex-col gap-1">
-                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide inline-block w-fit ${
-                          e.status === "ativo" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
-                          e.status === "férias" ? "bg-blue-50 text-blue-700 border border-blue-200" :
-                          e.status === "bloqueado_definitivo" ? "bg-red-50 text-red-700 border border-red-200" :
-                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
-                        }`}>{e.status === "bloqueado_definitivo" ? "BLOQUEADO" : e.status === "ativo" ? "ATIVO" : e.status === "férias" ? "FÉRIAS" : e.status?.toUpperCase()}</span>
-                        {e.status === "bloqueado_definitivo" && isDiretoria && e.blockType && (
-                          <span className="text-xs text-red-500 font-medium" title={e.blockReason || ""}>
-                            {e.blockType === "criminal" ? "Criminal" : e.blockType === "processo" ? "Processo" : e.blockType === "ambos" ? "Criminal + Processo" : e.blockType}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-1 flex-wrap">
-                        <Button variant="ghost" size="icon" onClick={() => setHrEmployee(e)} title="RH (Faltas, Multas, Ponto, Holerite)" data-testid={`button-hr-${e.id}`}>
-                          <ClipboardList className="w-4 h-4 text-orange-600" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDocEmployee(e)} title="Documentos / Contrato" data-testid={`button-docs-${e.id}`}>
-                          <FileText className="w-4 h-4 text-purple-600" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setSalaryEmployee(e)} title="Salários" data-testid={`button-salary-${e.id}`}>
-                          <DollarSign className="w-4 h-4 text-green-600" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setAccessEmployee(e)} title="Criar Acesso" data-testid={`button-create-access-${e.id}`}>
-                          <KeyRound className="w-4 h-4 text-blue-600" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }} data-testid={`button-edit-employee-${e.id}`}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(e.id)} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
     </AdminLayout>
   );
 }
