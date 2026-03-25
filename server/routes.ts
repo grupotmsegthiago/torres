@@ -4774,41 +4774,31 @@ Regras:
       const sig2X = LM + sigW + 40;
       doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor("#cccccc").stroke().restore();
       doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 45, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 58, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 69, { width: sigW, align: "center" });
+      const contratanteNomeFontSize = contratanteNome.length > 35 ? 6.5 : 8;
+      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 58, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 72, { width: sigW, align: "center" });
 
-      y = sigY + 95;
+      y = sigY + 100;
 
-      if (sc.testemunha1_nome || sc.testemunha2_nome) {
-        checkPage(80);
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
+      checkPage(100);
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
+      y += 20;
+
+      const drawWitness = (num: number, rg: string, cpf: string) => {
+        checkPage(50);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y);
+        y += 14;
+        hLine(y + 12);
         y += 18;
+        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("RG:", LM, y);
+        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(rg || "______________________", LM + 20, y);
+        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("CPF:", LM + W / 2, y);
+        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(cpf || "______________________", LM + W / 2 + 25, y);
+        y += 25;
+      };
 
-        if (sc.testemunha1_nome) {
-          hLine(y + 25);
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 1:", LM, y);
-          doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(`${sc.testemunha1_nome}${sc.testemunha1_rg ? ` — RG: ${sc.testemunha1_rg}` : ""}${sc.testemunha1_cpf ? ` — CPF: ${sc.testemunha1_cpf}` : ""}`, LM, y + 30, { width: W });
-          y += 50;
-        }
-        if (sc.testemunha2_nome) {
-          hLine(y + 25);
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 2:", LM, y);
-          doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(`${sc.testemunha2_nome}${sc.testemunha2_rg ? ` — RG: ${sc.testemunha2_rg}` : ""}${sc.testemunha2_cpf ? ` — CPF: ${sc.testemunha2_cpf}` : ""}`, LM, y + 30, { width: W });
-          y += 50;
-        }
-      } else {
-        checkPage(80);
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
-        y += 18;
-        hLine(y + 25);
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 1:", LM, y);
-        doc.font("Helvetica").fontSize(8).fillColor(LIGHT).text("Nome: __________________________ RG: __________________ CPF: __________________", LM, y + 30, { width: W });
-        y += 55;
-        hLine(y + 25);
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 2:", LM, y);
-        doc.font("Helvetica").fontSize(8).fillColor(LIGHT).text("Nome: __________________________ RG: __________________ CPF: __________________", LM, y + 30, { width: W });
-        y += 50;
-      }
+      drawWitness(1, sc.testemunha1_rg || "", sc.testemunha1_cpf || "");
+      drawWitness(2, sc.testemunha2_rg || "", sc.testemunha2_cpf || "");
 
       const pageCount = doc.bufferedPageRange().count;
       for (let i = 0; i < pageCount; i++) {
