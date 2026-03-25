@@ -4581,15 +4581,48 @@ Regras:
       res.setHeader("Content-Disposition", `inline; filename=MINUTA_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
 
+      const fs = await import("fs");
+      const path = await import("path");
       const W = 465;
       const LM = 65;
+      const BRAND = "#111111";
+      const BRAND_ACCENT = "#1a1a1a";
       const DARK = "#111111";
       const GRAY = "#333333";
-      const LIGHT = "#888888";
-      let y = 60;
+      const LIGHT = "#777777";
+      const ACCENT_LINE = "#222222";
+      let y = 55;
 
-      const checkPage = (need = 80) => { if (y > 740 - need) { doc.addPage(); y = 60; } };
-      const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.5).strokeColor("#cccccc").stroke().restore(); };
+      const logoPath = path.resolve("attached_assets/image_1772056652908.png");
+      const hasLogo = fs.existsSync(logoPath);
+
+      const HEADER_H = 46;
+      const FOOTER_H = 30;
+      const CONTENT_TOP = 60 + HEADER_H + 10;
+      const CONTENT_BOTTOM = 740 - FOOTER_H;
+
+      const drawHeader = () => {
+        doc.save().rect(0, 0, 595.28, HEADER_H).fill(BRAND).restore();
+        if (hasLogo) { try { doc.image(logoPath, LM, 8, { height: 30 }); } catch {} }
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
+          .text("TORRES VIGILÂNCIA PATRIMONIAL", hasLogo ? LM + 45 : LM, 12, { width: W - (hasLogo ? 45 : 0) });
+        doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa")
+          .text("CNPJ: 36.982.392/0001-89", hasLogo ? LM + 45 : LM, 24, { width: W - (hasLogo ? 45 : 0) });
+      };
+
+      const drawFooter = () => {
+        const fY = 795 - FOOTER_H;
+        doc.save().rect(0, fY, 595.28, FOOTER_H + 10).fill(BRAND).restore();
+        doc.font("Helvetica").fontSize(6).fillColor("#cccccc")
+          .text("www.torresseguranca.com.br  •  @grupotorres.seguranca  •  (11) 96369-6699  •  escolta@torresseguranca.com.br", LM, fY + 8, { width: W, align: "center" });
+      };
+
+      drawHeader();
+      y = CONTENT_TOP;
+
+      const checkPage = (need = 80) => { if (y > CONTENT_BOTTOM - need) { doc.addPage(); drawHeader(); y = CONTENT_TOP; } };
+      const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.6).strokeColor(ACCENT_LINE).stroke().restore(); };
+      const thinLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.3).strokeColor("#dddddd").stroke().restore(); };
 
       const writeText = (text: string, opts: any = {}) => {
         checkPage(doc.heightOfString(text, { width: W, lineGap: 3, ...opts }));
@@ -4600,9 +4633,10 @@ Regras:
 
       const clauseTitle = (num: number, title: string) => {
         checkPage(30);
-        y += 6;
-        doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(`Cláusula ${num} – ${title}`, LM, y, { width: W });
-        y += 18;
+        y += 4;
+        doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`Cláusula ${num} – ${title}`, LM + 8, y + 2, { width: W - 16 });
+        y += 24;
       };
 
       const subItem = (code: string, text: string) => {
@@ -4618,9 +4652,12 @@ Regras:
       const contratanteRepresentante = sc.contratante_representante || "seu representante legal";
       const avisoPrevioDias = sc.aviso_previo_dias || 30;
 
-      doc.font("Helvetica-Bold").fontSize(14).fillColor(DARK)
-        .text("MINUTA DE CONTRATO – PRESTAÇÃO DE SERVIÇOS", LM, y, { width: W, align: "center" });
-      y += 30;
+      doc.font("Helvetica-Bold").fontSize(13).fillColor(DARK)
+        .text("MINUTA DE CONTRATO", LM, y, { width: W, align: "center" });
+      y += 16;
+      doc.font("Helvetica").fontSize(9).fillColor(LIGHT)
+        .text("PRESTAÇÃO DE SERVIÇOS DE ESCOLTA ARMADA", LM, y, { width: W, align: "center" });
+      y += 22;
 
       hLine(y); y += 15;
 
@@ -4762,33 +4799,37 @@ Regras:
       doc.font("Helvetica").fontSize(9).fillColor(DARK).text(`São Paulo, ${fmtDateSig(sc.data_assinatura)}.`, LM, y, { width: W, align: "center" });
       y += 35;
 
-      checkPage(120);
+      checkPage(140);
+      y += 10;
       const sigW = W / 2 - 20;
       const sigY = y;
 
-      hLine(sigY + 40);
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + 45, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + 58, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + 69, { width: sigW, align: "center" });
+      doc.save().rect(LM, sigY, sigW, 3).fill(BRAND).restore();
+      doc.save().moveTo(LM, sigY + 40).lineTo(LM + sigW, sigY + 40).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + 46, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + 59, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + 71, { width: sigW, align: "center" });
 
       const sig2X = LM + sigW + 40;
-      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor("#cccccc").stroke().restore();
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 45, { width: sigW, align: "center" });
+      doc.save().rect(sig2X, sigY, sigW, 3).fill(BRAND).restore();
+      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 46, { width: sigW, align: "center" });
       const contratanteNomeFontSize = contratanteNome.length > 35 ? 6.5 : 8;
-      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 58, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 72, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 59, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 73, { width: sigW, align: "center" });
 
       y = sigY + 100;
 
       checkPage(100);
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
-      y += 20;
+      doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("TESTEMUNHAS", LM + 8, y + 2, { width: W - 16 });
+      y += 24;
 
       const drawWitness = (num: number, rg: string, cpf: string) => {
         checkPage(50);
         doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y);
         y += 14;
-        hLine(y + 12);
+        doc.save().moveTo(LM, y + 12).lineTo(LM + W, y + 12).lineWidth(0.4).strokeColor("#cccccc").stroke().restore();
         y += 18;
         doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("RG:", LM, y);
         doc.font("Helvetica").fontSize(8).fillColor(DARK).text(rg || "______________________", LM + 20, y);
@@ -4803,9 +4844,10 @@ Regras:
       const pageCount = doc.bufferedPageRange().count;
       for (let i = 0; i < pageCount; i++) {
         doc.switchToPage(i);
+        drawFooter();
         doc.save();
-        doc.font("Helvetica").fontSize(7).fillColor(LIGHT)
-          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Torres Vigilância Patrimonial — Minuta de Contrato — Pág. ${i + 1}/${pageCount}`, LM, 785, { width: W, align: "center" });
+        doc.font("Helvetica").fontSize(6).fillColor("#999999")
+          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${pageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center" });
         doc.restore();
       }
 
