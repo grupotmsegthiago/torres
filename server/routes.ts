@@ -710,6 +710,11 @@ Para CPF, formate como 000.000.000-00.`
       await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
     }
     if (data.vehicleId && (!existing || existing.vehicleId !== data.vehicleId)) {
+      if (data.missionStatus && data.missionStatus !== "missao_paga") {
+        await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
+      }
+    }
+    if (data.vehicleId && existing?.missionStatus === "missao_paga" && data.missionStatus === "aguardando") {
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
     const isFinished = data.missionStatus === "encerrada" || data.missionStatus === "finalizada" ||
@@ -1597,7 +1602,7 @@ Para CPF, formate como 000.000.000-00.`
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
     const orders = await storage.getServiceOrders();
     const activeOrders = orders.filter(
-      (o) => o.status === "em_andamento" || o.status === "aberta"
+      (o) => o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada"
     );
 
     const enriched = await Promise.all(
@@ -1696,10 +1701,10 @@ Para CPF, formate como 000.000.000-00.`
     const allVehicles = await storage.getVehicles();
     const orders = await storage.getServiceOrders();
     const activeOrders = orders.filter(
-      (o) => o.status === "em_andamento"
+      (o) => o.status === "em_andamento" || (o.status === "agendada" && o.missionStatus)
     );
     const scheduledOrders = orders.filter(
-      (o) => o.status === "aberta"
+      (o) => (o.status === "aberta" || o.status === "agendada") && !o.missionStatus
     );
 
     const tcPositions = await truckscontrol.getCachedPositions();
@@ -1866,6 +1871,7 @@ Para CPF, formate como 000.000.000-00.`
                   id: linkedOrder.id,
                   osNumber: linkedOrder.osNumber,
                   missionStatus: linkedOrder.missionStatus,
+                  scheduledDate: linkedOrder.scheduledDate,
                   clientName: client?.name || "—",
                   priority: linkedOrder.priority || "agendada",
                   employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null } : null,

@@ -203,6 +203,7 @@ interface TrackedVehicle {
     id: number;
     osNumber: string;
     missionStatus: string;
+    scheduledDate?: string | null;
     clientName: string;
     priority: string;
     employee1: { id: number; name: string; phone: string | null } | null;
@@ -348,7 +349,7 @@ function getPriorityDisplay(priority: string) {
 }
 
 function getStatusDisplay(missionStatus: string, osStatus: string) {
-  if (osStatus === "aberta") {
+  if (osStatus === "aberta" || (osStatus === "agendada" && !missionStatus)) {
     return { label: "Aguardando Despacho", icon: Clock, className: "bg-slate-50 text-slate-600 border-slate-200" };
   }
   switch (missionStatus) {
@@ -2053,6 +2054,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
                           </p>
+                          {v.activeOs.scheduledDate && (
+                            <p className="text-[10px] text-neutral-400 font-medium">
+                              {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          )}
                         </div>
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
