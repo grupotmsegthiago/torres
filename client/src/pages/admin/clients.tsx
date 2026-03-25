@@ -1090,6 +1090,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                     <p className="text-[10px] text-neutral-500">Prestação de Serviços de Escolta Armada</p>
                   </div>
                   <div className="flex gap-1">
+                    <button onClick={async () => { try { const r = await authFetch(`/api/service-contracts/${sc.id}/pdf`); if (!r.ok) throw new Error("Erro ao gerar PDF"); const blob = await r.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `CONTRATO_${sc.contract_number || sc.id.slice(0, 8)}.pdf`; a.click(); URL.revokeObjectURL(url); } catch (e: any) { toast({ title: "Erro", description: e.message, variant: "destructive" }); } }} className="p-1.5 rounded hover:bg-neutral-100" title="Baixar PDF" data-testid={`button-pdf-contract-${sc.id}`}><FileDown size={14} className="text-neutral-500" /></button>
                     <button onClick={() => { setEditingSC(sc); setShowContractModal(true); }} className="p-1.5 rounded hover:bg-neutral-100"><Edit size={14} className="text-neutral-500" /></button>
                     <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>
                   </div>

@@ -4568,6 +4568,258 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/service-contracts/:id/pdf", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const PDFDocument = (await import("pdfkit")).default;
+      const { data: sc, error } = await supabaseAdmin.from("service_contracts").select("*").eq("id", req.params.id).single();
+      if (error || !sc) return res.status(404).json({ message: "Contrato não encontrado" });
+
+      const { data: priceTable } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", sc.client_id).eq("status", "ativo").maybeSingle();
+
+      const doc = new PDFDocument({ size: "A4", margins: { top: 50, bottom: 50, left: 50, right: 50 } });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename=CONTRATO_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
+      doc.pipe(res);
+
+      const W = 495;
+      const LM = 50;
+      const DARK = "#111111";
+      const GRAY = "#555555";
+      const LIGHT = "#999999";
+      let y = 50;
+
+      const gradientRect = (x: number, yy: number, w: number, h: number) => {
+        const grad = doc.linearGradient(x, yy, x + w, yy);
+        grad.stop(0, "#000000").stop(1, "#2C3E50");
+        doc.save().rect(x, yy, w, h).fill(grad).restore();
+      };
+      const hLine = (yy: number) => {
+        doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
+      };
+      const sectionTitle = (title: string) => {
+        if (y > 700) { doc.addPage(); y = 50; }
+        gradientRect(LM, y, W, 24);
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(title.toUpperCase(), LM, y + 7, { width: W, align: "center" });
+        y += 30;
+      };
+      const labelValue = (label: string, value: string, col = 0, cols = 1) => {
+        const colW = W / cols;
+        const x = LM + col * colW;
+        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text(label.toUpperCase(), x, y);
+        doc.font("Helvetica").fontSize(9).fillColor(DARK).text(value || "—", x, y + 10, { width: colW - 10 });
+      };
+      const spacer = (h = 25) => { y += h; };
+
+      const fmtDate = (d: string | null) => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
+
+      gradientRect(LM, y, W, 60);
+      doc.font("Helvetica-Bold").fontSize(16).fillColor("#ffffff").text("TORRES VIGILÂNCIA PATRIMONIAL", LM + 15, y + 12, { width: W - 30 });
+      doc.font("Helvetica").fontSize(8).fillColor("#cccccc").text("CNPJ: 36.982.392/0001-89", LM + 15, y + 32);
+      doc.font("Helvetica").fontSize(8).fillColor("#cccccc").text("Segurança Privada — Escolta Armada", LM + 15, y + 43);
+      y += 70;
+
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(DARK).text("CONTRATO DE PRESTAÇÃO DE SERVIÇOS", LM, y, { width: W, align: "center" });
+      y += 20;
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text("DE ESCOLTA ARMADA PARA TRANSPORTE DE CARGAS", LM, y, { width: W, align: "center" });
+      y += 30;
+
+      if (sc.contract_number) {
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(`Contrato nº ${sc.contract_number}`, LM, y, { width: W, align: "center" });
+        y += 25;
+      }
+
+      sectionTitle("1. DAS PARTES");
+
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA:", LM, y);
+      y += 14;
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA, pessoa jurídica de direito privado, inscrita no CNPJ sob nº 36.982.392/0001-89, doravante denominada CONTRATADA.", LM, y, { width: W, lineGap: 3 });
+      y += 40;
+
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE:", LM, y);
+      y += 14;
+      const contratanteText = `${sc.contratante_razao || sc.client_name || "—"}${sc.contratante_cnpj ? `, inscrita no CNPJ sob nº ${sc.contratante_cnpj}` : ""}${sc.contratante_endereco ? `, com sede em ${sc.contratante_endereco}` : ""}${sc.contratante_representante ? `, representada por ${sc.contratante_representante}` : ""}, doravante denominada CONTRATANTE.`;
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(contratanteText, LM, y, { width: W, lineGap: 3 });
+      y += doc.heightOfString(contratanteText, { width: W, lineGap: 3 }) + 10;
+
+      sectionTitle("2. DO OBJETO");
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        `O presente contrato tem por objeto a ${sc.object || "Prestação de Serviços de Escolta Armada"}, conforme as condições e especificações técnicas descritas neste instrumento.`,
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 35;
+
+      sectionTitle("3. DOS SERVIÇOS E EQUIPAMENTOS");
+      labelValue("Número de Vigilantes", String(sc.num_vigilantes || 2), 0, 2);
+      labelValue("Armamento", sc.armamento_descricao || "—", 1, 2);
+      spacer(30);
+      labelValue("Equipamentos", sc.equipamentos || "—", 0, 1);
+      spacer(30);
+
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        "Os serviços serão executados por vigilantes devidamente habilitados, portando os equipamentos e armamentos acima descritos, em viatura identificada com sistema de rastreamento veicular em tempo real.",
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 45;
+
+      if (y > 650) { doc.addPage(); y = 50; }
+
+      sectionTitle("4. DA VIGÊNCIA E PRAZO");
+      labelValue("Tipo de Vigência", sc.vigencia_tipo === "determinado" ? "Prazo Determinado" : "Prazo Indeterminado", 0, 3);
+      labelValue("Início", fmtDate(sc.vigencia_inicio), 1, 3);
+      labelValue("Término", sc.vigencia_tipo === "determinado" ? fmtDate(sc.vigencia_fim) : "Indeterminado", 2, 3);
+      spacer(30);
+
+      labelValue("Data de Assinatura", fmtDate(sc.data_assinatura), 0, 3);
+      labelValue("Aviso Prévio", `${sc.aviso_previo_dias || 30} dias`, 1, 3);
+      labelValue("Renovação Automática", sc.renovacao_automatica ? "Sim" : "Não", 2, 3);
+      spacer(30);
+
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        sc.vigencia_tipo === "determinado"
+          ? `O presente contrato vigorará pelo período de ${sc.vigencia_inicio ? fmtDate(sc.vigencia_inicio) : "—"} a ${sc.vigencia_fim ? fmtDate(sc.vigencia_fim) : "—"}, podendo ser rescindido por qualquer das partes mediante aviso prévio de ${sc.aviso_previo_dias || 30} dias.${sc.renovacao_automatica ? " Na ausência de manifestação contrária, o contrato será automaticamente renovado por igual período." : ""}`
+          : `O presente contrato é por prazo indeterminado, podendo ser rescindido por qualquer das partes mediante aviso prévio de ${sc.aviso_previo_dias || 30} dias.`,
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 50;
+
+      if (y > 650) { doc.addPage(); y = 50; }
+
+      sectionTitle("5. DO REAJUSTE");
+      labelValue("Periodicidade", (sc.reajuste_periodicidade || "anual").charAt(0).toUpperCase() + (sc.reajuste_periodicidade || "anual").slice(1), 0, 3);
+      labelValue("Índice de Correção", sc.reajuste_indice || sc.indice_correcao || "INPC", 1, 3);
+      labelValue("Observações", sc.reajuste_observacoes || "—", 2, 3);
+      spacer(30);
+
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        `Os valores pactuados serão reajustados ${(sc.reajuste_periodicidade || "anual") === "anual" ? "anualmente" : `a cada ${sc.reajuste_periodicidade}`}, com base na variação acumulada do índice ${sc.reajuste_indice || sc.indice_correcao || "INPC"}, ou outro índice que venha a substituí-lo.`,
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 35;
+
+      if (priceTable) {
+        if (y > 600) { doc.addPage(); y = 50; }
+        sectionTitle("6. DOS VALORES");
+
+        const priceRows = [
+          ["KM Carregado", `R$ ${Number(priceTable.valor_km_carregado || 0).toFixed(2)} / km`],
+          ["KM Vazio", `R$ ${Number(priceTable.valor_km_vazio || 0).toFixed(2)} / km`],
+          ["Franquia Mínima", `${Number(priceTable.franquia_minima_km || 0)} km`],
+          ["Hora Estadia", `R$ ${Number(priceTable.valor_hora_estadia || 0).toFixed(2)} / hora`],
+          ["Diária / Pernoite", `R$ ${Number(priceTable.valor_diaria || 0).toFixed(2)}`],
+          ["VRP Base", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
+          ["Adicional Noturno (VRP)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
+          ["Adicional Noturno (KM)", `${Number(priceTable.adicional_noturno_km_pct || 0)}%`],
+          ["Periculosidade", `${Number(priceTable.adicional_periculosidade_pct || 0)}%`],
+        ];
+
+        priceRows.forEach(([label, value], i) => {
+          if (i % 2 === 0) {
+            doc.save().rect(LM, y - 2, W, 18).fill("#f5f5f5").restore();
+          }
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label, LM + 10, y + 2, { width: 200 });
+          doc.font("Helvetica").fontSize(9).fillColor(DARK).text(value, LM + 220, y + 2, { width: 250 });
+          y += 18;
+        });
+        spacer(10);
+      }
+
+      if (y > 600) { doc.addPage(); y = 50; }
+
+      sectionTitle(`${priceTable ? "7" : "6"}. DAS PENALIDADES`);
+      labelValue("Multa por Mora", `${Number(sc.multa_mora_pct || 2).toFixed(2)}%`, 0, 2);
+      labelValue("Juros de Mora", `${Number(sc.juros_mora_pct || 1).toFixed(2)}% ao mês`, 1, 2);
+      spacer(30);
+
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        `Em caso de inadimplência, incidirá multa de ${Number(sc.multa_mora_pct || 2).toFixed(2)}% sobre o valor em atraso, acrescido de juros de mora de ${Number(sc.juros_mora_pct || 1).toFixed(2)}% ao mês, calculados pro rata die.`,
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 40;
+
+      if (sc.observacoes) {
+        if (y > 650) { doc.addPage(); y = 50; }
+        sectionTitle(`${priceTable ? "8" : "7"}. OBSERVAÇÕES`);
+        doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(sc.observacoes, LM, y, { width: W, lineGap: 3 });
+        y += doc.heightOfString(sc.observacoes, { width: W, lineGap: 3 }) + 20;
+      }
+
+      if (y > 550) { doc.addPage(); y = 50; }
+
+      const lastSection = sc.observacoes ? (priceTable ? "9" : "8") : (priceTable ? "8" : "7");
+      sectionTitle(`${lastSection}. DO FORO`);
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        "Para dirimir quaisquer controvérsias oriundas deste contrato, as partes elegem o foro da Comarca de Eunápolis, Estado da Bahia, com exclusão de qualquer outro, por mais privilegiado que seja.",
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 40;
+
+      hLine(y);
+      y += 15;
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
+        `E por estarem assim justas e contratadas, as partes firmam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença das testemunhas abaixo.`,
+        LM, y, { width: W, lineGap: 3 }
+      );
+      y += 30;
+
+      const localDate = sc.data_assinatura
+        ? `Eunápolis/BA, ${new Date(sc.data_assinatura + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}`
+        : `Eunápolis/BA, ${new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}`;
+      doc.font("Helvetica").fontSize(9).fillColor(DARK).text(localDate, LM, y, { width: W, align: "center" });
+      y += 40;
+
+      if (y > 580) { doc.addPage(); y = 50; }
+
+      const sigW = W / 2 - 20;
+      const sigY = y;
+
+      hLine(sigY + 40);
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + 45, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + 58, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + 69, { width: sigW, align: "center" });
+
+      const sig2X = LM + sigW + 40;
+      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 45, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(sc.contratante_razao || sc.client_name || "—", sig2X, sigY + 58, { width: sigW, align: "center" });
+      if (sc.contratante_cnpj) {
+        doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${sc.contratante_cnpj}`, sig2X, sigY + 69, { width: sigW, align: "center" });
+      }
+
+      y = sigY + 95;
+
+      if (sc.testemunha1_nome || sc.testemunha2_nome) {
+        if (y > 650) { doc.addPage(); y = 50; }
+
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
+        y += 18;
+
+        if (sc.testemunha1_nome) {
+          hLine(y + 25);
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 1:", LM, y);
+          doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(`${sc.testemunha1_nome}${sc.testemunha1_rg ? ` — RG: ${sc.testemunha1_rg}` : ""}${sc.testemunha1_cpf ? ` — CPF: ${sc.testemunha1_cpf}` : ""}`, LM, y + 30, { width: W });
+          y += 50;
+        }
+        if (sc.testemunha2_nome) {
+          hLine(y + 25);
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 2:", LM, y);
+          doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(`${sc.testemunha2_nome}${sc.testemunha2_rg ? ` — RG: ${sc.testemunha2_rg}` : ""}${sc.testemunha2_cpf ? ` — CPF: ${sc.testemunha2_cpf}` : ""}`, LM, y + 30, { width: W });
+          y += 50;
+        }
+      }
+
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        doc.save();
+        doc.font("Helvetica").fontSize(7).fillColor(LIGHT)
+          .text(`Contrato ${sc.contract_number || ""} — Torres Vigilância Patrimonial — Pág. ${i + 1}/${pageCount}`, LM, 780, { width: W, align: "center" });
+        doc.restore();
+      }
+
+      doc.end();
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // Client Billing Report (monthly)
   app.get("/api/escort/relatorio/:clientId", requireAuth, async (req, res) => {
     try {
