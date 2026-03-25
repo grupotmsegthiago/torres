@@ -318,6 +318,32 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS company_documents (
+        id SERIAL PRIMARY KEY,
+        doc_type TEXT NOT NULL,
+        label TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_data TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        uploaded_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS homologation_logs (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL,
+        client_name TEXT,
+        recipient_email TEXT NOT NULL,
+        recipient_name TEXT,
+        documents_sent TEXT[],
+        sent_by TEXT,
+        status TEXT NOT NULL DEFAULT 'enviado',
+        sent_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);

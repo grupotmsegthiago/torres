@@ -1302,17 +1302,17 @@ function HomologacaoTab({ client }: { client: Client }) {
 
   const { data: companyDocs = [], refetch: refetchDocs } = useQuery<CompanyDoc[]>({
     queryKey: ["/api/company-documents"],
-    queryFn: async () => { const r = await authFetch("/api/company-documents"); const d = await r.json(); return Array.isArray(d) ? d : []; },
+    queryFn: getQueryFn<CompanyDoc[]>({ on401: "returnNull" }),
   });
 
   const { data: logs = [], refetch: refetchLogs } = useQuery<HomologLog[]>({
-    queryKey: ["/api/homologation-logs", client.id],
-    queryFn: async () => { const r = await authFetch(`/api/homologation-logs/${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; },
+    queryKey: ["/api/homologation-logs", String(client.id)],
+    queryFn: getQueryFn<HomologLog[]>({ on401: "returnNull" }),
   });
 
   const { data: emailConfig } = useQuery<{ configured: boolean; host: string; port: string; user: string }>({
     queryKey: ["/api/email-config"],
-    queryFn: async () => { const r = await authFetch("/api/email-config"); return r.json(); },
+    queryFn: getQueryFn<{ configured: boolean; host: string; port: string; user: string }>({ on401: "returnNull" }),
   });
 
   const handleUploadDoc = (docType: string, label: string) => {
