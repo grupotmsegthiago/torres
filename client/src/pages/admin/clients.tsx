@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -517,8 +517,8 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
         if (editing) return apiRequest("PUT", `/api/service-contracts/${editing.id}`, payload);
         return apiRequest("POST", "/api/service-contracts", payload);
       },
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/service-contracts"] });
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: ["/api/service-contracts"] });
         toast({ title: editing ? "Contrato atualizado" : "Contrato cadastrado" });
         onClose();
       },
@@ -830,7 +830,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const [editingVehicle, setEditingVehicle] = useState<ClientVehicle | null>(null);
   const [vForm, setVForm] = useState({ plate: "", model: "", brand: "", color: "", driverName: "", driverPhone: "", notes: "" });
 
-  const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/service-contracts?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
+  const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", client.id], queryFn: async () => { const r = await authFetch(`/api/service-contracts?client_id=${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: priceContracts = [] } = useQuery<EscortContract[]>({ queryKey: ["/api/escort/contracts"] });
   const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/escort/routes?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: allBillings = [] } = useQuery<EscortBilling[]>({ queryKey: ["/api/escort/billings"] });
