@@ -1703,6 +1703,13 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const getDocStatus = (docType: string) => docs.some((d: any) => d.type === docType);
 
+  const MANDATORY_DOC_TYPES = REQUIRED_DOCS
+    .filter(g => g.group !== "Dependentes (se necessário)")
+    .flatMap(g => g.items.map(i => i.type));
+  const missingDocs = MANDATORY_DOC_TYPES.filter(t => !getDocStatus(t));
+  const allDocsComplete = missingDocs.length === 0;
+  const isDiretoria = user?.role === "diretoria";
+
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
     contrato: 0,
@@ -1872,10 +1879,45 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold text-neutral-700">Contrato de Trabalho</h3>
-              <Button size="sm" onClick={generateContract} data-testid="button-generate-contract-pasta">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!allDocsComplete && !isDiretoria) {
+                    toast({ title: "Documentação incompleta", description: `Faltam ${missingDocs.length} documento(s) obrigatório(s). Somente a Diretoria pode autorizar a geração sem documentação completa.`, variant: "destructive" });
+                    return;
+                  }
+                  if (!allDocsComplete && isDiretoria) {
+                    toast({ title: "Atenção", description: `Gerando contrato com ${missingDocs.length} documento(s) pendente(s) — autorizado pela Diretoria.` });
+                  }
+                  generateContract();
+                }}
+                data-testid="button-generate-contract-pasta"
+              >
                 <FileText className="w-4 h-4 mr-1" /> Gerar Contrato
               </Button>
             </div>
+
+            {!allDocsComplete && (
+              <div className={`border rounded-lg p-3 ${isDiretoria ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className={`w-4 h-4 ${isDiretoria ? "text-amber-600" : "text-red-600"}`} />
+                  <span className={`text-xs font-bold uppercase ${isDiretoria ? "text-amber-700" : "text-red-700"}`}>
+                    {missingDocs.length} documento(s) obrigatório(s) pendente(s)
+                  </span>
+                </div>
+                <ul className="space-y-0.5 ml-6">
+                  {missingDocs.map(t => (
+                    <li key={t} className={`text-xs ${isDiretoria ? "text-amber-600" : "text-red-600"}`}>• {t}</li>
+                  ))}
+                </ul>
+                {isDiretoria ? (
+                  <p className="text-[10px] text-amber-500 mt-2 italic">Você possui autorização da Diretoria para gerar o contrato mesmo com documentos pendentes.</p>
+                ) : (
+                  <p className="text-[10px] text-red-500 mt-2 italic">Geração de contrato bloqueada. Somente a Diretoria pode autorizar.</p>
+                )}
+              </div>
+            )}
+
             <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 space-y-3">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome</span><span className="font-medium">{employee.name}</span></div>
@@ -1885,7 +1927,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Admissão</span><span>{employee.hireDate || "-"}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Pagamento</span><span>{employee.paymentMethod || "PIX"}</span></div>
               </div>
-              <p className="text-xs text-neutral-400 mt-2">Clique em "Gerar Contrato" para visualizar e imprimir o contrato de trabalho completo.</p>
+              {allDocsComplete && <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Documentação completa — contrato liberado para geração.</p>}
             </div>
           </div>
         )}
