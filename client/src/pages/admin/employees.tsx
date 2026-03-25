@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1506,8 +1506,33 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
 
 function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; onClose: () => void; onEdit: () => void }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canEdit = user?.role === "diretoria" || user?.role === "admin";
   const [tab, setTab] = useState<PastaTab>("documentos");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [excelMonth, setExcelMonth] = useState(new Date().getMonth() + 1);
+  const [excelYear, setExcelYear] = useState(new Date().getFullYear());
+  const [exporting, setExporting] = useState(false);
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await authFetch(`/api/employees/${employee.id}/folha-ponto-excel?month=${excelMonth}&year=${excelYear}`);
+      if (!res.ok) throw new Error("Erro ao gerar Excel");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Folha_Ponto_${employee.name.replace(/\s+/g, "_")}_${MONTHS[excelMonth - 1]}_${excelYear}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Excel exportado com sucesso" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data: docs = [], isLoading: loadingDocs } = useQuery<EmployeeDocument[]>({
     queryKey: ["/api/employee-documents", employee.id],
@@ -1923,11 +1948,23 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
         {tab === "ponto" && (
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center flex-wrap gap-2">
               <h3 className="text-sm font-bold text-neutral-700">Folha de Ponto</h3>
-              <Button size="sm" onClick={() => setShowTsForm(!showTsForm)} data-testid="button-add-timesheet-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+              <div className="flex items-center gap-2">
+                <select value={excelMonth} onChange={(e) => setExcelMonth(Number(e.target.value))} className="border border-neutral-200 rounded px-2 py-1 text-xs" data-testid="select-excel-month">
+                  {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+                <Input type="number" value={excelYear} onChange={(e) => setExcelYear(Number(e.target.value))} className="w-20 h-7 text-xs" data-testid="input-excel-year" />
+                <Button size="sm" variant="outline" onClick={exportExcel} disabled={exporting} data-testid="button-export-excel-ponto">
+                  {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Download className="w-3.5 h-3.5 mr-1" />}
+                  Exportar Excel
+                </Button>
+                {canEdit && (
+                  <Button size="sm" onClick={() => setShowTsForm(!showTsForm)} data-testid="button-add-timesheet-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+                )}
+              </div>
             </div>
-            {showTsForm && (
+            {canEdit && showTsForm && (
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
                 <Input type="date" value={tsForm.date} onChange={(e) => setTsForm({ ...tsForm, date: e.target.value })} placeholder="Data" data-testid="input-ts-date-pasta" />
                 <div className="grid grid-cols-2 gap-2">
@@ -1943,11 +1980,16 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <Button size="sm" onClick={() => addTimesheet.mutate()} disabled={!tsForm.date || addTimesheet.isPending} data-testid="button-save-timesheet-pasta">Salvar</Button>
               </div>
             )}
+            {!canEdit && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700" data-testid="text-ponto-readonly">
+                Visualização somente leitura. Apenas Diretoria e Administrador podem editar registros de ponto.
+              </div>
+            )}
             {loadingTs ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : timesheets.length === 0 ? (
               <p className="text-sm text-neutral-400 text-center py-4">Nenhum ponto registrado</p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">S. Almoço</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th><th className="px-3 py-2"></th></tr></thead>
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">S. Almoço</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th>{canEdit && <th className="px-3 py-2"></th>}</tr></thead>
                 <tbody>
                   {timesheets.map((t: any) => (
                     <tr key={t.id} className="border-b border-neutral-100">
@@ -1957,7 +1999,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                       <td className="px-3 py-2">{t.lunchIn || "-"}</td>
                       <td className="px-3 py-2">{t.clockOut || "-"}</td>
                       <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
-                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                      {canEdit && <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>}
                     </tr>
                   ))}
                 </tbody>

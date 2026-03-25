@@ -2887,6 +2887,166 @@ Para CPF, formate como 000.000.000-00.`
     res.json({ ok: true });
   });
 
+  app.get("/api/employees/:id/folha-ponto-excel", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const XLSX = await import("xlsx");
+      const employeeId = Number(req.params.id);
+      const month = Number(req.query.month) || new Date().getMonth() + 1;
+      const year = Number(req.query.year) || new Date().getFullYear();
+
+      const employee = await storage.getEmployee(employeeId);
+      if (!employee) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+      const daysInMonth = endDate.getDate();
+
+      const timesheetRows = await db.select().from(employeeTimesheets).where(
+        and(
+          eq(employeeTimesheets.employeeId, employeeId),
+          gte(employeeTimesheets.date, startDate),
+          lte(employeeTimesheets.date, endDate)
+        )
+      ).orderBy(employeeTimesheets.date);
+
+      const absenceRows = await db.select().from(employeeAbsences).where(
+        and(
+          eq(employeeAbsences.employeeId, employeeId),
+          gte(employeeAbsences.startDate, startDate),
+          lte(employeeAbsences.startDate, endDate)
+        )
+      );
+
+      const discRows = await db.select().from(employeeDisciplinary).where(
+        and(
+          eq(employeeDisciplinary.employeeId, employeeId),
+          gte(employeeDisciplinary.date, startDate),
+          lte(employeeDisciplinary.date, endDate)
+        )
+      );
+
+      const tsMap = new Map<string, any>();
+      for (const ts of timesheetRows) {
+        const d = new Date(ts.date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        tsMap.set(key, ts);
+      }
+
+      const MONTHS_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      const DAYS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+      const wb = XLSX.utils.book_new();
+      const rows: any[][] = [];
+
+      rows.push(["", "", "", "", "EMPRESA:", "", "GRUPO TORRES PATRIMONIAL", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", "ENDEREÇO:", "", "", "", "", "", "", "", "", "Ficha Individual - Art 74/3 CLT", ""]);
+      rows.push(["", "", "", "", "BAIRRO:", "", "", "", "", "", "", "", "", "Portaria Nº 3082 de 11/04/98", ""]);
+      rows.push(["", "", "", "", `CODIGO: ${employee.matricula}`, "", employee.name, "", "", "", "", employee.role?.toUpperCase() || "VIGILANTE DE ESCOLTA ARMADA", "", "", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", `MÊS: ${MONTHS_PT[month - 1].toUpperCase()} / ${year}`, ""]);
+      rows.push(["", "", "", "", `CARGO: ${employee.role?.toUpperCase() || "VIGILANTE DE ESCOLTA ARMADA"}`, "", "", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", `DEPTO/ SETOR/ SEÇÃO: 0001/ 0002 / 0000`, "", "", "", "", "", "", "", "", "", ""]);
+      rows.push([]);
+
+      rows.push([
+        "DATA", "", "DIA", "TIPO", "ENTRADA", "SAÍDA ALM.", "RETORNO ALM.", "SAÍDA", "PERNOITE", "HORAS DESC.", "TOTAL HORAS", "DIÁRIA", "AD. NOT.", "ASS. FUNCIONÁRIO", "OBSERVAÇÕES"
+      ]);
+
+      let totalOvertime = 0;
+      let totalDays = 0;
+      let folgaCount = 0;
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, month - 1, day);
+        const dayStr = DAYS_PT[d.getDay()];
+        const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const ts = tsMap.get(dateKey);
+
+        const isSunday = d.getDay() === 0;
+        let tipo = "";
+
+        if (ts) {
+          totalDays++;
+          if (ts.overtime) totalOvertime += Number(ts.overtime);
+          tipo = "ESCOLTA";
+        } else if (isSunday) {
+          tipo = "FOLGA";
+          folgaCount++;
+        }
+
+        rows.push([
+          `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`,
+          "",
+          dayStr,
+          tipo,
+          ts?.clockIn || "",
+          ts?.lunchOut || "",
+          ts?.lunchIn || "",
+          ts?.clockOut || "",
+          "",
+          "",
+          ts?.overtime ? `${ts.overtime}h` : "",
+          "",
+          "",
+          "",
+          ts?.notes || ""
+        ]);
+      }
+
+      rows.push([]);
+      rows.push(["TOTAL", "", "", "", "", "", "", "", "", "", `${totalOvertime}h`, "", "", "", ""]);
+      rows.push([]);
+
+      const justificadas = absenceRows.filter(a => a.status === "aprovado").length;
+      const naoJustificadas = absenceRows.filter(a => a.status !== "aprovado").length;
+      const suspensoes = discRows.filter(d => d.type === "Suspensão").length;
+      const advertencias = discRows.filter(d => d.type === "Advertência").length;
+
+      rows.push(["FALTAS", "", "", absenceRows.length, "", `JUSTIFICADAS: ${justificadas}`, "", "", `NÃO JUSTIFICADAS: ${naoJustificadas}`, "", "", "", "", "", ""]);
+      rows.push([]);
+      rows.push(["FOLGAS", "", "", folgaCount, "", "SUSPENSÃO", "", "", suspensoes, "", "ADVERTÊNCIA", "", "", advertencias, ""]);
+      rows.push([]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "ASSINATURA COLABORADOR", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "____________________________", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", employee.name, ""]);
+      rows.push([]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "VISTO SUPERVISOR OPERACIONAL", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "____________________________", ""]);
+      rows.push([]);
+      rows.push(["Hora Extra 60%", "", "", "", "", "", "", "", totalOvertime, "", "", "", "", "", ""]);
+      rows.push(["Diárias", "", "", "", "", "", "", "", totalDays, "", "", "", "", "", ""]);
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      ws["!cols"] = [
+        { wch: 14 }, { wch: 2 }, { wch: 5 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
+        { wch: 8 }, { wch: 30 }, { wch: 20 }
+      ];
+
+      ws["!merges"] = [
+        { s: { r: 0, c: 6 }, e: { r: 0, c: 10 } },
+        { s: { r: 4, c: 6 }, e: { r: 4, c: 10 } },
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, `PONTO ${MONTHS_PT[month - 1].toUpperCase()}`);
+
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      const filename = `Folha_Ponto_${employee.name.replace(/\s+/g, "_")}_${MONTHS_PT[month - 1]}_${year}.xlsx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(Buffer.from(buf));
+    } catch (err: any) {
+      console.error("[folha-ponto-excel]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ====================== HR: HOLERITES ======================
 
   app.get("/api/employees/:id/payslips", requireAuth, requireAdmin, async (req, res) => {
