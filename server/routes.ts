@@ -4596,20 +4596,15 @@ Regras:
       let logoBuffer: Buffer | null = null;
       try {
         const sharp = (await import("sharp")).default;
-        const whiteSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" width="300" height="420">
-          <g fill="#ffffff">
-            <rect x="98" y="0" width="22" height="32" rx="1"/>
-            <rect x="139" y="0" width="22" height="32" rx="1"/>
-            <rect x="180" y="0" width="22" height="32" rx="1"/>
-            <rect x="86" y="24" width="128" height="20" rx="1"/>
-            <path d="M50 40 L250 40 L250 240 Q250 310 150 370 Q50 310 50 240 Z"/>
-            <path d="M68 160 L232 160 L232 235 Q232 298 150 350 Q68 298 68 235 Z" fill="#111111"/>
-            <polygon points="150,210 82,160 88,150 150,196 212,150 218,160"/>
-            <polygon points="150,260 98,215 104,205 150,246 196,205 202,215"/>
-            <polygon points="150,305 115,270 121,260 150,286 179,260 185,270"/>
-          </g>
-        </svg>`;
-        logoBuffer = await sharp(Buffer.from(whiteSvg)).resize({ height: 120 }).png().toBuffer();
+        const logoSrc = path.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774457182066.jpeg");
+        if (fs.existsSync(logoSrc)) {
+          logoBuffer = await sharp(logoSrc)
+            .resize({ height: 120 })
+            .negate({ alpha: false })
+            .flatten({ background: { r: 17, g: 17, b: 17 } })
+            .png()
+            .toBuffer();
+        }
       } catch {}
 
       const HEADER_H = 46;
