@@ -321,16 +321,40 @@ function getMissionLabel(status: string | null) {
   }
 }
 
+function getHoursUntilMission(scheduledDate: string | null | undefined): number | null {
+  if (!scheduledDate) return null;
+  const now = new Date();
+  const scheduled = new Date(scheduledDate);
+  return (scheduled.getTime() - now.getTime()) / (1000 * 60 * 60);
+}
+
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
   if (v.activeOs) {
     const ms = v.activeOs.missionStatus;
     if (ms === "encerrada") {
       return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     }
+    if (ms === "missao_paga") {
+      const hoursLeft = getHoursUntilMission(v.activeOs.scheduledDate);
+      if (hoursLeft !== null && hoursLeft > 6) {
+        return { label: "DISPONÍVEL", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+      }
+      if (hoursLeft !== null && hoursLeft > 5) {
+        return { label: "ATENÇÃO", icon: AlertTriangle, className: "bg-amber-50 text-amber-700 border-amber-200" };
+      }
+      return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
+    }
     return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
   }
   if (v.scheduledOs) {
-    return { label: "COM AGENDAMENTO", icon: CalendarClock, className: "bg-amber-50 text-amber-700 border-amber-200" };
+    const hoursLeft = getHoursUntilMission(v.scheduledOs.scheduledDate);
+    if (hoursLeft !== null && hoursLeft > 6) {
+      return { label: "DISPONÍVEL", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    }
+    if (hoursLeft !== null && hoursLeft > 5) {
+      return { label: "ATENÇÃO", icon: AlertTriangle, className: "bg-amber-50 text-amber-700 border-amber-200" };
+    }
+    return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
   }
   return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
