@@ -4639,30 +4639,93 @@ Regras:
       const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.6).strokeColor(ACCENT_LINE).stroke().restore(); };
       const thinLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.3).strokeColor("#dddddd").stroke().restore(); };
 
+      const safeText = (text: string, x: number, yPos: number, opts: any = {}) => {
+        const font = opts.font || "Helvetica";
+        const size = opts.size || 9;
+        const color = opts.color || GRAY;
+        const width = opts.width || W;
+        const lineGap = opts.lineGap ?? 3;
+        const align = opts.align || "justify";
+
+        doc.font(font).fontSize(size);
+        const totalH = doc.heightOfString(text, { width, lineGap });
+        const availH = CONTENT_BOTTOM - yPos;
+
+        if (totalH <= availH + 2) {
+          doc.fillColor(color).text(text, x, yPos, { width, lineGap, align, lineBreak: true });
+          return yPos + totalH;
+        }
+
+        const words = text.split(" ");
+        let chunk = "";
+        let curY = yPos;
+
+        for (let i = 0; i < words.length; i++) {
+          const test = chunk ? chunk + " " + words[i] : words[i];
+          doc.font(font).fontSize(size);
+          const testH = doc.heightOfString(test, { width, lineGap });
+          const remain = CONTENT_BOTTOM - curY;
+
+          if (testH > remain && chunk) {
+            doc.font(font).fontSize(size).fillColor(color)
+              .text(chunk, x, curY, { width, lineGap, align, lineBreak: true });
+            startNewPage();
+            curY = y;
+            chunk = words[i];
+          } else {
+            chunk = test;
+          }
+        }
+        if (chunk) {
+          doc.font(font).fontSize(size).fillColor(color)
+            .text(chunk, x, curY, { width, lineGap, align, lineBreak: true });
+          doc.font(font).fontSize(size);
+          curY += doc.heightOfString(chunk, { width, lineGap });
+        }
+        return curY;
+      };
+
       const writeText = (text: string, opts: any = {}) => {
         doc.font(opts.font || "Helvetica").fontSize(opts.size || 9);
         const h = doc.heightOfString(text, { width: W, lineGap: 3 });
-        checkPage(h + (opts.gap || 8));
-        doc.fillColor(opts.color || GRAY)
-          .text(text, LM, y, { width: W, lineGap: 3, align: opts.align || "justify" });
-        y += h + (opts.gap || 8);
+        const gap = opts.gap || 8;
+        if (h + gap <= CONTENT_BOTTOM - y) {
+          doc.fillColor(opts.color || GRAY)
+            .text(text, LM, y, { width: W, lineGap: 3, align: opts.align || "justify", lineBreak: true });
+          y += h + gap;
+        } else {
+          checkPage(Math.min(h + gap, 60));
+          y = safeText(text, LM, y, { font: opts.font, size: opts.size, color: opts.color, align: opts.align });
+          y += gap;
+        }
       };
 
       const clauseTitle = (num: number, title: string) => {
-        checkPage(26);
+        const label = `Cláusula ${num} – ${title}`;
+        doc.font("Helvetica-Bold").fontSize(9);
+        const titleH = doc.heightOfString(label, { width: W - 16 });
+        const barH = Math.max(20, titleH + 8);
+        checkPage(barH + 6);
         y += 4;
-        doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`Cláusula ${num} – ${title}`, LM + 8, y + 2, { width: W - 16 });
-        y += 24;
+        doc.save().rect(LM, y - 2, W, barH).fill(BRAND_ACCENT).restore();
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
+          .text(label, LM + 8, y + 3, { width: W - 16, lineBreak: true });
+        y += barH + 6;
       };
 
       const subItem = (code: string, text: string) => {
         const full = `${code} - ${text}`;
         doc.font("Helvetica").fontSize(8.5);
         const h = doc.heightOfString(full, { width: W - 10, lineGap: 2 });
-        checkPage(h + 5);
-        doc.fillColor(GRAY).text(full, LM + 10, y, { width: W - 10, lineGap: 2, align: "justify" });
-        y += h + 5;
+        const gap = 5;
+        if (h + gap <= CONTENT_BOTTOM - y) {
+          doc.fillColor(GRAY).text(full, LM + 10, y, { width: W - 10, lineGap: 2, align: "justify", lineBreak: true });
+          y += h + gap;
+        } else {
+          checkPage(Math.min(h + gap, 40));
+          y = safeText(full, LM + 10, y, { size: 8.5, width: W - 10, lineGap: 2 });
+          y += gap;
+        }
       };
 
       const contratanteNome = sc.contratante_razao || sc.client_name || "_______________";
@@ -4683,20 +4746,30 @@ Regras:
       const contratanteFullText = `CONTRATANTE: ${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`;
       doc.font("Helvetica").fontSize(9);
       const contratanteH = doc.heightOfString(contratanteFullText, { width: W, lineGap: 3 });
-      checkPage(contratanteH + 10);
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE: ", LM, y, { continued: true, width: W });
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY)
-        .text(`${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`, { width: W, lineGap: 3, align: "justify" });
-      y += contratanteH + 20;
+      if (contratanteH + 15 <= CONTENT_BOTTOM - y) {
+        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE: ", LM, y, { continued: true, width: W });
+        doc.font("Helvetica").fontSize(9).fillColor(GRAY)
+          .text(`${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`, { width: W, lineGap: 3, align: "justify" });
+        y += contratanteH + 15;
+      } else {
+        checkPage(40);
+        y = safeText(contratanteFullText, LM, y, { font: "Helvetica", size: 9 });
+        y += 15;
+      }
 
       const contratadaFullText = "CONTRATADA: TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.";
       doc.font("Helvetica").fontSize(9);
       const contratadaH = doc.heightOfString(contratadaFullText, { width: W, lineGap: 3 });
-      checkPage(contratadaH + 10);
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA: ", LM, y, { continued: true, width: W });
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY)
-        .text("TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.", { width: W, lineGap: 3, align: "justify" });
-      y += contratadaH + 15;
+      if (contratadaH + 15 <= CONTENT_BOTTOM - y) {
+        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA: ", LM, y, { continued: true, width: W });
+        doc.font("Helvetica").fontSize(9).fillColor(GRAY)
+          .text("TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.", { width: W, lineGap: 3, align: "justify" });
+        y += contratadaH + 12;
+      } else {
+        checkPage(40);
+        y = safeText(contratadaFullText, LM, y, { font: "Helvetica", size: 9 });
+        y += 12;
+      }
 
       checkPage(30);
       writeText("As partes, acima nomeadas e qualificadas, têm entre si como justo e acordado o presente Contrato de Prestação de Serviços de Escolta Armada, que se regerão pelos termos, cláusulas, obrigações e condições adiante articuladas:");
@@ -4842,8 +4915,8 @@ Regras:
       doc.save().rect(sig2X, sigY, sigW, 3).fill(BRAND).restore();
       doc.save().moveTo(sig2X, sigY + SIG_LINE_OFFSET).lineTo(sig2X + sigW, sigY + SIG_LINE_OFFSET).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
       doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center", lineBreak: false });
-      const contratanteNomeFontSize = contratanteNome.length > 35 ? 6.5 : 8;
-      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center", lineBreak: false });
+      const contratanteNomeFontSize = contratanteNome.length > 50 ? 5.5 : contratanteNome.length > 35 ? 6.5 : 8;
+      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center", lineBreak: true });
       doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + SIG_LINE_OFFSET + 35, { width: sigW, align: "center", lineBreak: false });
 
       y = sigY + SIG_LINE_OFFSET + 55;
@@ -4853,6 +4926,7 @@ Regras:
       y += 24;
 
       const drawWitness = (num: number, rg: string, cpf: string) => {
+        checkPage(60);
         doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y, { lineBreak: false });
         y += 14;
         doc.save().moveTo(LM, y + 12).lineTo(LM + W, y + 12).lineWidth(0.4).strokeColor("#cccccc").stroke().restore();
