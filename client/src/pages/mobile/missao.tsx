@@ -37,7 +37,7 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
   checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/16", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Check-in · 5/16", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Chegada no Cliente · 5/16", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
   checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/16", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
   checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/16", icon: User, needsForm: true },
   iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/16", icon: Siren },
@@ -453,16 +453,17 @@ export default function MobileMissaoPage() {
     try {
       if (!navigator.onLine) throw new Error("offline");
       await apiRequest("POST", "/api/mission/photo", payload);
+      logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""}`);
     } catch (err) {
       if (isNetworkError(err)) {
         enqueueAction("/api/mission/photo", "POST", payload);
         setOfflinePending(getPendingCount());
         toast({ title: "Salvo offline", description: "A foto será enviada quando o sinal voltar." });
+        logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""} (offline)`);
       } else {
-        toast({ title: "Erro ao enviar foto", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+        throw err;
       }
     }
-    logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""}`);
   };
 
   const advanceMission = async () => {
@@ -482,7 +483,7 @@ export default function MobileMissaoPage() {
         setOfflinePending(getPendingCount());
         toast({ title: "Salvo offline", description: "A etapa será avançada quando o sinal voltar." });
       } else {
-        toast({ title: "Erro ao avançar etapa", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+        throw err;
       }
     }
     logAuditAction("mission_step_advance", "/mobile/missao", `Avançou de ${fromStep} | OS #${mission.serviceOrderId}`);
@@ -520,7 +521,8 @@ export default function MobileMissaoPage() {
       await advanceMission();
       toast({ title: "Etapa concluída!" });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      const msg = err.message || "Erro ao processar etapa";
+      toast({ title: "Erro ao avançar", description: msg.includes("Fotos obrigatórias") ? "Envie todas as fotos obrigatórias antes de continuar." : msg, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -1078,6 +1080,9 @@ export default function MobileMissaoPage() {
                   data-testid="input-km-value"
                 />
               </div>
+              {config.photos && config.photos.length > 0 && (
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Fotos Obrigatórias ({Object.keys(photos).length}/{config.photos.length})</label>
+              )}
               {config.photos?.map((label) => {
                 const key = label.toLowerCase().replace(/\s/g, '-');
                 const isAgentPhoto = label === "Agente Equipado";
@@ -1099,7 +1104,7 @@ export default function MobileMissaoPage() {
               data-testid="button-confirm-km"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              {currentStep === "checkout_km_saida" ? "Liberar Viagem" : "Confirmar"}
+              {currentStep === "checkout_km_saida" ? "Liberar Viagem" : `Confirmar KM ${currentStep === "checkin_chegada_km" ? "Chegada" : ""}`}
             </button>
           </div>
         )}
