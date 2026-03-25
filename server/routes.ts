@@ -4593,29 +4593,40 @@ Regras:
       const ACCENT_LINE = "#222222";
       let y = 55;
 
-      const logoPath = path.resolve("attached_assets/image_1772056652908.png");
-      const hasLogo = fs.existsSync(logoPath);
-      let invertedLogoBuffer: Buffer | null = null;
-      if (hasLogo) {
-        try {
-          const sharp = (await import("sharp")).default;
-          invertedLogoBuffer = await sharp(logoPath).negate({ alpha: false }).png().toBuffer();
-        } catch {}
-      }
+      let logoBuffer: Buffer | null = null;
+      try {
+        const sharp = (await import("sharp")).default;
+        const whiteSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" width="300" height="420">
+          <g fill="#ffffff">
+            <rect x="98" y="0" width="22" height="32" rx="1"/>
+            <rect x="139" y="0" width="22" height="32" rx="1"/>
+            <rect x="180" y="0" width="22" height="32" rx="1"/>
+            <rect x="86" y="24" width="128" height="20" rx="1"/>
+            <path d="M50 40 L250 40 L250 240 Q250 310 150 370 Q50 310 50 240 Z"/>
+            <path d="M68 160 L232 160 L232 235 Q232 298 150 350 Q68 298 68 235 Z" fill="#111111"/>
+            <polygon points="150,210 82,160 88,150 150,196 212,150 218,160"/>
+            <polygon points="150,260 98,215 104,205 150,246 196,205 202,215"/>
+            <polygon points="150,305 115,270 121,260 150,286 179,260 185,270"/>
+          </g>
+        </svg>`;
+        logoBuffer = await sharp(Buffer.from(whiteSvg)).resize({ height: 120 }).png().toBuffer();
+      } catch {}
 
       const HEADER_H = 46;
       const FOOTER_H = 30;
-      const CONTENT_TOP = 60 + HEADER_H + 10;
-      const CONTENT_BOTTOM = 740 - FOOTER_H;
+      const CONTENT_TOP = HEADER_H + 16;
+      const CONTENT_BOTTOM = 795 - FOOTER_H - 20;
 
       const drawHeader = () => {
         doc.save().rect(0, 0, 595.28, HEADER_H).fill(BRAND).restore();
-        if (invertedLogoBuffer) { try { doc.image(invertedLogoBuffer, LM, 8, { height: 30 }); } catch {} }
-        else if (hasLogo) { try { doc.image(logoPath, LM, 8, { height: 30 }); } catch {} }
+        const hasLogo = !!logoBuffer;
+        if (hasLogo) { try { doc.image(logoBuffer!, LM + 4, 6, { height: 34 }); } catch {} }
+        const textX = hasLogo ? LM + 40 : LM;
+        const textW = hasLogo ? W - 40 : W;
         doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
-          .text("TORRES VIGILÂNCIA PATRIMONIAL", (invertedLogoBuffer || hasLogo) ? LM + 45 : LM, 12, { width: W - ((invertedLogoBuffer || hasLogo) ? 45 : 0) });
+          .text("TORRES VIGILÂNCIA PATRIMONIAL", textX, 12, { width: textW });
         doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa")
-          .text("CNPJ: 36.982.392/0001-89", (invertedLogoBuffer || hasLogo) ? LM + 45 : LM, 24, { width: W - ((invertedLogoBuffer || hasLogo) ? 45 : 0) });
+          .text("CNPJ: 36.982.392/0001-89", textX, 24, { width: textW });
       };
 
       const drawFooter = () => {
@@ -4633,14 +4644,16 @@ Regras:
       const thinLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.3).strokeColor("#dddddd").stroke().restore(); };
 
       const writeText = (text: string, opts: any = {}) => {
-        checkPage(doc.heightOfString(text, { width: W, lineGap: 3, ...opts }));
-        doc.font(opts.font || "Helvetica").fontSize(opts.size || 9).fillColor(opts.color || GRAY)
-          .text(text, LM, y, { width: W, lineGap: 3, align: opts.align || "justify", ...opts });
-        y += doc.heightOfString(text, { width: W, lineGap: 3, ...opts }) + (opts.gap || 8);
+        doc.font(opts.font || "Helvetica").fontSize(opts.size || 9);
+        const h = doc.heightOfString(text, { width: W, lineGap: 3 });
+        checkPage(h + (opts.gap || 8));
+        doc.fillColor(opts.color || GRAY)
+          .text(text, LM, y, { width: W, lineGap: 3, align: opts.align || "justify" });
+        y += h + (opts.gap || 8);
       };
 
       const clauseTitle = (num: number, title: string) => {
-        checkPage(30);
+        checkPage(26);
         y += 4;
         doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
         doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(`Cláusula ${num} – ${title}`, LM + 8, y + 2, { width: W - 16 });
@@ -4649,9 +4662,11 @@ Regras:
 
       const subItem = (code: string, text: string) => {
         const full = `${code} - ${text}`;
-        checkPage(doc.heightOfString(full, { width: W - 10, lineGap: 2 }));
-        doc.font("Helvetica").fontSize(8.5).fillColor(GRAY).text(full, LM + 10, y, { width: W - 10, lineGap: 2, align: "justify" });
-        y += doc.heightOfString(full, { width: W - 10, lineGap: 2 }) + 5;
+        doc.font("Helvetica").fontSize(8.5);
+        const h = doc.heightOfString(full, { width: W - 10, lineGap: 2 });
+        checkPage(h + 5);
+        doc.fillColor(GRAY).text(full, LM + 10, y, { width: W - 10, lineGap: 2, align: "justify" });
+        y += h + 5;
       };
 
       const contratanteNome = sc.contratante_razao || sc.client_name || "_______________";
@@ -4669,16 +4684,23 @@ Regras:
 
       hLine(y); y += 15;
 
+      const contratanteFullText = `CONTRATANTE: ${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`;
+      doc.font("Helvetica").fontSize(9);
+      const contratanteH = doc.heightOfString(contratanteFullText, { width: W, lineGap: 3 });
+      checkPage(contratanteH + 10);
       doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE: ", LM, y, { continued: true, width: W });
       doc.font("Helvetica").fontSize(9).fillColor(GRAY)
         .text(`${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`, { width: W, lineGap: 3, align: "justify" });
-      y += doc.heightOfString(`CONTRATANTE: ${contratanteNome}. Pessoa jurídica de direito privado...`, { width: W, lineGap: 3 }) + 25;
+      y += contratanteH + 20;
 
-      checkPage(40);
+      const contratadaFullText = "CONTRATADA: TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.";
+      doc.font("Helvetica").fontSize(9);
+      const contratadaH = doc.heightOfString(contratadaFullText, { width: W, lineGap: 3 });
+      checkPage(contratadaH + 10);
       doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA: ", LM, y, { continued: true, width: W });
       doc.font("Helvetica").fontSize(9).fillColor(GRAY)
         .text("TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.", { width: W, lineGap: 3, align: "justify" });
-      y += doc.heightOfString("CONTRATADA: TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica...", { width: W, lineGap: 3 }) + 20;
+      y += contratadaH + 15;
 
       checkPage(30);
       writeText("As partes, acima nomeadas e qualificadas, têm entre si como justo e acordado o presente Contrato de Prestação de Serviços de Escolta Armada, que se regerão pelos termos, cláusulas, obrigações e condições adiante articuladas:");
