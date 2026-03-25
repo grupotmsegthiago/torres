@@ -4595,6 +4595,13 @@ Regras:
 
       const logoPath = path.resolve("attached_assets/image_1772056652908.png");
       const hasLogo = fs.existsSync(logoPath);
+      let invertedLogoBuffer: Buffer | null = null;
+      if (hasLogo) {
+        try {
+          const sharp = (await import("sharp")).default;
+          invertedLogoBuffer = await sharp(logoPath).negate({ alpha: false }).png().toBuffer();
+        } catch {}
+      }
 
       const HEADER_H = 46;
       const FOOTER_H = 30;
@@ -4603,11 +4610,12 @@ Regras:
 
       const drawHeader = () => {
         doc.save().rect(0, 0, 595.28, HEADER_H).fill(BRAND).restore();
-        if (hasLogo) { try { doc.image(logoPath, LM, 8, { height: 30 }); } catch {} }
+        if (invertedLogoBuffer) { try { doc.image(invertedLogoBuffer, LM, 8, { height: 30 }); } catch {} }
+        else if (hasLogo) { try { doc.image(logoPath, LM, 8, { height: 30 }); } catch {} }
         doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
-          .text("TORRES VIGILÂNCIA PATRIMONIAL", hasLogo ? LM + 45 : LM, 12, { width: W - (hasLogo ? 45 : 0) });
+          .text("TORRES VIGILÂNCIA PATRIMONIAL", (invertedLogoBuffer || hasLogo) ? LM + 45 : LM, 12, { width: W - ((invertedLogoBuffer || hasLogo) ? 45 : 0) });
         doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa")
-          .text("CNPJ: 36.982.392/0001-89", hasLogo ? LM + 45 : LM, 24, { width: W - (hasLogo ? 45 : 0) });
+          .text("CNPJ: 36.982.392/0001-89", (invertedLogoBuffer || hasLogo) ? LM + 45 : LM, 24, { width: W - ((invertedLogoBuffer || hasLogo) ? 45 : 0) });
       };
 
       const drawFooter = () => {
@@ -4799,34 +4807,34 @@ Regras:
       doc.font("Helvetica").fontSize(9).fillColor(DARK).text(`São Paulo, ${fmtDateSig(sc.data_assinatura)}.`, LM, y, { width: W, align: "center" });
       y += 35;
 
-      checkPage(140);
-      y += 10;
+      const SIG_BLOCK_H = 220;
+      if (y + SIG_BLOCK_H > CONTENT_BOTTOM) { doc.addPage(); drawHeader(); y = CONTENT_TOP; }
+      y += 15;
       const sigW = W / 2 - 20;
       const sigY = y;
+      const SIG_LINE_OFFSET = 70;
 
       doc.save().rect(LM, sigY, sigW, 3).fill(BRAND).restore();
-      doc.save().moveTo(LM, sigY + 40).lineTo(LM + sigW, sigY + 40).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + 46, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + 59, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + 71, { width: sigW, align: "center" });
+      doc.save().moveTo(LM, sigY + SIG_LINE_OFFSET).lineTo(LM + sigW, sigY + SIG_LINE_OFFSET).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + SIG_LINE_OFFSET + 33, { width: sigW, align: "center" });
 
       const sig2X = LM + sigW + 40;
       doc.save().rect(sig2X, sigY, sigW, 3).fill(BRAND).restore();
-      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 46, { width: sigW, align: "center" });
+      doc.save().moveTo(sig2X, sigY + SIG_LINE_OFFSET).lineTo(sig2X + sigW, sigY + SIG_LINE_OFFSET).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center" });
       const contratanteNomeFontSize = contratanteNome.length > 35 ? 6.5 : 8;
-      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 59, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 73, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + SIG_LINE_OFFSET + 35, { width: sigW, align: "center" });
 
-      y = sigY + 100;
+      y = sigY + SIG_LINE_OFFSET + 55;
 
-      checkPage(100);
       doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
       doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("TESTEMUNHAS", LM + 8, y + 2, { width: W - 16 });
       y += 24;
 
       const drawWitness = (num: number, rg: string, cpf: string) => {
-        checkPage(50);
         doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y);
         y += 14;
         doc.save().moveTo(LM, y + 12).lineTo(LM + W, y + 12).lineWidth(0.4).strokeColor("#cccccc").stroke().restore();
