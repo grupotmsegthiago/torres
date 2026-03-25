@@ -764,8 +764,18 @@ Para CPF, formate como 000.000.000-00.`
       const qrData = `TORRES|OS:${os.osNumber}|${new Date().toISOString().slice(0, 10)}`;
       const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
 
-      const logoPath = path.resolve("attached_assets/image_1772056652908.png");
-      const hasLogo = fs.existsSync(logoPath);
+      let osLogoBuffer: Buffer | null = null;
+      try {
+        const logoSrc = path.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+        if (fs.existsSync(logoSrc)) {
+          osLogoBuffer = await sharp(logoSrc)
+            .negate({ alpha: false })
+            .flatten({ background: { r: 34, g: 34, b: 34 } })
+            .png()
+            .toBuffer();
+        }
+      } catch {}
+      const hasLogo = !!osLogoBuffer;
 
       const doc = new PDFDocument({ size: "A4", margin: 30 });
       res.setHeader("Content-Type", "application/pdf");
@@ -863,7 +873,7 @@ Para CPF, formate como 000.000.000-00.`
       doc.restore();
 
       if (hasLogo) {
-        try { doc.image(logoPath, LM + 12, y + 6, { height: 38 }); } catch {}
+        try { doc.image(osLogoBuffer!, LM + 8, y + 4, { height: 42 }); } catch {}
       }
 
       y += 50;
