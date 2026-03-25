@@ -4576,130 +4576,79 @@ Regras:
 
       const { data: priceTable } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", sc.client_id).eq("status", "ativo").maybeSingle();
 
-      const doc = new PDFDocument({ size: "A4", margins: { top: 50, bottom: 50, left: 50, right: 50 }, bufferPages: true });
+      const doc = new PDFDocument({ size: "A4", margins: { top: 60, bottom: 60, left: 65, right: 65 }, bufferPages: true });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `inline; filename=CONTRATO_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
+      res.setHeader("Content-Disposition", `inline; filename=MINUTA_${sc.contract_number || sc.id.slice(0, 8)}.pdf`);
       doc.pipe(res);
 
-      const W = 495;
-      const LM = 50;
+      const W = 465;
+      const LM = 65;
       const DARK = "#111111";
-      const GRAY = "#555555";
-      const LIGHT = "#999999";
-      let y = 50;
+      const GRAY = "#333333";
+      const LIGHT = "#888888";
+      let y = 60;
 
-      const gradientRect = (x: number, yy: number, w: number, h: number) => {
-        const grad = doc.linearGradient(x, yy, x + w, yy);
-        grad.stop(0, "#000000").stop(1, "#2C3E50");
-        doc.save().rect(x, yy, w, h).fill(grad).restore();
-      };
-      const hLine = (yy: number) => {
-        doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
-      };
-      const sectionTitle = (title: string) => {
-        if (y > 700) { doc.addPage(); y = 50; }
-        gradientRect(LM, y, W, 24);
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff").text(title.toUpperCase(), LM, y + 7, { width: W, align: "center" });
-        y += 30;
-      };
-      const labelValue = (label: string, value: string, col = 0, cols = 1) => {
-        const colW = W / cols;
-        const x = LM + col * colW;
-        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text(label.toUpperCase(), x, y);
-        doc.font("Helvetica").fontSize(9).fillColor(DARK).text(value || "—", x, y + 10, { width: colW - 10 });
-      };
-      const spacer = (h = 25) => { y += h; };
+      const checkPage = (need = 80) => { if (y > 740 - need) { doc.addPage(); y = 60; } };
+      const hLine = (yy: number) => { doc.save().moveTo(LM, yy).lineTo(LM + W, yy).lineWidth(0.5).strokeColor("#cccccc").stroke().restore(); };
 
-      const fmtDate = (d: string | null) => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
+      const writeText = (text: string, opts: any = {}) => {
+        checkPage(doc.heightOfString(text, { width: W, lineGap: 3, ...opts }));
+        doc.font(opts.font || "Helvetica").fontSize(opts.size || 9).fillColor(opts.color || GRAY)
+          .text(text, LM, y, { width: W, lineGap: 3, align: opts.align || "justify", ...opts });
+        y += doc.heightOfString(text, { width: W, lineGap: 3, ...opts }) + (opts.gap || 8);
+      };
 
-      gradientRect(LM, y, W, 60);
-      doc.font("Helvetica-Bold").fontSize(16).fillColor("#ffffff").text("TORRES VIGILÂNCIA PATRIMONIAL", LM + 15, y + 12, { width: W - 30 });
-      doc.font("Helvetica").fontSize(8).fillColor("#cccccc").text("CNPJ: 36.982.392/0001-89", LM + 15, y + 32);
-      doc.font("Helvetica").fontSize(8).fillColor("#cccccc").text("Segurança Privada — Escolta Armada", LM + 15, y + 43);
-      y += 70;
+      const clauseTitle = (num: number, title: string) => {
+        checkPage(30);
+        y += 6;
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(`Cláusula ${num} – ${title}`, LM, y, { width: W });
+        y += 18;
+      };
 
-      doc.font("Helvetica-Bold").fontSize(14).fillColor(DARK).text("CONTRATO DE PRESTAÇÃO DE SERVIÇOS", LM, y, { width: W, align: "center" });
-      y += 20;
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text("DE ESCOLTA ARMADA PARA TRANSPORTE DE CARGAS", LM, y, { width: W, align: "center" });
+      const subItem = (code: string, text: string) => {
+        const full = `${code} - ${text}`;
+        checkPage(doc.heightOfString(full, { width: W - 10, lineGap: 2 }));
+        doc.font("Helvetica").fontSize(8.5).fillColor(GRAY).text(full, LM + 10, y, { width: W - 10, lineGap: 2, align: "justify" });
+        y += doc.heightOfString(full, { width: W - 10, lineGap: 2 }) + 5;
+      };
+
+      const contratanteNome = sc.contratante_razao || sc.client_name || "_______________";
+      const contratanteCnpj = sc.contratante_cnpj || "_______________";
+      const contratanteEndereco = sc.contratante_endereco || "_______________";
+      const contratanteRepresentante = sc.contratante_representante || "seu representante legal";
+      const avisoPrevioDias = sc.aviso_previo_dias || 30;
+
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(DARK)
+        .text("MINUTA DE CONTRATO – PRESTAÇÃO DE SERVIÇOS", LM, y, { width: W, align: "center" });
       y += 30;
 
-      if (sc.contract_number) {
-        doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(`Contrato nº ${sc.contract_number}`, LM, y, { width: W, align: "center" });
-        y += 25;
-      }
+      hLine(y); y += 15;
 
-      sectionTitle("1. DAS PARTES");
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE: ", LM, y, { continued: true, width: W });
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY)
+        .text(`${contratanteNome}. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº ${contratanteCnpj}, com sede fiscal na ${contratanteEndereco}, representado neste ato por ${contratanteRepresentante}.`, { width: W, lineGap: 3, align: "justify" });
+      y += doc.heightOfString(`CONTRATANTE: ${contratanteNome}. Pessoa jurídica de direito privado...`, { width: W, lineGap: 3 }) + 25;
 
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA:", LM, y);
-      y += 14;
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA, pessoa jurídica de direito privado, inscrita no CNPJ sob nº 36.982.392/0001-89, doravante denominada CONTRATADA.", LM, y, { width: W, lineGap: 3 });
-      y += 40;
+      checkPage(40);
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA: ", LM, y, { continued: true, width: W });
+      doc.font("Helvetica").fontSize(9).fillColor(GRAY)
+        .text("TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica de direito privado, inscrita no CNPJ/MF sob nº 36.982.392/0001-89, com sede fiscal em São Paulo/SP.", { width: W, lineGap: 3, align: "justify" });
+      y += doc.heightOfString("CONTRATADA: TORRES VIGILÂNCIA PATRIMONIAL LTDA. Pessoa jurídica...", { width: W, lineGap: 3 }) + 20;
 
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE:", LM, y);
-      y += 14;
-      const contratanteText = `${sc.contratante_razao || sc.client_name || "—"}${sc.contratante_cnpj ? `, inscrita no CNPJ sob nº ${sc.contratante_cnpj}` : ""}${sc.contratante_endereco ? `, com sede em ${sc.contratante_endereco}` : ""}${sc.contratante_representante ? `, representada por ${sc.contratante_representante}` : ""}, doravante denominada CONTRATANTE.`;
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(contratanteText, LM, y, { width: W, lineGap: 3 });
-      y += doc.heightOfString(contratanteText, { width: W, lineGap: 3 }) + 10;
+      checkPage(30);
+      writeText("As partes, acima nomeadas e qualificadas, têm entre si como justo e acordado o presente Contrato de Prestação de Serviços de Escolta Armada, que se regerão pelos termos, cláusulas, obrigações e condições adiante articuladas:");
 
-      sectionTitle("2. DO OBJETO");
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        `O presente contrato tem por objeto a ${sc.object || "Prestação de Serviços de Escolta Armada"}, conforme as condições e especificações técnicas descritas neste instrumento.`,
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 35;
+      clauseTitle(1, "Do Objeto");
+      writeText(`A CONTRATADA prestará à CONTRATANTE os serviços especializados de Escolta Armada, através do acompanhamento ostensivo de caminhões e veículos de carga, denominados auto cargas, que transportam mercadorias consideradas de alto risco, quanto a roubos e furtos, conforme discriminação contida no Quadro Resumo, que fica fazendo parte integrante deste instrumento.`);
+      subItem("1.1", "A segurança será realizada através do acompanhamento ostensivo de caminhões e veículos de carga, em vias públicas em geral, contando com o apoio de Viaturas de Escolta, devidamente identificadas com o brasão da CONTRATADA, equipadas com sistema de rádio comunicação e dotadas de 04 (quatro) portas, podendo ser inclusive rastreadas via satélite.");
+      subItem("1.2", "Os serviços de Escolta Armada serão prestados por vigilantes identificados através de crachá de identificação, treinados, uniformizados, armados e munidos de equipamentos e materiais indispensáveis à execução dos serviços, definidos e discriminados na Cláusula 6 abaixo, obedecida a legislação vigente e as tratativas entre as partes.");
 
-      sectionTitle("3. DOS SERVIÇOS E EQUIPAMENTOS");
-      labelValue("Número de Vigilantes", String(sc.num_vigilantes || 2), 0, 2);
-      labelValue("Armamento", sc.armamento_descricao || "—", 1, 2);
-      spacer(30);
-      labelValue("Equipamentos", sc.equipamentos || "—", 0, 1);
-      spacer(30);
-
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        "Os serviços serão executados por vigilantes devidamente habilitados, portando os equipamentos e armamentos acima descritos, em viatura identificada com sistema de rastreamento veicular em tempo real.",
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 45;
-
-      if (y > 650) { doc.addPage(); y = 50; }
-
-      sectionTitle("4. DA VIGÊNCIA E PRAZO");
-      labelValue("Tipo de Vigência", sc.vigencia_tipo === "determinado" ? "Prazo Determinado" : "Prazo Indeterminado", 0, 3);
-      labelValue("Início", fmtDate(sc.vigencia_inicio), 1, 3);
-      labelValue("Término", sc.vigencia_tipo === "determinado" ? fmtDate(sc.vigencia_fim) : "Indeterminado", 2, 3);
-      spacer(30);
-
-      labelValue("Data de Assinatura", fmtDate(sc.data_assinatura), 0, 3);
-      labelValue("Aviso Prévio", `${sc.aviso_previo_dias || 30} dias`, 1, 3);
-      labelValue("Renovação Automática", sc.renovacao_automatica ? "Sim" : "Não", 2, 3);
-      spacer(30);
-
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        sc.vigencia_tipo === "determinado"
-          ? `O presente contrato vigorará pelo período de ${sc.vigencia_inicio ? fmtDate(sc.vigencia_inicio) : "—"} a ${sc.vigencia_fim ? fmtDate(sc.vigencia_fim) : "—"}, podendo ser rescindido por qualquer das partes mediante aviso prévio de ${sc.aviso_previo_dias || 30} dias.${sc.renovacao_automatica ? " Na ausência de manifestação contrária, o contrato será automaticamente renovado por igual período." : ""}`
-          : `O presente contrato é por prazo indeterminado, podendo ser rescindido por qualquer das partes mediante aviso prévio de ${sc.aviso_previo_dias || 30} dias.`,
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 50;
-
-      if (y > 650) { doc.addPage(); y = 50; }
-
-      sectionTitle("5. DO REAJUSTE");
-      labelValue("Periodicidade", (sc.reajuste_periodicidade || "anual").charAt(0).toUpperCase() + (sc.reajuste_periodicidade || "anual").slice(1), 0, 3);
-      labelValue("Índice de Correção", sc.reajuste_indice || sc.indice_correcao || "INPC", 1, 3);
-      labelValue("Observações", sc.reajuste_observacoes || "—", 2, 3);
-      spacer(30);
-
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        `Os valores pactuados serão reajustados ${(sc.reajuste_periodicidade || "anual") === "anual" ? "anualmente" : `a cada ${sc.reajuste_periodicidade}`}, com base na variação acumulada do índice ${sc.reajuste_indice || sc.indice_correcao || "INPC"}, ou outro índice que venha a substituí-lo.`,
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 35;
+      clauseTitle(2, "Do Quadro Resumo");
+      writeText("As partes acordam que o Quadro Resumo, parte integrante do presente instrumento, definirá todos os aspectos operacionais, técnicos e financeiros dos serviços a serem prestados pela CONTRATADA à CONTRATANTE.");
 
       if (priceTable) {
-        if (y > 600) { doc.addPage(); y = 50; }
-        sectionTitle("6. DOS VALORES");
-
+        checkPage(200);
+        y += 5;
         const priceRows = [
           ["KM Carregado", `R$ ${Number(priceTable.valor_km_carregado || 0).toFixed(2)} / km`],
           ["KM Vazio", `R$ ${Number(priceTable.valor_km_vazio || 0).toFixed(2)} / km`],
@@ -4707,68 +4656,113 @@ Regras:
           ["Hora Estadia", `R$ ${Number(priceTable.valor_hora_estadia || 0).toFixed(2)} / hora`],
           ["Diária / Pernoite", `R$ ${Number(priceTable.valor_diaria || 0).toFixed(2)}`],
           ["VRP Base", `R$ ${Number(priceTable.vrp_base || 0).toFixed(2)}`],
-          ["Adicional Noturno (VRP)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
-          ["Adicional Noturno (KM)", `${Number(priceTable.adicional_noturno_km_pct || 0)}%`],
+          ["Adic. Noturno (VRP)", `${Number(priceTable.adicional_noturno_vrp_pct || 0)}%`],
+          ["Adic. Noturno (KM)", `${Number(priceTable.adicional_noturno_km_pct || 0)}%`],
           ["Periculosidade", `${Number(priceTable.adicional_periculosidade_pct || 0)}%`],
         ];
-
+        doc.save().rect(LM, y, W, 18).fill("#222222").restore();
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("QUADRO RESUMO – VALORES", LM + 10, y + 4, { width: W - 20, align: "center" });
+        y += 20;
         priceRows.forEach(([label, value], i) => {
-          if (i % 2 === 0) {
-            doc.save().rect(LM, y - 2, W, 18).fill("#f5f5f5").restore();
-          }
+          checkPage(20);
+          if (i % 2 === 0) doc.save().rect(LM, y - 2, W, 18).fill("#f5f5f5").restore();
           doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label, LM + 10, y + 2, { width: 200 });
-          doc.font("Helvetica").fontSize(9).fillColor(DARK).text(value, LM + 220, y + 2, { width: 250 });
+          doc.font("Helvetica").fontSize(8.5).fillColor(DARK).text(value, LM + 220, y + 2, { width: 230 });
           y += 18;
         });
-        spacer(10);
+        y += 10;
       }
 
-      if (y > 600) { doc.addPage(); y = 50; }
+      clauseTitle(3, "Dos Documentos Integrantes");
+      writeText("Para melhor caracterização do objeto deste CONTRATO, bem como para definir procedimentos decorrentes das obrigações ora contraídos, integram este instrumento, como se nele estivessem transcritos, os dispositivos pertinentes às normas de segurança; as atas; as correspondências entre as partes, às trocadas e as futuras, e, mais, os documentos técnicos dos serviços solicitados.");
 
-      sectionTitle(`${priceTable ? "7" : "6"}. DAS PENALIDADES`);
-      labelValue("Multa por Mora", `${Number(sc.multa_mora_pct || 2).toFixed(2)}%`, 0, 2);
-      labelValue("Juros de Mora", `${Number(sc.juros_mora_pct || 1).toFixed(2)}% ao mês`, 1, 2);
-      spacer(30);
+      clauseTitle(4, "Das Alterações dos Serviços");
+      writeText("Os serviços prestados poderão sofrer alterações, desde que, antecipadamente, sejam submetidos à análise da CONTRATANTE, através de correspondência própria enviada pela CONTRATADA, levando-se em conta que tais alterações ocorram para melhor adequá-los em razão de operacionalidade e/ou prioridades.");
 
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        `Em caso de inadimplência, incidirá multa de ${Number(sc.multa_mora_pct || 2).toFixed(2)}% sobre o valor em atraso, acrescido de juros de mora de ${Number(sc.juros_mora_pct || 1).toFixed(2)}% ao mês, calculados pro rata die.`,
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 40;
+      clauseTitle(5, "Da Individualização dos Serviços");
+      writeText("Os serviços a serem prestados pela CONTRATADA à CONTRATANTE estão descritos e individualizados no Quadro Resumo anexo, que faz parte integrante deste instrumento.");
 
-      if (sc.observacoes) {
-        if (y > 650) { doc.addPage(); y = 50; }
-        sectionTitle(`${priceTable ? "8" : "7"}. OBSERVAÇÕES`);
-        doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(sc.observacoes, LM, y, { width: W, lineGap: 3 });
-        y += doc.heightOfString(sc.observacoes, { width: W, lineGap: 3 }) + 20;
+      clauseTitle(6, "Dos Vigilantes, Do Armamento e Dos Equipamentos Indispensáveis à Execução dos Serviços");
+      writeText("Os vigilantes, o armamento e os equipamentos indispensáveis à execução dos serviços de Escolta Armada serão fornecidos pela contratada, sendo todos de sua responsabilidade e patrimônio.");
+      subItem("6.1", `A contratada disponibilizará ${sc.num_vigilantes ? String(sc.num_vigilantes).padStart(2, '0') + ` (${['Zero','Um','Dois','Três','Quatro','Cinco'][sc.num_vigilantes] || sc.num_vigilantes})` : "02 (Dois)"} Vigilantes de Escolta Armada por operação.`);
+      subItem("6.2", "A contratada disponibilizará para cada operação:");
+      subItem("6.2.1", "01 (um) Revólver Calibre 38 de 5 (cinco) ou de 6 (seis) tiros;");
+      subItem("6.2.2", "01 (uma) Espingarda Calibre 12 Pistol Grip, tipo Pump ou similar;");
+      subItem("6.2.3", "12 (doze) cartuchos de munição calibre 38, sendo 6 (seis) cartuchos empregados no municiamento da arma e 6 (seis) no carregador adicional;");
+      subItem("6.2.4", "02 (dois) Coletes à prova de bala nível II-A;");
+      subItem("6.2.5", "14 (quatorze) Cartuchos de munição calibre 12, sendo 07 (sete) empregados no municiamento da arma e 07 (sete) armazenados em estojo para municiamento adicional;");
+      subItem("6.2.6", "01 (um) Rádio transceptor para comunicação entre a equipe, a base e se for o caso entre a contratante;");
+      subItem("6.2.7", "01 (um) veículo (viatura) de passageiros com capacidade para 5 (cinco) ocupantes, motor 1.0 ou superior, com 4 (quatro) portas, preferencialmente com menos de 2 (dois) anos de uso e/ou fabricação, devidamente identificada com o brasão da empresa e demais elementos de identificação de escolta armada e contatos da empresa, equipado com sistema de rastreamento de veículo tipo satelital e com 2 (dois) botões de pânico a ser acionado em casos de emergências e/ou ocorrências durante a operação;");
+      subItem("6.3", "A contratada fornecerá a seus funcionários envolvidos na prestação dos serviços conjuntos completos de uniforme, sendo capote, calça terbrim cor preta, camisa terbrim cor preta com brasão de identificação, boina feltro preta, coturnos de cano de lona preta, cordão fiel, coldre de arma com cinto modelo robocop, cinto de lona para calças e capa de colete.");
+
+      clauseTitle(7, "Do Prazo de Vigência");
+      if (sc.vigencia_tipo === "determinado") {
+        const fmtDate = (d: string | null) => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "___/___/______";
+        writeText(`O prazo de vigência deste contrato é de ${fmtDate(sc.vigencia_inicio)} a ${fmtDate(sc.vigencia_fim)}, sendo que, qualquer das partes poderá rescindi-lo, a qualquer momento, desde que, notifique a outra, com prévia antecedência de ${avisoPrevioDias} (${avisoPrevioDias === 30 ? "trinta" : avisoPrevioDias}) dias.`);
+      } else {
+        writeText(`O prazo de vigência deste contrato é por tempo indeterminado, sendo que, qualquer das partes poderá rescindi-lo, a qualquer momento, desde que, notifique a outra, com prévia antecedência de ${avisoPrevioDias} (${avisoPrevioDias === 30 ? "trinta" : avisoPrevioDias}) dias.`);
       }
 
-      if (y > 550) { doc.addPage(); y = 50; }
+      clauseTitle(8, "Do Preço");
+      writeText("Os valores inerentes às operações de Escolta Armada serão cobrados conforme o destino da missão, o tempo do deslocamento, os pernoites e os serviços de preservação, podendo estas ser Urbanas ou Rodoviárias dentro da Região da Grande São Paulo ou Operações Estaduais ou Interestaduais, desde que estas se iniciem no Estado de São Paulo; de forma tal que a cada evento de escolta será tratado individualmente e seus custos previamente acordados, sendo estes, descritos no Anexo I.");
+      subItem("8.1", "O valor dos serviços contratados será pago nas datas, condições e periodicidade constantes da Cláusula 9, abaixo.");
+      subItem("8.2", "A CONTRATANTE será considerada inadimplente, caso deixe de pagar, na data de vencimento normal da obrigação, o valor dos serviços prestados, constituindo tal fato motivo justo para a rescisão contratual pela CONTRATADA, cabendo ainda a esta o direito de cobrar seu crédito, com os acréscimos constantes do item seguinte.");
+      subItem("8.3", "No preço do serviço ajustado não estão computados qualquer expectativa inflacionária, razão pela qual sobre os pagamentos vincendos não se aplicarão qualquer índice deflacionário e/ou congelamento e/ou restrições de atualização monetária, tais como, exemplificativamente, tablitas, deflatores, planos econômicos de governo etc.");
 
-      const lastSection = sc.observacoes ? (priceTable ? "9" : "8") : (priceTable ? "8" : "7");
-      sectionTitle(`${lastSection}. DO FORO`);
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        "Para dirimir quaisquer controvérsias oriundas deste contrato, as partes elegem o foro da Comarca de Eunápolis, Estado da Bahia, com exclusão de qualquer outro, por mais privilegiado que seja.",
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 40;
+      clauseTitle(9, "Do Faturamento dos Serviços e Forma de Pagamento");
+      writeText("O pagamento será efetuado pela CONTRATANTE à CONTRATADA posterior a execução do serviço prestado, conforme acordado entre as partes.");
+      subItem("9.1", "Os serviços que ultrapassarem a carga horária contratada, ou seja, o tempo predeterminado por missão será cobrado horas adicionais, com o valor acordado entre as partes, da mesma forma os serviços que ultrapassarem a quilometragem contratada, ou seja, a distância predeterminada por missão será cobrado quilômetros adicionais, com o valor acordado entre as partes, conforme ANEXO I; ficando avençado que os valores correspondentes à prestação destes serviços serão totalizados e faturados conforme caput da Cláusula 9 deste contrato.");
 
-      hLine(y);
-      y += 15;
-      doc.font("Helvetica").fontSize(9).fillColor(GRAY).text(
-        `E por estarem assim justas e contratadas, as partes firmam o presente instrumento em 02 (duas) vias de igual teor e forma, na presença das testemunhas abaixo.`,
-        LM, y, { width: W, lineGap: 3 }
-      );
-      y += 30;
+      clauseTitle(10, "Da Alteração de Preços");
+      subItem("10.1", `Os preços estabelecidos no presente contrato serão atualizados por eventuais aumentos advindos de custos setoriais, equipamentos, materiais e, especialmente, aqueles relacionados com os reajustes dos empregados da CONTRATADA, provenientes de Acordo ou Dissídio Coletivo da Categoria, bem como novos encargos, taxas ou tributos criados pelo Poder Público Federal, Estadual ou Municipal, que impactem a planilha de composição de preços da CONTRATADA, ensejarão uma atualização dos preços contratuais, mediante prévia comunicação escrita da CONTRATADA à CONTRATANTE e mediante prévio acordo entre as partes.`);
+      subItem("10.2", "Fica previamente acordado entre as partes que, caso ocorra uma elevação desproporcional dos índices de custeio deste contrato, em função de reajustes dos custos diretos e indiretos, haverá uma negociação entre as partes, visando a readequação dos preços contratuais, a fim de que se recomponha o equilíbrio econômico-financeiro do contrato.");
 
-      const localDate = sc.data_assinatura
-        ? `Eunápolis/BA, ${new Date(sc.data_assinatura + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}`
-        : `Eunápolis/BA, ${new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}`;
-      doc.font("Helvetica").fontSize(9).fillColor(DARK).text(localDate, LM, y, { width: W, align: "center" });
-      y += 40;
+      clauseTitle(11, "Da Rescisão Contratual");
+      subItem("11.1", `O presente contrato poderá ser rescindido, sem a incidência de multa, por qualquer das partes, mediante prévio aviso, por escrito, com antecedência mínima de ${avisoPrevioDias} (${avisoPrevioDias === 30 ? "trinta" : avisoPrevioDias}) dias, contados da data em que a outra parte receber a aludida comunicação, devidamente protocolizada.`);
 
-      if (y > 580) { doc.addPage(); y = 50; }
+      clauseTitle(12, "Da Responsabilidade das Partes");
+      writeText("A CONTRATADA é responsável, direta e exclusiva, pela execução integral dos serviços objeto do presente contrato, bem como por eventuais danos, que por si, seus prepostos, empregados, por dolo ou culpa, causarem à CONTRATANTE, desde que devidamente comprovados e comunicados por escrito, pela CONTRATANTE à CONTRATADA, até o segundo dia útil posterior à ocorrência.");
+      subItem("12.1", "A CONTRATADA compromete-se a utilizar, na prestação dos serviços, profissionais previamente selecionados, sem antecedentes criminais e político-sociais, bem como profissionais que melhor se adaptem às características exigidas pela CONTRATANTE.");
+      subItem("12.2", "Os serviços de escolta armada serão prestados por vigilantes treinados, uniformizados, equipados e armados, sempre de comum acordo entre as partes e em conformidade com a Lei nº 7.102, de 20/06/83 e a Lei nº 9.017, de 30/03/95.");
+      subItem("12.3", "A CONTRATADA fica assegurada no direito de promover substituições, quando necessário, de vigilantes e outros elementos destacados para os serviços aqui descritos e contratado sendo dever da CONTRATADA, promover a substituição imediatamente após comunicação por escrito da CONTRATANTE, qualquer de seus empregados ou prepostos cuja permanência nos locais de prestação de serviço for julgada inconveniente.");
+      subItem("12.4", "A CONTRATADA não será responsável por eventos decorrentes de deficiência operacional, se esta for proveniente de alterações de ordens ou rotinas dadas unilateralmente pela CONTRATANTE aos vigilantes e prepostos da CONTRATADA.");
+      subItem("12.5", "Fica entendido entre as partes contratantes que, ao vigilante, não se deve dar incumbência fora de suas atividades específicas.");
+      subItem("12.6", "A CONTRATADA manterá um serviço de inspeção de seus vigilantes e prepostos, verificando periodicamente, o andamento dos serviços e procedimentos de segurança, sem que isto implique em quaisquer ônus ou acréscimo no preço pago pela CONTRATANTE.");
 
+      clauseTitle(13, "Dos Ressarcimentos e Reembolsos");
+      writeText("Correrão por conta exclusiva da CONTRATANTE, todas as despesas referentes a pedágios em estradas estaduais e federais, bem como estadias e despesas em viagens, quando as mesmas forem decorrentes de despesas extraordinárias para os serviços previamente acordados, desde que as mesmas sejam devidamente autorizadas pela CONTRATANTE, devendo, referidas despesas, ser ressarcidas ou reembolsadas, mediante a apresentação, por parte da CONTRATADA, dos respectivos comprovantes e/ou notas fiscais referentes aos desembolsos.");
+
+      clauseTitle(14, "Das Omissões do Contrato");
+      writeText("Quaisquer fatos ou casos omissos no presente contrato não ensejarão a sua rescisão.");
+      subItem("14.1", "O presente contrato obriga as partes, por si, seus herdeiros e sucessores, a qualquer título.");
+      subItem("14.2", "Qualquer alteração ou modificação às cláusulas e condições deste contrato somente será válida se feita por documento escrito, assinado pelas partes e testemunhas, que se constituirá em aditivo ao presente.");
+
+      clauseTitle(15, "Da Exclusão do Vínculo Empregatício");
+      writeText("O presente contrato, em razão do seu objetivo e natureza, não gera para a CONTRATANTE, em relação aos empregados e prepostos da CONTRATADA, qualquer vínculo de natureza trabalhista e/ou previdenciária, respondendo exclusivamente a CONTRATADA por toda e qualquer ação trabalhista e/ou indenizatória por eles propostas, bem como pelo resultado delas.");
+
+      clauseTitle(16, "Das Disposições Gerais");
+      subItem("16.1", "A CONTRATADA somente será responsável pela prestação dos serviços objeto deste contrato, não podendo garantir a inocorrência de fatos delituosos contra o patrimônio da CONTRATANTE ou de terceiros, nem responder pelo desaparecimento, furto, roubo, dano ou destruição de quaisquer bens, cargas ou objetos de propriedade da CONTRATANTE ou de terceiros ou por qualquer outro dano ou prejuízo que venha a ser causado à CONTRATANTE ou a terceiros que não tenha sido causado diretamente pelos funcionários e/ou preposto da CONTRATADA.");
+      subItem("16.2", "Fica convencionado que a CONTRATADA, em relação aos seus funcionários alocados na CONTRATANTE, se responsabiliza por quaisquer ônus decorrentes de fiscalizações realizadas pelo Ministério do Trabalho e do Emprego, através das Delegacias Regionais do Trabalho, tais como notificações para apresentação de documentos, registros de empregados, esclarecimentos, e outros que forem pertinentes à situação, além da apresentação de defesas e recursos administrativos decorrentes de autuações fiscais, com o necessário pagamento das multas administrativas impostas.");
+      subItem("16.3", 'É vedado a qualquer das partes utilizar o presente objeto contratual em garantias para transações bancárias e/ou financeiras de qualquer espécie, efetuar operação de desconto, negociar, repassar ou de qualquer forma ceder os créditos decorrentes da execução desse a Bancos, empresas de "factoring" ou terceiros, sem prévia autorização por escrito da outra parte.');
+      subItem("16.4", "Ficam desde já convencionados que o presente contrato não irá configurar nenhum outro direito para as partes, além da prestação dos serviços supramencionados, devendo este contrato ser interpretado sob o ponto de vista restritivo, de modo a não permitir qualquer interpretação diferente da objetivada pelas partes.");
+      subItem("16.5", "Eventual tolerância de uma parte a infrações ou descumprimento das condições estipuladas no presente contrato, cometidas pela outra parte, será tida como ato de mera liberalidade, não se constituindo em perdão, precedente, novação ou renúncia a direitos que a legislação ou o contrato assegurem às partes.");
+      subItem("16.6", "A assinatura do presente contrato representa a aceitação de todas as disposições nele contidas, prevalecendo sobre todas as tratativas e entendimentos mantidos anteriormente entre as partes.");
+      subItem("16.7", "Se qualquer cláusula ou dispositivo deste contrato for considerado nulo ou sem efeito, no todo ou em parte, as demais deverão permanecer válidas e serão interpretadas de forma a preservar sua validade.");
+      subItem("16.8", "O presente contrato expressa todos os acordos e condições estipulados pelas partes com relação ao objeto contrato, substituindo todos os eventuais contratos e seus anexos anteriormente firmados entre elas, os quais neste ato são tidos como rescindidos ofertando-se as partes mútua quitação para nada mais reclamar.");
+
+      clauseTitle(17, "Do Sigilo");
+      writeText("Toda e qualquer informação relativa ao objeto do presente será sempre considerada sigilosa e confidencial, ficando expressamente vedado à CONTRATADA, bem como aos seus empregados ou prepostos, delas dar conhecimento a terceiros não autorizados, sob pena de responsabilização civil e criminal.");
+
+      clauseTitle(18, "Do Foro");
+      writeText("As partes elegem o Foro Central de São Paulo – SP para dirimir eventuais dúvidas ou divergências que as partes venham a ter com relação ao presente contrato. E, por estarem assim ajustadas, declaram as partes aceitar as disposições estabelecidas nas cláusulas do presente contrato, que, após lido e achado conforme, vai assinado pelos representantes legais das partes e pelas testemunhas abaixo.");
+
+      y += 10;
+      checkPage(30);
+      const fmtDateSig = (d: string | null) => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+      doc.font("Helvetica").fontSize(9).fillColor(DARK).text(`São Paulo, ${fmtDateSig(sc.data_assinatura)}.`, LM, y, { width: W, align: "center" });
+      y += 35;
+
+      checkPage(120);
       const sigW = W / 2 - 20;
       const sigY = y;
 
@@ -4778,18 +4772,15 @@ Regras:
       doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + 69, { width: sigW, align: "center" });
 
       const sig2X = LM + sigW + 40;
-      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor("#d4d4d4").stroke().restore();
+      doc.save().moveTo(sig2X, sigY + 40).lineTo(sig2X + sigW, sigY + 40).lineWidth(0.5).strokeColor("#cccccc").stroke().restore();
       doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + 45, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(sc.contratante_razao || sc.client_name || "—", sig2X, sigY + 58, { width: sigW, align: "center" });
-      if (sc.contratante_cnpj) {
-        doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${sc.contratante_cnpj}`, sig2X, sigY + 69, { width: sigW, align: "center" });
-      }
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(contratanteNome, sig2X, sigY + 58, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + 69, { width: sigW, align: "center" });
 
       y = sigY + 95;
 
       if (sc.testemunha1_nome || sc.testemunha2_nome) {
-        if (y > 650) { doc.addPage(); y = 50; }
-
+        checkPage(80);
         doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
         y += 18;
 
@@ -4805,6 +4796,18 @@ Regras:
           doc.font("Helvetica").fontSize(8).fillColor(GRAY).text(`${sc.testemunha2_nome}${sc.testemunha2_rg ? ` — RG: ${sc.testemunha2_rg}` : ""}${sc.testemunha2_cpf ? ` — CPF: ${sc.testemunha2_cpf}` : ""}`, LM, y + 30, { width: W });
           y += 50;
         }
+      } else {
+        checkPage(80);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("TESTEMUNHAS:", LM, y);
+        y += 18;
+        hLine(y + 25);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 1:", LM, y);
+        doc.font("Helvetica").fontSize(8).fillColor(LIGHT).text("Nome: __________________________ RG: __________________ CPF: __________________", LM, y + 30, { width: W });
+        y += 55;
+        hLine(y + 25);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text("Testemunha 2:", LM, y);
+        doc.font("Helvetica").fontSize(8).fillColor(LIGHT).text("Nome: __________________________ RG: __________________ CPF: __________________", LM, y + 30, { width: W });
+        y += 50;
       }
 
       const pageCount = doc.bufferedPageRange().count;
@@ -4812,7 +4815,7 @@ Regras:
         doc.switchToPage(i);
         doc.save();
         doc.font("Helvetica").fontSize(7).fillColor(LIGHT)
-          .text(`Contrato ${sc.contract_number || ""} — Torres Vigilância Patrimonial — Pág. ${i + 1}/${pageCount}`, LM, 780, { width: W, align: "center" });
+          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Torres Vigilância Patrimonial — Minuta de Contrato — Pág. ${i + 1}/${pageCount}`, LM, 785, { width: W, align: "center" });
         doc.restore();
       }
 
