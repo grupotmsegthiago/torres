@@ -1578,36 +1578,37 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     });
     setDocForm(p => ({ ...p, fileData: dataUrl, fileName: file.name }));
 
-    if (file.type.startsWith("image/")) {
-      setScanningDoc(true);
-      try {
-        const res = await authFetch("/api/employees/ocr-document", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageData: dataUrl, docType: docForm.type }),
+    setScanningDoc(true);
+    try {
+      const res = await authFetch("/api/employees/ocr-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: dataUrl, docType: docForm.type }),
+      });
+      if (res.ok) {
+        const extracted = await res.json();
+        const filledFields: string[] = [];
+        setDocForm(prev => {
+          const updated = { ...prev };
+          if (extracted.documentNumber && !prev.documentNumber) { updated.documentNumber = extracted.documentNumber; filledFields.push("Nº Documento"); }
+          if (extracted.issueDate && !prev.issueDate) { updated.issueDate = extracted.issueDate; filledFields.push("Emissão"); }
+          if (extracted.expiryDate && !prev.expiryDate) { updated.expiryDate = extracted.expiryDate; filledFields.push("Validade"); }
+          if (extracted.notes) { updated.notes = prev.notes ? prev.notes : extracted.notes; filledFields.push("Obs"); }
+          return updated;
         });
-        if (res.ok) {
-          const extracted = await res.json();
-          const filledFields: string[] = [];
-          setDocForm(prev => {
-            const updated = { ...prev };
-            if (extracted.documentNumber && !prev.documentNumber) { updated.documentNumber = extracted.documentNumber; filledFields.push("Nº Documento"); }
-            if (extracted.issueDate && !prev.issueDate) { updated.issueDate = extracted.issueDate; filledFields.push("Emissão"); }
-            if (extracted.expiryDate && !prev.expiryDate) { updated.expiryDate = extracted.expiryDate; filledFields.push("Validade"); }
-            if (extracted.notes) { updated.notes = prev.notes ? prev.notes : extracted.notes; filledFields.push("Obs"); }
-            return updated;
-          });
-          if (filledFields.length > 0) {
-            toast({ title: "Documento processado", description: `Extraído: ${filledFields.join(", ")}` });
-          } else {
-            toast({ title: "Documento anexado", description: "Nenhum dado novo extraído automaticamente" });
-          }
+        if (filledFields.length > 0) {
+          toast({ title: "Documento processado", description: `Extraído: ${filledFields.join(", ")}` });
+        } else {
+          toast({ title: "Documento anexado", description: "Nenhum dado novo extraído automaticamente" });
         }
-      } catch (err) {
-        console.error("OCR doc error:", err);
-      } finally {
-        setScanningDoc(false);
+      } else {
+        toast({ title: "Documento anexado", description: "Leitura automática não disponível para este formato" });
       }
+    } catch (err) {
+      console.error("OCR doc error:", err);
+      toast({ title: "Documento anexado", description: "Erro na leitura automática" });
+    } finally {
+      setScanningDoc(false);
     }
   };
   const createDoc = useMutation({

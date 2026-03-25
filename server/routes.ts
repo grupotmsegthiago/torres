@@ -533,23 +533,49 @@ Para CPF, formate como 000.000.000-00.`
 
       const openai = new OpenAI({ apiKey, baseURL });
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        messages: [
-          {
-            role: "system",
-            content: `Você é um sistema especializado em extrair dados de documentos brasileiros.
+      const systemPrompt = `Você é um sistema especializado em extrair dados de documentos brasileiros.
 O documento sendo analisado é do tipo: "${docType || 'Documento geral'}".
 Extraia os seguintes campos e retorne APENAS um JSON válido (sem markdown):
 {
-  "documentNumber": "número do documento (registro, matrícula, protocolo, etc)",
+  "documentNumber": "número do documento (registro, matrícula, protocolo, nº CNH, etc)",
   "issueDate": "data de emissão no formato YYYY-MM-DD",
   "expiryDate": "data de validade no formato YYYY-MM-DD",
-  "notes": "tipo do documento identificado e informações relevantes (nome do titular, órgão emissor, etc)"
+  "notes": "tipo do documento identificado e informações relevantes (nome do titular, órgão emissor, categoria CNH, etc)"
 }
 Se um campo não for encontrado, retorne string vazia "". Nunca invente dados.
-Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`
-          },
+Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
+
+      const isPdf = imageData.startsWith("data:application/pdf");
+      let messages: any[];
+
+      if (isPdf) {
+        const base64Content = imageData.split(",")[1];
+        const pdfBuffer = Buffer.from(base64Content, "base64");
+
+        let pdfText = "";
+        try {
+          const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+          const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+          const numPages = Math.min(doc.numPages, 3);
+          for (let i = 1; i <= numPages; i++) {
+            const page = await doc.getPage(i);
+            const content = await page.getTextContent();
+            pdfText += content.items.map((item: any) => item.str).join(" ") + "\n";
+          }
+        } catch (pdfErr: any) {
+          console.error("[ocr-document] PDF text extraction error:", pdfErr.message);
+          pdfText = "Não foi possível extrair texto do PDF";
+        }
+
+        console.log(`[ocr-document] PDF text extracted (${pdfText.length} chars): ${pdfText.substring(0, 300)}...`);
+
+        messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Extraia os dados deste documento (${docType || "documento"}). Texto extraído do PDF:\n\n${pdfText}` },
+        ];
+      } else {
+        messages = [
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: [
@@ -557,10 +583,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`
               { type: "image_url", image_url: { url: imageData } },
             ],
           },
-        ],
+        ];
+      }
+
+      const response = await openai.chat.completions.create({
+        model: isPdf ? "gpt-5-mini" : "gpt-5-mini",
+        messages,
       });
 
       const text = response.choices?.[0]?.message?.content || "";
+      console.log("[ocr-document] AI response:", text.substring(0, 300));
       const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleaned);
       res.json(parsed);
