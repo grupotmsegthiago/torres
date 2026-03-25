@@ -4624,16 +4624,16 @@ Regras:
         const textX = hasLogo ? LM + 40 : LM;
         const textW = hasLogo ? W - 40 : W;
         doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
-          .text("TORRES VIGILÂNCIA PATRIMONIAL", textX, 12, { width: textW });
+          .text("TORRES VIGILÂNCIA PATRIMONIAL", textX, 12, { width: textW, lineBreak: false });
         doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa")
-          .text("CNPJ: 36.982.392/0001-89", textX, 24, { width: textW });
+          .text("CNPJ: 36.982.392/0001-89", textX, 24, { width: textW, lineBreak: false });
       };
 
       const drawFooter = () => {
         const fY = 795 - FOOTER_H;
         doc.save().rect(0, fY, 595.28, FOOTER_H + 10).fill(BRAND).restore();
         doc.font("Helvetica").fontSize(6).fillColor("#cccccc")
-          .text("www.torresseguranca.com.br  •  @grupotorres.seguranca  •  (11) 96369-6699  •  escolta@torresseguranca.com.br", LM, fY + 8, { width: W, align: "center" });
+          .text("www.torresseguranca.com.br  •  @grupotorres.seguranca  •  (11) 96369-6699  •  escolta@torresseguranca.com.br", LM, fY + 8, { width: W, align: "center", lineBreak: false });
       };
 
       drawHeader();
@@ -4676,10 +4676,10 @@ Regras:
       const avisoPrevioDias = sc.aviso_previo_dias || 30;
 
       doc.font("Helvetica-Bold").fontSize(13).fillColor(DARK)
-        .text("MINUTA DE CONTRATO", LM, y, { width: W, align: "center" });
+        .text("MINUTA DE CONTRATO", LM, y, { width: W, align: "center", lineBreak: false });
       y += 16;
       doc.font("Helvetica").fontSize(9).fillColor(LIGHT)
-        .text("PRESTAÇÃO DE SERVIÇOS DE ESCOLTA ARMADA", LM, y, { width: W, align: "center" });
+        .text("PRESTAÇÃO DE SERVIÇOS DE ESCOLTA ARMADA", LM, y, { width: W, align: "center", lineBreak: false });
       y += 22;
 
       hLine(y); y += 15;
@@ -4728,13 +4728,13 @@ Regras:
           ["Periculosidade", `${Number(priceTable.adicional_periculosidade_pct || 0)}%`],
         ];
         doc.save().rect(LM, y, W, 18).fill("#222222").restore();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("QUADRO RESUMO – VALORES", LM + 10, y + 4, { width: W - 20, align: "center" });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("QUADRO RESUMO – VALORES", LM + 10, y + 4, { width: W - 20, align: "center", lineBreak: false });
         y += 20;
         priceRows.forEach(([label, value], i) => {
           checkPage(20);
           if (i % 2 === 0) doc.save().rect(LM, y - 2, W, 18).fill("#f5f5f5").restore();
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label, LM + 10, y + 2, { width: 200 });
-          doc.font("Helvetica").fontSize(8.5).fillColor(DARK).text(value, LM + 220, y + 2, { width: 230 });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label, LM + 10, y + 2, { width: 200, lineBreak: false });
+          doc.font("Helvetica").fontSize(8.5).fillColor(DARK).text(value, LM + 220, y + 2, { width: 230, lineBreak: false });
           y += 18;
         });
         y += 10;
@@ -4826,7 +4826,7 @@ Regras:
       y += 10;
       checkPage(30);
       const fmtDateSig = (d: string | null) => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
-      doc.font("Helvetica").fontSize(9).fillColor(DARK).text(`São Paulo, ${fmtDateSig(sc.data_assinatura)}.`, LM, y, { width: W, align: "center" });
+      doc.font("Helvetica").fontSize(9).fillColor(DARK).text(`São Paulo, ${fmtDateSig(sc.data_assinatura)}.`, LM, y, { width: W, align: "center", lineBreak: false });
       y += 35;
 
       const SIG_BLOCK_H = 220;
@@ -4838,47 +4838,46 @@ Regras:
 
       doc.save().rect(LM, sigY, sigW, 3).fill(BRAND).restore();
       doc.save().moveTo(LM, sigY + SIG_LINE_OFFSET).lineTo(LM + sigW, sigY + SIG_LINE_OFFSET).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + SIG_LINE_OFFSET + 33, { width: sigW, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATADA", LM, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("TORRES VIGILÂNCIA PATRIMONIAL LTDA", LM, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text("CNPJ: 36.982.392/0001-89", LM, sigY + SIG_LINE_OFFSET + 33, { width: sigW, align: "center", lineBreak: false });
 
       const sig2X = LM + sigW + 40;
       doc.save().rect(sig2X, sigY, sigW, 3).fill(BRAND).restore();
       doc.save().moveTo(sig2X, sigY + SIG_LINE_OFFSET).lineTo(sig2X + sigW, sigY + SIG_LINE_OFFSET).lineWidth(0.5).strokeColor(ACCENT_LINE).stroke().restore();
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text("CONTRATANTE", sig2X, sigY + SIG_LINE_OFFSET + 6, { width: sigW, align: "center", lineBreak: false });
       const contratanteNomeFontSize = contratanteNome.length > 35 ? 6.5 : 8;
-      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center" });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + SIG_LINE_OFFSET + 35, { width: sigW, align: "center" });
+      doc.font("Helvetica").fontSize(contratanteNomeFontSize).fillColor(GRAY).text(contratanteNome, sig2X, sigY + SIG_LINE_OFFSET + 20, { width: sigW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(7).fillColor(LIGHT).text(`CNPJ: ${contratanteCnpj}`, sig2X, sigY + SIG_LINE_OFFSET + 35, { width: sigW, align: "center", lineBreak: false });
 
       y = sigY + SIG_LINE_OFFSET + 55;
 
       doc.save().rect(LM, y - 2, W, 18).fill(BRAND_ACCENT).restore();
-      doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("TESTEMUNHAS", LM + 8, y + 2, { width: W - 16 });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text("TESTEMUNHAS", LM + 8, y + 2, { width: W - 16, lineBreak: false });
       y += 24;
 
       const drawWitness = (num: number, rg: string, cpf: string) => {
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(`Testemunha ${num}:`, LM, y, { lineBreak: false });
         y += 14;
         doc.save().moveTo(LM, y + 12).lineTo(LM + W, y + 12).lineWidth(0.4).strokeColor("#cccccc").stroke().restore();
         y += 18;
-        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("RG:", LM, y);
-        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(rg || "______________________", LM + 20, y);
-        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("CPF:", LM + W / 2, y);
-        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(cpf || "______________________", LM + W / 2 + 25, y);
+        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("RG:", LM, y, { lineBreak: false });
+        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(rg || "______________________", LM + 20, y, { lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7).fillColor(LIGHT).text("CPF:", LM + W / 2, y, { lineBreak: false });
+        doc.font("Helvetica").fontSize(8).fillColor(DARK).text(cpf || "______________________", LM + W / 2 + 25, y, { lineBreak: false });
         y += 25;
       };
 
       drawWitness(1, sc.testemunha1_rg || "", sc.testemunha1_cpf || "");
       drawWitness(2, sc.testemunha2_rg || "", sc.testemunha2_cpf || "");
 
-      const pageCount = doc.bufferedPageRange().count;
+      const range = doc.bufferedPageRange();
+      const pageCount = range.count;
       for (let i = 0; i < pageCount; i++) {
         doc.switchToPage(i);
         drawFooter();
-        doc.save();
         doc.font("Helvetica").fontSize(6).fillColor("#999999")
-          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${pageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center" });
-        doc.restore();
+          .text(`${sc.contract_number ? `Contrato ${sc.contract_number} — ` : ""}Pág. ${i + 1}/${pageCount}`, LM, 795 - FOOTER_H + 20, { width: W, align: "center", lineBreak: false });
       }
 
       doc.end();
