@@ -822,34 +822,34 @@ Para CPF, formate como 000.000.000-00.`
 
       const fieldRow = (label: string, value: string, valueX = 160) => {
         const rH = 18;
+        const vPad = Math.floor((rH - 8) / 2);
         hLine(LM, y + rH, W);
-        const labelW = valueX - PAD;
-        const valW = W - valueX - PAD;
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label.toUpperCase() + ":", LM, y + 4, { width: labelW, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label.toUpperCase() + ":", LABEL_X, y + vPad, { width: valueX - LABEL_X - 5, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(value || "\u2014", LM + valueX, y + 4, { width: valW, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(value || "\u2014", LM + valueX, y + vPad, { width: W - valueX - PAD, lineBreak: false });
         doc.restore();
         y += rH;
       };
 
       const fieldRow2 = (l1: string, v1: string, l2: string, v2: string, splitAt = 0.5) => {
         const rH = 18;
+        const vPad = Math.floor((rH - 8) / 2);
         hLine(LM, y + rH, W);
         const col1W = Math.floor(W * splitAt);
         const vOff = 120;
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + 4, { width: vOff - PAD, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + vPad, { width: vOff - PAD, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LM + vOff, y + 4, { width: col1W - vOff - 10, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LM + vOff, y + vPad, { width: col1W - vOff - 10, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + col1W + PAD, y + 4, { width: vOff - PAD, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + col1W + PAD, y + vPad, { width: vOff - PAD, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LM + col1W + vOff, y + 4, { width: W - col1W - vOff - PAD, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LM + col1W + vOff, y + vPad, { width: W - col1W - vOff - PAD, lineBreak: false });
         doc.restore();
         y += rH;
       };
@@ -868,25 +868,32 @@ Para CPF, formate como 000.000.000-00.`
 
       y += 50;
 
-      fillRect(LM, y, W, 24, BG_ALT);
-      borderRect(LM, y, W, 24);
+      fillRect(LM, y, W, 20, BG_ALT);
+      borderRect(LM, y, W, 20);
       const halfW = Math.floor(W / 2);
+      const osLabelW = 100;
       doc.save();
-      doc.font("Helvetica-Bold").fontSize(6.5).fillColor(GRAY).text("FOLHA / OS", LM, y + 2, { width: halfW, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(os.osNumber, LM, y + 10, { width: halfW, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(6.5).fillColor(GRAY).text("OPERA\u00c7\u00c3O", LM + halfW, y + 2, { width: halfW, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text((os.type || "ESCOLTA").toUpperCase(), LM + halfW, y + 10, { width: halfW, align: "center", lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("FOLHA / OS", LABEL_X, y + 6, { width: osLabelW, lineBreak: false });
       doc.restore();
-      y += 24;
+      doc.save();
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text(os.osNumber, LM + osLabelW + PAD, y + 5, { width: 140, lineBreak: false });
+      doc.restore();
+      doc.save();
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("OPERA\u00c7\u00c3O", LM + W - 200, y + 6, { width: 80, lineBreak: false });
+      doc.restore();
+      doc.save();
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text((os.type || "ESCOLTA").toUpperCase(), LM + W - 110, y + 6, { width: 100, lineBreak: false });
+      doc.restore();
+      y += 20;
 
       if (os.route) {
         fillRect(LM, y, W, 28, "#ffffff");
         borderRect(LM, y, W, 28);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("ROTA", LM, y + 4, { width: 60, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("ROTA", LABEL_X, y + 10, { width: osLabelW, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica").fontSize(7.5).fillColor(DARK).text(os.route, LM + 60, y + 4, { width: W - 70, align: "center" });
+        doc.font("Helvetica").fontSize(7.5).fillColor(DARK).text(os.route, LM + osLabelW + PAD, y + 7, { width: W - osLabelW - PAD * 3 });
         doc.restore();
         y += 28;
       }
@@ -895,7 +902,7 @@ Para CPF, formate como 000.000.000-00.`
       fillRect(LM, y, W, 22, "#ffffff");
       borderRect(LM, y, W, 22);
       doc.save();
-      doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text((client?.name || "\u2014").toUpperCase(), LM, y + 5, { width: W, align: "center", lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(DARK).text((client?.name || "\u2014").toUpperCase(), LM, y + 6, { width: W, align: "center", lineBreak: false });
       doc.restore();
       y += 22;
 
@@ -903,26 +910,28 @@ Para CPF, formate como 000.000.000-00.`
         fillRect(LM, y, W, 18, BG_ALT);
         borderRect(LM, y, W, 18);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("SOLICITANTE:", LM, y + 4, { width: halfW, align: "center", lineBreak: false });
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(os.requesterName.toUpperCase(), LM + halfW, y + 4, { width: halfW, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("SOLICITANTE:", LABEL_X, y + 5, { width: osLabelW, lineBreak: false });
+        doc.restore();
+        doc.save();
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(os.requesterName, LM + osLabelW + PAD, y + 5, { width: W - osLabelW - PAD * 2, lineBreak: false });
         doc.restore();
         y += 18;
       }
 
       const dateVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "\u2014";
       const timeVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "\u2014";
-      fillRect(LM, y, W, 24, "#ffffff");
-      borderRect(LM, y, W, 24);
+      fillRect(LM, y, W, 18, "#ffffff");
+      borderRect(LM, y, W, 18);
       const col3W = Math.floor(W / 3);
       doc.save();
-      doc.font("Helvetica-Bold").fontSize(6.5).fillColor(GRAY).text("DATA", LM, y + 2, { width: col3W, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text(dateVal, LM, y + 11, { width: col3W, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(6.5).fillColor(GRAY).text("HOR\u00c1RIO", LM + col3W, y + 2, { width: col3W, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text(timeVal, LM + col3W, y + 11, { width: col3W, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(6.5).fillColor(GRAY).text("PRIORIDADE", LM + col3W * 2, y + 2, { width: col3W, align: "center", lineBreak: false });
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((os.priority || "").toUpperCase(), LM + col3W * 2, y + 11, { width: col3W, align: "center", lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("DATA:", LABEL_X, y + 5, { width: 40, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(dateVal, LABEL_X + 42, y + 5, { width: col3W - 52, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("HOR\u00c1RIO:", LM + col3W + PAD, y + 5, { width: 55, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(timeVal, LM + col3W + 65, y + 5, { width: col3W - 70, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("PRIORIDADE:", LM + col3W * 2 + PAD, y + 5, { width: 72, lineBreak: false });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text((os.priority || "").toUpperCase(), LM + col3W * 2 + 82, y + 5, { width: col3W - 92, lineBreak: false });
       doc.restore();
-      y += 24;
+      y += 18;
 
       y += 4;
 
@@ -948,27 +957,26 @@ Para CPF, formate como 000.000.000-00.`
           } catch {}
         }
 
+        const vOff = 120;
+        const rightCol = Math.floor(dataW * 0.55);
         const rH = 16;
-        const col1W = Math.floor(dataW * 0.5);
-        const labelColW = 70;
-        const valCol1W = col1W - labelColW;
-        const valCol2W = dataW - col1W - labelColW;
+        const vPad = Math.floor((rH - 8) / 2);
 
         const agentRow = (l1: string, v1: string, l2: string, v2: string) => {
-          hLine(LM, y + rH, dataW);
+          hLine(LM, y + rH, W);
           doc.save();
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LM, y + 3, { width: labelColW + PAD, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LM + labelColW + PAD, y + 3, { width: valCol1W - PAD, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + col1W, y + 3, { width: labelColW + PAD, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LM + col1W + labelColW + PAD, y + 3, { width: valCol2W - PAD, align: "center", lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + vPad, { width: 50, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LABEL_X + 50, y + vPad, { width: rightCol - 55, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LABEL_X + rightCol, y + vPad, { width: 70, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LABEL_X + rightCol + 70, y + vPad, { width: dataW - rightCol - 75, lineBreak: false });
           doc.restore();
           y += rH;
         };
 
-        hLine(LM, y + rH, dataW);
+        hLine(LM, y + rH, W);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("NOME:", LM, y + 3, { width: labelColW + PAD, align: "center", lineBreak: false });
-        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), LM + labelColW + PAD, y + 2, { width: dataW - labelColW - PAD * 2, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("NOME:", LABEL_X, y + vPad, { width: 45, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), LABEL_X + 50, y + vPad - 1, { width: dataW - 55, lineBreak: false });
         doc.restore();
         y += rH;
 
@@ -1001,7 +1009,7 @@ Para CPF, formate como 000.000.000-00.`
         doc.save();
         doc.font("Helvetica-Bold").fontSize(7).fillColor(GRAY);
         for (let i = 0; i < 4; i++) {
-          doc.text(thLabels[i], cx, y + 4, { width: colWs[i], align: "center", lineBreak: false });
+          doc.text(thLabels[i], cx + 6, y + 4, { width: colWs[i] - 8, lineBreak: false });
           cx += colWs[i];
         }
         doc.restore();
@@ -1012,15 +1020,15 @@ Para CPF, formate como 000.000.000-00.`
           cx = LM;
           doc.save();
           doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK);
-          doc.text(`${w.weapon?.type || "\u2014"} ${w.weapon?.model || ""}`.trim(), cx, y + 4, { width: colWs[0], align: "center", lineBreak: false });
+          doc.text(`${w.weapon?.type || "\u2014"} ${w.weapon?.model || ""}`.trim(), cx + 6, y + 5, { width: colWs[0] - 8, lineBreak: false });
           cx += colWs[0];
           doc.font("Helvetica").fontSize(8).fillColor(DARK);
-          doc.text(w.weapon?.caliber || "\u2014", cx, y + 4, { width: colWs[1], align: "center", lineBreak: false });
+          doc.text(w.weapon?.caliber || "\u2014", cx + 6, y + 5, { width: colWs[1] - 8, lineBreak: false });
           cx += colWs[1];
-          doc.text(w.weapon?.serialNumber || "\u2014", cx, y + 4, { width: colWs[2], align: "center", lineBreak: false });
+          doc.text(w.weapon?.serialNumber || "\u2014", cx + 6, y + 5, { width: colWs[2] - 8, lineBreak: false });
           cx += colWs[2];
           doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK);
-          doc.text("12 proj.", cx, y + 4, { width: colWs[3], align: "center", lineBreak: false });
+          doc.text("12 proj.", cx + 6, y + 5, { width: colWs[3] - 8, lineBreak: false });
           doc.restore();
           y += 18;
         }
@@ -1038,21 +1046,21 @@ Para CPF, formate como 000.000.000-00.`
         borderRect(LM, y, W, 18);
         doc.save();
         doc.font("Helvetica-Bold").fontSize(7).fillColor(GRAY);
-        doc.text("VIATURA", LM, y + 5, { width: col4W, align: "center", lineBreak: false });
-        doc.text("COR", LM + col4W, y + 5, { width: col4W, align: "center", lineBreak: false });
-        doc.text("PLACA", LM + col4W * 2, y + 5, { width: col4W, align: "center", lineBreak: false });
-        doc.text("RASTREADOR / ID", LM + col4W * 3, y + 5, { width: col4W, align: "center", lineBreak: false });
+        doc.text("VIATURA", LM + 6, y + 5, { width: col4W - 8, lineBreak: false });
+        doc.text("COR", LM + col4W + 6, y + 5, { width: col4W - 8, lineBreak: false });
+        doc.text("PLACA", LM + col4W * 2 + 6, y + 5, { width: col4W - 8, lineBreak: false });
+        doc.text("RASTREADOR / ID", LM + col4W * 3 + 6, y + 5, { width: col4W - 8, lineBreak: false });
         doc.restore();
         y += 18;
 
         borderRect(LM, y, W, 18);
         doc.save();
         doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK);
-        doc.text(modelStr || "\u2014", LM, y + 4, { width: col4W, align: "center", lineBreak: false });
-        doc.text(vehicle.color || "\u2014", LM + col4W, y + 4, { width: col4W, align: "center", lineBreak: false });
-        doc.text(vehicle.plate, LM + col4W * 2, y + 4, { width: col4W, align: "center", lineBreak: false });
+        doc.text(modelStr || "\u2014", LM + 6, y + 5, { width: col4W - 8, lineBreak: false });
+        doc.text(vehicle.color || "\u2014", LM + col4W + 6, y + 5, { width: col4W - 8, lineBreak: false });
+        doc.text(vehicle.plate, LM + col4W * 2 + 6, y + 5, { width: col4W - 8, lineBreak: false });
         const trackerStr = trackerType ? `${trackerType} / ${vehicle.truckscontrolIdentifier || vehicle.trackerId || vehicle.plate}` : "\u2014";
-        doc.text(trackerStr, LM + col4W * 3, y + 4, { width: col4W, align: "center", lineBreak: false });
+        doc.text(trackerStr, LM + col4W * 3 + 6, y + 5, { width: col4W - 8, lineBreak: false });
         doc.restore();
         y += 18;
 
@@ -1102,24 +1110,11 @@ Para CPF, formate como 000.000.000-00.`
 
       if (os.escortedDriverName || os.escortedVehiclePlate) {
         sectionHeader("Dados da Carga / Ve\u00edculo Cliente");
-        const cargaLblW = 80;
-        const cargaHalf = Math.floor(W / 2);
-        const cargaRow = (l1: string, v1: string, l2: string, v2: string) => {
-          const rH = 18;
-          hLine(LM, y + rH, W);
-          doc.save();
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LM, y + 4, { width: cargaLblW + PAD, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LM + cargaLblW + PAD, y + 4, { width: cargaHalf - cargaLblW - PAD * 2, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + cargaHalf, y + 4, { width: cargaLblW + PAD, align: "center", lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LM + cargaHalf + cargaLblW + PAD, y + 4, { width: cargaHalf - cargaLblW - PAD * 2, align: "center", lineBreak: false });
-          doc.restore();
-          y += rH;
-        };
         if (os.escortedDriverName) {
-          cargaRow("Motorista", os.escortedDriverName, "Telefone", "");
+          fieldRow2("Motorista", os.escortedDriverName, "Telefone", "");
         }
         if (os.escortedVehiclePlate) {
-          cargaRow("Ve\u00edculo", os.escortedVehiclePlate, "GR/Doc", "");
+          fieldRow2("Ve\u00edculo", os.escortedVehiclePlate, "GR/Doc", "");
         }
         y += 6;
       }
@@ -1131,7 +1126,7 @@ Para CPF, formate como 000.000.000-00.`
         doc.save();
         doc.font("Helvetica").fontSize(8).fillColor(DARK);
         const infoText = [os.description, os.notes].filter(Boolean).join("\n");
-        doc.text(infoText || "\u2014", LM, y + 6, { width: W, align: "center" });
+        doc.text(infoText || "\u2014", LABEL_X, y + 16, { width: W - PAD * 2 });
         doc.restore();
         y += 44;
       }
