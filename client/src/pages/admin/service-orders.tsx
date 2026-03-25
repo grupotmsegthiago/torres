@@ -780,8 +780,13 @@ export default function ServiceOrdersPage() {
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);
-                            setPdfViewerUrl(url);
-                            setPdfViewerTitle(`OS ${o.osNumber}`);
+                            const isInsideIframe = window.self !== window.top;
+                            if (isInsideIframe) {
+                              window.open(url, "_blank");
+                            } else {
+                              setPdfViewerUrl(url);
+                              setPdfViewerTitle(`OS ${o.osNumber}`);
+                            }
                           } catch {
                             toast({ title: "Erro ao visualizar PDF", variant: "destructive" });
                           }
@@ -827,13 +832,36 @@ export default function ServiceOrdersPage() {
                 }} data-testid="button-download-from-viewer">
                   <Download className="w-4 h-4 mr-1" /> Baixar
                 </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  window.open(pdfViewerUrl, "_blank");
+                }} data-testid="button-open-new-tab">
+                  <ExternalLink className="w-4 h-4 mr-1" /> Nova Aba
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="button-close-pdf-viewer">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden">
-              <iframe src={pdfViewerUrl} className="w-full h-full border-0" title={pdfViewerTitle} data-testid="iframe-pdf-viewer" />
+            <div className="flex-1 overflow-hidden bg-neutral-100">
+              <object data={pdfViewerUrl} type="application/pdf" className="w-full h-full">
+                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+                  <FileText className="w-16 h-16 text-neutral-400" />
+                  <p className="text-sm text-neutral-500 text-center">Seu navegador não suporta visualização de PDF embutida.</p>
+                  <div className="flex gap-2">
+                    <Button variant="default" size="sm" onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = pdfViewerUrl;
+                      a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
+                      a.click();
+                    }} data-testid="button-fallback-download">
+                      <Download className="w-4 h-4 mr-1" /> Baixar PDF
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => window.open(pdfViewerUrl, "_blank")} data-testid="button-fallback-open">
+                      <ExternalLink className="w-4 h-4 mr-1" /> Abrir em Nova Aba
+                    </Button>
+                  </div>
+                </div>
+              </object>
             </div>
           </div>
         </div>
