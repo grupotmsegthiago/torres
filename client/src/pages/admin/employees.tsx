@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1667,7 +1667,41 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     if (w) { w.document.write(contractHtml); w.document.close(); w.print(); }
   };
 
-  const DOC_TYPES = ["CNH", "CNV", "RG", "CPF", "Comprovante de Residência", "Certidão", "ASO", "Curso NR", "Certificado", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
+  const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Dados Bancários", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
+
+  const REQUIRED_DOCS = [
+    { group: "Identificação e Documentos Pessoais", items: [
+      { type: "RG", label: "RG" },
+      { type: "CPF", label: "CPF" },
+      { type: "CTPS", label: "Carteira de Trabalho (CTPS)" },
+      { type: "PIS/PASEP/NIS", label: "PIS/PASEP/NIS" },
+      { type: "Comprovante de Residência", label: "Comprovante de Residência" },
+      { type: "Fotos 3x4", label: "03 Fotos 3x4 recentes" },
+      { type: "Título de Eleitor", label: "Título de Eleitor" },
+      { type: "Certificado de Reservista", label: "Certificado de Reservista (homens 18-45)" },
+    ]},
+    { group: "Habilitação e Formação", items: [
+      { type: "CNH", label: "CNH / CNV" },
+      { type: "Certidão de Pontuação CNH", label: "Certidão de Pontuação de CNH" },
+      { type: "Dados Bancários", label: "Dados Bancários" },
+      { type: "Certificado Formação Vigilante", label: "Certificado de Formação de Vigilante" },
+      { type: "Certificado Formação Escolta Armada", label: "Certificado de Formação de Escolta Armada" },
+      { type: "Reciclagem Escolta Armada", label: "Última Reciclagem de Escolta Armada" },
+      { type: "ASO", label: "ASO - Atestado de Saúde Ocupacional (Admissional)" },
+    ]},
+    { group: "Dependentes (se necessário)", items: [
+      { type: "Certidão Nascimento/Casamento", label: "Certidão de Nascimento/Casamento" },
+      { type: "Certidão Nascimento Filhos", label: "Certidão de Nascimento de Filhos (menores 14 anos)" },
+      { type: "Carteira Vacinação/Comprovante Escolar", label: "Carteira de Vacinação e Comprovante Escolar" },
+    ]},
+    { group: "Certidões Obrigatórias", items: [
+      { type: "Antecedente Criminal Polícia Civil", label: "Antecedente Criminal Polícia Civil" },
+      { type: "Antecedente Criminal Polícia Militar", label: "Antecedente Criminal Polícia Militar" },
+      { type: "Certidão de COP", label: "Certidão de COP (Objeto em Pé)" },
+    ]},
+  ];
+
+  const getDocStatus = (docType: string) => docs.some((d: any) => d.type === docType);
 
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
@@ -1738,7 +1772,42 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
       <Card className="bg-white border-neutral-200 p-4">
         {tab === "documentos" && (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-neutral-900 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-white" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Checklist de Documentos Obrigatórios</h3>
+                </div>
+                <span className="text-[10px] font-bold text-neutral-400">
+                  {REQUIRED_DOCS.reduce((acc, g) => acc + g.items.filter(i => getDocStatus(i.type)).length, 0)}/{REQUIRED_DOCS.reduce((acc, g) => acc + g.items.length, 0)} entregues
+                </span>
+              </div>
+              <div className="p-3 space-y-3 bg-neutral-50/50">
+                {REQUIRED_DOCS.map((group) => (
+                  <div key={group.group}>
+                    <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5">{group.group}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                      {group.items.map((item) => {
+                        const delivered = getDocStatus(item.type);
+                        return (
+                          <div key={item.type} className={`flex items-center gap-2 px-2.5 py-1.5 rounded text-xs ${delivered ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-neutral-100"}`} data-testid={`checklist-${item.type.toLowerCase().replace(/[\s/]+/g, "-")}`}>
+                            {delivered ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            ) : (
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-neutral-300 flex-shrink-0" />
+                            )}
+                            <span className={delivered ? "text-emerald-700 font-medium" : "text-neutral-600"}>{item.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-neutral-400 italic mt-1">Após aprovação, o candidato terá 3 dias úteis para entrega da documentação.</p>
+              </div>
+            </div>
+
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold text-neutral-700">Documentos Arquivados</h3>
               <Button size="sm" onClick={() => setShowDocForm(!showDocForm)} data-testid="button-add-doc-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
