@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, date, timestamp, serial, real, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, date, timestamp, serial, real, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -201,6 +201,7 @@ export const serviceOrders = pgTable("service_orders", {
   baseCleanStatus: text("base_clean_status"),
   baseCleanNotes: text("base_clean_notes"),
   baseChecklistConfirmed: boolean("base_checklist_confirmed"),
+  stepLogs: jsonb("step_logs").default([]),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

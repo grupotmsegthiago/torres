@@ -9,7 +9,7 @@ import {
   Camera, Check, ChevronRight,
   Shield, Car, Users, Clock, Crosshair,
   AlertTriangle, CheckCircle2, Truck, User, Siren,
-  DollarSign, Loader2,
+  DollarSign, Loader2, MapPin, Wifi, WifiOff, History,
 } from "lucide-react";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
@@ -68,6 +68,15 @@ const STEP_PHOTO_SLOTS: Record<string, { key: string; label: string }[]> = {
 
 const KM_STEPS = ["checkout_km_saida", "checkin_chegada_km", "checkout_km_final"];
 
+type StepLogEntry = {
+  step: string;
+  completedAt: string;
+  agentName: string;
+  agentId: number;
+  geo?: { lat: string; lng: string } | null;
+  nextStep: string;
+};
+
 type ActiveMission = {
   id: number;
   osNumber: string;
@@ -78,6 +87,7 @@ type ActiveMission = {
   employee2Name: string;
   missionStatus: string;
   completedSteps: string[];
+  stepLogs?: StepLogEntry[];
   scheduledDate?: string;
   description?: string;
   escortedDriverName?: string | null;
@@ -306,6 +316,90 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+const STEP_LABELS: Record<string, string> = {
+  missao_paga: "Pagamento Confirmado",
+  aguardando: "Ciência da Missão",
+  checkout_armamento: "Armamento Conferido",
+  checkout_viatura: "Viatura Conferida",
+  checkout_km_saida: "KM Saída Registrado",
+  em_transito_origem: "Em Trânsito ao Cliente",
+  checkin_chegada_km: "Chegada no Cliente",
+  checkin_veiculo_escoltado: "Veículo Escoltado Registrado",
+  checkin_dados_motorista: "Dados do Motorista Registrados",
+  iniciar_missao: "Missão Iniciada",
+  em_transito_destino: "Em Trânsito ao Destino",
+  chegada_destino: "Chegada no Destino",
+  checkout_km_final: "KM Final Registrado",
+  checkout_viatura_retorno: "Viatura Retorno Conferida",
+  finalizada: "Entregas Finalizadas",
+  em_prontidao: "Em Prontidão",
+  retorno_base: "Retorno à Base",
+  chegada_base: "Chegada na Base",
+  encerrada: "Missão Encerrada",
+};
+
+function MissionTimeline({ stepLogs }: { stepLogs: StepLogEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!stepLogs || stepLogs.length === 0) return null;
+
+  const sorted = [...stepLogs].sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  const display = expanded ? sorted : sorted.slice(-3);
+
+  return (
+    <div className="mt-4 mb-2">
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 mb-3 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wider" data-testid="button-toggle-timeline">
+        <History size={14} />
+        Linha do Tempo ({sorted.length} etapas)
+        <ChevronRight size={12} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
+      <div className="space-y-0">
+        {display.map((log, i) => {
+          const dt = new Date(log.completedAt);
+          const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const dateStr = dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const isLast = i === display.length - 1;
+          return (
+            <div key={`${log.step}-${log.completedAt}`} className="flex gap-3" data-testid={`timeline-entry-${log.step}`}>
+              <div className="flex flex-col items-center">
+                <div className={`w-3 h-3 rounded-full border-2 shrink-0 ${isLast ? "bg-foreground border-foreground" : "bg-muted border-foreground/40"}`} />
+                {!isLast && <div className="w-0.5 h-full bg-foreground/15 min-h-[32px]" />}
+              </div>
+              <div className="pb-3 flex-1 min-w-0">
+                <p className="text-xs font-bold text-foreground leading-tight">{STEP_LABELS[log.step] || log.step}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground font-mono">{dateStr} {timeStr}</span>
+                  <span className="text-[10px] text-muted-foreground">•</span>
+                  <span className="text-[10px] text-muted-foreground font-medium">{log.agentName}</span>
+                  {log.geo && (
+                    <>
+                      <span className="text-[10px] text-muted-foreground">•</span>
+                      <a
+                        href={`https://www.google.com/maps?q=${log.geo.lat},${log.geo.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-blue-500 hover:underline flex items-center gap-0.5"
+                        data-testid={`link-geo-${log.step}`}
+                      >
+                        <MapPin size={9} /> GPS
+                      </a>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!expanded && sorted.length > 3 && (
+        <button onClick={() => setExpanded(true)} className="text-[10px] text-muted-foreground hover:text-foreground font-bold uppercase tracking-wider ml-6" data-testid="button-show-all-timeline">
+          Ver todas as {sorted.length} etapas
+        </button>
+      )}
     </div>
   );
 }
@@ -603,6 +697,10 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         </div>
 
         <StepProgress currentStatus={mission.missionStatus} />
+
+        {mission.stepLogs && mission.stepLogs.length > 0 && (
+          <MissionTimeline stepLogs={mission.stepLogs} />
+        )}
 
         <div className="bg-muted/50 rounded-xl p-3 mb-4 flex items-center justify-between text-xs border border-border">
           <span className="font-bold text-foreground">{mission.osNumber}</span>

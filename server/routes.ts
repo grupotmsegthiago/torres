@@ -2287,6 +2287,7 @@ Para CPF, formate como 000.000.000-00.`
       missionStatus: so.missionStatus,
       completedSteps,
       photoCount: photos.length,
+      stepLogs: so.stepLogs || [],
     });
   });
 
@@ -2515,6 +2516,19 @@ Para CPF, formate como 000.000.000-00.`
       updates.status = "concluida";
       updates.completedDate = new Date();
     }
+
+    const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+    const geo = req.body.latitude && req.body.longitude ? { lat: req.body.latitude, lng: req.body.longitude } : null;
+    const emp = await storage.getEmployee(user.employeeId);
+    const stepLogEntry = {
+      step: currentStep,
+      completedAt: new Date().toISOString(),
+      agentName: emp?.fullName || user.name || "—",
+      agentId: user.employeeId,
+      geo,
+      nextStep,
+    };
+    updates.stepLogs = [...existingLogs, stepLogEntry];
 
     const updated = await storage.updateServiceOrder(serviceOrderId, updates);
 

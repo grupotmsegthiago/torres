@@ -5,11 +5,13 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError } from "@/lib/offlineQueue";
 import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
+  WifiOff, History, ChevronRight,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -303,6 +305,74 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
   );
 }
 
+const MOBILE_STEP_LABELS: Record<string, string> = {
+  missao_paga: "Pagamento Confirmado",
+  aguardando: "Ciência da Missão",
+  checkout_armamento: "Armamento Conferido",
+  checkout_viatura: "Viatura Conferida",
+  checkout_km_saida: "KM Saída Registrado",
+  em_transito_origem: "Em Trânsito",
+  checkin_chegada_km: "Chegada no Cliente",
+  checkin_veiculo_escoltado: "Veículo Registrado",
+  checkin_dados_motorista: "Dados Motorista",
+  iniciar_missao: "Missão Iniciada",
+  em_transito_destino: "Em Trânsito Destino",
+  chegada_destino: "Chegada Destino",
+  checkout_km_final: "KM Final",
+  checkout_viatura_retorno: "Viatura Retorno",
+  finalizada: "Entregas OK",
+  em_prontidao: "Em Prontidão",
+  retorno_base: "Retorno Base",
+  chegada_base: "Chegada Base",
+  encerrada: "Encerrada",
+};
+
+function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!stepLogs || stepLogs.length === 0) return null;
+
+  const sorted = [...stepLogs].sort((a: any, b: any) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  const display = expanded ? sorted : sorted.slice(-2);
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="mobile-timeline">
+      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 mb-3 w-full" data-testid="button-toggle-timeline">
+        <History size={14} className="text-neutral-500" />
+        <span className="text-[10px] font-black text-neutral-500 uppercase tracking-wider flex-1 text-left">
+          Linha do Tempo ({sorted.length})
+        </span>
+        <ChevronRight size={12} className={`text-neutral-400 transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
+      <div className="space-y-0">
+        {display.map((log: any, i: number) => {
+          const dt = new Date(log.completedAt);
+          const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+          const dateStr = dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const isLast = i === display.length - 1;
+          return (
+            <div key={`${log.step}-${i}`} className="flex gap-3" data-testid={`timeline-entry-${log.step}-${i}`}>
+              <div className="flex flex-col items-center">
+                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isLast ? "bg-neutral-900" : "bg-neutral-300"}`} />
+                {!isLast && <div className="w-0.5 h-full bg-neutral-200 min-h-[24px]" />}
+              </div>
+              <div className="pb-2 flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-neutral-800 leading-tight">{MOBILE_STEP_LABELS[log.step] || log.step}</p>
+                <p className="text-[10px] text-neutral-400 font-mono">{dateStr} {timeStr} — {log.agentName}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!expanded && sorted.length > 2 && (
+        <button onClick={() => setExpanded(true)} className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider ml-5 mt-1" data-testid="button-show-all-timeline">
+          Ver todas ({sorted.length})
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function MobileMissaoPage() {
   const { toast } = useToast();
   const { getPosition } = useGeoLocation();
@@ -348,9 +418,29 @@ export default function MobileMissaoPage() {
     setStatusUpdate("");
   }, []);
 
+  const [offlinePending, setOfflinePending] = useState(getPendingCount());
+  const [online, setOnline] = useState(isOnline());
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    startOfflineSync((result) => {
+      if (result.sent > 0) {
+        toast({ title: `${result.sent} ação(ões) sincronizada(s)`, description: "Dados enviados com sucesso." });
+        queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+        setOfflinePending(getPendingCount());
+      }
+    });
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
   const uploadPhoto = async (step: string, label: string, photoData: string, km?: number) => {
     const pos = await getPosition();
-    await apiRequest("POST", "/api/mission/photo", {
+    const payload = {
       serviceOrderId: mission.serviceOrderId,
       employeeId: mission.employeeId || 1,
       step,
@@ -359,15 +449,42 @@ export default function MobileMissaoPage() {
       latitude: pos?.lat || null,
       longitude: pos?.lng || null,
       notes: label,
-    });
+    };
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      await apiRequest("POST", "/api/mission/photo", payload);
+    } catch (err) {
+      if (isNetworkError(err)) {
+        enqueueAction("/api/mission/photo", "POST", payload);
+        setOfflinePending(getPendingCount());
+        toast({ title: "Salvo offline", description: "A foto será enviada quando o sinal voltar." });
+      } else {
+        toast({ title: "Erro ao enviar foto", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+      }
+    }
     logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""}`);
   };
 
   const advanceMission = async () => {
     const fromStep = currentStep;
-    await apiRequest("POST", "/api/mission/advance", {
+    const geo = await getPosition();
+    const payload = {
       serviceOrderId: mission.serviceOrderId,
-    });
+      latitude: geo?.lat || null,
+      longitude: geo?.lng || null,
+    };
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      await apiRequest("POST", "/api/mission/advance", payload);
+    } catch (err) {
+      if (isNetworkError(err)) {
+        enqueueAction("/api/mission/advance", "POST", payload);
+        setOfflinePending(getPendingCount());
+        toast({ title: "Salvo offline", description: "A etapa será avançada quando o sinal voltar." });
+      } else {
+        toast({ title: "Erro ao avançar etapa", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+      }
+    }
     logAuditAction("mission_step_advance", "/mobile/missao", `Avançou de ${fromStep} | OS #${mission.serviceOrderId}`);
     queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
     resetStepState();
@@ -654,6 +771,31 @@ export default function MobileMissaoPage() {
             })}
           </div>
         </div>
+
+        {!online && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-3 flex items-center gap-3" data-testid="alert-offline">
+            <WifiOff className="w-5 h-5 text-red-500 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-red-700 uppercase">Sem conexão</p>
+              <p className="text-[10px] text-red-500">Ações serão salvas e enviadas quando o sinal voltar.</p>
+            </div>
+            {offlinePending > 0 && (
+              <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{offlinePending}</span>
+            )}
+          </div>
+        )}
+
+        {online && offlinePending > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center gap-3" data-testid="alert-syncing">
+            <Loader2 className="w-5 h-5 text-amber-500 shrink-0 animate-spin" />
+            <div>
+              <p className="text-xs font-bold text-amber-700 uppercase">Sincronizando...</p>
+              <p className="text-[10px] text-amber-500">{offlinePending} ação(ões) pendente(s)</p>
+            </div>
+          </div>
+        )}
+
+        <MobileTimeline stepLogs={mission.stepLogs || []} />
 
         {mission.missionStartedAt && !["finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada"].includes(currentStep) && (
           <MissionTimer startedAt={mission.missionStartedAt} />
