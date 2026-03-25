@@ -136,10 +136,10 @@ function OperationNotificationsBar() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-neutral-800" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                <span className="text-sm font-semibold text-neutral-800 font-heading">
                   {isPending ? (isMirror ? "Espelhamento em Processo" : "Comando em Processo") : isSuccess ? (isMirror ? "Espelhamento Concluído" : "Comando Enviado") : (isMirror ? "Falha no Espelhamento" : "Falha no Comando")}
                 </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-neutral-900 text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-neutral-900 text-white font-heading">
                   {n.plate}
                 </span>
               </div>
@@ -895,7 +895,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             <div className="border-t border-neutral-100 px-3 py-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Raio</span>
-                <span className="text-sm font-bold text-blue-700" style={{ fontFamily: "'Montserrat', sans-serif" }}>{radiusKm} km</span>
+                <span className="text-sm font-bold text-blue-700 font-heading">{radiusKm} km</span>
               </div>
               <input
                 type="range"
@@ -1755,7 +1755,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       >
         <div className="flex items-center gap-2.5">
           <Truck className="w-4 h-4 text-neutral-300" />
-          <h2 className="font-bold text-sm text-white tracking-wide uppercase" style={{ fontFamily: "'Montserrat', sans-serif", letterSpacing: "0.08em" }}>Veículos</h2>
+          <h2 className="font-bold text-sm text-white tracking-wide uppercase font-heading" style={{ letterSpacing: "0.08em" }}>Veículos</h2>
           <span className="text-xs text-neutral-400 font-medium ml-0.5">({onlyVehicles.length})</span>
         </div>
         <div className="flex items-center gap-2">
@@ -1769,9 +1769,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
       {expanded && (
         <div className="overflow-x-auto">
-          <table className="w-full" data-testid="table-vehicles-tracking" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <table className="w-full" data-testid="table-vehicles-tracking">
             <thead>
-              <tr style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)", fontFamily: "'Montserrat', sans-serif" }}>
+              <tr className="font-heading" style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)" }}>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap w-10">#</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
@@ -1846,7 +1846,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-neutral-500 mt-0.5 leading-tight" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                          <p className="text-[11px] text-neutral-500 mt-0.5 leading-tight" style={{ fontWeight: 400 }}>
                             {v.brand} {v.model}
                             {v.year ? ` ${v.year}` : ""}
                             {v.color ? <span className="text-neutral-400"> · {v.color}</span> : ""}
@@ -2258,7 +2258,7 @@ function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
               <Crosshair className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+              <h3 className="text-sm font-bold text-neutral-900 font-heading">
                 Busca por Raio — {result.radiusKm} km
               </h3>
               <p className="text-xs text-neutral-500 flex items-center gap-1 mt-0.5">
@@ -2446,10 +2446,10 @@ export default function OperationalGridPage() {
                   <Radio className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-white tracking-wide" style={{ fontFamily: "'Montserrat', sans-serif" }} data-testid="text-grid-title">
+                  <h1 className="text-xl font-bold text-white tracking-wide" data-testid="text-grid-title">
                     Grid Operacional
                   </h1>
-                  <p className="text-xs text-neutral-400 mt-0.5" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <p className="text-xs text-neutral-400 mt-0.5">
                     Monitoramento em tempo real
                   </p>
                 </div>
@@ -2481,21 +2481,21 @@ export default function OperationalGridPage() {
                   <Truck className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
                 </div>
-                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{onlyVehicles.length}</p>
+                <p className="text-2xl font-bold text-white font-heading">{onlyVehicles.length}</p>
               </div>
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Satellite className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
                 </div>
-                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
+                <p className="text-2xl font-bold text-white font-heading">{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
               </div>
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <MapPin className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
                 </div>
-                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{withPositionCount}</p>
+                <p className="text-2xl font-bold text-white font-heading">{withPositionCount}</p>
               </div>
               {noSignalCount > 0 && (
                 <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3">
@@ -2503,7 +2503,7 @@ export default function OperationalGridPage() {
                     <WifiOff className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
                   </div>
-                  <p className="text-2xl font-bold text-amber-300" style={{ fontFamily: "'Montserrat', sans-serif" }}>{noSignalCount}</p>
+                  <p className="text-2xl font-bold text-amber-300 font-heading">{noSignalCount}</p>
                 </div>
               )}
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
@@ -2511,7 +2511,7 @@ export default function OperationalGridPage() {
                   <Navigation className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>
                 </div>
-                <p className="text-2xl font-bold text-white" style={{ fontFamily: "'Montserrat', sans-serif" }}>{activeOsCount}</p>
+                <p className="text-2xl font-bold text-white font-heading">{activeOsCount}</p>
               </div>
             </div>
           </div>

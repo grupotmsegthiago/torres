@@ -108,7 +108,7 @@ export default function TelemetryPage() {
       <div className="p-6 max-w-[1400px] mx-auto space-y-6" data-testid="telemetry-page">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "Montserrat, sans-serif" }}>Telemetria & Custos</h1>
+            <h1 className="text-2xl font-bold tracking-tight font-heading">Telemetria & Custos</h1>
             <p className="text-sm text-neutral-500 mt-0.5">Controle de infrações, idle excessivo e estimativas de custo</p>
           </div>
           <div className="flex items-center gap-2">

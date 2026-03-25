@@ -43,9 +43,10 @@
   --chart-3: 0 0% 45%;
   --chart-4: 0 0% 60%;
   --chart-5: 0 0% 75%;
-  --font-sans: Montserrat, Inter, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Montserrat', 'Inter', sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Menlo, monospace;
+  --font-mono: 'JetBrains Mono', Menlo, monospace;
   --radius: .5rem;
   --shadow-2xs: 0px 2px 0px 0px hsl(220 8% 15% / 0.00);
   --shadow-xs: 0px 2px 0px 0px hsl(220 8% 15% / 0.00);
@@ -176,6 +177,15 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
   }
 }
 
