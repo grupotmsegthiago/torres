@@ -748,7 +748,7 @@ export default function ServiceOrdersPage() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
-                        {o.status === "aberta" && (
+                        {(o.status === "aberta" || o.status === "agendada") && !o.missionStatus && (
                           <Button
                             variant="ghost"
                             size="icon"
