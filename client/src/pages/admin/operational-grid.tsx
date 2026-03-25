@@ -16,6 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
+  BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Battery,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -1776,6 +1777,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Bateria</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
                 <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Tempo</th>
@@ -1902,6 +1904,52 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <Signal className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.gpsSignal ? "GPS OK" : "GPS sem sinal"}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </td>
+
+                    <td className="px-3 py-3 text-center">
+                      {!v.hasTracker ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Battery className="w-4 h-4 mx-auto text-neutral-300" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem rastreador</TooltipContent>
+                        </Tooltip>
+                      ) : v.tracker?.batteryLevel === undefined || v.tracker.batteryLevel === null ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Battery className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                          </TooltipTrigger>
+                          <TooltipContent>Sem informação de bateria</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="flex flex-col items-center gap-0.5">
+                              {v.tracker.batteryLevel >= 70 ? (
+                                <BatteryFull className="w-4 h-4 text-green-500" />
+                              ) : v.tracker.batteryLevel >= 40 ? (
+                                <BatteryMedium className="w-4 h-4 text-amber-500" />
+                              ) : v.tracker.batteryLevel >= 15 ? (
+                                <BatteryLow className="w-4 h-4 text-orange-500" />
+                              ) : (
+                                <BatteryWarning className="w-4 h-4 text-red-500 animate-pulse" />
+                              )}
+                              <span className={`text-[9px] font-bold leading-none ${
+                                v.tracker.batteryLevel >= 70 ? "text-green-600" :
+                                v.tracker.batteryLevel >= 40 ? "text-amber-600" :
+                                v.tracker.batteryLevel >= 15 ? "text-orange-600" : "text-red-600"
+                              }`}>{v.tracker.batteryLevel}%</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Bateria: {v.tracker.batteryLevel}% — {
+                              v.tracker.batteryLevel >= 70 ? "Boa" :
+                              v.tracker.batteryLevel >= 40 ? "Média" :
+                              v.tracker.batteryLevel >= 15 ? "Baixa" : "Crítica"
+                            }
+                          </TooltipContent>
                         </Tooltip>
                       )}
                     </td>
