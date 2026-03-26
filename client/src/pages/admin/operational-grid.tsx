@@ -2016,10 +2016,23 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
                     <td className="px-3 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
-                        <span className={`text-xs font-semibold ${posInfo.color}`}>{posInfo.text}</span>
-                      </div>
+                      {v.tracker?.lastPositionTime ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-xs font-semibold text-neutral-800">
+                                {new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                              </span>
+                              <span className={`text-xs font-bold ${posInfo.color}`}>
+                                {new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>Última posição há {posInfo.text}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
                     </td>
 
                     <td className="px-3 py-3 text-center whitespace-nowrap">
