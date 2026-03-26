@@ -2049,6 +2049,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 return {
                   id: linkedOrder.id,
                   osNumber: linkedOrder.osNumber,
+                  status: linkedOrder.status,
                   missionStatus: linkedOrder.missionStatus,
                   scheduledDate: linkedOrder.scheduledDate,
                   clientName: client?.name || "—",
