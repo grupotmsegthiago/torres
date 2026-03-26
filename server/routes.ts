@@ -1911,6 +1911,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           trackerData.stoppedSince = stoppedSince;
           trackerData.ignitionOnSince = ignitionOnSince;
 
+          if (v.truckscontrolIdentifier) {
+            const tcVeiID = parseInt(v.truckscontrolIdentifier);
+            if (!isNaN(tcVeiID)) {
+              truckscontrol.recordPosition(tcVeiID, trackerData.latitude, trackerData.longitude, trackerData.speed ?? 0, trackerData.ignition === true);
+            }
+          }
+
           storage.updateVehicle(v.id, {
             lastLatitude: String(trackerData.latitude),
             lastLongitude: String(trackerData.longitude),
@@ -1970,6 +1977,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           iconType: v.iconType || "polo",
           noSignalSince,
           deviceType: "vehicle" as const,
+          idleSamePlace: v.truckscontrolIdentifier ? truckscontrol.getIdleSamePlaceInfo(parseInt(v.truckscontrolIdentifier)) : null,
           tracker: trackerData,
           activeOs: linkedOrder
             ? await (async () => {

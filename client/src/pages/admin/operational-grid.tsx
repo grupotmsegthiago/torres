@@ -187,6 +187,7 @@ interface TrackedVehicle {
   deviceType?: "vehicle" | "spy";
   batteryLevel?: number;
   coupled?: boolean;
+  idleSamePlace?: { count: number; isAlert: boolean } | null;
   tracker: {
     veiID?: number;
     latitude?: number;
@@ -696,6 +697,8 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _stopT = getStoppedTime(v);
         const _noSigT = getNoSignalTime(v);
         const _isLive = v.tracker.isLiveData !== false;
+        const _samePlaceAlert = v.idleSamePlace?.isAlert === true;
+        const _samePlaceCount = v.idleSamePlace?.count ?? 0;
         infoContent = `
           <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; min-width: 240px; padding: 4px;">
             <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">${v.plate}</div>
@@ -704,7 +707,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             ${!_isLive && !_noSigT ? `<div style="font-size: 13px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
             ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 13px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
             ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 13px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
-            ${_idleMin >= 5 ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 4px 8px; border-radius: 4px; border: 1px solid #fca5a5; margin-top: 4px;">⚠ ALERTA: Parado c/ motor ligado há ${_idleT}</div>` : _idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
+            ${_samePlaceAlert ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 6px 10px; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 6px;">🚨 ALERTA: ${_samePlaceCount} posições no mesmo lugar c/ motor ligado!</div>` : _idleMin >= 5 ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 4px 8px; border-radius: 4px; border: 1px solid #fca5a5; margin-top: 4px;">⚠ ALERTA: Parado c/ motor ligado há ${_idleT}</div>` : _idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
             ${_stopT && !v.tracker.ignition ? `<div style="font-size: 13px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
             ${_ignT ? `<div style="font-size: 13px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
             ${v.tracker.lastPositionTime ? `<div style="font-size: 13px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
@@ -976,6 +979,68 @@ function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function VehicleBlockButton({ vehicle }: { vehicle: TrackedVehicle }) {
+  const { toast } = useToast();
+  const { addNotification, updateNotification } = useOpNotifications();
+  const [confirming, setConfirming] = useState(false);
+
+  const blockMutation = useMutation({
+    mutationFn: async () => {
+      const veiID = vehicle.tracker?.veiID || (vehicle.truckscontrolIdentifier ? parseInt(vehicle.truckscontrolIdentifier) : 0);
+      if (!veiID) throw new Error("Sem veiID");
+      const res = await authFetch(`/api/vehicles/truckscontrol/command/${veiID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: "bloquear" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Erro ao bloquear");
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "Bloqueio enviado", description: `Comando de bloqueio enviado para ${vehicle.plate}` });
+      setConfirming(false);
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao bloquear", description: err.message, variant: "destructive" });
+      setConfirming(false);
+    },
+  });
+
+  if (!confirming) {
+    return (
+      <button
+        className="inline-flex items-center gap-1 text-xs font-bold text-red-600 bg-red-100 border border-red-300 rounded px-2 py-0.5 hover:bg-red-200 transition-colors"
+        onClick={() => setConfirming(true)}
+        data-testid={`btn-quick-block-${vehicle.id}`}
+      >
+        <Zap className="w-3 h-3" />
+        Bloquear
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        className="inline-flex items-center gap-1 text-xs font-bold text-white bg-red-600 border border-red-700 rounded px-2 py-0.5 hover:bg-red-700 transition-colors animate-pulse"
+        onClick={() => blockMutation.mutate()}
+        disabled={blockMutation.isPending}
+        data-testid={`btn-confirm-block-${vehicle.id}`}
+      >
+        {blockMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+        Confirmar
+      </button>
+      <button
+        className="text-xs text-neutral-400 hover:text-neutral-600"
+        onClick={() => setConfirming(false)}
+      >
+        <X className="w-3 h-3" />
+      </button>
     </div>
   );
 }
@@ -1811,6 +1876,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const noSignalTime = getNoSignalTime(v);
                 const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 120;
                 const isIdleAlert = idleMin >= 5;
+                const samePlaceAlert = v.idleSamePlace?.isAlert === true;
+                const samePlaceCount = v.idleSamePlace?.count ?? 0;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
                 const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
@@ -1820,6 +1887,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   <tr
                     key={v.id}
                     className={`transition-colors ${
+                      samePlaceAlert ? "bg-red-50/80 hover:bg-red-50" :
                       isOverSpeed ? "bg-red-50/80 hover:bg-red-50" :
                       isIdleAlert ? "bg-amber-50/60 hover:bg-amber-50" :
                       rodizio ? "bg-red-50/30 hover:bg-red-50/50" :
@@ -2014,15 +2082,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipContent>Sem sinal há {noSignalTime} — última posição mantida</TooltipContent>
                           </Tooltip>
                         ) : idleTime ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 ${isIdleAlert ? "text-red-700 bg-red-50 border border-red-300 animate-pulse" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
-                                {isIdleAlert ? <AlertTriangle className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-                                <span className="text-xs font-bold">{idleTime}</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>{isIdleAlert ? `⚠ ALERTA: Motor ligado e parado há ${idleTime} (>${idleMin}min)` : `Motor ligado, veículo parado há ${idleTime}`}</TooltipContent>
-                          </Tooltip>
+                          <div className="flex flex-col items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 ${samePlaceAlert ? "text-red-700 bg-red-100 border border-red-400 animate-pulse shadow-sm" : isIdleAlert ? "text-red-700 bg-red-50 border border-red-300 animate-pulse" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
+                                  {samePlaceAlert || isIdleAlert ? <AlertTriangle className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                                  <span className="text-xs font-bold">{idleTime}</span>
+                                  {samePlaceCount >= 2 && <span className="text-xs font-bold">({samePlaceCount}x)</span>}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>{samePlaceAlert ? `🚨 ALERTA: ${samePlaceCount} posições no mesmo lugar com motor ligado! Considere bloquear.` : isIdleAlert ? `⚠ Motor ligado e parado há ${idleTime}` : `Motor ligado, veículo parado há ${idleTime}`}</TooltipContent>
+                            </Tooltip>
+                            {samePlaceAlert && v.trackerType === "truckscontrol" && (
+                              <VehicleBlockButton vehicle={v} />
+                            )}
+                          </div>
                         ) : stoppedTime && !isIgnOn ? (
                           <Tooltip>
                             <TooltipTrigger>

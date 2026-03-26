@@ -85,6 +85,56 @@ let spyCache: SpyDevice[] = [];
 let spyCacheTimestamp = 0;
 let messagesBySpy: Map<number, SpyMessage> = new Map();
 
+interface PositionHistoryEntry {
+  lat: number;
+  lon: number;
+  speed: number;
+  ignition: boolean;
+  timestamp: number;
+}
+
+const positionHistory: Map<number, PositionHistoryEntry[]> = new Map();
+const POSITION_HISTORY_MAX = 10;
+const SAME_PLACE_RADIUS_METERS = 50;
+const IDLE_SAME_PLACE_THRESHOLD = 5;
+
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function recordPosition(veiID: number, lat: number, lon: number, speed: number, ignition: boolean) {
+  if (lat === 0 && lon === 0) return;
+  const history = positionHistory.get(veiID) || [];
+  history.push({ lat, lon, speed, ignition, timestamp: Date.now() });
+  if (history.length > POSITION_HISTORY_MAX) history.splice(0, history.length - POSITION_HISTORY_MAX);
+  positionHistory.set(veiID, history);
+}
+
+export function getIdleSamePlaceInfo(veiID: number): { count: number; isAlert: boolean } | null {
+  const history = positionHistory.get(veiID);
+  if (!history || history.length < 2) return null;
+
+  const latest = history[history.length - 1];
+  if (!latest.ignition || latest.speed > 2) return null;
+
+  let consecutiveCount = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    if (!entry.ignition) break;
+    if (entry.speed > 2) break;
+    const dist = haversineDistance(latest.lat, latest.lon, entry.lat, entry.lon);
+    if (dist > SAME_PLACE_RADIUS_METERS) break;
+    consecutiveCount++;
+  }
+
+  if (consecutiveCount < 2) return null;
+  return { count: consecutiveCount, isAlert: consecutiveCount >= IDLE_SAME_PLACE_THRESHOLD };
+}
+
 const BASE_URL = "https://webservice.newrastreamentoonline.com.br/";
 const VEHICLE_CACHE_TTL = 5 * 60 * 1000;
 
