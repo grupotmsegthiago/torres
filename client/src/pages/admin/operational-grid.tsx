@@ -9,14 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  MapPin, Key, Satellite, Signal, RefreshCw, Radio,
+  MapPin, Power, Satellite, Signal, RefreshCw, Radio,
   ExternalLink, Zap, CalendarClock, Recycle, Car, X,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Battery,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -1851,7 +1850,6 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Veículo</th>
                 <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ignição</th>
                 <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">GPS</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Bateria</th>
                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Última Pos.</th>
                 <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Tempo</th>
@@ -1942,21 +1940,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Key className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Power className="w-4 h-4 mx-auto text-neutral-300" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.ignition === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Key className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Power className="w-4 h-4 mx-auto text-amber-500" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de ignição</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Key className={`w-4 h-4 mx-auto ${v.tracker.ignition ? "text-green-500" : "text-red-500"}`} />
+                            <Power className={`w-4 h-4 mx-auto ${v.tracker.ignition ? "text-green-500 drop-shadow-[0_0_4px_rgba(34,197,94,0.5)]" : "text-red-500"}`} />
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
                         </Tooltip>
@@ -1988,51 +1986,6 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 text-center">
-                      {!v.hasTracker ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Battery className="w-4 h-4 mx-auto text-neutral-300" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem rastreador</TooltipContent>
-                        </Tooltip>
-                      ) : v.tracker?.batteryLevel === undefined || v.tracker.batteryLevel === null ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Battery className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem informação de bateria</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <div className="flex flex-col items-center gap-0.5">
-                              {v.tracker.batteryLevel >= 70 ? (
-                                <BatteryFull className="w-4 h-4 text-green-500" />
-                              ) : v.tracker.batteryLevel >= 40 ? (
-                                <BatteryMedium className="w-4 h-4 text-amber-500" />
-                              ) : v.tracker.batteryLevel >= 15 ? (
-                                <BatteryLow className="w-4 h-4 text-orange-500" />
-                              ) : (
-                                <BatteryWarning className="w-4 h-4 text-red-500 animate-pulse" />
-                              )}
-                              <span className={`text-xs font-bold leading-none ${
-                                v.tracker.batteryLevel >= 70 ? "text-green-600" :
-                                v.tracker.batteryLevel >= 40 ? "text-amber-600" :
-                                v.tracker.batteryLevel >= 15 ? "text-orange-600" : "text-red-600"
-                              }`}>{v.tracker.batteryLevel}%</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Bateria: {v.tracker.batteryLevel}% — {
-                              v.tracker.batteryLevel >= 70 ? "Boa" :
-                              v.tracker.batteryLevel >= 40 ? "Média" :
-                              v.tracker.batteryLevel >= 15 ? "Baixa" : "Crítica"
-                            }
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
 
                     <td className="px-3 py-3 max-w-[240px]">
                       {v.tracker?.address ? (
@@ -2124,7 +2077,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           <Tooltip>
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-1.5 py-0.5">
-                                <Key className="w-2.5 h-2.5" />
+                                <Power className="w-2.5 h-2.5" />
                                 <span className="text-xs font-semibold">{ignitionOnTime}</span>
                               </div>
                             </TooltipTrigger>
