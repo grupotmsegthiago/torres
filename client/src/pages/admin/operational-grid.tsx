@@ -176,6 +176,8 @@ interface TrackedVehicle {
   chassi?: string | null;
   renavam?: string | null;
   km?: number | null;
+  initialKm?: number | null;
+  lastKmUpdate?: string | null;
   status: string;
   hasTracker: boolean;
   trackerId: string | null;
@@ -1059,7 +1061,9 @@ function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
         {v.color && <p><span className="text-neutral-500">Cor:</span> {v.color}</p>}
         {v.chassi && <p><span className="text-neutral-500">Chassi:</span> <span className="font-mono text-xs">{v.chassi}</span></p>}
         {v.renavam && <p><span className="text-neutral-500">Renavam:</span> <span className="font-mono">{v.renavam}</span></p>}
-        {v.km != null && v.km > 0 && <p><span className="text-neutral-500">KM:</span> {v.km.toLocaleString("pt-BR")}</p>}
+        {(v.initialKm != null && v.initialKm > 0) && <p><span className="text-neutral-500">KM Inicial:</span> {v.initialKm.toLocaleString("pt-BR")}</p>}
+        {v.km != null && v.km > 0 && <p><span className="text-neutral-500">KM Atual:</span> <span className="font-bold">{v.km.toLocaleString("pt-BR")}</span></p>}
+        {v.lastKmUpdate && <p><span className="text-neutral-500">Atualizado:</span> {new Date(v.lastKmUpdate).toLocaleDateString("pt-BR")}</p>}
         <hr className="border-neutral-200 my-1" />
         <p><span className="text-neutral-500">Rastreador:</span> {v.trackerType === "truckscontrol" ? "TrucksControl" : v.trackerType === "custom" ? "API Custom" : v.trackerType === "none" ? "Nenhum" : v.trackerType || "Nenhum"}</p>
         {v.trackerId && <p><span className="text-neutral-500">ID:</span> <span className="font-mono">{v.trackerId}</span></p>}

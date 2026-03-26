@@ -31,6 +31,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     trackerType: (vehicle as any)?.trackerType || "none",
     truckscontrolIdentifier: (vehicle as any)?.truckscontrolIdentifier || "",
     km: vehicle?.km || 0,
+    initialKm: (vehicle as any)?.initialKm || 0,
     documentFile: (vehicle as any)?.documentFile || "",
     photoFront: vehicle?.photoFront || "",
     photoLeft: vehicle?.photoLeft || "",
@@ -151,6 +152,11 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cor</label>
           <Input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} data-testid="input-vehicle-color" />
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Inicial (vida útil)</label>
+          <Input type="number" value={form.initialKm} onChange={(e) => setForm({ ...form, initialKm: Number(e.target.value) })} placeholder="Ex: 45000" data-testid="input-vehicle-initial-km" />
+          <span className="text-[11px] text-neutral-400 mt-0.5 block">KM que o veículo já tinha ao ser cadastrado</span>
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Atual</label>
@@ -581,7 +587,8 @@ export default function VehiclesPage() {
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Placa</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Veículo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Atual</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Inicial</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Média</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
@@ -592,7 +599,8 @@ export default function VehiclesPage() {
                   <tr key={v.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-vehicle-${v.id}`}>
                     <td className="p-3 font-medium text-neutral-900">{v.plate}</td>
                     <td className="p-3 text-neutral-600">{v.brand} {v.model} {v.year}</td>
-                    <td className="p-3 text-neutral-600">{v.km?.toLocaleString() || "0"}</td>
+                    <td className="p-3 text-neutral-600 font-semibold">{v.km?.toLocaleString() || "0"}</td>
+                    <td className="p-3 text-neutral-400 text-sm">{(v as any).initialKm?.toLocaleString() || "0"}</td>
                     <td className="p-3 text-neutral-600">
                       <span className="flex items-center gap-1">
                         <Gauge className="w-3.5 h-3.5" />

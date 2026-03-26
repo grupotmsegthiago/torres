@@ -631,6 +631,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
+  app.patch("/api/vehicles/:id/km", requireAuth, async (req, res) => {
+    const { km, initialKm } = req.body;
+    const updates: any = {};
+    if (km !== undefined) updates.km = Number(km);
+    if (initialKm !== undefined) updates.initialKm = Number(initialKm);
+    updates.lastKmUpdate = new Date();
+    const data = await storage.updateVehicle(Number(req.params.id), updates);
+    if (!data) return res.status(404).json({ message: "Veículo não encontrado" });
+    res.json(data);
+  });
+
   app.delete("/api/vehicles/:id", requireAuth, async (req, res) => {
     await storage.deleteVehicle(Number(req.params.id));
     res.json({ message: "Veículo removido" });
@@ -1969,6 +1980,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           chassi: v.chassi,
           renavam: v.renavam,
           km: v.km,
+          initialKm: v.initialKm,
+          lastKmUpdate: v.lastKmUpdate,
           status: v.status,
           hasTracker,
           trackerId: v.trackerId || v.truckscontrolIdentifier,
