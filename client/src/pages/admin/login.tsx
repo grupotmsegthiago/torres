@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Shield, Eye, EyeOff, UserPlus, Lock, FileCheck } from "lucide-react";
+import { Shield, Eye, EyeOff, UserPlus, Lock, FileCheck, User, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -61,6 +61,7 @@ Ao acessar o Sistema, o Usuário declara ter lido, compreendido e aceito integra
 8.3. O aceite digital deste Termo, com registro de data, hora, IP e identificação do dispositivo, constitui prova válida e eficaz da manifestação de vontade do Usuário.`;
 
 export default function LoginPage() {
+  const [loginMode, setLoginMode] = useState<"funcionario" | "interno">("funcionario");
   const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -114,7 +115,7 @@ export default function LoginPage() {
     try {
       let emailToUse = credential.trim();
 
-      if (isCpfInput(credential)) {
+      if (loginMode === "funcionario") {
         const cleanCpf = credential.replace(/\D/g, "");
         if (cleanCpf.length !== 11) {
           toast({ title: "CPF inválido", description: "Digite os 11 dígitos do CPF.", variant: "destructive" });
@@ -128,7 +129,7 @@ export default function LoginPage() {
         });
         if (!lookupRes.ok) {
           const err = await lookupRes.json().catch(() => ({}));
-          throw new Error(err.message || "CPF não encontrado");
+          throw new Error(err.message || "CPF não encontrado no sistema");
         }
         const { email } = await lookupRes.json();
         emailToUse = email;
@@ -148,6 +149,12 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const switchMode = (mode: "funcionario" | "interno") => {
+    setLoginMode(mode);
+    setCredential("");
+    setPassword("");
   };
 
   const handleAcceptTerms = async () => {
@@ -363,12 +370,10 @@ export default function LoginPage() {
     );
   }
 
-  const isTypingCpf = isCpfInput(credential);
-
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-sm bg-neutral-900 border-neutral-800 p-8" data-testid="card-login">
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-6">
           <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
             {needsSetup ? (
               <UserPlus className="w-6 h-6 text-white/60" />
@@ -377,9 +382,11 @@ export default function LoginPage() {
             )}
           </div>
           <h1 className="text-xl font-bold text-white" data-testid="text-login-title">
-            {needsSetup ? "Configuração Inicial" : "Área Interna"}
+            {needsSetup ? "Configuração Inicial" : "Torres Vigilância"}
           </h1>
-          <p className="text-sm text-white/40 mt-1">Torres Vigilância Patrimonial</p>
+          <p className="text-sm text-white/40 mt-1">
+            {needsSetup ? "Torres Vigilância Patrimonial" : "Sistema Operacional"}
+          </p>
           {needsSetup && (
             <p className="text-xs text-white/30 mt-2 text-center max-w-[280px]">
               Crie a conta do administrador principal para começar a usar o sistema.
@@ -457,52 +464,95 @@ export default function LoginPage() {
             </Button>
           </form>
         ) : (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="text-xs text-white/40 mb-1.5 block">
-                {isTypingCpf ? "CPF" : "CPF ou E-mail"}
-              </label>
-              <Input
-                type="text"
-                inputMode={isTypingCpf ? "numeric" : "email"}
-                value={isTypingCpf ? formatCpf(credential) : credential}
-                onChange={(e) => setCredential(e.target.value)}
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/20"
-                placeholder="000.000.000-00 ou email"
-                required
-                data-testid="input-credential"
-              />
+          <>
+            <div className="flex rounded-lg bg-white/5 p-1 mb-6" data-testid="login-mode-tabs">
+              <button
+                type="button"
+                onClick={() => switchMode("funcionario")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-semibold transition-all ${
+                  loginMode === "funcionario"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-white/50 hover:text-white/80"
+                }`}
+                data-testid="tab-funcionario"
+              >
+                <User className="w-4 h-4" />
+                Funcionário
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode("interno")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-semibold transition-all ${
+                  loginMode === "interno"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-white/50 hover:text-white/80"
+                }`}
+                data-testid="tab-interno"
+              >
+                <Briefcase className="w-4 h-4" />
+                Gestão
+              </button>
             </div>
-            <div>
-              <label className="text-xs text-white/40 mb-1.5 block">Senha</label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-white/5 border-white/10 text-white placeholder:text-white/20 pr-10"
-                  placeholder="••••••"
-                  required
-                  data-testid="input-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="text-xs text-white/40 mb-1.5 block">
+                  {loginMode === "funcionario" ? "CPF" : "E-mail"}
+                </label>
+                {loginMode === "funcionario" ? (
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={formatCpf(credential)}
+                    onChange={(e) => setCredential(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20 text-lg tracking-wider"
+                    placeholder="000.000.000-00"
+                    required
+                    data-testid="input-cpf"
+                  />
+                ) : (
+                  <Input
+                    type="email"
+                    value={credential}
+                    onChange={(e) => setCredential(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20"
+                    placeholder="seu@email.com"
+                    required
+                    data-testid="input-email"
+                  />
+                )}
               </div>
-            </div>
-            <Button
-              type="submit"
-              className="w-full bg-white text-black hover:bg-white/90"
-              disabled={loading}
-              data-testid="button-login"
-            >
-              {loading ? "Entrando..." : "Entrar"}
-            </Button>
-          </form>
+              <div>
+                <label className="text-xs text-white/40 mb-1.5 block">Senha</label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20 pr-10"
+                    placeholder="••••••"
+                    required
+                    data-testid="input-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <Button
+                type="submit"
+                className="w-full bg-white text-black hover:bg-white/90 font-semibold"
+                disabled={loading}
+                data-testid="button-login"
+              >
+                {loading ? "Entrando..." : "Entrar"}
+              </Button>
+            </form>
+          </>
         )}
       </Card>
     </div>
