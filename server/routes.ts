@@ -1745,9 +1745,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           vHasTracker = true;
           const tcPositions = await truckscontrol.getCachedPositions();
           if (tcPositions.length > 0) {
-            const pos = vehicle.truckscontrolIdentifier
+            let pos = vehicle.truckscontrolIdentifier
               ? truckscontrol.findPositionByIdentifier(tcPositions, vehicle.truckscontrolIdentifier)
-              : truckscontrol.findPositionByPlate(tcPositions, vehicle.plate);
+              : null;
+            if (!pos) pos = truckscontrol.findPositionByPlate(tcPositions, vehicle.plate);
             if (pos) {
               trackerData = {
                 latitude: pos.latitude,
@@ -1840,9 +1841,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           hasTracker = true;
           const vehiclePositions = tcPositions.filter(p => p.deviceType === "vehicle");
           if (vehiclePositions.length > 0) {
-            const pos = v.truckscontrolIdentifier
+            let pos = v.truckscontrolIdentifier
               ? truckscontrol.findPositionByIdentifier(vehiclePositions, v.truckscontrolIdentifier)
-              : truckscontrol.findPositionByPlate(vehiclePositions, v.plate);
+              : null;
+            if (!pos) pos = truckscontrol.findPositionByPlate(vehiclePositions, v.plate);
             if (pos) {
               gotLiveData = true;
               trackerData = {

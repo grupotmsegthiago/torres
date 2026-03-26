@@ -613,7 +613,14 @@ export function findPositionByPlate(positions: TrucksControlPosition[], plate: s
 
 export function findPositionByIdentifier(positions: TrucksControlPosition[], identifier: string): TrucksControlPosition | null {
   const clean = identifier.trim().toUpperCase();
-  return positions.find((p) => p.identifier.trim().toUpperCase() === clean) || null;
+  const byIdent = positions.find((p) => p.identifier.trim().toUpperCase() === clean);
+  if (byIdent) return byIdent;
+  const asNum = parseInt(identifier);
+  if (!isNaN(asNum)) {
+    const byVeiID = positions.find((p) => p.veiID === asNum);
+    if (byVeiID) return byVeiID;
+  }
+  return null;
 }
 
 export type CommandType = "bloquear" | "desbloquear" | "sirene";
