@@ -140,7 +140,7 @@ function OperationNotificationsBar() {
                 <span className="text-sm font-semibold text-neutral-800 font-heading">
                   {isPending ? (isMirror ? "Espelhamento em Processo" : "Comando em Processo") : isSuccess ? (isMirror ? "Espelhamento Concluído" : "Comando Enviado") : (isMirror ? "Falha no Espelhamento" : "Falha no Comando")}
                 </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-neutral-900 text-white font-heading">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-neutral-900 text-white font-heading">
                   {n.plate}
                 </span>
               </div>
@@ -149,7 +149,7 @@ function OperationNotificationsBar() {
               </p>
             </div>
             {isPending && (
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 animate-pulse">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 animate-pulse">
                 Aguarde...
               </span>
             )}
@@ -672,13 +672,13 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       let infoContent: string;
       if (isSpy) {
         infoContent = `
-          <div style="font-family: system-ui; min-width: 200px; padding: 4px;">
-            <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; color: #7c3aed;">🔍 ${v.model}</div>
-            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.plate}</div>
-            ${v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
-            ${v.batteryLevel !== undefined && v.batteryLevel >= 0 ? `<div style="font-size: 12px;"><b>Bateria:</b> ${v.batteryLevel}%</div>` : ""}
-            <div style="font-size: 12px;"><b>Acoplado:</b> ${v.coupled ? "Sim ✅" : "Não ❌"}</div>
-            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
+          <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; min-width: 200px; padding: 4px;">
+            <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px; color: #7c3aed;">🔍 ${v.model}</div>
+            <div style="color: #666; font-size: 13px; margin-bottom: 6px;">${v.plate}</div>
+            ${v.tracker.speed !== undefined ? `<div style="font-size: 13px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
+            ${v.batteryLevel !== undefined && v.batteryLevel >= 0 ? `<div style="font-size: 13px;"><b>Bateria:</b> ${v.batteryLevel}%</div>` : ""}
+            <div style="font-size: 13px;"><b>Acoplado:</b> ${v.coupled ? "Sim ✅" : "Não ❌"}</div>
+            ${v.tracker.address ? `<div style="font-size: 13px; color: #888; margin-top: 4px;">${v.tracker.address}</div>` : ""}
           </div>
         `;
       } else {
@@ -688,19 +688,19 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _noSigT = getNoSignalTime(v);
         const _isLive = v.tracker.isLiveData !== false;
         infoContent = `
-          <div style="font-family: system-ui; min-width: 240px; padding: 4px;">
-            <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">${v.plate}</div>
-            <div style="color: #666; font-size: 12px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
-            ${!_isLive && _noSigT ? `<div style="font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT} — posição mantida</div>` : ""}
-            ${!_isLive && !_noSigT ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
-            ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 12px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
-            ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 12px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
-            ${_idleT ? `<div style="font-size: 12px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
-            ${_stopT && !v.tracker.ignition ? `<div style="font-size: 12px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
-            ${_ignT ? `<div style="font-size: 12px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
-            ${v.tracker.lastPositionTime ? `<div style="font-size: 11px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
-            ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
-            ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
+          <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; min-width: 240px; padding: 4px;">
+            <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">${v.plate}</div>
+            <div style="color: #666; font-size: 13px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
+            ${!_isLive && _noSigT ? `<div style="font-size: 13px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT} — posição mantida</div>` : ""}
+            ${!_isLive && !_noSigT ? `<div style="font-size: 13px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
+            ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 13px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
+            ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 13px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
+            ${_idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
+            ${_stopT && !v.tracker.ignition ? `<div style="font-size: 13px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
+            ${_ignT ? `<div style="font-size: 13px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
+            ${v.tracker.lastPositionTime ? `<div style="font-size: 13px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
+            ${v.tracker.address ? `<div style="font-size: 13px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
+            ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 13px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
           </div>
         `;
       }
@@ -895,7 +895,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
           {radiusActive && radiusCenter && (
             <div className="border-t border-neutral-100 px-3 py-2.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Raio</span>
+                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Raio</span>
                 <span className="text-sm font-bold text-blue-700 font-heading">{radiusKm} km</span>
               </div>
               <input
@@ -914,7 +914,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                     key={r}
                     type="button"
                     onClick={() => updateRadiusKm(r)}
-                    className={`text-[10px] px-2 py-0.5 rounded font-semibold transition-colors ${radiusKm === r ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}
+                    className={`text-xs px-2 py-0.5 rounded font-semibold transition-colors ${radiusKm === r ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}
                     data-testid={`button-map-radius-${r}`}
                   >
                     {r}km
@@ -922,13 +922,13 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 ))}
               </div>
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-blue-700 font-semibold">
+                <span className="text-xs text-blue-700 font-semibold">
                   {nearbyCount} {nearbyCount === 1 ? "viatura" : "viaturas"} no raio
                 </span>
                 <button
                   type="button"
                   onClick={clearRadius}
-                  className="text-[11px] text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 transition-colors"
+                  className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 transition-colors"
                   data-testid="button-map-clear-radius"
                 >
                   <X className="w-3 h-3" />
@@ -1214,7 +1214,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide text-neutral-300 border border-neutral-600 bg-neutral-800/50 hover:bg-neutral-700 hover:text-white transition-colors" data-testid="button-mirror">
+        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wide text-neutral-300 border border-neutral-600 bg-neutral-800/50 hover:bg-neutral-700 hover:text-white transition-colors" data-testid="button-mirror">
           <Copy className="w-3 h-3" />
           Gerenciadoras
         </button>
@@ -1243,9 +1243,9 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                       <p className="font-semibold text-sm">{g.name}</p>
                       {g.cnpj && <p className="text-xs text-neutral-500">{g.cnpj}</p>}
                       <div className="flex gap-2 mt-1 flex-wrap">
-                        {g.apiUrl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-mono truncate max-w-[160px]">{g.apiType?.toUpperCase()}</span>}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">CMD: {g.tcPermissaoComando ? "Sim" : "Não"}</span>
-                        {g.tcValidade && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700">Val: {g.tcValidade}</span>}
+                        {g.apiUrl && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-mono truncate max-w-[160px]">{g.apiType?.toUpperCase()}</span>}
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">CMD: {g.tcPermissaoComando ? "Sim" : "Não"}</span>
+                        {g.tcValidade && <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700">Val: {g.tcValidade}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2 shrink-0">
@@ -1271,7 +1271,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                 <p className="text-xs font-semibold text-neutral-700 mb-2">Espelhar veículo via TrucksControl</p>
                 <div className="flex gap-2 items-end flex-wrap">
                   <div className="flex-1 min-w-[120px]">
-                    <Label className="text-[10px] text-neutral-500">Veículo (veiID)</Label>
+                    <Label className="text-xs text-neutral-500">Veículo (veiID)</Label>
                     <Select value={espelharVeiID} onValueChange={setEspelharVeiID}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-espelhar-vei"><SelectValue placeholder="Veículo" /></SelectTrigger>
                       <SelectContent>
@@ -1282,7 +1282,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                     </Select>
                   </div>
                   <div className="flex-1 min-w-[120px]">
-                    <Label className="text-[10px] text-neutral-500">Gerenciadora</Label>
+                    <Label className="text-xs text-neutral-500">Gerenciadora</Label>
                     <Select value={espelharGerId} onValueChange={setEspelharGerId}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-espelhar-ger"><SelectValue placeholder="Gerenciadora" /></SelectTrigger>
                       <SelectContent>
@@ -1660,7 +1660,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                 >
                   <div>
                     <p className="text-sm font-medium">{g.name}</p>
-                    {g.cnpj && <p className="text-[11px] text-neutral-400">{g.cnpj}</p>}
+                    {g.cnpj && <p className="text-xs text-neutral-400">{g.cnpj}</p>}
                   </div>
                   <Send className="w-3.5 h-3.5 text-neutral-400" />
                 </button>
@@ -1700,7 +1700,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                   <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center"><XCircle className="w-4 h-4 text-red-500" /></div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">Bloquear</p>
-                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível remotamente"}</p>
+                    <p className="text-xs text-neutral-400">{cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível remotamente"}</p>
                   </div>
                   {commandMutation.isPending && cmdConfirm === "bloquear" && <Loader2 className="w-4 h-4 animate-spin text-red-500" />}
                 </button>
@@ -1713,7 +1713,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                   <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">Desbloquear</p>
-                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "desbloquear" ? "Clique novamente para confirmar" : "Liberar combustível"}</p>
+                    <p className="text-xs text-neutral-400">{cmdConfirm === "desbloquear" ? "Clique novamente para confirmar" : "Liberar combustível"}</p>
                   </div>
                   {commandMutation.isPending && cmdConfirm === "desbloquear" && <Loader2 className="w-4 h-4 animate-spin text-green-500" />}
                 </button>
@@ -1726,7 +1726,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                   <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center"><AlertTriangle className="w-4 h-4 text-amber-500" /></div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">Sirene / Alerta</p>
-                    <p className="text-[11px] text-neutral-400">{cmdConfirm === "sirene" ? "Clique novamente para confirmar" : "Ativar sirene do rastreador"}</p>
+                    <p className="text-xs text-neutral-400">{cmdConfirm === "sirene" ? "Clique novamente para confirmar" : "Ativar sirene do rastreador"}</p>
                   </div>
                   {commandMutation.isPending && cmdConfirm === "sirene" && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
                 </button>
@@ -1773,18 +1773,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           <table className="w-full" data-testid="table-vehicles-tracking">
             <thead>
               <tr className="font-heading" style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)" }}>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap w-10">#</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ignição</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">GPS</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Bateria</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Localização</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Última Pos.</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Tempo</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Agentes</th>
-                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">OS / Status</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Viatura</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-neutral-500 uppercase tracking-[0.12em] whitespace-nowrap">Ações</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap w-10">#</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Veículo</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ignição</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">GPS</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Bateria</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Localização</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Última Pos.</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Tempo</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -1816,7 +1816,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     data-testid={`row-vehicle-${v.id}`}
                   >
                     <td className="px-3 py-3 text-center">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-[11px] shadow-sm">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-xs shadow-sm">
                         {String(index + 1).padStart(2, "0")}
                       </span>
                     </td>
@@ -1828,27 +1828,27 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={`font-extrabold text-[13px] tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
+                            <span className={`font-extrabold text-sm tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
                               {v.plate}
                             </span>
                             {rodizio && (
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <span className="text-[10px] px-2 py-0.5 bg-red-600 text-white rounded font-bold uppercase animate-pulse shadow-sm">Rodízio SP</span>
+                                  <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded font-bold uppercase animate-pulse shadow-sm">Rodízio SP</span>
                                 </TooltipTrigger>
                                 <TooltipContent>Veículo em rodízio hoje em São Paulo (7h-10h / 17h-20h)</TooltipContent>
                               </Tooltip>
                             )}
                             {v.trackerType === "truckscontrol" && (
-                              <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-bold uppercase">TC</span>
+                              <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded font-bold uppercase">TC</span>
                             )}
                             {isOverSpeed && (
-                              <span className="text-[10px] px-2 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
+                              <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
                                 {v.tracker!.speed} km/h
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-neutral-500 mt-0.5 leading-tight" style={{ fontWeight: 400 }}>
+                          <p className="text-xs text-neutral-500 mt-0.5 leading-tight" style={{ fontWeight: 400 }}>
                             {v.brand} {v.model}
                             {v.year ? ` ${v.year}` : ""}
                             {v.color ? <span className="text-neutral-400"> · {v.color}</span> : ""}
@@ -1936,7 +1936,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               ) : (
                                 <BatteryWarning className="w-4 h-4 text-red-500 animate-pulse" />
                               )}
-                              <span className={`text-[9px] font-bold leading-none ${
+                              <span className={`text-xs font-bold leading-none ${
                                 v.tracker.batteryLevel >= 70 ? "text-green-600" :
                                 v.tracker.batteryLevel >= 40 ? "text-amber-600" :
                                 v.tracker.batteryLevel >= 15 ? "text-orange-600" : "text-red-600"
@@ -1963,7 +1963,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           data-testid={`link-map-${v.id}`}
                         >
                           <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-blue-500 group-hover:text-blue-700" : "text-neutral-300"}`} />
-                          <span className={`text-[11px] font-medium leading-tight truncate ${hasLocation ? "text-blue-600 group-hover:text-blue-800 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
+                          <span className={`text-xs font-medium leading-tight truncate ${hasLocation ? "text-blue-600 group-hover:text-blue-800 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
                             {v.tracker.address}
                           </span>
                         </button>
@@ -1971,21 +1971,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <button
                           type="button"
                           onClick={() => { if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                          className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 text-[11px] font-medium cursor-pointer"
+                          className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 text-xs font-medium cursor-pointer"
                           data-testid={`link-map-${v.id}`}
                         >
                           <MapPin className="w-3.5 h-3.5" />
                           Ver no mapa
                         </button>
                       ) : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
+                        <span className="text-neutral-300 text-xs">—</span>
                       )}
                     </td>
 
                     <td className="px-3 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full ${posInfo.dotColor}`} />
-                        <span className={`text-[11px] font-semibold ${posInfo.color}`}>{posInfo.text}</span>
+                        <span className={`text-xs font-semibold ${posInfo.color}`}>{posInfo.text}</span>
                       </div>
                     </td>
 
@@ -1996,7 +1996,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-gray-600 bg-gray-100 border border-gray-300 rounded-md px-2 py-0.5">
                                 <WifiOff className="w-3 h-3" />
-                                <span className="text-[11px] font-bold">{noSignalTime}</span>
+                                <span className="text-xs font-bold">{noSignalTime}</span>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Sem sinal há {noSignalTime} — última posição mantida</TooltipContent>
@@ -2006,7 +2006,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
                                 <Pause className="w-3 h-3" />
-                                <span className="text-[11px] font-bold">{idleTime}</span>
+                                <span className="text-xs font-bold">{idleTime}</span>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Motor ligado, veículo parado há {idleTime}</TooltipContent>
@@ -2016,7 +2016,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5">
                                 <XCircle className="w-3 h-3" />
-                                <span className="text-[11px] font-bold">{stoppedTime}</span>
+                                <span className="text-xs font-bold">{stoppedTime}</span>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Veículo desligado e parado há {stoppedTime}</TooltipContent>
@@ -2026,27 +2026,27 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-0.5">
                                 <Navigation className="w-3 h-3" />
-                                <span className="text-[11px] font-bold">{v.tracker?.speed ?? 0} km/h</span>
+                                <span className="text-xs font-bold">{v.tracker?.speed ?? 0} km/h</span>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Em movimento a {v.tracker?.speed ?? 0} km/h</TooltipContent>
                           </Tooltip>
                         ) : (
-                          <span className="text-neutral-300 text-[11px]">—</span>
+                          <span className="text-neutral-300 text-xs">—</span>
                         )}
                         {ignitionOnTime && (
                           <Tooltip>
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-1.5 py-0.5">
                                 <Key className="w-2.5 h-2.5" />
-                                <span className="text-[10px] font-semibold">{ignitionOnTime}</span>
+                                <span className="text-xs font-semibold">{ignitionOnTime}</span>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Motor ligado há {ignitionOnTime}</TooltipContent>
                           </Tooltip>
                         )}
                         {!isLive && v.tracker && (
-                          <span className="text-[9px] text-orange-500 font-semibold">sem sinal</span>
+                          <span className="text-xs text-orange-500 font-semibold">sem sinal</span>
                         )}
                       </div>
                     </td>
@@ -2057,7 +2057,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {v.activeOs.employee1 && (
                             <div className="flex items-center gap-1.5">
                               <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
-                              <span className="font-bold text-[12px] text-neutral-900 leading-tight">
+                              <span className="font-bold text-xs text-neutral-900 leading-tight">
                                 {v.activeOs.employee1.name}
                               </span>
                               {v.activeOs.employee1.phone && (
@@ -2072,7 +2072,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           )}
                           {v.activeOs.employee2 && (
                             <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
-                              <span className="font-semibold text-[11px] text-neutral-500 leading-tight">
+                              <span className="font-semibold text-xs text-neutral-500 leading-tight">
                                 {v.activeOs.employee2.name}
                               </span>
                               {v.activeOs.employee2.phone && (
@@ -2085,10 +2085,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </Link>
                             </div>
                           )}
-                          {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-[11px]">Sem agente</span>}
+                          {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-xs">Sem agente</span>}
                         </div>
                       ) : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
+                        <span className="text-neutral-300 text-xs">—</span>
                       )}
                     </td>
 
@@ -2096,7 +2096,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       {v.activeOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-vehicle-${v.id}`}>
+                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-xs hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-vehicle-${v.id}`}>
                               {v.activeOs.osNumber}
                             </Link>
                             {hasLocation && (
@@ -2127,7 +2127,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {v.activeOs.clientName}
                           </p>
                           {v.activeOs.scheduledDate && (
-                            <p className="text-[10px] text-neutral-400 font-medium">
+                            <p className="text-xs text-neutral-400 font-medium">
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
@@ -2135,7 +2135,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-[11px] hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-scheduled-${v.id}`}>
+                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-xs hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-scheduled-${v.id}`}>
                               {v.scheduledOs.osNumber}
                             </Link>
                             <span className="text-xs px-2 py-0.5 rounded font-bold border bg-slate-50 text-slate-600 border-slate-200">
@@ -2149,7 +2149,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           )}
                         </div>
                       ) : (
-                        <span className="text-neutral-300 text-[11px]">—</span>
+                        <span className="text-neutral-300 text-xs">—</span>
                       )}
                     </td>
 
@@ -2158,7 +2158,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         const vStatus = getViaturaStatus(v);
                         const VIcon = vStatus.icon;
                         return (
-                          <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
                             <VIcon className="w-3 h-3" />
                             {vStatus.label}
                           </span>
@@ -2350,10 +2350,10 @@ function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-extrabold text-neutral-900 tracking-wide">{v.plate}</span>
+                      <span className="text-sm font-extrabold text-neutral-900 tracking-wide">{v.plate}</span>
                       <div className={`w-2 h-2 rounded-full ${dotColor}`} />
                     </div>
-                    <p className="text-[10px] text-neutral-500 truncate">{v.brand} {v.model}</p>
+                    <p className="text-xs text-neutral-500 truncate">{v.brand} {v.model}</p>
                     <p className="text-xs font-bold text-blue-600 mt-0.5">
                       {v.distance < 1 ? `${Math.round(v.distance * 1000)} m` : `${v.distance.toFixed(1)} km`}
                     </p>
@@ -2425,7 +2425,7 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
               >
                 <Car className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-neutral-900 truncate">{v.plate}</p>
+                  <p className="text-xs font-bold text-neutral-900 truncate">{v.plate}</p>
                   <p className="text-xs text-neutral-500 font-medium">{v.distance < 1 ? `${Math.round(v.distance * 1000)}m` : `${v.distance.toFixed(1)}km`}</p>
                 </div>
               </button>
@@ -2527,21 +2527,21 @@ export default function OperationalGridPage() {
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Truck className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{onlyVehicles.length}</p>
               </div>
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Satellite className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
               </div>
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{withPositionCount}</p>
               </div>
@@ -2549,7 +2549,7 @@ export default function OperationalGridPage() {
                 <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3">
                   <div className="flex items-center gap-2 mb-1">
                     <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
+                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
                   </div>
                   <p className="text-2xl font-bold text-amber-300 font-heading">{noSignalCount}</p>
                 </div>
@@ -2557,7 +2557,7 @@ export default function OperationalGridPage() {
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Navigation className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{activeOsCount}</p>
               </div>
