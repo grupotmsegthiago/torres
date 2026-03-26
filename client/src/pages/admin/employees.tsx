@@ -824,7 +824,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </div>
       )}
 
-      <form onSubmit={(e) => {
+      <form onSubmit={async (e) => {
         e.preventDefault();
         if (form.status === "bloqueado_definitivo") {
           if (!form.blockType) {
@@ -840,6 +840,20 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         if (submitData.status !== "bloqueado_definitivo") {
           submitData.blockType = "";
           submitData.blockReason = "";
+        }
+        if (submitData.address && (!submitData.addressLat || !submitData.addressLng) && window.google?.maps?.Geocoder) {
+          try {
+            const geocoder = new window.google.maps.Geocoder();
+            const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+              geocoder.geocode({ address: submitData.address, region: "br" }, (results, status) => {
+                if (status === "OK" && results && results.length > 0) resolve(results);
+                else reject(new Error(status));
+              });
+            });
+            const loc = result[0].geometry.location;
+            submitData.addressLat = loc.lat();
+            submitData.addressLng = loc.lng();
+          } catch {}
         }
         mutation.mutate(submitData);
       }} className="space-y-6">
