@@ -454,6 +454,14 @@ function getIdleTime(v: TrackedVehicle): string | null {
   return formatTimeDiff(v.tracker.lastPositionTime);
 }
 
+function getIdleMinutes(v: TrackedVehicle): number {
+  if (!v.tracker || v.tracker.ignition !== true) return 0;
+  if ((v.tracker.speed ?? 0) > 2) return 0;
+  const since = v.tracker.stoppedSince || v.tracker.lastPositionTime;
+  if (!since) return 0;
+  return Math.floor((Date.now() - new Date(since).getTime()) / 60000);
+}
+
 function getIgnitionOnTime(v: TrackedVehicle): string | null {
   if (!v.tracker || v.tracker.ignition !== true) return null;
   if (v.tracker.ignitionOnSince) return formatTimeDiff(v.tracker.ignitionOnSince);
@@ -683,6 +691,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         `;
       } else {
         const _idleT = getIdleTime(v);
+        const _idleMin = getIdleMinutes(v);
         const _ignT = getIgnitionOnTime(v);
         const _stopT = getStoppedTime(v);
         const _noSigT = getNoSignalTime(v);
@@ -695,7 +704,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             ${!_isLive && !_noSigT ? `<div style="font-size: 13px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
             ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 13px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
             ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 13px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
-            ${_idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
+            ${_idleMin >= 5 ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 4px 8px; border-radius: 4px; border: 1px solid #fca5a5; margin-top: 4px;">⚠ ALERTA: Parado c/ motor ligado há ${_idleT}</div>` : _idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
             ${_stopT && !v.tracker.ignition ? `<div style="font-size: 13px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
             ${_ignT ? `<div style="font-size: 13px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
             ${v.tracker.lastPositionTime ? `<div style="font-size: 13px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
@@ -1796,10 +1805,12 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   : null;
                 const rodizio = isRodizioSP(v.plate);
                 const idleTime = getIdleTime(v);
+                const idleMin = getIdleMinutes(v);
                 const ignitionOnTime = getIgnitionOnTime(v);
                 const stoppedTime = getStoppedTime(v);
                 const noSignalTime = getNoSignalTime(v);
                 const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 120;
+                const isIdleAlert = idleMin >= 5;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
                 const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
@@ -1810,6 +1821,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     key={v.id}
                     className={`transition-colors ${
                       isOverSpeed ? "bg-red-50/80 hover:bg-red-50" :
+                      isIdleAlert ? "bg-amber-50/60 hover:bg-amber-50" :
                       rodizio ? "bg-red-50/30 hover:bg-red-50/50" :
                       index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"
                     }`}
@@ -2004,12 +2016,12 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         ) : idleTime ? (
                           <Tooltip>
                             <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5">
-                                <Pause className="w-3 h-3" />
+                              <div className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 ${isIdleAlert ? "text-red-700 bg-red-50 border border-red-300 animate-pulse" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
+                                {isIdleAlert ? <AlertTriangle className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
                                 <span className="text-xs font-bold">{idleTime}</span>
                               </div>
                             </TooltipTrigger>
-                            <TooltipContent>Motor ligado, veículo parado há {idleTime}</TooltipContent>
+                            <TooltipContent>{isIdleAlert ? `⚠ ALERTA: Motor ligado e parado há ${idleTime} (>${idleMin}min)` : `Motor ligado, veículo parado há ${idleTime}`}</TooltipContent>
                           </Tooltip>
                         ) : stoppedTime && !isIgnOn ? (
                           <Tooltip>
