@@ -149,6 +149,13 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS full_tank BOOLEAN DEFAULT true`);
     await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS receipt_photo TEXT`);
 
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lat REAL`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lng REAL`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`);
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`);
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS gerenciadoras (
         id SERIAL PRIMARY KEY,

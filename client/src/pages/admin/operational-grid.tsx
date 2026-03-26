@@ -210,8 +210,12 @@ interface TrackedVehicle {
     scheduledDate?: string | null;
     clientName: string;
     priority: string;
-    employee1: { id: number; name: string; phone: string | null } | null;
-    employee2: { id: number; name: string; phone: string | null } | null;
+    employee1: { id: number; name: string; phone: string | null; addressLat?: number | null; addressLng?: number | null } | null;
+    employee2: { id: number; name: string; phone: string | null; addressLat?: number | null; addressLng?: number | null } | null;
+    originLat?: number | null;
+    originLng?: number | null;
+    destinationLat?: number | null;
+    destinationLng?: number | null;
   } | null;
   scheduledOs: {
     id: number;
@@ -490,6 +494,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const markersRef = useRef<any[]>([]);
   const carImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const circleRef = useRef<any>(null);
+  const geofenceCirclesRef = useRef<any[]>([]);
   const centerMarkerRef = useRef<any>(null);
   const autocompleteRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -727,6 +732,62 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
       (marker as any)._vehicleId = v.id;
       markersRef.current.push(marker);
+    });
+
+    geofenceCirclesRef.current.forEach((c) => c.setMap(null));
+    geofenceCirclesRef.current = [];
+
+    const GEOFENCE_RADIUS = 1000;
+    const geofenceColors = [
+      { stroke: "#2563eb", fill: "#2563eb", label: "Origem" },
+      { stroke: "#dc2626", fill: "#dc2626", label: "Destino" },
+      { stroke: "#7c3aed", fill: "#7c3aed", label: "Agente 1" },
+      { stroke: "#059669", fill: "#059669", label: "Agente 2" },
+    ];
+
+    vehicles.forEach((v) => {
+      if (!v.activeOs || v.deviceType === "spy") return;
+      const os = v.activeOs;
+
+      const points: { lat: number | null | undefined; lng: number | null | undefined; colorIdx: number }[] = [
+        { lat: os.originLat, lng: os.originLng, colorIdx: 0 },
+        { lat: os.destinationLat, lng: os.destinationLng, colorIdx: 1 },
+        { lat: os.employee1?.addressLat, lng: os.employee1?.addressLng, colorIdx: 2 },
+        { lat: os.employee2?.addressLat, lng: os.employee2?.addressLng, colorIdx: 3 },
+      ];
+
+      points.forEach((pt) => {
+        if (pt.lat == null || pt.lng == null) return;
+        const color = geofenceColors[pt.colorIdx];
+        const circle = new window.google.maps.Circle({
+          center: { lat: pt.lat, lng: pt.lng },
+          radius: GEOFENCE_RADIUS,
+          map: mapInstanceRef.current,
+          strokeColor: color.stroke,
+          strokeOpacity: 0.6,
+          strokeWeight: 2,
+          fillColor: color.fill,
+          fillOpacity: 0.08,
+          clickable: false,
+        });
+        geofenceCirclesRef.current.push(circle);
+
+        const labelMarker = new window.google.maps.Marker({
+          position: { lat: pt.lat, lng: pt.lng },
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: color.fill,
+            fillOpacity: 0.9,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: `${color.label} - ${os.osNumber}`,
+          clickable: false,
+        });
+        geofenceCirclesRef.current.push(labelMarker);
+      });
     });
 
     if (hasPositions && !radiusActive) {

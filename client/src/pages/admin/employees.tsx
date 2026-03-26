@@ -6,6 +6,7 @@ import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -477,6 +478,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     phone: employee?.phone || "",
     email: employee?.email || "",
     address: employee?.address || "",
+    addressLat: (employee as any)?.addressLat || null,
+    addressLng: (employee as any)?.addressLng || null,
     birthDate: employee?.birthDate || "",
     motherName: employee?.motherName || "",
     fatherName: employee?.fatherName || "",
@@ -991,7 +994,14 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Endereço</label>
-              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-employee-address" />
+              <PlacesAutocomplete
+                value={form.address}
+                onChange={(val) => setForm({ ...form, address: val })}
+                onPlaceSelect={(p) => setForm((prev) => ({ ...prev, address: p.address, addressLat: p.lat, addressLng: p.lng }))}
+                placeholder="Buscar endereço..."
+                theme="light"
+                data-testid="input-employee-address"
+              />
             </div>
           </div>
         </fieldset>

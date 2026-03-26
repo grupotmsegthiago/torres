@@ -95,6 +95,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [routeDestination, setRouteDestination] = useState("");
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
+  const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
   const nowLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
@@ -111,7 +113,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     kitId: order?.kitId || null,
     route: (order as any)?.route || "",
     origin: (order as any)?.origin || "",
+    originLat: (order as any)?.originLat || null,
+    originLng: (order as any)?.originLng || null,
     destination: (order as any)?.destination || "",
+    destinationLat: (order as any)?.destinationLat || null,
+    destinationLng: (order as any)?.destinationLng || null,
     requesterName: (order as any)?.requesterName || "",
     escortedDriverName: (order as any)?.escortedDriverName || "",
     escortedDriverPhone: (order as any)?.escortedDriverPhone || "",
@@ -130,7 +136,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const addRoute = async () => {
     if (!routeOrigin.trim() || !routeDestination.trim()) return;
     const routeStr = `${routeOrigin.trim()} → ${routeDestination.trim()}`;
-    setForm({ ...form, route: routeStr, origin: routeOrigin.trim(), destination: routeDestination.trim() });
+    setForm({
+      ...form,
+      route: routeStr,
+      origin: routeOrigin.trim(),
+      originLat: originCoords?.lat || null,
+      originLng: originCoords?.lng || null,
+      destination: routeDestination.trim(),
+      destinationLat: destCoords?.lat || null,
+      destinationLng: destCoords?.lng || null,
+    });
     setShowRouteForm(false);
     setCalculatingRoute(true);
     try {
@@ -357,7 +372,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", destination: "" }); setRouteInfo(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }); setRouteInfo(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>
@@ -384,11 +399,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <div className="flex-1">
-                        <PlacesAutocomplete value={routeOrigin} onChange={setRouteOrigin} placeholder="Origem (ex: São Paulo, SP)" className="text-sm" theme="light" data-testid="input-route-origin" />
+                        <PlacesAutocomplete value={routeOrigin} onChange={setRouteOrigin} onPlaceSelect={(p) => setOriginCoords({ lat: p.lat, lng: p.lng })} placeholder="Origem (ex: São Paulo, SP)" className="text-sm" theme="light" data-testid="input-route-origin" />
                       </div>
                       <span className="text-neutral-400 text-xs font-bold shrink-0">→</span>
                       <div className="flex-1">
-                        <PlacesAutocomplete value={routeDestination} onChange={setRouteDestination} placeholder="Destino (ex: Rio de Janeiro, RJ)" className="text-sm" theme="light" data-testid="input-route-destination" />
+                        <PlacesAutocomplete value={routeDestination} onChange={setRouteDestination} onPlaceSelect={(p) => setDestCoords({ lat: p.lat, lng: p.lng })} placeholder="Destino (ex: Rio de Janeiro, RJ)" className="text-sm" theme="light" data-testid="input-route-destination" />
                       </div>
                     </div>
                     <div className="flex gap-2">

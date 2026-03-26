@@ -53,9 +53,16 @@ interface Suggestion {
   secondaryText: string;
 }
 
+export interface PlaceResult {
+  address: string;
+  lat: number;
+  lng: number;
+}
+
 interface PlacesAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
+  onPlaceSelect?: (place: PlaceResult) => void;
   placeholder?: string;
   className?: string;
   id?: string;
@@ -67,6 +74,7 @@ interface PlacesAutocompleteProps {
 export function PlacesAutocomplete({
   value,
   onChange,
+  onPlaceSelect,
   placeholder,
   className,
   id,
@@ -146,7 +154,17 @@ export function PlacesAutocomplete({
     setSuggestions([]);
     setShowDropdown(false);
     sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
-  }, [onChange]);
+
+    if (onPlaceSelect && suggestion.placeId && window.google?.maps) {
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ placeId: suggestion.placeId }, (results: any, status: string) => {
+        if (status === "OK" && results?.[0]?.geometry?.location) {
+          const loc = results[0].geometry.location;
+          onPlaceSelect({ address: suggestion.text, lat: loc.lat(), lng: loc.lng() });
+        }
+      });
+    }
+  }, [onChange, onPlaceSelect]);
 
   return (
     <div ref={wrapperRef} className="relative w-full">
