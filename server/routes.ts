@@ -2440,10 +2440,28 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!user.employeeId) return res.json(null);
 
     const orders = await storage.getServiceOrdersByEmployee(user.employeeId);
-    const active = orders.find(
+    const allActive = orders.filter(
       (o) => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
+
+    const emAndamento = allActive.find(o => o.status === "em_andamento");
+    const agendadas = allActive
+      .filter(o => o.status === "agendada")
+      .sort((a, b) => {
+        const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
+        const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
+        return da - db;
+      });
+    const active = emAndamento || agendadas[0];
     if (!active) return res.json(null);
+
+    const scheduled = allActive
+      .filter(o => o.id !== active.id && o.status === "agendada")
+      .sort((a, b) => {
+        const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
+        const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
+        return da - db;
+      });
 
     const [client, vehicle, emp1, emp2] = await Promise.all([
       storage.getClient(active.clientId),
@@ -2454,6 +2472,24 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const photos = await storage.getMissionPhotosByOS(active.id);
     const completedSteps = photos.map((p) => p.step);
+
+    const scheduledMissions = await Promise.all(
+      scheduled.map(async (o) => {
+        const c = await storage.getClient(o.clientId);
+        return {
+          id: o.id,
+          osNumber: o.osNumber,
+          clientName: c?.name || "—",
+          scheduledDate: o.scheduledDate,
+          route: o.route || null,
+          origin: o.origin || null,
+          destination: o.destination || null,
+          status: o.status,
+          missionStatus: o.missionStatus,
+          priority: o.priority,
+        };
+      })
+    );
 
     res.json({
       ...active,
@@ -2472,7 +2508,42 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       origin: active.origin || null,
       destination: active.destination || null,
       route: active.route || null,
+      scheduledMissions,
     });
+  });
+
+  app.get("/api/mission/scheduled", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.json([]);
+
+    const orders = await storage.getServiceOrdersByEmployee(user.employeeId);
+    const scheduled = orders
+      .filter((o) => (o.status === "agendada" || o.status === "aberta") && o.missionStatus !== "encerrada")
+      .sort((a, b) => {
+        const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
+        const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
+        return da - db;
+      });
+
+    const result = await Promise.all(
+      scheduled.map(async (o) => {
+        const c = await storage.getClient(o.clientId);
+        return {
+          id: o.id,
+          osNumber: o.osNumber,
+          clientName: c?.name || "—",
+          scheduledDate: o.scheduledDate,
+          route: o.route || null,
+          origin: o.origin || null,
+          destination: o.destination || null,
+          status: o.status,
+          missionStatus: o.missionStatus,
+          priority: o.priority,
+        };
+      })
+    );
+
+    res.json(result);
   });
 
   app.get("/api/mission/status/:serviceOrderId", requireAuth, async (req, res) => {
@@ -2666,6 +2737,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const { serviceOrderId } = req.body;
     const so = await storage.getServiceOrder(serviceOrderId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    if (so.status !== "em_andamento") {
+      return res.status(403).json({ message: "OS não está em andamento. Aguarde a liberação pela administração." });
+    }
 
     const isAssigned =
       so.assignedEmployeeId === user.employeeId ||

@@ -77,6 +77,19 @@ type StepLogEntry = {
   nextStep: string;
 };
 
+type ScheduledMissionInfo = {
+  id: number;
+  osNumber: string;
+  clientName: string;
+  scheduledDate: string | null;
+  route: string | null;
+  origin: string | null;
+  destination: string | null;
+  status: string;
+  missionStatus: string | null;
+  priority: string | null;
+};
+
 type ActiveMission = {
   id: number;
   osNumber: string;
@@ -93,6 +106,11 @@ type ActiveMission = {
   escortedDriverName?: string | null;
   escortedVehiclePlate?: string | null;
   missionStartedAt?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  route?: string | null;
+  status?: string;
+  scheduledMissions?: ScheduledMissionInfo[];
 };
 
 function compressImage(file: File, maxDim = 1024, quality = 0.7): Promise<string> {
@@ -404,6 +422,54 @@ function MissionTimeline({ stepLogs }: { stepLogs: StepLogEntry[] }) {
   );
 }
 
+function ScheduledMissionsList({ missions }: { missions: ScheduledMissionInfo[] }) {
+  if (!missions.length) return null;
+
+  return (
+    <div className="w-full mt-2">
+      <h3 className="text-xs font-black text-muted-foreground uppercase tracking-wider mb-3 text-left">
+        Próximas Missões
+      </h3>
+      <div className="space-y-3">
+        {missions.map((m) => {
+          const dateStr = m.scheduledDate
+            ? new Date(m.scheduledDate).toLocaleDateString("pt-BR", {
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit"
+              })
+            : "Sem data";
+          return (
+            <div key={m.id} className="bg-card border border-border rounded-xl p-4 text-left" data-testid={`scheduled-mission-${m.id}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-black text-foreground">{m.osNumber}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                  Agendada
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-1">
+                <span className="font-semibold text-foreground">Cliente:</span> {m.clientName}
+              </p>
+              <p className="text-xs text-muted-foreground mb-1">
+                <span className="font-semibold text-foreground">Data:</span> {dateStr}
+              </p>
+              {m.origin && (
+                <p className="text-xs text-muted-foreground mb-1">
+                  <span className="font-semibold text-foreground">Origem:</span> {m.origin}
+                </p>
+              )}
+              {m.destination && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">Destino:</span> {m.destination}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StepIcon({ stepKey }: { stepKey: string }) {
   const iconClass = "w-8 h-8 text-muted-foreground mx-auto mb-1";
   switch (stepKey) {
@@ -594,33 +660,70 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
 
   if (mission.missionStatus === "missao_paga") {
     const isAdmin = user?.role === "admin" || user?.role === "diretoria";
+    const isAgendada = mission.status === "agendada" || mission.status === "aberta";
+    const scheduledDateFormatted = mission.scheduledDate
+      ? new Date(mission.scheduledDate).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
+      : null;
+
     return (
       <div className="min-h-[80vh] bg-gradient-to-b from-card to-muted relative rounded-2xl overflow-hidden border border-border no-print-zone">
         <ShieldWatermark />
         <div className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] p-6 text-center">
-          <div className="w-20 h-20 rounded-full bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center mb-4">
-            <DollarSign className="w-10 h-10 text-emerald-600" />
-          </div>
-          <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-awaiting-payment">
-            Aguardando Pagamento
-          </h2>
-          <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
-            {isAdmin
-              ? "Confirme o recebimento do pagamento para liberar a missão aos agentes."
-              : "Aguarde a confirmação de pagamento pela administração."}
-          </p>
+          {isAgendada ? (
+            <>
+              <div className="w-20 h-20 rounded-full bg-blue-100 border-2 border-blue-300 flex items-center justify-center mb-4">
+                <Clock className="w-10 h-10 text-blue-600" />
+              </div>
+              <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-mission-scheduled">
+                Missão Agendada
+              </h2>
+              {scheduledDateFormatted && (
+                <p className="text-sm font-semibold text-blue-600 mb-4">
+                  {scheduledDateFormatted}
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
+                {isAdmin
+                  ? "Confirme o pagamento para liberar o início da missão."
+                  : "Sua próxima missão está agendada. Aguarde a liberação pela administração."}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="w-20 h-20 rounded-full bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center mb-4">
+                <DollarSign className="w-10 h-10 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-awaiting-payment">
+                Aguardando Pagamento
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
+                {isAdmin
+                  ? "Confirme o recebimento do pagamento para liberar a missão aos agentes."
+                  : "Aguarde a confirmação de pagamento pela administração."}
+              </p>
+            </>
+          )}
 
-          <div className="bg-muted/60 rounded-xl border border-border p-4 w-full mb-6 space-y-2">
+          <div className="bg-muted/60 rounded-xl border border-border p-4 w-full mb-4 space-y-2 text-left">
             <p className="text-sm text-foreground"><span className="font-bold">OS:</span> {mission.osNumber}</p>
             <p className="text-sm text-foreground"><span className="font-bold">Cliente:</span> {mission.clientName}</p>
             <p className="text-sm text-foreground"><span className="font-bold">Viatura:</span> {mission.vehiclePlate}</p>
+            {mission.origin && (
+              <p className="text-sm text-foreground"><span className="font-bold">Origem:</span> {mission.origin}</p>
+            )}
+            {mission.destination && (
+              <p className="text-sm text-foreground"><span className="font-bold">Destino:</span> {mission.destination}</p>
+            )}
+            {mission.route && (
+              <p className="text-sm text-foreground"><span className="font-bold">Rota:</span> {mission.route}</p>
+            )}
           </div>
 
           {isAdmin ? (
             <button
               onClick={() => confirmPaymentMutation.mutate()}
               disabled={confirmPaymentMutation.isPending}
-              className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base uppercase tracking-wider shadow-lg transition-all disabled:opacity-50"
+              className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base uppercase tracking-wider shadow-lg transition-all disabled:opacity-50 mb-4"
               data-testid="button-confirm-payment"
             >
               {confirmPaymentMutation.isPending
@@ -628,10 +731,14 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
                 : "CONFIRMAR PAGAMENTO"}
             </button>
           ) : (
-            <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="flex items-center gap-2 text-muted-foreground mb-4">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span className="text-sm font-medium">Atualizando automaticamente...</span>
             </div>
+          )}
+
+          {mission.scheduledMissions && mission.scheduledMissions.length > 0 && (
+            <ScheduledMissionsList missions={mission.scheduledMissions} />
           )}
         </div>
       </div>
@@ -866,6 +973,14 @@ export default function MissionPage() {
     refetchInterval: 5000,
   });
 
+  const { data: scheduledMissions } = useQuery<ScheduledMissionInfo[]>({
+    queryKey: ["/api/mission/scheduled"],
+    refetchInterval: 30000,
+    enabled: !mission,
+  });
+
+  const hasScheduled = scheduledMissions && scheduledMissions.length > 0;
+
   return (
     <AdminLayout>
       <div className="max-w-md mx-auto no-print-zone" data-testid="mission-page">
@@ -891,15 +1006,33 @@ export default function MissionPage() {
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] mb-6">
                 Escolta Armada
               </p>
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4 border border-border">
-                <Shield className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <h2 className="text-lg font-bold text-foreground mb-1" data-testid="text-no-mission">
-                Nenhuma missão ativa
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Você não possui nenhuma ordem de serviço em andamento.
-              </p>
+              {!hasScheduled && (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4 border border-border">
+                    <Shield className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h2 className="text-lg font-bold text-foreground mb-1" data-testid="text-no-mission">
+                    Nenhuma missão ativa
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Você não possui nenhuma ordem de serviço em andamento.
+                  </p>
+                </>
+              )}
+              {hasScheduled && (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-4 border border-blue-200">
+                    <Clock className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <h2 className="text-lg font-bold text-foreground mb-1" data-testid="text-has-scheduled">
+                    Missões Agendadas
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Você possui {scheduledMissions.length} {scheduledMissions.length === 1 ? "missão agendada" : "missões agendadas"}.
+                  </p>
+                  <ScheduledMissionsList missions={scheduledMissions} />
+                </>
+              )}
             </div>
           </div>
         )}
