@@ -1101,10 +1101,16 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
       return r.json();
     },
     onSuccess: (data) => {
-      toast({ title: data.success ? "Espelhamento enviado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
-      if (data.success) onOpenChange(false);
+      if (data.success) {
+        toast({ title: "Espelhamento enviado", description: data.message });
+        setLastError(null);
+        onOpenChange(false);
+      } else {
+        setLastError(data.message || "Erro desconhecido");
+        toast({ title: "Falha no espelhamento", description: data.message, variant: "destructive" });
+      }
     },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => { setLastError(err.message); toast({ title: "Erro", description: err.message, variant: "destructive" }); },
   });
 
   const espelharTcMutation = useMutation({
@@ -1127,11 +1133,23 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
       return r.json();
     },
     onSuccess: (data) => {
-      toast({ title: data.success ? "Espelhamento TC enviado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
-      if (data.success) onOpenChange(false);
+      if (data.success) {
+        toast({ title: "Espelhamento TC enviado", description: data.message });
+        setLastError(null);
+        onOpenChange(false);
+      } else {
+        setLastError(data.message || "Erro desconhecido");
+        toast({ title: "Falha no espelhamento", description: data.message, variant: "destructive" });
+      }
     },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => { setLastError(err.message); toast({ title: "Erro", description: err.message, variant: "destructive" }); },
   });
+
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setLastError(null);
+  }, [open]);
 
   if (!vehicle) return null;
 
@@ -1139,14 +1157,27 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]" data-testid="dialog-mirror-vehicle">
+      <DialogContent className="sm:max-w-[420px]" data-testid="dialog-mirror-vehicle">
         <DialogHeader>
           <DialogTitle className="text-base font-bold">Espelhar — {vehicle.plate}</DialogTitle>
           <DialogDescription className="text-sm text-neutral-500">
             Enviar posição deste veículo para a gerenciadora.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 mt-2">
+
+        {lastError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-1" data-testid="mirror-error-detail">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-red-700">Falha no espelhamento</p>
+                <p className="text-xs text-red-600 mt-0.5">{lastError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2 mt-1">
           {activeGerenciadoras.length === 0 ? (
             <p className="text-sm text-neutral-500 text-center py-4">Nenhuma gerenciadora cadastrada.</p>
           ) : (
@@ -1162,6 +1193,7 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
                   className="h-8 w-8"
                   disabled={mirrorMutation.isPending || espelharTcMutation.isPending}
                   onClick={() => {
+                    setLastError(null);
                     if (vehicle.trackerType === "truckscontrol" && vehicle.truckscontrolIdentifier && g.cnpj) {
                       espelharTcMutation.mutate({ gerenciadora: g });
                     } else if (g.apiUrl) {
@@ -1181,6 +1213,10 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
               </div>
             ))
           )}
+        </div>
+
+        <div className="text-[10px] text-neutral-400 mt-2 border-t pt-2">
+          <p><b>Veículo:</b> {vehicle.plate} | <b>TC ID:</b> {vehicle.truckscontrolIdentifier || "N/A"} | <b>Tipo:</b> {vehicle.trackerType || "N/A"}</p>
         </div>
       </DialogContent>
     </Dialog>

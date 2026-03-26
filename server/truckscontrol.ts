@@ -879,13 +879,23 @@ export async function createEspelhamento(
 
   const xml = `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${id}</id><veiID>${veiID}</veiID><cmd>${cmd}</cmd><IE>${IE}</IE><TIE>${TIE}</TIE><validade>${validade}</validade><possocancelar>${possoCancelar}</possocancelar><comandoexclusivo>${comandoExclusivo}</comandoexclusivo><compartilhardados>${compartilharDados}</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`;
 
+  console.log(`[truckscontrol] Espelhamento REQUEST: veiID=${veiID}, CNPJ=${cnpjClean}, cmd=${cmd}, IE=${IE}, TIE=${TIE}, validade=${validade}, possoCancelar=${possoCancelar}, comandoExclusivo=${comandoExclusivo}, compartilharDados=${compartilharDados}`);
+
   try {
     const response = await postXml(xml);
-    console.log(`[truckscontrol] Espelhamento veiID=${veiID} -> CNPJ=${cnpjClean}: ${response.substring(0, 300)}`);
+    console.log(`[truckscontrol] Espelhamento RESPONSE veiID=${veiID}: ${response.substring(0, 500)}`);
 
     if (response.includes("<ErrorRequest>") || response.includes("<erro>") || response.includes("<Erro>")) {
-      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
-      return { success: false, message: erroMsg || "Erro desconhecido", id, rawResponse: response.substring(0, 500) };
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro") || "Erro desconhecido";
+      const codigoErro = parseXmlValue(response, "codigo") || "?";
+
+      const diagnostics: string[] = [];
+      if (codigoErro === "2") {
+        diagnostics.push("Possíveis causas: CNPJ não cadastrado no TrucksControl, veículo já espelhado para este CNPJ, ou permissão insuficiente.");
+      }
+
+      const detailMsg = `Código ${codigoErro}: ${erroMsg}${diagnostics.length ? ` — ${diagnostics.join(" ")}` : ""}`;
+      return { success: false, message: detailMsg, id, rawResponse: response.substring(0, 500) };
     }
 
     const statusVal = parseInt(parseXmlValue(response, "status") || "0");
