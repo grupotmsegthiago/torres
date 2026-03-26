@@ -176,12 +176,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       if (order) {
         await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
       } else {
+        payload.missionStatus = "missao_paga";
         await apiRequest("POST", "/api/service-orders", payload);
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
       toast({ title: order ? "OS atualizada" : "OS criada" });
       onClose();
     },
@@ -250,25 +253,35 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const AgentSection = ({ emp, label }: { emp: Employee | null | undefined; label: string }) => {
     if (!emp) return null;
+    const photoUrl = (emp as any).photoUrl;
     return (
       <div className="border border-neutral-200 rounded-lg overflow-hidden" data-testid={`section-agent-${label.toLowerCase()}`}>
         <SectionHeader icon={User} title={`Agente: ${emp.name.split(" ")[0].toUpperCase()}`} />
-        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
-          <InfoCell label="Nome" className="md:col-span-2 border-r border-neutral-100">{emp.name}</InfoCell>
-          <InfoCell label="CPF" className="border-r border-neutral-100">{emp.cpf || "—"}</InfoCell>
-          <InfoCell label="RG">{emp.rg || "—"}</InfoCell>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
-          <InfoCell label="Contato" className="border-r border-neutral-100">{emp.phone || "—"}</InfoCell>
-          <InfoCell label="CNH" className="border-r border-neutral-100">{emp.cnhNumber || "—"}</InfoCell>
-          <InfoCell label="Val. CNH" className="border-r border-neutral-100">{(emp as any).cnhExpiry ? new Date((emp as any).cnhExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
-          <InfoCell label="Matrícula">{emp.matricula}</InfoCell>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
-          <InfoCell label="CNV" className="border-r border-neutral-100">{(emp as any).cnvNumber || "—"}</InfoCell>
-          <InfoCell label="Val. CNV" className="border-r border-neutral-100">{(emp as any).cnvExpiry ? new Date((emp as any).cnvExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
-          <InfoCell label="Colete" className="border-r border-neutral-100">{(emp as any).vestNumber || "—"}</InfoCell>
-          <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${new Date((emp as any).vestExpiry).toLocaleDateString("pt-BR")}` : ""}</InfoCell>
+        <div className="flex">
+          {photoUrl && (
+            <div className="w-28 shrink-0 border-r border-neutral-100 bg-neutral-50 flex items-center justify-center p-2">
+              <img src={photoUrl} alt={emp.name} className="w-24 h-28 object-cover rounded-lg border border-neutral-200" data-testid={`img-agent-photo-${label}`} />
+            </div>
+          )}
+          <div className="flex-1">
+            <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+              <InfoCell label="Nome" className="md:col-span-2 border-r border-neutral-100">{emp.name}</InfoCell>
+              <InfoCell label="CPF" className="border-r border-neutral-100">{emp.cpf || "—"}</InfoCell>
+              <InfoCell label="RG">{emp.rg || "—"}</InfoCell>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+              <InfoCell label="Contato" className="border-r border-neutral-100">{emp.phone || "—"}</InfoCell>
+              <InfoCell label="CNH" className="border-r border-neutral-100">{emp.cnhNumber || "—"}</InfoCell>
+              <InfoCell label="Val. CNH" className="border-r border-neutral-100">{(emp as any).cnhExpiry ? new Date((emp as any).cnhExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+              <InfoCell label="Matrícula">{emp.matricula}</InfoCell>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
+              <InfoCell label="CNV" className="border-r border-neutral-100">{(emp as any).cnvNumber || "—"}</InfoCell>
+              <InfoCell label="Val. CNV" className="border-r border-neutral-100">{(emp as any).cnvExpiry ? new Date((emp as any).cnvExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+              <InfoCell label="Colete" className="border-r border-neutral-100">{(emp as any).vestNumber || "—"}</InfoCell>
+              <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${new Date((emp as any).vestExpiry).toLocaleDateString("pt-BR")}` : ""}</InfoCell>
+            </div>
+          </div>
         </div>
       </div>
     );
