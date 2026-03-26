@@ -1854,6 +1854,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     );
 
     const tcPositions = await truckscontrol.getCachedPositions();
+    const plates = allVehicles.map(v => v.plate);
+    const lastAlertMap = await storage.getLastAlertByPlates(plates);
 
     const tracked = await Promise.all(
       allVehicles.map(async (v) => {
@@ -2043,6 +2045,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 };
               })()
             : null,
+          lastAlert: (() => {
+            const alert = lastAlertMap.get(v.plate);
+            if (!alert) return null;
+            return {
+              eventType: alert.eventType,
+              value: alert.value,
+              details: alert.details,
+              createdAt: alert.createdAt,
+            };
+          })(),
           scheduledOs: (() => {
             const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id);
             return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate } : null;

@@ -190,6 +190,7 @@ interface TrackedVehicle {
   batteryLevel?: number;
   coupled?: boolean;
   photoFront?: string | null;
+  lastAlert?: { eventType: string; value: number | null; details: string | null; createdAt: string | null } | null;
   idleSamePlace?: { count: number; isAlert: boolean } | null;
   tracker: {
     veiID?: number;
@@ -1024,7 +1025,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
 function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
   const speeding = vehicles.filter(
-    (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 120
+    (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 110
   );
 
   if (speeding.length === 0) return null;
@@ -1977,17 +1978,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           <table className="w-full" data-testid="table-vehicles-tracking">
             <thead>
               <tr className="font-heading" style={{ background: "linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%)" }}>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap w-10">#</th>
-                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Veículo</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ignição</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">GPS</th>
-                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Localização</th>
-                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Última Pos.</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Tempo</th>
-                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
-                <th className="px-3 py-2.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ações</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap w-10">#</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Veículo</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ignição</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">GPS</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Localização</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Última Pos.</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Tempo</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Últ. Alerta</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -2003,7 +2005,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const ignitionOnTime = getIgnitionOnTime(v);
                 const stoppedTime = getStoppedTime(v);
                 const noSignalTime = getNoSignalTime(v);
-                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 120;
+                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
                 const isIdleAlert = idleMin >= 5;
                 const samePlaceAlert = v.idleSamePlace?.isAlert === true;
                 const samePlaceCount = v.idleSamePlace?.count ?? 0;
@@ -2024,13 +2026,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     }`}
                     data-testid={`row-vehicle-${v.id}`}
                   >
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-xs shadow-sm">
                         {String(index + 1).padStart(2, "0")}
                       </span>
                     </td>
 
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: statusColor }}>
                           <img src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
@@ -2067,7 +2069,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       </div>
                     </td>
 
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
@@ -2095,7 +2097,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
@@ -2121,7 +2123,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
 
-                    <td className="px-3 py-3 max-w-[200px]">
+                    <td className="px-2 py-1.5 max-w-[200px]">
                       {v.tracker?.address ? (
                         <button
                           type="button"
@@ -2149,7 +2151,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 whitespace-nowrap min-w-[100px]">
+                    <td className="px-2 py-1.5 whitespace-nowrap min-w-[100px]">
                       {v.tracker?.lastPositionTime ? (
                         <Tooltip>
                           <TooltipTrigger>
@@ -2169,7 +2171,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 text-center whitespace-nowrap">
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-1">
                         {noSignalTime && !isLive ? (
                           <Tooltip>
@@ -2261,7 +2263,30 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       </div>
                     </td>
 
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      {v.lastAlert ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                              <span className="text-[11px] font-semibold text-red-600 tabular-nums">
+                                {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
+                                {" "}
+                                {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-bold">{v.lastAlert.eventType === "excesso_velocidade" ? "Excesso de Velocidade" : v.lastAlert.eventType}</p>
+                            <p>{v.lastAlert.details || "—"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+
+                    <td className="px-2 py-1.5">
                       {v.activeOs ? (
                         <div className="flex flex-col gap-1.5">
                           {v.activeOs.employee1 && (
@@ -2302,7 +2327,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
                       {v.activeOs ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
@@ -2363,7 +2388,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 text-center whitespace-nowrap">
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
                       {(() => {
                         const vStatus = getViaturaStatus(v);
                         const VIcon = vStatus.icon;
@@ -2376,7 +2401,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       })()}
                     </td>
 
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-2 py-1.5 text-center">
                       <VehicleRowActions v={v} vehicles={vehicles} gerenciadoras={gerenciadoras} />
                     </td>
                   </tr>

@@ -146,6 +146,7 @@ export interface IStorage {
 
   createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent>;
   getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]>;
+  getLastAlertByPlates(plates: string[]): Promise<Map<string, TelemetryEvent>>;
 
   upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation>;
   getAgentLocations(): Promise<AgentLocation[]>;
@@ -619,6 +620,20 @@ export class DatabaseStorage implements IStorage {
   async createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent> {
     const [created] = await db.insert(telemetryEvents).values(e).returning();
     return created;
+  }
+
+  async getLastAlertByPlates(plates: string[]): Promise<Map<string, TelemetryEvent>> {
+    const result = new Map<string, TelemetryEvent>();
+    if (plates.length === 0) return result;
+    const rows = await db.select().from(telemetryEvents)
+      .where(sql`${telemetryEvents.plate} IN ${plates}`)
+      .orderBy(desc(telemetryEvents.createdAt));
+    for (const row of rows) {
+      if (!result.has(row.plate)) {
+        result.set(row.plate, row);
+      }
+    }
+    return result;
   }
 
   async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {

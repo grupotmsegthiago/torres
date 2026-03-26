@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import { processIdleAlert, processIgnitionOff, getActiveIdleAlerts } from "./truckscontrol";
 import type { InsertTelemetryEvent } from "@shared/schema";
 
-const SPEED_LIMIT = 120;
+const SPEED_LIMIT = 110;
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
 const speedAlertCooldown = new Map<string, number>();
