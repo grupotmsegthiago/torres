@@ -709,22 +709,37 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _isLive = v.tracker.isLiveData !== false;
         const _samePlaceAlert = v.idleSamePlace?.isAlert === true;
         const _samePlaceCount = v.idleSamePlace?.count ?? 0;
+        const _statusText = _samePlaceAlert
+          ? `🚨 ${_samePlaceCount} pos. mesmo lugar c/ motor`
+          : _idleMin >= 5
+          ? `⚠ Parado c/ motor há ${_idleT}`
+          : _idleT
+          ? `⏸ Parado c/ motor: ${_idleT}`
+          : _stopT && !v.tracker.ignition
+          ? `⏹ Parado há ${_stopT}`
+          : v.tracker.speed && v.tracker.speed > 0
+          ? `🚗 Em movimento`
+          : _ignT
+          ? `🔑 Motor ligado: ${_ignT}`
+          : "—";
+        const _statusColor = _samePlaceAlert || _idleMin >= 5 ? "#dc2626" : _idleT ? "#d97706" : _stopT ? "#dc2626" : v.tracker.speed && v.tracker.speed > 0 ? "#16a34a" : "#333";
+
         infoContent = `
-          <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; min-width: 240px; padding: 4px;">
-            ${v.photoFront ? `<div style="margin-bottom: 8px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;"><img src="${v.photoFront}" style="width: 100%; height: 120px; object-fit: cover; display: block;" alt="${v.plate}" /></div>` : ""}
-            <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">${v.plate}</div>
-            <div style="color: #666; font-size: 13px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
-            ${!_isLive && _noSigT ? `<div style="font-size: 13px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT} — posição mantida</div>` : ""}
-            ${!_isLive && !_noSigT ? `<div style="font-size: 13px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
-            ${_isLive && v.tracker.speed !== undefined ? `<div style="font-size: 13px;"><b>Vel:</b> ${v.tracker.speed} km/h</div>` : ""}
-            ${_isLive && v.tracker.ignition !== undefined ? `<div style="font-size: 13px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>` : ""}
-            ${_samePlaceAlert ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 6px 10px; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 6px;">🚨 ALERTA: ${_samePlaceCount} posições no mesmo lugar c/ motor ligado!</div>` : _idleMin >= 5 ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 4px 8px; border-radius: 4px; border: 1px solid #fca5a5; margin-top: 4px;">⚠ ALERTA: Parado c/ motor ligado há ${_idleT}</div>` : _idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
-            ${_stopT && !v.tracker.ignition ? `<div style="font-size: 13px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
-            ${_ignT ? `<div style="font-size: 13px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
-            ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px;"><b>⚡ Bateria:</b> ${v.tracker.voltage.toFixed(1)}V</div>` : ""}
-            ${v.tracker.lastPositionTime ? `<div style="font-size: 13px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
-            ${v.tracker.address ? `<div style="font-size: 13px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
-            ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 13px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
+          <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 4px; display: flex; gap: 14px; align-items: flex-start; min-width: ${v.photoFront ? '380px' : '240px'};">
+            <div style="flex: 1; min-width: 0;">
+              ${!_isLive && _noSigT ? `<div style="font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 3px 6px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT}</div>` : ""}
+              ${!_isLive && !_noSigT ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
+              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Placa:</span> <b>${v.plate.replace(/^(.{3})(.+)$/, "$1-$2")}</b></div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Veículo:</span> <b>${v.brand} ${v.model}</b></div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Status:</span> <span style="color: ${_statusColor}; font-weight: 600;">${_statusText}</span></div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Ignição:</span> ${v.tracker.ignition ? "<b>Ligada ✅</b>" : "<b>Desligada ❌</b>"}</div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Velocidade:</span> <b>${v.tracker.speed ?? 0} km/h</b></div>
+              ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Bateria:</span> <b>${v.tracker.voltage.toFixed(1)}V</b></div>` : ""}
+              ${v.tracker.lastPositionTime ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">🕐 ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
+              ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
+              ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
+            </div>
+            ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
           </div>
         `;
       }
