@@ -16,6 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
+  Bell, BellOff, MessageSquareText,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -1609,14 +1610,16 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
 
-  const cmdLabels: Record<string, string> = { bloquear: "Bloquear", desbloquear: "Desbloquear", sirene: "Sirene/Alerta" };
+  const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
+
+  const cmdLabels: Record<string, string> = { bloquear: "Bloquear", desbloquear: "Desbloquear", sirene: "Sirene/Alerta", aviso_cabine_on: "Aviso Cabine (Ligar)", aviso_cabine_off: "Aviso Cabine (Desligar)", mensagem_texto: "Mensagem de Texto" };
 
   const commandMutation = useMutation({
-    mutationFn: async ({ vehicleId, command, notifId }: { vehicleId: number; command: string; notifId: string }) => {
+    mutationFn: async ({ vehicleId, command, notifId, mensagem }: { vehicleId: number; command: string; notifId: string; mensagem?: string }) => {
       const res = await authFetch("/api/truckscontrol/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicleId, command }),
+        body: JSON.stringify({ vehicleId, command, mensagem }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Erro ao enviar comando");
@@ -1641,7 +1644,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
         plate: v.plate,
         label: `Enviando comando "${cmdLabels[command] || command}" para ${v.plate}...`,
       });
-      commandMutation.mutate({ vehicleId: v.id, command, notifId });
+      const mensagem = command === "mensagem_texto" ? msgTexto : undefined;
+      commandMutation.mutate({ vehicleId: v.id, command, notifId, mensagem });
     } else {
       setCmdConfirm(command);
     }
@@ -1808,6 +1812,63 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
                   </div>
                   {commandMutation.isPending && cmdConfirm === "sirene" && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
                 </button>
+
+                <div className="border-t border-neutral-100 my-1" />
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-1">Aviso de Cabine</p>
+
+                <button
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "aviso_cabine_on" ? "bg-violet-50 border-violet-300 ring-1 ring-violet-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("aviso_cabine_on")}
+                  disabled={commandMutation.isPending}
+                  data-testid={`btn-cmd-cabin-on-${v.id}`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center"><Bell className="w-4 h-4 text-violet-500" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Ligar Aviso de Cabine</p>
+                    <p className="text-xs text-neutral-400">{cmdConfirm === "aviso_cabine_on" ? "Clique novamente para confirmar" : "Ativar alerta sonoro na cabine"}</p>
+                  </div>
+                  {commandMutation.isPending && cmdConfirm === "aviso_cabine_on" && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
+                </button>
+                <button
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "aviso_cabine_off" ? "bg-neutral-50 border-neutral-300 ring-1 ring-neutral-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("aviso_cabine_off")}
+                  disabled={commandMutation.isPending}
+                  data-testid={`btn-cmd-cabin-off-${v.id}`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center"><BellOff className="w-4 h-4 text-neutral-500" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Desligar Aviso de Cabine</p>
+                    <p className="text-xs text-neutral-400">{cmdConfirm === "aviso_cabine_off" ? "Clique novamente para confirmar" : "Desativar alerta sonoro"}</p>
+                  </div>
+                  {commandMutation.isPending && cmdConfirm === "aviso_cabine_off" && <Loader2 className="w-4 h-4 animate-spin text-neutral-500" />}
+                </button>
+
+                <div className="border-t border-neutral-100 my-1" />
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-1">Mensagem de Texto</p>
+
+                <div className="rounded-lg border p-3 space-y-2">
+                  <textarea
+                    className="w-full text-sm border border-neutral-200 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    rows={2}
+                    value={msgTexto}
+                    onChange={(e) => setMsgTexto(e.target.value)}
+                    placeholder="Digite a mensagem..."
+                    data-testid={`input-msg-texto-${v.id}`}
+                  />
+                  <button
+                    className={`w-full flex items-center gap-3 rounded-lg border p-2.5 transition-colors text-left ${cmdConfirm === "mensagem_texto" ? "bg-blue-50 border-blue-300 ring-1 ring-blue-200" : "hover:bg-neutral-50"}`}
+                    onClick={() => handleCommand("mensagem_texto")}
+                    disabled={commandMutation.isPending || !msgTexto.trim()}
+                    data-testid={`btn-cmd-msg-${v.id}`}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center"><MessageSquareText className="w-4 h-4 text-blue-500" /></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Enviar Mensagem</p>
+                      <p className="text-xs text-neutral-400">{cmdConfirm === "mensagem_texto" ? "Clique novamente para confirmar" : "Enviar texto para display do veículo"}</p>
+                    </div>
+                    {commandMutation.isPending && cmdConfirm === "mensagem_texto" && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+                  </button>
+                </div>
               </>
             ) : (
               <p className="text-sm text-neutral-400 text-center py-3">Veículo sem rastreador configurado</p>

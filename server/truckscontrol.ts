@@ -722,21 +722,25 @@ export function findPositionByIdentifier(positions: TrucksControlPosition[], ide
   return null;
 }
 
-export type CommandType = "bloquear" | "desbloquear" | "sirene";
+export type CommandType = "bloquear" | "desbloquear" | "sirene" | "aviso_cabine_on" | "aviso_cabine_off" | "mensagem_texto";
 
 export async function sendCommand(
   veiID: number,
-  command: CommandType
+  command: CommandType,
+  mensagem?: string
 ): Promise<{ success: boolean; message: string; rawResponse?: string }> {
   const config = getConfig();
   if (!config) {
     return { success: false, message: "Credenciais TrucksControl não configuradas." };
   }
 
-  const commandMap: Record<CommandType, { cmd: number; label: string }> = {
+  const commandMap: Record<string, { cmd: number; label: string }> = {
     bloquear: { cmd: 1, label: "Bloquear" },
     desbloquear: { cmd: 2, label: "Desbloquear" },
     sirene: { cmd: 3, label: "Sirene/Alerta" },
+    aviso_cabine_on: { cmd: 5, label: "Aviso de Cabine (Ligar)" },
+    aviso_cabine_off: { cmd: 5, label: "Aviso de Cabine (Desligar)" },
+    mensagem_texto: { cmd: 4, label: "Mensagem de Texto" },
   };
 
   const cmdInfo = commandMap[command];
@@ -745,7 +749,12 @@ export async function sendCommand(
   }
 
   try {
-    const xml = `<RequestComando><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd></RequestComando>`;
+    let xml: string;
+    if (command === "mensagem_texto" && mensagem) {
+      xml = `<RequestComando><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd><msg>${escapeXml(mensagem)}</msg></RequestComando>`;
+    } else {
+      xml = `<RequestComando><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd></RequestComando>`;
+    }
     const response = await postXml(xml);
 
     if (response.includes("<erro>") || response.includes("<Erro>")) {
@@ -764,6 +773,59 @@ export async function sendCommand(
     console.log(`[truckscontrol] Erro ao enviar comando ${command}: ${err.message}`);
     return { success: false, message: `Erro de conexão: ${err.message}` };
   }
+}
+
+const activeIdleAlerts: Map<number, { alertedAt: number; cabineTimer?: ReturnType<typeof setTimeout> }> = new Map();
+
+export function getActiveIdleAlerts(): Map<number, { alertedAt: number }> {
+  return activeIdleAlerts;
+}
+
+function escapeXml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+export async function processIdleAlert(veiID: number, plate: string): Promise<void> {
+  if (activeIdleAlerts.has(veiID)) return;
+
+  activeIdleAlerts.set(veiID, { alertedAt: Date.now() });
+
+  console.log(`[idle-alert] Veiculo ${plate} (veiID=${veiID}) — Motor ligado parado. Enviando aviso de cabine + mensagem.`);
+
+  const cabineResult = await sendCommand(veiID, "aviso_cabine_on");
+  console.log(`[idle-alert] Aviso cabine ON para ${plate}: ${cabineResult.message}`);
+
+  const msgResult = await sendCommand(veiID, "mensagem_texto", "Motor Ligado com carro parado .. desligue o veiculo!");
+  console.log(`[idle-alert] Mensagem enviada para ${plate}: ${msgResult.message}`);
+
+  const cabineTimer = setTimeout(async () => {
+    const alertInfo = activeIdleAlerts.get(veiID);
+    if (alertInfo) {
+      console.log(`[idle-alert] Timeout 2min — desligando aviso de cabine para ${plate} (veiID=${veiID})`);
+      const offResult = await sendCommand(veiID, "aviso_cabine_off");
+      console.log(`[idle-alert] Aviso cabine OFF (timeout) para ${plate}: ${offResult.message}`);
+      activeIdleAlerts.delete(veiID);
+    }
+  }, 2 * 60 * 1000);
+
+  const existing = activeIdleAlerts.get(veiID);
+  if (existing) existing.cabineTimer = cabineTimer;
+}
+
+export async function processIgnitionOff(veiID: number, plate: string): Promise<void> {
+  const alertInfo = activeIdleAlerts.get(veiID);
+  if (!alertInfo) return;
+
+  console.log(`[idle-alert] Veiculo ${plate} (veiID=${veiID}) — Ignição desligada. Cancelando aviso de cabine.`);
+
+  if (alertInfo.cabineTimer) {
+    clearTimeout(alertInfo.cabineTimer);
+  }
+
+  activeIdleAlerts.delete(veiID);
+
+  const offResult = await sendCommand(veiID, "aviso_cabine_off");
+  console.log(`[idle-alert] Aviso cabine OFF (ignição off) para ${plate}: ${offResult.message}`);
 }
 
 export function getVehicleCache(): TrucksControlVehicle[] {

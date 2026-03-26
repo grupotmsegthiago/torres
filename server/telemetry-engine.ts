@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { processIdleAlert, processIgnitionOff, getActiveIdleAlerts } from "./truckscontrol";
 import type { InsertTelemetryEvent } from "@shared/schema";
 
 const SPEED_LIMIT = 120;
@@ -20,6 +21,7 @@ interface VehicleTelemetryData {
   stoppedSince?: string | null;
   ignitionOnSince?: string | null;
   driverName?: string | null;
+  truckscontrolId?: number | null;
 }
 
 export function processTelemetry(vehicles: VehicleTelemetryData[]): void {
@@ -61,6 +63,11 @@ function checkSpeedViolation(v: VehicleTelemetryData, now: number): void {
 function checkIdleViolation(v: VehicleTelemetryData, now: number): void {
   if (!v.ignition || v.speed > 2) {
     idleAlertSent.delete(v.plate);
+    if (!v.ignition && v.truckscontrolId && getActiveIdleAlerts().has(v.truckscontrolId)) {
+      processIgnitionOff(v.truckscontrolId, v.plate).catch(err => {
+        console.error(`[telemetry] Erro ao processar ignição off para ${v.plate}:`, err.message);
+      });
+    }
     return;
   }
 
@@ -95,6 +102,12 @@ function checkIdleViolation(v: VehicleTelemetryData, now: number): void {
   }).catch(err => {
     console.error(`[telemetry] Erro ao registrar idle:`, err.message);
   });
+
+  if (v.truckscontrolId) {
+    processIdleAlert(v.truckscontrolId, v.plate).catch(err => {
+      console.error(`[telemetry] Erro ao enviar alerta cabine para ${v.plate}:`, err.message);
+    });
+  }
 }
 
 export function updateIdleDuration(plate: string, currentMinutes: number): void {

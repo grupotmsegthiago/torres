@@ -2086,6 +2086,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           stoppedSince: t.tracker!.stoppedSince,
           ignitionOnSince: t.tracker!.ignitionOnSince,
           driverName: t.activeOs?.employee1?.name || null,
+          truckscontrolId: t.truckscontrolIdentifier ? parseInt(t.truckscontrolIdentifier) : null,
         }));
       if (telemetryData.length > 0) {
         processTelemetry(telemetryData);
@@ -2119,7 +2120,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.post("/api/truckscontrol/command", requireAuth, requireAdminRole, async (req, res) => {
     const vehicleId = Number(req.body.vehicleId);
     const command = String(req.body.command || "");
-    const validCommands = ["bloquear", "desbloquear", "sirene"] as const;
+    const mensagem = req.body.mensagem ? String(req.body.mensagem) : undefined;
+    const validCommands = ["bloquear", "desbloquear", "sirene", "aviso_cabine_on", "aviso_cabine_off", "mensagem_texto"] as const;
 
     if (!Number.isInteger(vehicleId) || vehicleId <= 0) {
       return res.status(400).json({ success: false, message: "vehicleId deve ser um número inteiro positivo." });
@@ -2159,8 +2161,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       return res.status(400).json({ success: false, message: "Veículo sem identificador TrucksControl configurado. Configure o campo 'truckscontrolIdentifier' no cadastro do veículo." });
     }
 
-    console.log(`[command] Enviando ${command} para veículo ${vehicle.plate} (veiID=${veiID}) por ${req.user?.name || req.user?.email}`);
-    const result = await truckscontrol.sendCommand(veiID, command as any);
+    console.log(`[command] Enviando ${command} para veículo ${vehicle.plate} (veiID=${veiID}) por ${req.user?.name || req.user?.email}${mensagem ? ` msg="${mensagem}"` : ""}`);
+    const result = await truckscontrol.sendCommand(veiID, command as any, mensagem);
     if (!result.success) {
       return res.status(502).json(result);
     }
