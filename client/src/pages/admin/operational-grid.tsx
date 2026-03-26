@@ -1721,7 +1721,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                       </Select>
                     </div>
                   </div>
-                  <p className="text-[10px] text-neutral-400 mt-2">Padrão ao espelhar: CMD Permitido, IE Não, TIE Não, Validade 5 dias</p>
+                  <p className="text-[10px] text-neutral-400 mt-2">Padrão ao espelhar: CMD Permitido, IE Não, TIE Não, Validade 31 dias, Compartilhar dados Sim</p>
                 </div>
 
                 <div className="border-t pt-3">

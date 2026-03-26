@@ -891,7 +891,17 @@ export async function createEspelhamento(
 
       const diagnostics: string[] = [];
       if (codigoErro === "2") {
-        diagnostics.push("Possíveis causas: CNPJ não cadastrado no TrucksControl, veículo já espelhado para este CNPJ, ou permissão insuficiente.");
+        try {
+          const espelhados = await listEspelhados();
+          const jaEspelhado = espelhados.vehicles.find(v => String(v.veiID) === String(veiID) && v.cgccpf.replace(/[^0-9]/g, "") === cnpjClean);
+          if (jaEspelhado) {
+            diagnostics.push(`Veículo já espelhado para este CNPJ (cliente: ${jaEspelhado.cliente || cnpjClean}, validade: ${jaEspelhado.validade}). Cancele o espelhamento existente antes de criar um novo.`);
+          } else {
+            diagnostics.push("A conta pode não ter permissão de espelhamento via API habilitada. Verifique com o suporte TrucksControl se 'Compartilhamento de Dados' e 'Alterar Validade' estão habilitados na integração.");
+          }
+        } catch {
+          diagnostics.push("Veículo possivelmente já espelhado para este CNPJ, ou permissão de espelhamento não habilitada na conta.");
+        }
       }
 
       const detailMsg = `Código ${codigoErro}: ${erroMsg}${diagnostics.length ? ` — ${diagnostics.join(" ")}` : ""}`;
