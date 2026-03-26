@@ -816,6 +816,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       data.status === "concluida" || data.status === "concluída" || data.status === "cancelada";
     if (data.vehicleId && isFinished) {
       await storage.updateVehicle(data.vehicleId, { status: "disponível" });
+
+      try {
+        const vehicle = await storage.getVehicle(data.vehicleId);
+        if (vehicle && vehicle.trackerType === "truckscontrol" && vehicle.truckscontrolIdentifier) {
+          const espelhados = await truckscontrol.listEspelhados();
+          if (espelhados.success && espelhados.vehicles.length > 0) {
+            const veiID = vehicle.truckscontrolIdentifier;
+            const veiculoEspelhado = espelhados.vehicles.filter(e => String(e.veiID) === String(veiID));
+            for (const esp of veiculoEspelhado) {
+              console.log(`[auto-cancel] Cancelando espelhamento veiID=${veiID} CNPJ=${esp.cgccpf} (missão finalizada OS #${data.osNumber})`);
+              await truckscontrol.cancelEspelhamento(Number(veiID), esp.cgccpf);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.log(`[auto-cancel] Erro ao cancelar espelhamento automático: ${err.message}`);
+      }
     }
 
     res.json(data);

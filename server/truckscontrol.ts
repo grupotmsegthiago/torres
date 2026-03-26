@@ -1057,7 +1057,7 @@ export async function cancelEspelhamentoProprietario(veiID: number, cnpjCliente:
 
 function getDefaultValidade(): string {
   const d = new Date();
-  d.setFullYear(d.getFullYear() + 1);
+  d.setDate(d.getDate() + 5);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 

@@ -1080,22 +1080,36 @@ function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
 }
 
 
+function getValidade5Days(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 5);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
 function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { vehicle: TrackedVehicle | null; open: boolean; onOpenChange: (o: boolean) => void; gerenciadoras: Gerenciadora[] }) {
   const { toast } = useToast();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [lastError, setLastError] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const mirrorMutation = useMutation({
-    mutationFn: async ({ gerenciadoraId }: { gerenciadoraId: number }) => {
+  const espelharTcMutation = useMutation({
+    mutationFn: async ({ gerenciadora }: { gerenciadora: Gerenciadora }) => {
       if (!vehicle) throw new Error("Veículo não selecionado");
-      const vehicleData = [{
-        plate: vehicle.plate, model: vehicle.model, brand: vehicle.brand,
-        latitude: vehicle.tracker?.latitude, longitude: vehicle.tracker?.longitude,
-        speed: vehicle.tracker?.speed, ignition: vehicle.tracker?.ignition,
-        gpsSignal: vehicle.tracker?.gpsSignal, address: vehicle.tracker?.address,
-        lastPositionTime: vehicle.tracker?.lastPositionTime,
-      }];
-      const r = await authFetch(`/api/gerenciadoras/${gerenciadoraId}/mirror`, {
+      const veiID = vehicle.tracker?.veiID || (vehicle.truckscontrolIdentifier ? parseInt(vehicle.truckscontrolIdentifier) : null);
+      if (!veiID) throw new Error("Veículo sem ID TrucksControl");
+      const r = await authFetch("/api/truckscontrol/espelhar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicleData }),
+        body: JSON.stringify({
+          veiID,
+          cnpj: gerenciadora.cnpj,
+          cmd: 1,
+          IE: 0,
+          TIE: 0,
+          validade: getValidade5Days(),
+          possoCancelar: gerenciadora.tcPossoCancelar ?? 1,
+          comandoExclusivo: gerenciadora.tcComandoExclusivo ?? 0,
+          compartilharDados: gerenciadora.tcCompartilharDados ?? 0,
+        }),
       });
       if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
       return r.json();
@@ -1113,47 +1127,21 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
     onError: (err: Error) => { setLastError(err.message); toast({ title: "Erro", description: err.message, variant: "destructive" }); },
   });
 
-  const espelharTcMutation = useMutation({
-    mutationFn: async ({ gerenciadora }: { gerenciadora: Gerenciadora }) => {
-      if (!vehicle?.truckscontrolIdentifier) throw new Error("Veículo sem ID TrucksControl");
-      const r = await authFetch("/api/truckscontrol/espelhar", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          veiID: parseInt(vehicle.truckscontrolIdentifier),
-          cnpj: gerenciadora.cnpj,
-          IE: gerenciadora.tcIE ?? 0,
-          TIE: gerenciadora.tcTIE ?? 0,
-          validade: gerenciadora.tcValidade || "",
-          possoCancelar: gerenciadora.tcPossoCancelar ?? 1,
-          comandoExclusivo: gerenciadora.tcComandoExclusivo ?? 0,
-          compartilharDados: gerenciadora.tcCompartilharDados ?? 0,
-        }),
-      });
-      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
-      return r.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        toast({ title: "Espelhamento TC enviado", description: data.message });
-        setLastError(null);
-        onOpenChange(false);
-      } else {
-        setLastError(data.message || "Erro desconhecido");
-        toast({ title: "Falha no espelhamento", description: data.message, variant: "destructive" });
-      }
-    },
-    onError: (err: Error) => { setLastError(err.message); toast({ title: "Erro", description: err.message, variant: "destructive" }); },
-  });
-
-  const [lastError, setLastError] = useState<string | null>(null);
-
   useEffect(() => {
-    if (open) setLastError(null);
+    if (open) { setLastError(null); setSearchQuery(""); setTimeout(() => searchInputRef.current?.focus(), 100); }
   }, [open]);
 
   if (!vehicle) return null;
 
   const activeGerenciadoras = gerenciadoras.filter(g => g.active === 1);
+  const filtered = activeGerenciadoras.filter(g => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return g.name.toLowerCase().includes(q) || (g.cnpj || "").toLowerCase().includes(q);
+  });
+
+  const veiID = vehicle.tracker?.veiID || vehicle.truckscontrolIdentifier || null;
+  const isTc = vehicle.trackerType === "truckscontrol" && !!veiID;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1161,12 +1149,24 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
         <DialogHeader>
           <DialogTitle className="text-base font-bold">Espelhar — {vehicle.plate}</DialogTitle>
           <DialogDescription className="text-sm text-neutral-500">
-            Enviar posição deste veículo para a gerenciadora.
+            Selecione a gerenciadora para espelhar este veículo.
           </DialogDescription>
         </DialogHeader>
 
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+          <Input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar gerenciadora..."
+            className="pl-8 h-8 text-sm"
+            data-testid="input-search-gerenciadora"
+          />
+        </div>
+
         {lastError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mt-1" data-testid="mirror-error-detail">
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="mirror-error-detail">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
               <div>
@@ -1177,34 +1177,34 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
           </div>
         )}
 
-        <div className="space-y-2 mt-1">
-          {activeGerenciadoras.length === 0 ? (
-            <p className="text-sm text-neutral-500 text-center py-4">Nenhuma gerenciadora cadastrada.</p>
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-neutral-500 text-center py-4">
+              {activeGerenciadoras.length === 0 ? "Nenhuma gerenciadora cadastrada." : "Nenhum resultado encontrado."}
+            </p>
           ) : (
-            activeGerenciadoras.map((g) => (
-              <div key={g.id} className="flex items-center justify-between border rounded-lg px-4 py-3 hover:bg-neutral-50 transition-colors" data-testid={`mirror-ger-${g.id}`}>
-                <div>
+            filtered.map((g) => (
+              <div key={g.id} className="flex items-center justify-between border rounded-lg px-3 py-2.5 hover:bg-neutral-50 transition-colors" data-testid={`mirror-ger-${g.id}`}>
+                <div className="min-w-0 flex-1">
                   <p className="font-semibold text-sm">{g.name}</p>
                   {g.cnpj && <p className="text-xs text-neutral-500">{g.cnpj}</p>}
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
-                  disabled={mirrorMutation.isPending || espelharTcMutation.isPending}
+                  className="h-8 w-8 shrink-0"
+                  disabled={espelharTcMutation.isPending || !isTc || !g.cnpj}
                   onClick={() => {
                     setLastError(null);
-                    if (vehicle.trackerType === "truckscontrol" && vehicle.truckscontrolIdentifier && g.cnpj) {
+                    if (isTc && g.cnpj) {
                       espelharTcMutation.mutate({ gerenciadora: g });
-                    } else if (g.apiUrl) {
-                      mirrorMutation.mutate({ gerenciadoraId: g.id });
                     } else {
-                      toast({ title: "Sem destino", description: "Gerenciadora sem API URL ou CNPJ configurado.", variant: "destructive" });
+                      toast({ title: "Erro", description: !isTc ? "Veículo sem rastreador TrucksControl" : "Gerenciadora sem CNPJ", variant: "destructive" });
                     }
                   }}
                   data-testid={`btn-mirror-send-${g.id}`}
                 >
-                  {(mirrorMutation.isPending || espelharTcMutation.isPending) ? (
+                  {espelharTcMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Send className="w-4 h-4 text-neutral-500" />
@@ -1215,8 +1215,9 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
           )}
         </div>
 
-        <div className="text-[10px] text-neutral-400 mt-2 border-t pt-2">
-          <p><b>Veículo:</b> {vehicle.plate} | <b>TC ID:</b> {vehicle.truckscontrolIdentifier || "N/A"} | <b>Tipo:</b> {vehicle.trackerType || "N/A"}</p>
+        <div className="text-[10px] text-neutral-400 border-t pt-2 space-y-0.5">
+          <p><b>Veículo:</b> {vehicle.plate} | <b>TC veiID:</b> {veiID || "N/A"}</p>
+          <p><b>Padrão:</b> CMD: Permitido | IE: Não | TIE: Não | Validade: 5 dias</p>
         </div>
       </DialogContent>
     </Dialog>
@@ -1526,10 +1527,10 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
       veiID: Number(espelharVeiID),
       cnpj: ger.cnpj,
       options: {
-        cmd: ger.tcPermissaoComando ?? 1,
-        IE: ger.tcIE ?? 0,
-        TIE: ger.tcTIE ?? 0,
-        validade: ger.tcValidade || undefined,
+        cmd: 1,
+        IE: 0,
+        TIE: 0,
+        validade: getValidade5Days(),
         possoCancelar: ger.tcPossoCancelar ?? 1,
         comandoExclusivo: ger.tcComandoExclusivo ?? 0,
         compartilharDados: ger.tcCompartilharDados ?? 0,
@@ -1686,65 +1687,9 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
 
             {showAdvanced && (
               <>
-                <div className="grid grid-cols-2 gap-3 border-t pt-3">
-                  <div>
-                    <Label className="text-xs">Tipo API</Label>
-                    <Select value={formData.apiType} onValueChange={(v) => setFormData({ ...formData, apiType: v })}>
-                      <SelectTrigger data-testid="select-gerenciadora-api-type"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="webhook">Webhook</SelectItem>
-                        <SelectItem value="rest">REST API</SelectItem>
-                        <SelectItem value="soap">SOAP / TrucksControl</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Chave/Token</Label>
-                    <Input value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="Bearer token ou API key" className="h-8" data-testid="input-gerenciadora-api-key" />
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs">URL da API (webhook)</Label>
-                    <Input value={formData.apiUrl} onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })} placeholder="https://api.gerenciadora.com/webhook" data-testid="input-gerenciadora-api-url" />
-                  </div>
-                </div>
-
                 <div className="border-t pt-3">
                   <p className="text-xs font-semibold text-neutral-700 mb-2">Configurações TrucksControl (Espelhamento)</p>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Permissão de Comando</Label>
-                      <Select value={String(formData.tcPermissaoComando)} onValueChange={(v) => setFormData({ ...formData, tcPermissaoComando: Number(v) })}>
-                        <SelectTrigger className="h-8" data-testid="select-tc-cmd"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">Permitido</SelectItem>
-                          <SelectItem value="0">Não permitido</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Inteligência Embarcada (IE)</Label>
-                      <Select value={String(formData.tcIE)} onValueChange={(v) => setFormData({ ...formData, tcIE: Number(v) })}>
-                        <SelectTrigger className="h-8" data-testid="select-tc-ie"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0">Não permitido</SelectItem>
-                          <SelectItem value="1">Permitido</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Transferir IE no ato (TIE)</Label>
-                      <Select value={String(formData.tcTIE)} onValueChange={(v) => setFormData({ ...formData, tcTIE: Number(v) })}>
-                        <SelectTrigger className="h-8" data-testid="select-tc-tie"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0">Não transfere</SelectItem>
-                          <SelectItem value="1">Transfere</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Validade (DD/MM/AAAA)</Label>
-                      <Input value={formData.tcValidade} onChange={(e) => setFormData({ ...formData, tcValidade: e.target.value })} placeholder="21/03/2027" className="h-8" data-testid="input-tc-validade" />
-                    </div>
                     <div>
                       <Label className="text-xs">Proprietário pode cancelar</Label>
                       <Select value={String(formData.tcPossoCancelar)} onValueChange={(v) => setFormData({ ...formData, tcPossoCancelar: Number(v) })}>
@@ -1776,6 +1721,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                       </Select>
                     </div>
                   </div>
+                  <p className="text-[10px] text-neutral-400 mt-2">Padrão ao espelhar: CMD Permitido, IE Não, TIE Não, Validade 5 dias</p>
                 </div>
 
                 <div className="border-t pt-3">
@@ -1927,29 +1873,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
     }
   };
 
-  const mirrorMutation = useMutation({
-    mutationFn: async ({ gerenciadoraId, notifId }: { gerenciadoraId: number; notifId: string }) => {
-      const vehicleData = [{
-        plate: v.plate, model: v.model, brand: v.brand,
-        latitude: v.tracker?.latitude, longitude: v.tracker?.longitude,
-        speed: v.tracker?.speed, ignition: v.tracker?.ignition,
-        gpsSignal: v.tracker?.gpsSignal, address: v.tracker?.address,
-        lastPositionTime: v.tracker?.lastPositionTime, activeOs: v.activeOs,
-      }];
-      const res = await authFetch(`/api/gerenciadoras/${gerenciadoraId}/mirror`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicleData }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Erro");
-      const data = await res.json();
-      return { ...data, notifId };
-    },
-    onSuccess: (data) => updateNotification(data.notifId, { status: "success", message: data.message }),
-    onError: (err: Error, variables) => updateNotification(variables.notifId, { status: "error", message: err.message }),
-  });
-
-  const activeGerenciadoras = gerenciadoras.filter(g => g.active !== 0);
+  void gerenciadoras;
 
   return (
     <div className="flex items-center gap-1">
@@ -1989,44 +1913,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
         </TooltipTrigger>
         <TooltipContent>Espelhar</TooltipContent>
       </Tooltip>
-      <Dialog open={mirrorOpen} onOpenChange={setMirrorOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">Espelhar — {v.plate}</DialogTitle>
-            <DialogDescription className="text-xs">Enviar posição deste veículo para a gerenciadora.</DialogDescription>
-          </DialogHeader>
-          {activeGerenciadoras.length === 0 ? (
-            <p className="text-sm text-neutral-400 text-center py-3">Nenhuma gerenciadora cadastrada</p>
-          ) : (
-            <div className="space-y-2">
-              {activeGerenciadoras.map(g => (
-                <button
-                  key={g.id}
-                  className="w-full flex items-center justify-between rounded-lg border p-2.5 hover:bg-neutral-50 transition-colors text-left"
-                  onClick={() => {
-                    const notifId = addNotification({
-                      type: "mirror",
-                      status: "pending",
-                      plate: v.plate,
-                      label: `Espelhando ${v.plate} para ${g.name}...`,
-                    });
-                    mirrorMutation.mutate({ gerenciadoraId: g.id, notifId });
-                    setMirrorOpen(false);
-                  }}
-                  disabled={mirrorMutation.isPending || !g.apiUrl}
-                  data-testid={`btn-mirror-send-${g.id}`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{g.name}</p>
-                    {g.cnpj && <p className="text-xs text-neutral-400">{g.cnpj}</p>}
-                  </div>
-                  <Send className="w-3.5 h-3.5 text-neutral-400" />
-                </button>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <MirrorVehicleDialog vehicle={v as any} open={mirrorOpen} onOpenChange={setMirrorOpen} gerenciadoras={gerenciadoras} />
 
       <Tooltip>
         <TooltipTrigger asChild>
