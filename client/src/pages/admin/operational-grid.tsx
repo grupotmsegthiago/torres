@@ -750,6 +750,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
               </div>
               ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
+              ${v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
           </div>
@@ -1078,6 +1079,113 @@ function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
   );
 }
 
+
+function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { vehicle: TrackedVehicle | null; open: boolean; onOpenChange: (o: boolean) => void; gerenciadoras: Gerenciadora[] }) {
+  const { toast } = useToast();
+
+  const mirrorMutation = useMutation({
+    mutationFn: async ({ gerenciadoraId }: { gerenciadoraId: number }) => {
+      if (!vehicle) throw new Error("Veículo não selecionado");
+      const vehicleData = [{
+        plate: vehicle.plate, model: vehicle.model, brand: vehicle.brand,
+        latitude: vehicle.tracker?.latitude, longitude: vehicle.tracker?.longitude,
+        speed: vehicle.tracker?.speed, ignition: vehicle.tracker?.ignition,
+        gpsSignal: vehicle.tracker?.gpsSignal, address: vehicle.tracker?.address,
+        lastPositionTime: vehicle.tracker?.lastPositionTime,
+      }];
+      const r = await authFetch(`/api/gerenciadoras/${gerenciadoraId}/mirror`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleData }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: data.success ? "Espelhamento enviado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
+      if (data.success) onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const espelharTcMutation = useMutation({
+    mutationFn: async ({ gerenciadora }: { gerenciadora: Gerenciadora }) => {
+      if (!vehicle?.truckscontrolIdentifier) throw new Error("Veículo sem ID TrucksControl");
+      const r = await authFetch("/api/truckscontrol/espelhar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          veiID: parseInt(vehicle.truckscontrolIdentifier),
+          cnpj: gerenciadora.cnpj,
+          IE: gerenciadora.tcIE ?? 0,
+          TIE: gerenciadora.tcTIE ?? 0,
+          validade: gerenciadora.tcValidade || "",
+          possoCancelar: gerenciadora.tcPossoCancelar ?? 1,
+          comandoExclusivo: gerenciadora.tcComandoExclusivo ?? 0,
+          compartilharDados: gerenciadora.tcCompartilharDados ?? 0,
+        }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: data.success ? "Espelhamento TC enviado" : "Falha", description: data.message, variant: data.success ? "default" : "destructive" });
+      if (data.success) onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  if (!vehicle) return null;
+
+  const activeGerenciadoras = gerenciadoras.filter(g => g.active === 1);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[400px]" data-testid="dialog-mirror-vehicle">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold">Espelhar — {vehicle.plate}</DialogTitle>
+          <DialogDescription className="text-sm text-neutral-500">
+            Enviar posição deste veículo para a gerenciadora.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 mt-2">
+          {activeGerenciadoras.length === 0 ? (
+            <p className="text-sm text-neutral-500 text-center py-4">Nenhuma gerenciadora cadastrada.</p>
+          ) : (
+            activeGerenciadoras.map((g) => (
+              <div key={g.id} className="flex items-center justify-between border rounded-lg px-4 py-3 hover:bg-neutral-50 transition-colors" data-testid={`mirror-ger-${g.id}`}>
+                <div>
+                  <p className="font-semibold text-sm">{g.name}</p>
+                  {g.cnpj && <p className="text-xs text-neutral-500">{g.cnpj}</p>}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={mirrorMutation.isPending || espelharTcMutation.isPending}
+                  onClick={() => {
+                    if (vehicle.trackerType === "truckscontrol" && vehicle.truckscontrolIdentifier && g.cnpj) {
+                      espelharTcMutation.mutate({ gerenciadora: g });
+                    } else if (g.apiUrl) {
+                      mirrorMutation.mutate({ gerenciadoraId: g.id });
+                    } else {
+                      toast({ title: "Sem destino", description: "Gerenciadora sem API URL ou CNPJ configurado.", variant: "destructive" });
+                    }
+                  }}
+                  data-testid={`btn-mirror-send-${g.id}`}
+                >
+                  {(mirrorMutation.isPending || espelharTcMutation.isPending) ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 text-neutral-500" />
+                  )}
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function VehicleBlockButton({ vehicle }: { vehicle: TrackedVehicle }) {
   const { toast } = useToast();
@@ -2622,6 +2730,8 @@ export default function OperationalGridPage() {
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
   const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
   const [proximityResult, setProximityResult] = useState<ProximityResult | null>(null);
+  const [mirrorVehicle, setMirrorVehicle] = useState<TrackedVehicle | null>(null);
+  const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
 
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
@@ -2642,6 +2752,23 @@ export default function OperationalGridPage() {
       setLastRefresh(Math.max(vehiclesUpdatedAt || 0, gridUpdatedAt || 0));
     }
   }, [vehiclesUpdatedAt, gridUpdatedAt]);
+
+  const handleMirrorVehicle = useCallback((vehicleId: number) => {
+    const v = vehicles.find(veh => veh.id === vehicleId);
+    if (v) {
+      setMirrorVehicle(v);
+      setMirrorDialogOpen(true);
+    }
+  }, [vehicles]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const vehicleId = (e as CustomEvent).detail;
+      if (vehicleId) handleMirrorVehicle(vehicleId);
+    };
+    window.addEventListener("mirror-vehicle", handler);
+    return () => window.removeEventListener("mirror-vehicle", handler);
+  }, [handleMirrorVehicle]);
 
   const countdown = useCountdown(REFRESH_INTERVAL_MS, lastRefresh);
   const isFetching = fetchingVehicles || fetchingGrid;
@@ -2777,6 +2904,12 @@ export default function OperationalGridPage() {
           </>
         )}
       </div>
+      <MirrorVehicleDialog
+        vehicle={mirrorVehicle}
+        open={mirrorDialogOpen}
+        onOpenChange={setMirrorDialogOpen}
+        gerenciadoras={gerenciadoras}
+      />
     </AdminLayout>
     </OpNotifProvider>
   );
