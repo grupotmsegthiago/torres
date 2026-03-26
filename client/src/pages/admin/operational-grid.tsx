@@ -1217,7 +1217,7 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
 
         <div className="text-[10px] text-neutral-400 border-t pt-2 space-y-0.5">
           <p><b>Veículo:</b> {vehicle.plate} | <b>TC veiID:</b> {veiID || "N/A"}</p>
-          <p><b>Padrão:</b> CMD: Permitido | IE: Não | TIE: Não | Validade: 5 dias</p>
+          <p><b>Padrão:</b> CMD: Permitido | IE: Não | TIE: Não | Validade: 31 dias</p>
         </div>
       </DialogContent>
     </Dialog>
