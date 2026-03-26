@@ -269,7 +269,9 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
   km: integer("km").notNull(),
   fuelType: text("fuel_type").notNull().default("diesel"),
+  fullTank: boolean("full_tank").default(true),
   station: text("station"),
+  receiptPhoto: text("receipt_photo"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

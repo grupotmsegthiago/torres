@@ -1348,10 +1348,30 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
+  async function syncVehicleKmFromFuelings(vehicleId: number) {
+    const allFuelings = await storage.getVehicleFuelings();
+    const vehicleFuelings = allFuelings.filter(f => f.vehicleId === vehicleId);
+    if (vehicleFuelings.length === 0) return;
+    const maxKm = Math.max(...vehicleFuelings.map(f => f.km));
+    await storage.updateVehicle(vehicleId, {
+      km: maxKm,
+      lastKmUpdate: new Date(),
+    } as any);
+  }
+
   app.post("/api/fueling", requireAuth, async (req, res) => {
     const parsed = insertVehicleFuelingSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (parsed.data.vehicleId && parsed.data.km) {
+      const vehicle = await storage.getVehicle(parsed.data.vehicleId);
+      if (vehicle && parsed.data.km < vehicle.km) {
+        return res.status(400).json({ message: `KM informado (${parsed.data.km}) é menor que o KM atual do veículo (${vehicle.km}). Verifique o hodômetro.` });
+      }
+    }
     const data = await storage.createVehicleFueling(parsed.data);
+    if (parsed.data.vehicleId) {
+      await syncVehicleKmFromFuelings(parsed.data.vehicleId);
+    }
     res.status(201).json(data);
   });
 
@@ -1360,11 +1380,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateVehicleFueling(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Abastecimento não encontrado" });
+    if (data.vehicleId) {
+      await syncVehicleKmFromFuelings(data.vehicleId);
+    }
     res.json(data);
   });
 
   app.delete("/api/fueling/:id", requireAuth, async (req, res) => {
+    const existing = await storage.getVehicleFueling(Number(req.params.id));
     await storage.deleteVehicleFueling(Number(req.params.id));
+    if (existing?.vehicleId) {
+      await syncVehicleKmFromFuelings(existing.vehicleId);
+    }
     res.json({ message: "Abastecimento removido" });
   });
 
