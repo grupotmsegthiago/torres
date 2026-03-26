@@ -1987,7 +1987,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
 
-                    <td className="px-3 py-3 max-w-[240px]">
+                    <td className="px-3 py-3 max-w-[200px]">
                       {v.tracker?.address ? (
                         <button
                           type="button"
@@ -2015,15 +2015,15 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       )}
                     </td>
 
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className="px-3 py-3 whitespace-nowrap min-w-[100px]">
                       {v.tracker?.lastPositionTime ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-xs font-semibold text-neutral-800">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-xs font-semibold text-neutral-800 tabular-nums">
                                 {new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                               </span>
-                              <span className={`text-xs font-bold ${posInfo.color}`}>
+                              <span className={`text-xs font-bold tabular-nums ${posInfo.color}`}>
                                 {new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                               </span>
                             </div>
