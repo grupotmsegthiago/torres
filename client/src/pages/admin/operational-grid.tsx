@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  MapPin, Power, Satellite, Signal, RefreshCw, Radio,
+  MapPin, Power, Satellite, Signal, RefreshCw, Radio, ToggleLeft, ToggleRight,
   ExternalLink, Zap, CalendarClock, Recycle, Car, X,
   Building2, Navigation, Play, Flag, CircleCheckBig,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
@@ -982,20 +982,6 @@ function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
   );
 }
 
-function IgnitionKeyIcon({ className, on }: { className?: string; on?: boolean }) {
-  const color = on === undefined ? "currentColor" : on ? "#22c55e" : "#ef4444";
-  const glow = on ? "drop-shadow(0 0 4px rgba(34,197,94,0.6))" : "none";
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} style={{ filter: glow }}>
-      <rect x="2" y="9" width="14" height="6" rx="3" fill={color} />
-      <rect x="13" y="10.5" width="5" height="3" rx="0.5" fill={color} />
-      <rect x="16" y="9.5" width="1.5" height="2" rx="0.3" fill={color} />
-      <rect x="16" y="12.5" width="1.5" height="2" rx="0.3" fill={color} />
-      <circle cx="19.5" cy="12" r="3" stroke={color} strokeWidth="1.8" fill="none" />
-      <circle cx="19.5" cy="12" r="1" fill={color} />
-    </svg>
-  );
-}
 
 function VehicleBlockButton({ vehicle }: { vehicle: TrackedVehicle }) {
   const { toast } = useToast();
@@ -1955,21 +1941,24 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <IgnitionKeyIcon className="w-5 h-5 mx-auto" />
+                            <ToggleLeft className="w-5 h-5 mx-auto text-neutral-300" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.ignition === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <IgnitionKeyIcon className="w-5 h-5 mx-auto text-amber-500" />
+                            <ToggleLeft className="w-5 h-5 mx-auto text-amber-500" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de ignição</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
-                            <IgnitionKeyIcon className="w-5 h-5 mx-auto" on={v.tracker.ignition} />
+                            {v.tracker.ignition
+                              ? <ToggleRight className="w-5 h-5 mx-auto text-green-500" style={{ filter: "drop-shadow(0 0 4px rgba(34,197,94,0.5))" }} />
+                              : <ToggleLeft className="w-5 h-5 mx-auto text-red-500" />
+                            }
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
                         </Tooltip>
