@@ -1356,11 +1356,26 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
       if (data.success) {
         toast({ title: "Espelhamento realizado", description: data.message });
         queryClient.invalidateQueries({ queryKey: ["/api/truckscontrol/espelhados"] });
+        setDiagResult(null);
       } else {
         toast({ title: "Falha no espelhamento", description: data.message, variant: "destructive" });
       }
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const [diagResult, setDiagResult] = useState<{ results: Array<{ test: string; success: boolean; message: string }>; summary: string } | null>(null);
+  const diagMutation = useMutation({
+    mutationFn: async ({ veiID, cnpj }: { veiID: number; cnpj: string }) => {
+      const r = await authFetch("/api/truckscontrol/espelhar/diagnostico", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ veiID, cnpj }),
+      });
+      if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
+      return r.json();
+    },
+    onSuccess: (data) => setDiagResult(data),
+    onError: (err: Error) => toast({ title: "Erro no diagnóstico", description: err.message, variant: "destructive" }),
   });
 
   const aceitarMutation = useMutation({
@@ -1612,7 +1627,31 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                     {espelharMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
                     Espelhar TC
                   </Button>
+                  <Button size="sm" variant="outline" className="gap-1 h-8" onClick={() => {
+                    if (!espelharVeiID || !espelharGerId) return;
+                    const ger = gerenciadoras.find(g => g.id === Number(espelharGerId));
+                    if (!ger?.cnpj) return;
+                    diagMutation.mutate({ veiID: Number(espelharVeiID), cnpj: ger.cnpj });
+                  }} disabled={!espelharVeiID || !espelharGerId || diagMutation.isPending} data-testid="btn-diagnostico-tc">
+                    {diagMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                    Diagnóstico
+                  </Button>
                 </div>
+
+                {diagResult && (
+                  <div className="mt-3 border rounded-lg p-3 bg-white space-y-2" data-testid="diagnostico-result">
+                    <p className="text-xs font-bold text-neutral-800">Resultado do Diagnóstico</p>
+                    {diagResult.results.map((r: any, i: number) => (
+                      <div key={i} className={`text-xs px-2 py-1.5 rounded ${r.success ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                        <span className="font-semibold">{r.test}:</span> {r.message}
+                      </div>
+                    ))}
+                    <div className="text-xs mt-2 p-2 rounded bg-yellow-50 border border-yellow-200 text-yellow-800">
+                      <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
+                      <span className="font-semibold">Conclusão:</span> {diagResult.summary}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

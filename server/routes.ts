@@ -2372,6 +2372,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  app.post("/api/truckscontrol/espelhar/diagnostico", requireAuth, requireAdminRole, async (req, res) => {
+    const { veiID, cnpj } = req.body;
+    if (!veiID || !cnpj) return res.status(400).json({ success: false, message: "veiID e cnpj são obrigatórios" });
+    try {
+      const result = await truckscontrol.diagnosticoEspelhamento(veiID, cnpj);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   app.post("/api/truckscontrol/espelhamento/aceitar", requireAuth, requireAdminRole, async (req, res) => {
     const { veiID, desc } = req.body;
     if (!veiID) return res.status(400).json({ success: false, message: "veiID é obrigatório" });

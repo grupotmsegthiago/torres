@@ -1060,3 +1060,66 @@ function getDefaultValidade(): string {
   d.setFullYear(d.getFullYear() + 1);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
+
+export async function diagnosticoEspelhamento(veiID: number, cnpj: string): Promise<{
+  results: Array<{ test: string; params: Record<string, any>; success: boolean; message: string; rawResponse?: string }>;
+  summary: string;
+}> {
+  const config = getConfig();
+  if (!config) return { results: [], summary: "Credenciais TrucksControl não configuradas." };
+
+  const cnpjClean = cnpj.replace(/[^0-9]/g, "");
+  const validade = getDefaultValidade();
+  const results: Array<{ test: string; params: Record<string, any>; success: boolean; message: string; rawResponse?: string }> = [];
+
+  const variations = [
+    { test: "cmd=0 (sem comando)", cmd: 0, IE: 0, TIE: 0, possoCancelar: 1, comandoExclusivo: 0, compartilharDados: 1 },
+    { test: "cmd=1 (bloquear)", cmd: 1, IE: 0, TIE: 0, possoCancelar: 1, comandoExclusivo: 0, compartilharDados: 0 },
+    { test: "cmd=0 + compartilhar=1 + exclusivo=0", cmd: 0, IE: 0, TIE: 0, possoCancelar: 1, comandoExclusivo: 0, compartilharDados: 1 },
+  ];
+
+  for (const v of variations) {
+    const id = nextEspelhamentoId();
+    const xml = `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${id}</id><veiID>${veiID}</veiID><cmd>${v.cmd}</cmd><IE>${v.IE}</IE><TIE>${v.TIE}</TIE><validade>${validade}</validade><possocancelar>${v.possoCancelar}</possocancelar><comandoexclusivo>${v.comandoExclusivo}</comandoexclusivo><compartilhardados>${v.compartilharDados}</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`;
+
+    console.log(`[truckscontrol] DIAG test="${v.test}" veiID=${veiID} CNPJ=${cnpjClean}`);
+
+    try {
+      const response = await postXml(xml);
+      console.log(`[truckscontrol] DIAG RESPONSE: ${response.substring(0, 500)}`);
+
+      const hasError = response.includes("<ErrorRequest>") || (response.includes("<erro>") && response.includes("<codigo>"));
+      const statusVal = parseInt(parseXmlValue(response, "status") || "0");
+      const codigoErro = parseXmlValue(response, "codigo") || "";
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro") || "";
+
+      if (hasError) {
+        results.push({ test: v.test, params: v, success: false, message: `Código ${codigoErro}: ${erroMsg}`, rawResponse: response.substring(0, 500) });
+      } else if (statusVal === 2) {
+        results.push({ test: v.test, params: v, success: true, message: "Espelhamento criado com sucesso" });
+      } else {
+        results.push({ test: v.test, params: v, success: false, message: `status=${statusVal}, erro=${erroMsg || codigoErro}`, rawResponse: response.substring(0, 500) });
+      }
+    } catch (err: any) {
+      results.push({ test: v.test, params: v, success: false, message: `Erro de conexão: ${err.message}` });
+    }
+
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
+  const anySuccess = results.some(r => r.success);
+  let summary = "";
+  if (anySuccess) {
+    const working = results.filter(r => r.success).map(r => r.test).join(", ");
+    summary = `Espelhamento funciona com: ${working}`;
+  } else {
+    const allSameError = results.every(r => r.message === results[0]?.message);
+    if (allSameError) {
+      summary = `Todas as variações falharam com o mesmo erro: ${results[0]?.message}. Isso indica que o problema NÃO é nos parâmetros (cmd, IE, etc), e sim: (1) o CNPJ ${cnpjClean} não está cadastrado como gerenciadora no TrucksControl, (2) a conta Torres não tem permissão de espelhamento habilitada, ou (3) o veiID ${veiID} não aceita espelhamento.`;
+    } else {
+      summary = `Nenhuma variação funcionou. Erros diferentes sugerem problema de permissão ou configuração.`;
+    }
+  }
+
+  return { results, summary };
+}
