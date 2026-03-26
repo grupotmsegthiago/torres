@@ -202,6 +202,7 @@ interface TrackedVehicle {
     stoppedSince?: string | null;
     ignitionOnSince?: string | null;
     isLiveData?: boolean;
+    voltage?: number;
   } | null;
   activeOs: {
     id: number;
@@ -717,6 +718,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             ${_samePlaceAlert ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 6px 10px; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 6px;">🚨 ALERTA: ${_samePlaceCount} posições no mesmo lugar c/ motor ligado!</div>` : _idleMin >= 5 ? `<div style="font-size: 13px; color: #dc2626; font-weight: 700; background: #fef2f2; padding: 4px 8px; border-radius: 4px; border: 1px solid #fca5a5; margin-top: 4px;">⚠ ALERTA: Parado c/ motor ligado há ${_idleT}</div>` : _idleT ? `<div style="font-size: 13px; color: #d97706;"><b>⏸ Parado c/ motor:</b> ${_idleT}</div>` : ""}
             ${_stopT && !v.tracker.ignition ? `<div style="font-size: 13px; color: #dc2626;"><b>⏹ Parado:</b> ${_stopT}</div>` : ""}
             ${_ignT ? `<div style="font-size: 13px; color: #16a34a;"><b>🔑 Motor ligado:</b> ${_ignT}</div>` : ""}
+            ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px;"><b>⚡ Bateria:</b> ${v.tracker.voltage.toFixed(1)}V</div>` : ""}
             ${v.tracker.lastPositionTime ? `<div style="font-size: 13px; color: #888; margin-top: 4px;"><b>Última atualização:</b> ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
             ${v.tracker.address ? `<div style="font-size: 13px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
             ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 13px;"><b>OS:</b> ${v.activeOs.osNumber}<br/><b>Cliente:</b> ${v.activeOs.clientName}<br/><b>Status:</b> ${getMissionLabel(v.activeOs.missionStatus)}</div>` : ""}
@@ -2204,19 +2206,32 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <TooltipContent>Veículo desligado e parado há {stoppedTime}</TooltipContent>
                           </Tooltip>
                         ) : isMov ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-0.5">
-                                <Navigation className="w-3 h-3" />
-                                <span className="text-xs font-bold">{v.tracker?.speed ?? 0} km/h</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Em movimento a {v.tracker?.speed ?? 0} km/h</TooltipContent>
-                          </Tooltip>
+                          <div className="flex flex-col items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-0.5">
+                                  <Navigation className="w-3 h-3" />
+                                  <span className="text-xs font-bold">{v.tracker?.speed ?? 0} km/h</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>Em movimento a {v.tracker?.speed ?? 0} km/h</TooltipContent>
+                            </Tooltip>
+                            {ignitionOnTime && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <div className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    <span className="text-[10px] font-semibold">{ignitionOnTime}</span>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>Em movimento há {ignitionOnTime}</TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-neutral-300 text-xs">—</span>
                         )}
-                        {ignitionOnTime && (
+                        {!isMov && ignitionOnTime && (
                           <Tooltip>
                             <TooltipTrigger>
                               <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-1.5 py-0.5">
@@ -2225,6 +2240,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>Motor ligado há {ignitionOnTime}</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {v.tracker?.voltage != null && v.tracker.voltage > 0 && (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="inline-flex items-center gap-1 text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-md px-1.5 py-0.5">
+                                <Zap className="w-2.5 h-2.5" />
+                                <span className="text-[10px] font-semibold">{v.tracker.voltage.toFixed(1)}V</span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>Tensão da bateria: {v.tracker.voltage.toFixed(1)}V</TooltipContent>
                           </Tooltip>
                         )}
                         {!isLive && v.tracker && (

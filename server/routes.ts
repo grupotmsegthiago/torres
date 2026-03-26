@@ -1869,6 +1869,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           stoppedSince?: string | null;
           ignitionOnSince?: string | null;
           isLiveData?: boolean;
+          voltage?: number;
         } | null = null;
 
         const trackerType = v.trackerType || "none";
@@ -1894,6 +1895,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 gpsSignal: pos.gpsSignal,
                 speed: pos.speed,
                 address: pos.address,
+                voltage: pos.voltage,
                 isLiveData: true,
               };
             }
