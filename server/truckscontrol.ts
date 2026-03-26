@@ -225,7 +225,8 @@ function parseSpyMessages(xml: string): SpyMessage[] {
 }
 
 async function fetchSpyDevices(config: TrucksControlConfig): Promise<SpyDevice[]> {
-  if (spyCache.length > 0 && Date.now() - spyCacheTimestamp < VEHICLE_CACHE_TTL) {
+  const cacheValid = spyCache.length > 0 && Date.now() - spyCacheTimestamp < VEHICLE_CACHE_TTL;
+  if (cacheValid) {
     return spyCache;
   }
 
@@ -294,7 +295,8 @@ async function fetchSpyMessages(config: TrucksControlConfig): Promise<SpyMessage
 }
 
 async function fetchVehicles(config: TrucksControlConfig): Promise<TrucksControlVehicle[]> {
-  if (vehicleCache.length > 0 && Date.now() - vehicleCacheTimestamp < VEHICLE_CACHE_TTL) {
+  const cacheValid = vehicleCache.length > 0 && Date.now() - vehicleCacheTimestamp < VEHICLE_CACHE_TTL;
+  if (cacheValid) {
     return vehicleCache;
   }
 
@@ -359,6 +361,27 @@ async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControl
   }
 }
 
+let initialized = false;
+
+async function initializeCache(config: TrucksControlConfig): Promise<void> {
+  if (initialized) return;
+  initialized = true;
+  console.log("[truckscontrol] Inicializando cache...");
+  try {
+    await fetchVehicles(config);
+  } catch {}
+  try {
+    await fetchMessages(config);
+  } catch {}
+  try {
+    await fetchSpyDevices(config);
+  } catch {}
+  try {
+    await fetchSpyMessages(config);
+  } catch {}
+  console.log(`[truckscontrol] Cache inicial: ${vehicleCache.length} veículo(s), ${messagesByVehicle.size} posição(ões), ${spyCache.length} SPY(s)`);
+}
+
 export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
   const config = getConfig();
   if (!config) {
@@ -366,20 +389,20 @@ export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
     return [];
   }
 
-  try {
-    const [vehicles, spyDevices] = await Promise.all([
-      fetchVehicles(config),
-      fetchSpyDevices(config),
-    ]);
+  await initializeCache(config);
 
-    await Promise.all([
-      fetchMessages(config),
-      fetchSpyMessages(config),
-    ]);
+  try {
+    const vehicles = await fetchVehicles(config);
+    const spyDevices = await fetchSpyDevices(config);
+    await fetchMessages(config);
+    await fetchSpyMessages(config);
 
     const positions: TrucksControlPosition[] = [];
 
+    const processedVeiIDs = new Set<number>();
+
     for (const veh of vehicles) {
+      processedVeiIDs.add(veh.veiID);
       const msg = messagesByVehicle.get(veh.veiID);
       if (msg) {
         const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
@@ -421,6 +444,30 @@ export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
           deviceType: "vehicle",
         });
       }
+    }
+
+    for (const [veiID, msg] of messagesByVehicle) {
+      if (processedVeiIDs.has(veiID)) continue;
+      const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
+      positions.push({
+        latitude: msg.lat,
+        longitude: msg.lon,
+        speed: msg.vel >= 0 ? msg.vel : 0,
+        ignition: msg.evt4 === 1,
+        lastPositionTime: msg.dt,
+        gpsSignal: true,
+        address,
+        direction: 0,
+        odometer: 0,
+        plate: "",
+        identifier: String(veiID),
+        voltage: 0,
+        veiID,
+        municipality: msg.mun,
+        state: msg.uf,
+        deviceType: "vehicle",
+      });
+      console.log(`[truckscontrol] Posição órfã adicionada: veiID=${veiID} lat=${msg.lat} lon=${msg.lon} (veículo não no cache)`);
     }
 
     for (const spy of spyDevices) {
@@ -597,7 +644,9 @@ let positionCache: { data: TrucksControlPosition[]; timestamp: number } | null =
 const CACHE_TTL = 5 * 60 * 1000;
 
 export async function getCachedPositions(): Promise<TrucksControlPosition[]> {
-  if (positionCache && Date.now() - positionCache.timestamp < CACHE_TTL) {
+  const hasData = positionCache && positionCache.data.some(p => p.latitude !== 0);
+  const ttl = hasData ? CACHE_TTL : 30000;
+  if (positionCache && Date.now() - positionCache.timestamp < ttl) {
     return positionCache.data;
   }
 
