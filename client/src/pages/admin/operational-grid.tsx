@@ -189,6 +189,7 @@ interface TrackedVehicle {
   deviceType?: "vehicle" | "spy";
   batteryLevel?: number;
   coupled?: boolean;
+  photoFront?: string | null;
   idleSamePlace?: { count: number; isAlert: boolean } | null;
   tracker: {
     veiID?: number;
@@ -709,6 +710,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _samePlaceCount = v.idleSamePlace?.count ?? 0;
         infoContent = `
           <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; min-width: 240px; padding: 4px;">
+            ${v.photoFront ? `<div style="margin-bottom: 8px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;"><img src="${v.photoFront}" style="width: 100%; height: 120px; object-fit: cover; display: block;" alt="${v.plate}" /></div>` : ""}
             <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">${v.plate}</div>
             <div style="color: #666; font-size: 13px; margin-bottom: 6px;">${v.brand} ${v.model}</div>
             ${!_isLive && _noSigT ? `<div style="font-size: 13px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT} — posição mantida</div>` : ""}

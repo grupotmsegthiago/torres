@@ -2017,6 +2017,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           trackerType: v.trackerType || "none",
           truckscontrolIdentifier: v.truckscontrolIdentifier,
           iconType: v.iconType || "polo",
+          photoFront: v.photoFront || null,
           noSignalSince,
           deviceType: "vehicle" as const,
           idleSamePlace: v.truckscontrolIdentifier ? truckscontrol.getIdleSamePlaceInfo(parseInt(v.truckscontrolIdentifier)) : null,
