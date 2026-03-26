@@ -729,14 +729,14 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             <div style="flex: 1; min-width: 0;">
               ${!_isLive && _noSigT ? `<div style="font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 3px 6px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT}</div>` : ""}
               ${!_isLive && !_noSigT ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
-              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Placa:</span> <b>${v.plate.replace(/^(.{3})(.+)$/, "$1-$2")}</b></div>
-              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Veículo:</span> <b>${v.brand} ${v.model}</b></div>
-              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Status:</span> <span style="color: ${_statusColor}; font-weight: 600;">${_statusText}</span></div>
-              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Ignição:</span> ${v.tracker.ignition ? "<b>Ligada ✅</b>" : "<b>Desligada ❌</b>"}</div>
-              <div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Velocidade:</span> <b>${v.tracker.speed ?? 0} km/h</b></div>
-              ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px; margin-bottom: 3px;"><span style="color: #888;">Bateria:</span> <b>${v.tracker.voltage.toFixed(1)}V</b></div>` : ""}
-              ${v.tracker.lastPositionTime ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">🕐 ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
-              ${v.tracker.address ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
+              <div style="font-size: 13px; margin-bottom: 3px;"><b>Placa:</b> ${v.plate.replace(/^(.{3})(.+)$/, "$1-$2")}</div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><b>Veículo:</b> ${v.brand} ${v.model}</div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><b>Status:</b> <span style="color: ${_statusColor};">${_statusText}</span></div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>
+              <div style="font-size: 13px; margin-bottom: 3px;"><b>Velocidade:</b> ${v.tracker.speed ?? 0} km/h</div>
+              ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px; margin-bottom: 3px;"><b>Bateria:</b> ${v.tracker.voltage.toFixed(1)}V</div>` : ""}
+              ${v.tracker.lastPositionTime ? `<div style="font-size: 12px; color: #555; margin-top: 5px;">🕐 ${new Date(v.tracker.lastPositionTime).toLocaleString("pt-BR")}</div>` : ""}
+              ${v.tracker.address ? `<div style="font-size: 12px; color: #555; margin-top: 2px;">📍 ${v.tracker.address}</div>` : ""}
               ${v.activeOs ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
