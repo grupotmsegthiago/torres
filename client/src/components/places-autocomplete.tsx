@@ -96,8 +96,12 @@ export function PlacesAutocomplete({
 
   useEffect(() => {
     if (apiReady && window.google?.maps?.places) {
-      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
-      sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+      try {
+        autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+      } catch (e) {
+        console.error("[places] Failed to init AutocompleteService:", e);
+      }
     }
   }, [apiReady]);
 
@@ -117,28 +121,38 @@ export function PlacesAutocomplete({
       return;
     }
 
-    autocompleteServiceRef.current.getPlacePredictions(
-      {
-        input,
-        sessionToken: sessionTokenRef.current,
-        componentRestrictions: { country: "br" },
-        language: "pt-BR",
-      },
-      (predictions: any[] | null, status: string) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-          const items: Suggestion[] = predictions.map((p) => ({
-            placeId: p.place_id,
-            text: p.description,
-            mainText: p.structured_formatting?.main_text || p.description,
-            secondaryText: p.structured_formatting?.secondary_text || "",
-          }));
-          setSuggestions(items);
-          setShowDropdown(items.length > 0);
-        } else {
-          setSuggestions([]);
+    try {
+      autocompleteServiceRef.current.getPlacePredictions(
+        {
+          input,
+          sessionToken: sessionTokenRef.current,
+          componentRestrictions: { country: "br" },
+          language: "pt-BR",
+        },
+        (predictions: any[] | null, status: string) => {
+          try {
+            if (status === window.google?.maps?.places?.PlacesServiceStatus?.OK && predictions) {
+              const items: Suggestion[] = predictions.map((p) => ({
+                placeId: p.place_id,
+                text: p.description,
+                mainText: p.structured_formatting?.main_text || p.description,
+                secondaryText: p.structured_formatting?.secondary_text || "",
+              }));
+              setSuggestions(items);
+              setShowDropdown(items.length > 0);
+            } else {
+              setSuggestions([]);
+            }
+          } catch (e) {
+            console.error("[places] Callback error:", e);
+            setSuggestions([]);
+          }
         }
-      }
-    );
+      );
+    } catch (e) {
+      console.error("[places] getPlacePredictions error:", e);
+      setSuggestions([]);
+    }
   }, [apiReady]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,19 +164,25 @@ export function PlacesAutocomplete({
   }, [onChange, fetchSuggestions]);
 
   const handleSelect = useCallback((suggestion: Suggestion) => {
-    onChange(suggestion.text);
-    setSuggestions([]);
-    setShowDropdown(false);
-    sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+    try {
+      onChange(suggestion.text);
+      setSuggestions([]);
+      setShowDropdown(false);
+      if (window.google?.maps?.places) {
+        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
+      }
 
-    if (onPlaceSelect && suggestion.placeId && window.google?.maps) {
-      const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ placeId: suggestion.placeId }, (results: any, status: string) => {
-        if (status === "OK" && results?.[0]?.geometry?.location) {
-          const loc = results[0].geometry.location;
-          onPlaceSelect({ address: suggestion.text, lat: loc.lat(), lng: loc.lng() });
-        }
-      });
+      if (onPlaceSelect && suggestion.placeId && window.google?.maps) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ placeId: suggestion.placeId }, (results: any, status: string) => {
+          if (status === "OK" && results?.[0]?.geometry?.location) {
+            const loc = results[0].geometry.location;
+            onPlaceSelect({ address: suggestion.text, lat: loc.lat(), lng: loc.lng() });
+          }
+        });
+      }
+    } catch (e) {
+      console.error("[places] handleSelect error:", e);
     }
   }, [onChange, onPlaceSelect]);
 
