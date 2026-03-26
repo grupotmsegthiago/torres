@@ -290,9 +290,9 @@ function getLastPositionInfo(lastPositionTime?: string) {
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
   const timeStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
-  if (diffMin > 30) return { text: timeStr, color: "text-red-600", dotColor: "bg-red-500", diffMin };
-  if (diffMin > 5) return { text: timeStr, color: "text-amber-600", dotColor: "bg-amber-500", diffMin };
-  return { text: timeStr, color: "text-green-600", dotColor: "bg-green-500", diffMin };
+  if (diffMin > 30) return { text: timeStr, color: "text-neutral-500", dotColor: "bg-neutral-400", diffMin };
+  if (diffMin > 5) return { text: timeStr, color: "text-neutral-600", dotColor: "bg-neutral-500", diffMin };
+  return { text: timeStr, color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin };
 }
 
 function getMissionLabel(status: string | null) {
@@ -1999,7 +1999,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">GPS</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Localização</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Última Pos.</th>
-                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Tempo</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Velocidade</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Últ. Alerta</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
@@ -2103,8 +2103,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <Tooltip>
                           <TooltipTrigger>
                             {v.tracker.ignition
-                              ? <ToggleRight className="w-5 h-5 mx-auto text-green-500" style={{ filter: "drop-shadow(0 0 4px rgba(34,197,94,0.5))" }} />
-                              : <ToggleLeft className="w-5 h-5 mx-auto text-red-500" />
+                              ? <ToggleRight className="w-5 h-5 mx-auto text-emerald-600" />
+                              : <ToggleLeft className="w-5 h-5 mx-auto text-neutral-400" />
                             }
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
@@ -2116,21 +2116,21 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       {!v.hasTracker ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Signal className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Signal className="w-4 h-4 mx-auto text-neutral-300" />
                           </TooltipTrigger>
                           <TooltipContent>Sem integração / rastreador</TooltipContent>
                         </Tooltip>
                       ) : v.tracker?.gpsSignal === undefined ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Signal className="w-4 h-4 mx-auto text-amber-600 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
+                            <Signal className="w-4 h-4 mx-auto text-neutral-400" />
                           </TooltipTrigger>
                           <TooltipContent>Sem informação de GPS</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
-                            <Signal className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-green-500" : "text-red-500"}`} />
+                            <Signal className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-emerald-600" : "text-neutral-400"}`} />
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.gpsSignal ? "GPS OK" : "GPS sem sinal"}</TooltipContent>
                         </Tooltip>
@@ -2146,8 +2146,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           className={`inline-flex items-start gap-1.5 group text-left ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
                           data-testid={`link-map-${v.id}`}
                         >
-                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-blue-500 group-hover:text-blue-700" : "text-neutral-300"}`} />
-                          <span className={`text-xs font-medium leading-tight truncate ${hasLocation ? "text-blue-600 group-hover:text-blue-800 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
+                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-neutral-500 group-hover:text-neutral-700" : "text-neutral-300"}`} />
+                          <span className={`text-xs font-medium leading-tight truncate ${hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
                             {v.tracker.address}
                           </span>
                         </button>
@@ -2155,7 +2155,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <button
                           type="button"
                           onClick={() => { if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                          className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 text-xs font-medium cursor-pointer"
+                          className="inline-flex items-center gap-1 text-neutral-500 hover:text-neutral-700 text-xs font-medium cursor-pointer"
                           data-testid={`link-map-${v.id}`}
                         >
                           <MapPin className="w-3.5 h-3.5" />
@@ -2187,95 +2187,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
                     <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                      <div className="flex flex-col items-center gap-1">
-                        {noSignalTime && !isLive ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-gray-600 bg-gray-100 border border-gray-300 rounded-md px-2 py-0.5">
-                                <WifiOff className="w-3 h-3" />
-                                <span className="text-xs font-bold">{noSignalTime}</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Sem sinal há {noSignalTime} — última posição mantida</TooltipContent>
-                          </Tooltip>
-                        ) : idleTime ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <div className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 ${samePlaceAlert ? "text-red-700 bg-red-100 border border-red-400 animate-pulse shadow-sm" : isIdleAlert ? "text-red-700 bg-red-50 border border-red-300 animate-pulse" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
-                                  {samePlaceAlert || isIdleAlert ? <AlertTriangle className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-                                  <span className="text-xs font-bold">{idleTime}</span>
-                                  {samePlaceCount >= 2 && <span className="text-xs font-bold">({samePlaceCount}x)</span>}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>{samePlaceAlert ? `🚨 ALERTA: ${samePlaceCount} posições no mesmo lugar com motor ligado! Considere bloquear.` : isIdleAlert ? `⚠ Motor ligado e parado há ${idleTime}` : `Motor ligado, veículo parado há ${idleTime}`}</TooltipContent>
-                            </Tooltip>
-                            {samePlaceAlert && v.trackerType === "truckscontrol" && (
-                              <VehicleBlockButton vehicle={v} />
-                            )}
-                          </div>
-                        ) : stoppedTime && !isIgnOn ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5">
-                                <XCircle className="w-3 h-3" />
-                                <span className="text-xs font-bold">{stoppedTime}</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Veículo desligado e parado há {stoppedTime}</TooltipContent>
-                          </Tooltip>
-                        ) : isMov ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-0.5">
-                                  <Navigation className="w-3 h-3" />
-                                  <span className="text-xs font-bold">{v.tracker?.speed ?? 0} km/h</span>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>Em movimento a {v.tracker?.speed ?? 0} km/h</TooltipContent>
-                            </Tooltip>
-                            {ignitionOnTime && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <div className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5">
-                                    <Clock className="w-2.5 h-2.5" />
-                                    <span className="text-[10px] font-semibold">{ignitionOnTime}</span>
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>Em movimento há {ignitionOnTime}</TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-neutral-300 text-xs">—</span>
-                        )}
-                        {!isMov && ignitionOnTime && (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-md px-1.5 py-0.5">
-                                <Power className="w-2.5 h-2.5" />
-                                <span className="text-xs font-semibold">{ignitionOnTime}</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Motor ligado há {ignitionOnTime}</TooltipContent>
-                          </Tooltip>
-                        )}
-                        {v.tracker?.voltage != null && v.tracker.voltage > 0 && (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <div className="inline-flex items-center gap-1 text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-md px-1.5 py-0.5">
-                                <Zap className="w-2.5 h-2.5" />
-                                <span className="text-[10px] font-semibold">{v.tracker.voltage.toFixed(1)}V</span>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>Tensão da bateria: {v.tracker.voltage.toFixed(1)}V</TooltipContent>
-                          </Tooltip>
-                        )}
-                        {!isLive && v.tracker && (
-                          <span className="text-xs text-orange-500 font-semibold">sem sinal</span>
-                        )}
-                      </div>
+                      {v.tracker?.speed != null ? (
+                        <span className={`text-xs font-bold tabular-nums ${isOverSpeed ? "text-red-600" : v.tracker.speed > 0 ? "text-neutral-800" : "text-neutral-400"}`}>
+                          {v.tracker.speed} km/h
+                        </span>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
                     </td>
 
                     <td className="px-2 py-1.5 whitespace-nowrap">
@@ -2283,8 +2201,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <Tooltip>
                           <TooltipTrigger>
                             <div className="inline-flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
-                              <span className="text-[11px] font-semibold text-red-600 tabular-nums">
+                              <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                              <span className="text-[11px] font-semibold text-neutral-700 tabular-nums">
                                 {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
                                 {" "}
                                 {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
