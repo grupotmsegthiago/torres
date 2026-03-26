@@ -1080,9 +1080,9 @@ function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
 }
 
 
-function getValidade5Days(): string {
+function getValidade31Days(): string {
   const d = new Date();
-  d.setDate(d.getDate() + 5);
+  d.setDate(d.getDate() + 31);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
@@ -1105,10 +1105,10 @@ function MirrorVehicleDialog({ vehicle, open, onOpenChange, gerenciadoras }: { v
           cmd: 1,
           IE: 0,
           TIE: 0,
-          validade: getValidade5Days(),
-          possoCancelar: gerenciadora.tcPossoCancelar ?? 1,
+          validade: getValidade31Days(),
+          possoCancelar: 1,
           comandoExclusivo: gerenciadora.tcComandoExclusivo ?? 0,
-          compartilharDados: gerenciadora.tcCompartilharDados ?? 0,
+          compartilharDados: 1,
         }),
       });
       if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);

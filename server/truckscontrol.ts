@@ -875,7 +875,7 @@ export async function createEspelhamento(
   const validade = options.validade || getDefaultValidade();
   const possoCancelar = options.possoCancelar ?? 1;
   const comandoExclusivo = options.comandoExclusivo ?? 0;
-  const compartilharDados = options.compartilharDados ?? 0;
+  const compartilharDados = options.compartilharDados ?? 1;
 
   const xml = `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${id}</id><veiID>${veiID}</veiID><cmd>${cmd}</cmd><IE>${IE}</IE><TIE>${TIE}</TIE><validade>${validade}</validade><possocancelar>${possoCancelar}</possocancelar><comandoexclusivo>${comandoExclusivo}</comandoexclusivo><compartilhardados>${compartilharDados}</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`;
 
@@ -1057,7 +1057,7 @@ export async function cancelEspelhamentoProprietario(veiID: number, cnpjCliente:
 
 function getDefaultValidade(): string {
   const d = new Date();
-  d.setDate(d.getDate() + 5);
+  d.setDate(d.getDate() + 31);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
