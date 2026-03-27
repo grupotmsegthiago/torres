@@ -31,7 +31,7 @@ const VEHICLE_CHECKLIST_ITEMS = [
 ];
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
-  missao_paga: { title: "Aguardando Pagamento", subtitle: "Pagamento pendente de confirmação", icon: DollarSign },
+  missao_paga: { title: "Dados da Missão", subtitle: "Revise os dados e aguarde liberação", icon: Lock },
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/16", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
@@ -306,7 +306,7 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
 }
 
 const MOBILE_STEP_LABELS: Record<string, string> = {
-  missao_paga: "Pagamento Confirmado",
+  missao_paga: "Aguardando Liberação",
   aguardando: "Ciência da Missão",
   checkout_armamento: "Armamento Conferido",
   checkout_viatura: "Viatura Conferida",
@@ -842,41 +842,38 @@ export default function MobileMissaoPage() {
         )}
 
         {currentStep === "missao_paga" && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center space-y-3">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center mx-auto">
-                <DollarSign className="w-8 h-8 text-emerald-600" />
+          <div className="space-y-3">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-neutral-500">
+                <Crosshair className="w-3.5 h-3.5" />
+                <span className="font-bold uppercase tracking-wider">OS {mission.osNumber}</span>
               </div>
-              <h3 className="text-base font-bold text-neutral-800">Aguardando Confirmação de Pagamento</h3>
-              <p className="text-xs text-neutral-500 leading-relaxed">
-                Esta missão está aguardando a confirmação de pagamento pela administração. 
-                Você será notificado automaticamente quando o pagamento for confirmado e poderá iniciar o check-out.
-              </p>
-              <div className="flex items-center justify-center gap-2 text-xs text-emerald-600 font-medium pt-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Aguardando liberação...</span>
-              </div>
-            </div>
-            {mission.osNumber && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2">
+              {mission.vehiclePlate && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
-                  <Crosshair className="w-3.5 h-3.5" />
-                  <span className="font-bold uppercase tracking-wider">OS {mission.osNumber}</span>
+                  <Car className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Viatura:</strong> {mission.vehiclePlate} · {mission.vehicleModel || ""}</span>
                 </div>
-                {mission.origin && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span><strong className="text-neutral-700">Origem:</strong> {mission.origin}</span>
-                  </div>
-                )}
-                {mission.destination && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span><strong className="text-neutral-700">Destino:</strong> {mission.destination}</span>
-                  </div>
-                )}
+              )}
+              {mission.origin && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Origem:</strong> {mission.origin}</span>
+                </div>
+              )}
+              {mission.destination && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Destino:</strong> {mission.destination}</span>
+                </div>
+              )}
+            </div>
+            <div className="bg-amber-50 rounded-2xl border border-amber-200 p-4 text-center space-y-2">
+              <div className="flex items-center justify-center gap-2 text-xs text-amber-700 font-semibold">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Aguardando liberação da administração...</span>
               </div>
-            )}
+              <p className="text-[11px] text-amber-600">Você será notificado quando a missão for liberada para iniciar o check-out.</p>
+            </div>
           </div>
         )}
 
