@@ -391,6 +391,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
+  const isAtDestination = currentStep === "chegada_destino";
   const isGoingToOrigin = currentStep === "em_transito_origem";
   const targetLat = isGoingToOrigin ? mission.originLat : mission.destinationLat;
   const targetLng = isGoingToOrigin ? mission.originLng : mission.destinationLng;
@@ -481,6 +482,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
 
   return (
     <div className="space-y-4">
+      {!isAtDestination && (
       <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
         <div className="w-16 h-16 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto mb-3 animate-pulse">
           <Car className="w-8 h-8 text-neutral-600" />
@@ -494,8 +496,9 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
           </p>
         )}
       </div>
+      )}
 
-      {nearOrigin && (
+      {nearOrigin && !isAtDestination && (
         <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 flex items-center gap-3" data-testid="alert-near-origin">
           <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
             <MapPin className="w-5 h-5 text-white" />
@@ -627,6 +630,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         </div>
       )}
 
+      {!isAtDestination && (
       <div className="border-t border-neutral-200 pt-4">
         {!confirmArrival ? (
           <button
@@ -668,6 +672,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1632,7 +1637,7 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {(currentStep === "em_transito_origem" || currentStep === "em_transito_destino") && (
+        {(currentStep === "em_transito_origem" || currentStep === "em_transito_destino" || currentStep === "chegada_destino") && (
           <TransitStepView
             currentStep={currentStep}
             mission={mission}
