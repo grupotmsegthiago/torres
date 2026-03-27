@@ -2659,7 +2659,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         const lastUpdate = await db.select()
           .from(missionUpdates)
-          .where(eq(missionUpdates.serviceOrderId, o.id))
+          .where(and(eq(missionUpdates.serviceOrderId, o.id), eq(missionUpdates.readByAdmin, 0)))
           .orderBy(desc(missionUpdates.createdAt))
           .limit(1);
 
@@ -2898,7 +2898,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
                 const lastUpd = await db.select()
                   .from(missionUpdates)
-                  .where(eq(missionUpdates.serviceOrderId, linkedOrder.id))
+                  .where(and(eq(missionUpdates.serviceOrderId, linkedOrder.id), eq(missionUpdates.readByAdmin, 0)))
                   .orderBy(desc(missionUpdates.createdAt))
                   .limit(1);
                 return {

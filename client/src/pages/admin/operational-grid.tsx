@@ -2302,12 +2302,15 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               onClick={() => {
                 setPhotoModalUrl(null);
                 if (lastUpdateId) {
+                  seenUpdateIds.add(lastUpdateId);
+                  forceUpdate(n => n + 1);
                   authFetch("/api/mission/updates/mark-read", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ ids: [lastUpdateId] }),
                   }).then(() => {
                     queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
                   }).catch(() => {});
                 }
               }}
@@ -3245,6 +3248,7 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
     },
   });
 
