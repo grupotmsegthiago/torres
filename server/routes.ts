@@ -3349,11 +3349,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     );
 
     const emAndamento = allActive.find(o => o.status === "em_andamento");
+    const nowMs = Date.now();
     const agendadas = allActive
       .filter(o => o.status === "agendada")
       .sort((a, b) => {
-        const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
-        const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
+        const da = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - nowMs) : Infinity;
+        const db = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - nowMs) : Infinity;
         return da - db;
       });
     const active = emAndamento || agendadas[0];
@@ -3362,8 +3363,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const scheduled = allActive
       .filter(o => o.id !== active.id && o.status === "agendada")
       .sort((a, b) => {
-        const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
-        const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
+        const da = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - nowMs) : Infinity;
+        const db = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - nowMs) : Infinity;
         return da - db;
       });
 
