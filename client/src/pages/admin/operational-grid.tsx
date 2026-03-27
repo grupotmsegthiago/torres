@@ -2868,15 +2868,16 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
     finally { setRefSaving(false); }
   };
 
+  const anyDialogOpen = cmdOpen || mirrorOpen || !!missionAction || !!photoModalUrl || refPointDialog || manageRefOpen || !!ctxPdfUrl;
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      if (anyDialogOpen) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  const anyDialogOpen = cmdOpen || mirrorOpen || !!missionAction || !!photoModalUrl || refPointDialog || manageRefOpen || !!ctxPdfUrl;
+  }, [onClose, anyDialogOpen]);
 
   const menuStyle: React.CSSProperties = {
     position: "fixed",
