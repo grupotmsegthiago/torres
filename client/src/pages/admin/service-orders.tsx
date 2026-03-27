@@ -754,8 +754,18 @@ export default function ServiceOrdersPage() {
                         o.status === "em_andamento" ? "bg-neutral-900 text-white" :
                         o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                         o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
+                        o.status === "agendada" && o.priority === "imediata" ? "bg-red-50 text-red-700 border border-red-200" :
+                        o.status === "agendada" ? "bg-blue-50 text-blue-700 border border-blue-200" :
                         "bg-neutral-100 text-neutral-600 border border-neutral-200"
-                      }`}>{o.status === "aberta" ? "ABERTA" : o.status === "em_andamento" ? "EM ANDAMENTO" : o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" : o.status === "cancelada" ? "CANCELADA" : o.status?.toUpperCase()}</span>
+                      }`}>{
+                        o.status === "agendada" && o.priority === "imediata" ? "EM SERVIÇO" :
+                        o.status === "agendada" ? "AGENDAMENTO" :
+                        o.status === "aberta" ? "ABERTA" :
+                        o.status === "em_andamento" ? "EM ANDAMENTO" :
+                        o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" :
+                        o.status === "cancelada" ? "CANCELADA" :
+                        o.status?.toUpperCase()
+                      }</span>
                     </td>
                     <td className="p-3">
                       {o.kitId ? (
