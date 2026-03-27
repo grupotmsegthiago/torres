@@ -1044,22 +1044,58 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
               <Button onClick={() => { setEditingPrice(null); setShowPriceModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-price"><Plus size={14} className="mr-1" /> Nova Tabela</Button>
             </div>
             {clientPrices.length === 0 ? (
-              <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
+              <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400" style={{ fontFamily: "Inter, sans-serif" }}>Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
             ) : clientPrices.map(cp => (
-              <Card key={cp.id} className="p-4 border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`}>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-2">
-                  <div><p className="text-[9px] font-black text-blue-600 uppercase">KM Carregado</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_carregado))}/km</p></div>
-                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">KM Vazio</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_vazio))}/km</p></div>
-                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Estadia</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_hora_estadia))}/h</p></div>
-                  <div><p className="text-[9px] font-black text-amber-600 uppercase">VRP</p><p className="text-sm font-black font-mono">{fmt(Number(cp.vrp_base))}</p></div>
-                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Franquia KM</p><p className="text-sm font-black font-mono">{cp.franquia_minima_km} km</p></div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-neutral-100">
-                  <div><p className="text-[9px] font-black text-emerald-600 uppercase">R$/KM Acion.</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_acionamento || 0))}</p></div>
-                  <div><p className="text-[9px] font-black text-purple-600 uppercase">Franq. Horas</p><p className="text-sm font-black font-mono">{cp.franquia_horas || 0}h</p></div>
-                  <div><p className="text-[9px] font-black text-purple-600 uppercase">Hora Extra</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_hora_extra || 0))}</p></div>
-                  <div><p className="text-[9px] font-black text-purple-600 uppercase">KM Extra</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_extra || 0))}</p></div>
-                  <div><p className="text-[9px] font-black text-red-600 uppercase">Cancelamento</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_cancelamento || 0))}</p></div>
+              <Card key={cp.id} className="border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`} style={{ fontFamily: "Inter, sans-serif" }}>
+                <div className="divide-y divide-neutral-100">
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">KM Carregado</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_carregado))}/km</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">KM Vazio</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_vazio))}/km</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Estadia</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_estadia))}/h</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">VRP</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.vrp_base))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Franquia KM</span>
+                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_minima_km} km</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Diária</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_diaria || 0))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">R$/KM Acionamento</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_acionamento || 0))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Franquia Horas</span>
+                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_horas || 0}h</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Franquia KM</span>
+                    <span className="text-sm font-bold text-neutral-900">{cp.franquia_km || 0} km</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Hora Extra</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_extra || 0))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">KM Extra</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_extra || 0))}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
+                    <span className="text-xs font-semibold text-neutral-500">Cancelamento</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_cancelamento || 0))}</span>
+                  </div>
                 </div>
               </Card>
             ))}
