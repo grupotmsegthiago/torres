@@ -30,6 +30,7 @@ import AuditPage from "@/pages/admin/audit";
 import FinanceiroPage from "@/pages/admin/financeiro";
 import BoletimMedicaoPage from "@/pages/admin/boletim-medicao";
 import BalancoGerencialPage from "@/pages/admin/balanco-gerencial";
+import SimuladorMissaoPage from "@/pages/admin/simulador-missao";
 import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
@@ -141,6 +142,7 @@ function Router() {
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
       <Route path="/admin/telemetria">{() => <ProtectedRoute component={TelemetryPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
+      <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
       <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
       <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>

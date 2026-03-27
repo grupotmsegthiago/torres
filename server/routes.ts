@@ -3958,6 +3958,143 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(updated);
   });
 
+  app.post("/api/mission/simulate-step", requireAdminRole, async (req, res) => {
+    try {
+      const { serviceOrderId, action } = req.body;
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+
+      const currentStep = so.missionStatus as string;
+      const currentIdx = MISSION_STEPS.indexOf(currentStep as any);
+      if (currentIdx < 0 || currentIdx >= MISSION_STEPS.length - 1) {
+        return res.status(400).json({ message: "Missao ja finalizada ou status invalido" });
+      }
+
+      if (so.status === "agendada" && (currentStep === "missao_paga" || currentStep === "aguardando")) {
+        await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
+      }
+
+      const requiredPhotos = STEP_REQUIRED_PHOTOS[currentStep];
+      if (requiredPhotos && action === "upload_photos") {
+        const existingPhotos = await storage.getMissionPhotosByOS(serviceOrderId);
+        const existingSteps = existingPhotos.map(p => p.step);
+        const missing = requiredPhotos.filter(s => !existingSteps.includes(s));
+
+        const empId = so.assignedEmployeeId || 0;
+        const simPhoto = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMCwsKCwsM" +
+          "DhEQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQU" +
+          "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAKAAoDASIAAhEBAxEB/8QAFQABAQAA" +
+          "AAAAAAAAAAAAAAAAAkn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQ" +
+          "EAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAB//2Q==";
+
+        const baseKm = so.vehicleId ? ((await storage.getVehicle(so.vehicleId))?.km || 100) : 100;
+        const kmSteps = ["km_saida", "km_chegada", "km_final", "base_hodometro"];
+        const kmIncrement: Record<string, number> = { km_saida: 0, km_chegada: 50, km_final: 50, base_hodometro: 80 };
+
+        for (const step of missing) {
+          const kmVal = kmSteps.includes(step) ? baseKm + (kmIncrement[step] || 0) : null;
+          await storage.createMissionPhoto({
+            serviceOrderId, employeeId: empId, step,
+            photoData: simPhoto,
+            kmValue: kmVal, latitude: "-23.4827", longitude: "-46.7346", notes: "SIMULACAO",
+          });
+          if (kmVal && so.vehicleId && kmSteps.includes(step)) {
+            try {
+              const veh = await storage.getVehicle(so.vehicleId);
+              if (veh && kmVal >= (veh.km || 0)) {
+                await storage.updateVehicle(so.vehicleId, { km: kmVal, lastKmUpdate: new Date() });
+              }
+            } catch {}
+          }
+        }
+        return res.json({ message: `${missing.length} fotos simuladas enviadas`, step: currentStep, photosUploaded: missing });
+      }
+
+      if (action === "escort_data" && currentStep === "checkin_dados_motorista") {
+        if (!so.escortedDriverName || !so.escortedVehiclePlate) {
+          await storage.updateServiceOrder(serviceOrderId, {
+            escortedDriverName: so.escortedDriverName || "Joao Silva (SIM)",
+            escortedVehiclePlate: so.escortedVehiclePlate || "ABC1D23",
+            escortedDriverPhone: so.escortedDriverPhone || "(11) 99999-0000",
+          });
+        }
+        return res.json({ message: "Dados do motorista preenchidos (simulacao)" });
+      }
+
+      if (action === "start_mission" && currentStep === "iniciar_missao") {
+        if (!so.missionStartedAt) {
+          await storage.updateServiceOrder(serviceOrderId, { missionStartedAt: new Date() });
+        }
+        return res.json({ message: "Missao iniciada (simulacao)" });
+      }
+
+      if (action === "base_clean" && currentStep === "chegada_base") {
+        const baseKm = so.vehicleId ? ((await storage.getVehicle(so.vehicleId))?.km || 100) + 10 : 999;
+        await storage.updateServiceOrder(serviceOrderId, {
+          baseCleanStatus: "limpa",
+          baseCleanNotes: null,
+          baseReturnKm: String(baseKm),
+          baseChecklistConfirmed: true,
+        });
+        if (so.vehicleId) {
+          try {
+            const veh = await storage.getVehicle(so.vehicleId);
+            if (veh && baseKm >= (veh.km || 0)) {
+              await storage.updateVehicle(so.vehicleId, { km: baseKm, lastKmUpdate: new Date() });
+            }
+          } catch {}
+        }
+        return res.json({ message: `Viatura limpa, KM retorno: ${baseKm} (simulacao)` });
+      }
+
+      if (action === "advance") {
+        let nextStep = MISSION_STEPS[currentIdx + 1];
+        if (currentStep === "chegada_destino") nextStep = "finalizada";
+        const updates: any = { missionStatus: nextStep };
+
+        if (nextStep === "encerrada") {
+          updates.status = "concluida";
+          updates.completedDate = new Date();
+        }
+
+        const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+        const user = req.user!;
+        updates.stepLogs = [...existingLogs, {
+          step: currentStep, completedAt: new Date().toISOString(),
+          agentName: `SIMULACAO (${user.name})`, agentId: user.id,
+          geo: { lat: -23.4827, lng: -46.7346 }, nextStep,
+        }];
+
+        const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+        if (nextStep === "encerrada" && so.kitId) {
+          await storage.updateWeaponKit(so.kitId, { status: "disponível" });
+        }
+        if (nextStep === "encerrada" && so.vehicleId) {
+          try {
+            const veh = await storage.getVehicle(so.vehicleId);
+            const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+            const allKmValues = [
+              so.baseReturnKm ? Number(so.baseReturnKm) : 0,
+              ...photos.filter(p => p.kmValue).map(p => Number(p.kmValue)),
+            ].filter(v => v > 0);
+            const highestKm = Math.max(...allKmValues, 0);
+            if (veh && highestKm > 0 && highestKm >= (veh.km || 0)) {
+              await storage.updateVehicle(so.vehicleId, { km: highestKm, lastKmUpdate: new Date() });
+            }
+          } catch {}
+        }
+
+        return res.json({ message: `Avancou: ${currentStep} -> ${nextStep}`, missionStatus: nextStep, updated });
+      }
+
+      res.status(400).json({ message: "Acao invalida. Use: upload_photos, escort_data, start_mission, base_clean, advance" });
+    } catch (err: any) {
+      console.error("Simulation error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/mission/nova-entrega", requireAuth, async (req, res) => {
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });

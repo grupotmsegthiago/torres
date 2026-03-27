@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -36,7 +36,8 @@ const menuItems: MenuItem[] = [
     icon: Radio,
     children: [
       { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio },
-      { path: "/admin/mission", label: "Missão Ativa", icon: Target },
+      { path: "/admin/mission", label: "Missao Ativa", icon: Target },
+      { path: "/admin/simulador-missao", label: "Simulador Missao", icon: Play },
     ],
   },
   {
