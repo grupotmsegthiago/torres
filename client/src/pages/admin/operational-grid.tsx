@@ -406,11 +406,12 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
     ? getMissionLabel(os.lastAgentUpdate.missionStep)
     : getMissionLabel(os.missionStatus);
 
-  const origin = gridItem?.origin || "—";
-  const destination = gridItem?.destination || "—";
-  const driverName = gridItem?.escortedDriverName || "—";
-  const driverPhone = gridItem?.escortedDriverPhone || "—";
-  const driverPlate = gridItem?.escortedVehiclePlate || "—";
+  const pick = (...vals: (string | null | undefined)[]) => vals.find(v => v && v.trim()) || "—";
+  const origin = pick(gridItem?.origin, os.origin, v.activeOs?.origin);
+  const destination = pick(gridItem?.destination, os.destination, v.activeOs?.destination);
+  const driverName = pick(gridItem?.escortedDriverName, os.escortedDriverName, v.activeOs?.escortedDriverName);
+  const driverPhone = pick(gridItem?.escortedDriverPhone, os.escortedDriverPhone, v.activeOs?.escortedDriverPhone);
+  const driverPlate = pick(gridItem?.escortedVehiclePlate, os.escortedVehiclePlate, v.activeOs?.escortedVehiclePlate);
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
   const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
   const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
