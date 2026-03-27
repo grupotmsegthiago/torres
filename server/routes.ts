@@ -894,11 +894,22 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.post("/api/service-orders", requireAuth, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+
+    const allOrders = await storage.getServiceOrders();
+    let maxNum = 0;
+    for (const o of allOrders) {
+      const match = o.osNumber.match(/TOR-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    parsed.data.osNumber = `TOR-${String(maxNum + 1).padStart(4, "0")}`;
+
     if (parsed.data.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
       if (kit.status === "em_uso") {
-        const allOrders = await storage.getServiceOrders();
         const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         if (activeWithKit) {
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "missao_paga";
