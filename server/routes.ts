@@ -3618,14 +3618,22 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       return res.status(403).json({ message: "Sem permissão para resetar senha de Diretoria" });
     }
 
-    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+    const newPassword = "torres@123";
     const { error } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseUid, {
-      password: tempPassword,
+      password: newPassword,
     });
 
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
     await storage.updateUser(id, { mustChangePassword: 1 } as any);
-    res.json({ ...toSafeUser(user), tempPassword, mustChangePassword: true });
+    res.json({ ...toSafeUser(user), newPassword, mustChangePassword: true });
+  });
+
+  app.get("/api/users/by-employee/:employeeId", requireAuth, requireAdminRole, async (req, res) => {
+    const employeeId = Number(req.params.employeeId);
+    const allUsers = await storage.getUsers();
+    const user = allUsers.find(u => u.employeeId === employeeId);
+    if (!user) return res.status(404).json({ message: "Sem acesso" });
+    res.json(toSafeUser(user));
   });
 
   app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {

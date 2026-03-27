@@ -10,7 +10,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -33,7 +33,22 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
   const cpfDigits = employee.cpf ? employee.cpf.replace(/\D/g, "") : "";
   const hasCpf = cpfDigits.length === 11;
 
-  const mutation = useMutation({
+  const { data: existingUser, isLoading: checkingUser } = useQuery<{ id: number; email: string; role: string; mustChangePassword?: number } | null>({
+    queryKey: ["/api/users/by-employee", employee.id],
+    queryFn: async () => {
+      const { authFetch } = await import("@/lib/queryClient");
+      const res = await authFetch(`/api/users/by-employee/${employee.id}`);
+      if (res.status === 404) return null;
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const hasAccess = !!existingUser;
+  const currentPassword = hasAccess && existingUser.mustChangePassword ? "torres@123 (padrão)" : hasAccess ? "Alterada pelo funcionário" : null;
+
+  const createMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/auth/register-by-cpf", {
         cpf: cpfDigits,
@@ -43,8 +58,21 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Acesso criado", description: `Login: CPF do funcionário. Senha padrão: torres@123 (será alterada no primeiro acesso).` });
-      onClose();
+      queryClient.invalidateQueries({ queryKey: ["/api/users/by-employee", employee.id] });
+      toast({ title: "Acesso criado", description: "Login: CPF. Senha padrão: torres@123" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/users/${existingUser!.id}/reset-password`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/by-employee", employee.id] });
+      toast({ title: "Senha resetada", description: "Nova senha: torres@123. O funcionário precisará alterá-la no próximo login." });
     },
     onError: (err: any) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -55,14 +83,49 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Criar Acesso - {employee.name}</DialogTitle>
+          <DialogTitle>{hasAccess ? "Gerenciar Acesso" : "Criar Acesso"} - {employee.name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {!hasCpf ? (
+          {checkingUser ? (
+            <div className="flex items-center justify-center py-6 text-neutral-400 text-sm gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Verificando...
+            </div>
+          ) : !hasCpf ? (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
               <p className="font-semibold mb-1">Dados incompletos</p>
               <p>Para criar o acesso automático, o funcionário precisa ter <strong>CPF</strong> cadastrado.</p>
             </div>
+          ) : hasAccess ? (
+            <>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Acesso ativo</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Login:</span>
+                  <span className="font-semibold text-neutral-800">CPF ({formatCpf(cpfDigits)})</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Senha atual:</span>
+                  <span className="font-semibold text-neutral-800">{currentPassword}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Perfil:</span>
+                  <span className="font-semibold text-neutral-800">{existingUser.role === "admin" ? "Administrador" : existingUser.role === "diretoria" ? "Diretoria" : "Funcionário"}</span>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                onClick={() => resetMutation.mutate()}
+                disabled={resetMutation.isPending}
+                data-testid="button-reset-password"
+              >
+                {resetMutation.isPending ? "Resetando..." : "Resetar Senha para torres@123"}
+              </Button>
+            </>
           ) : (
             <>
               <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 space-y-2">
@@ -80,14 +143,12 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
                 </div>
               </div>
               <p className="text-xs text-neutral-500">O funcionário deverá alterar a senha no primeiro acesso.</p>
+              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} className="w-full" data-testid="button-save-access">
+                {createMutation.isPending ? "Criando..." : "Criar Acesso Automático"}
+              </Button>
             </>
           )}
-          <div className="flex gap-3">
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !hasCpf} data-testid="button-save-access">
-              {mutation.isPending ? "Criando..." : "Criar Acesso Automático"}
-            </Button>
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-          </div>
+          <Button type="button" variant="outline" onClick={onClose} className="w-full">Fechar</Button>
         </div>
       </DialogContent>
     </Dialog>
