@@ -2046,6 +2046,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       setMissionAction(null);
       setCancelReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
     },
