@@ -2,10 +2,10 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, Clock, MapPin, CheckCircle, ArrowLeft, Loader2, Sun, Coffee, LogOut, ExternalLink } from "lucide-react";
+import { Camera, Clock, MapPin, CheckCircle, ArrowLeft, Loader2, Sun, Coffee, LogOut, ExternalLink, AlertTriangle, Phone, X, Building2 } from "lucide-react";
 import { Link } from "wouter";
 
 const STEPS = [
@@ -21,6 +21,7 @@ export default function MobilePontoPage() {
   const { toast } = useToast();
   const [capturing, setCapturing] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [geofenceBlock, setGeofenceBlock] = useState<{ distance: number; address: string } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -94,22 +95,35 @@ export default function MobilePontoPage() {
 
   const clockMutation = useMutation({
     mutationFn: async ({ action, photo, lat, lng }: { action: string; photo: string; lat: number; lng: number }) => {
-      const res = await apiRequest("POST", "/api/mobile/ponto/clock", {
-        action, photo,
-        latitude: lat.toString(),
-        longitude: lng.toString(),
-        address: geoAddress || undefined,
+      const res = await authFetch("/api/mobile/ponto/clock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, photo, latitude: lat.toString(), longitude: lng.toString(), address: geoAddress || undefined }),
       });
-      return res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        const err: any = new Error(data.message || "Erro ao registrar ponto");
+        err.code = data.code;
+        err.distance = data.distance;
+        throw err;
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/ponto/today"] });
       toast({ title: "Ponto registrado com sucesso!" });
       stopCamera();
     },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    onError: (err: any) => {
       stopCamera();
+      if (err.code === "GEOFENCE_BLOCKED") {
+        setGeofenceBlock({
+          distance: err.distance || 0,
+          address: geoAddress || "Localização fora da sede",
+        });
+      } else {
+        toast({ title: "Erro", description: err.message, variant: "destructive" });
+      }
     },
   });
 
@@ -191,6 +205,57 @@ export default function MobilePontoPage() {
 
   return (
     <MobileLayout>
+      {geofenceBlock && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-6" data-testid="geofence-popup-overlay" onClick={() => setGeofenceBlock(null)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="geofence-popup">
+            <div className="bg-red-600 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white" />
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">Fora da Empresa</h3>
+              </div>
+              <button onClick={() => setGeofenceBlock(null)} className="text-white/70 hover:text-white" data-testid="button-close-geofence">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+                <Building2 className="w-8 h-8 text-red-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-red-700 uppercase">Distância da Sede</p>
+                  <p className="text-2xl font-black text-red-600">{(geofenceBlock.distance / 1000).toFixed(1)} km</p>
+                  <p className="text-[10px] text-red-500">Máximo permitido: 300m</p>
+                </div>
+              </div>
+
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Sua localização atual</p>
+                <p className="text-xs text-neutral-700 leading-relaxed">{geofenceBlock.address}</p>
+              </div>
+
+              <div className="bg-neutral-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Sede da empresa</p>
+                <p className="text-xs text-neutral-700">Av. Raimundo Pereira de Magalhães, 5720 - Pirituba, SP</p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-xs font-bold text-amber-800">O ponto de entrada só pode ser registrado na sede da empresa.</p>
+                <p className="text-[11px] text-amber-700 mt-1">Se você está em uma operação externa, entre em contato com seu responsável para autorização.</p>
+              </div>
+
+              <a href="tel:+5511999999999" className="flex items-center justify-center gap-2 w-full py-3 bg-neutral-900 text-white rounded-xl text-xs font-black uppercase tracking-wider" data-testid="button-call-supervisor">
+                <Phone className="w-4 h-4" />
+                Ligar para o Responsável
+              </a>
+
+              <button onClick={() => setGeofenceBlock(null)} className="w-full py-2.5 border border-neutral-200 text-neutral-600 rounded-xl text-xs font-bold uppercase tracking-wider" data-testid="button-dismiss-geofence">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 space-y-4" data-testid="mobile-ponto-page">
         <div className="flex items-center gap-3 mb-2">
           <Link href="/mobile">
