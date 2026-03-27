@@ -9,7 +9,6 @@ export function useGeolocation() {
   const [denied, setDenied] = useState(false);
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
   const [loading, setLoading] = useState(false);
-  const [ready, setReady] = useState(false);
   const watchRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initDone = useRef(false);
@@ -18,7 +17,6 @@ export function useGeolocation() {
     setPosition(pos);
     setLoading(false);
     setDenied(false);
-    setReady(true);
     try {
       await authFetch("/api/agent/location", {
         method: "POST",
@@ -42,7 +40,6 @@ export function useGeolocation() {
         setDenied(false);
         setPosition(pos);
         setLoading(false);
-        setReady(true);
       },
       () => {},
       { enableHighAccuracy: true }
@@ -133,5 +130,5 @@ export function useGeolocation() {
     };
   }, [user, sendLocation, startWatch, startInterval]);
 
-  return { denied, position, loading, ready, requestPermission };
+  return { denied, position, loading, requestPermission };
 }
