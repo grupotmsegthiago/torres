@@ -915,6 +915,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json({ message: "OS removida" });
   });
 
+  app.post("/api/service-orders/:id/approve-early-start", requireAuth, async (req, res) => {
+    const user = (req as any).user;
+    if (user.role !== "admin") return res.status(403).json({ message: "Somente admin pode autorizar início antecipado" });
+    const so = await storage.getServiceOrder(Number(req.params.id));
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+    const updated = await storage.updateServiceOrder(so.id, { earlyStartApproved: true });
+    res.json(updated);
+  });
+
   app.get("/api/service-orders/:id/pdf", requireAuth, async (req, res) => {
     try {
       const PDFDocument = (await import("pdfkit")).default;
@@ -2190,6 +2199,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   escortedDriverName: linkedOrder.escortedDriverName || null,
                   escortedDriverPhone: linkedOrder.escortedDriverPhone || null,
                   escortedVehiclePlate: linkedOrder.escortedVehiclePlate || null,
+                  earlyStartApproved: linkedOrder.earlyStartApproved || false,
                 };
               })()
             : null,
@@ -2985,6 +2995,19 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
 
     const currentStep = MISSION_STEPS[currentIdx];
+
+    if (currentStep === "missao_paga" && so.scheduledDate) {
+      const now = new Date();
+      const scheduled = new Date(so.scheduledDate);
+      const diffMs = scheduled.getTime() - now.getTime();
+      const diffMinutes = diffMs / (1000 * 60);
+      if (diffMinutes > 30 && !so.earlyStartApproved) {
+        return res.status(403).json({
+          message: "Missão agendada — início antecipado requer autorização do admin.",
+          code: "EARLY_START_BLOCKED",
+        });
+      }
+    }
 
     if (so.status === "agendada" && (currentStep === "missao_paga" || currentStep === "aguardando")) {
       await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });

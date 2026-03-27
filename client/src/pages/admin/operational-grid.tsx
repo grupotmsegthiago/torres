@@ -230,6 +230,7 @@ interface TrackedVehicle {
     originLng?: number | null;
     destinationLat?: number | null;
     destinationLng?: number | null;
+    earlyStartApproved?: boolean;
   } | null;
   scheduledOs: {
     id: number;
@@ -2130,6 +2131,32 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         <TooltipContent>Espelhar</TooltipContent>
       </Tooltip>
       <MirrorVehicleDialog vehicle={v as any} open={mirrorOpen} onOpenChange={setMirrorOpen} gerenciadoras={gerenciadoras} />
+
+      {v.activeOs && v.activeOs.missionStatus === "missao_paga" && !v.activeOs.earlyStartApproved && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-800 transition-colors animate-pulse"
+              onClick={async () => {
+                try {
+                  await authFetch(`/api/service-orders/${v.activeOs!.id}/approve-early-start`, {
+                    method: "POST",
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                  toast({ title: "Início antecipado autorizado!", description: "O agente já pode iniciar o check-in." });
+                } catch {
+                  toast({ title: "Erro", description: "Não foi possível autorizar.", variant: "destructive" });
+                }
+              }}
+              data-testid={`btn-early-start-${v.id}`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Liberar Início Antecipado</TooltipContent>
+        </Tooltip>
+      )}
 
       {v.activeOs && ["finalizada", "em_prontidao", "retorno_base"].includes(v.activeOs.missionStatus) && (
         <Tooltip>

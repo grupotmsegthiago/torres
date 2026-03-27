@@ -689,6 +689,7 @@ export default function MobileMissaoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [cienteConfirmed, setCienteConfirmed] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [earlyBlocked, setEarlyBlocked] = useState(false);
   const [baseCleanStatus, setBaseCleanStatus] = useState<"limpa" | "suja" | "">("");
   const [baseCleanNotes, setBaseCleanNotes] = useState("");
   const [baseReturnKm, setBaseReturnKm] = useState("");
@@ -709,6 +710,17 @@ export default function MobileMissaoPage() {
   const currentStep = (mission?.missionStatus as MissionStep) || "aguardando";
   const config = stepConfig[currentStep] || stepConfig.aguardando;
   const Icon = config.icon;
+
+  useEffect(() => {
+    if (mission && currentStep === "missao_paga" && mission.scheduledDate) {
+      const now = new Date();
+      const scheduled = new Date(mission.scheduledDate);
+      const diffMin = (scheduled.getTime() - now.getTime()) / (1000 * 60);
+      setEarlyBlocked(diffMin > 30 && !mission.earlyStartApproved);
+    } else {
+      setEarlyBlocked(false);
+    }
+  }, [mission, currentStep]);
 
   useEffect(() => {
     if (mission && currentStep === "checkin_dados_motorista") {
@@ -1381,25 +1393,41 @@ export default function MobileMissaoPage() {
               )}
             </div>
 
-            <button
-              onClick={async () => {
-                setSubmitting(true);
-                try {
-                  await advanceMission();
-                  toast({ title: "Check-in iniciado!" });
-                } catch (err: any) {
-                  toast({ title: "Erro", description: err.message, variant: "destructive" });
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-              disabled={submitting}
-              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 shadow-lg"
-              data-testid="button-iniciar-checkin"
-            >
-              {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowRight className="w-6 h-6" />}
-              Iniciar Check-in
-            </button>
+            {earlyBlocked ? (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-center space-y-2">
+                <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+                  <Lock className="w-7 h-7 text-amber-600" />
+                </div>
+                <p className="text-sm font-black text-amber-800 uppercase tracking-wider">Início Antecipado</p>
+                <p className="text-xs text-amber-600">Esta missão está agendada para mais tarde. O início antecipado requer autorização do admin/central.</p>
+                <p className="text-xs text-amber-500 font-bold">Aguarde a liberação ou entre em contato com a base.</p>
+              </div>
+            ) : (
+              <button
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    await advanceMission();
+                    toast({ title: "Check-in iniciado!" });
+                  } catch (err: any) {
+                    if (err.message?.includes("antecipado") || err.message?.includes("EARLY_START")) {
+                      setEarlyBlocked(true);
+                      toast({ title: "Início antecipado bloqueado", description: "Aguarde autorização do admin.", variant: "destructive" });
+                    } else {
+                      toast({ title: "Erro", description: err.message, variant: "destructive" });
+                    }
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                disabled={submitting}
+                className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 shadow-lg"
+                data-testid="button-iniciar-checkin"
+              >
+                {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowRight className="w-6 h-6" />}
+                Iniciar Check-in
+              </button>
+            )}
           </div>
         )}
 
