@@ -685,16 +685,16 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
 function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: () => void; editing: EscortContract | null; clientId: number; clientName: string }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
-    valor_km_carregado: editing?.valor_km_carregado?.toString() || "2.80",
-    valor_km_vazio: editing?.valor_km_vazio?.toString() || "1.40",
-    franquia_minima_km: editing?.franquia_minima_km?.toString() || "50",
-    valor_hora_estadia: editing?.valor_hora_estadia?.toString() || "50.00",
-    valor_diaria: editing?.valor_diaria?.toString() || "200.00",
-    vrp_base: editing?.vrp_base?.toString() || "150.00",
-    adicional_noturno_vrp_pct: editing?.adicional_noturno_vrp_pct?.toString() || "20",
-    adicional_noturno_km_pct: editing?.adicional_noturno_km_pct?.toString() || "15",
-    adicional_periculosidade_pct: editing?.adicional_periculosidade_pct?.toString() || "30",
-    periculosidade_horas_limite: editing?.periculosidade_horas_limite?.toString() || "8",
+    valor_km_carregado: editing?.valor_km_carregado?.toString() || "0.00",
+    valor_km_vazio: editing?.valor_km_vazio?.toString() || "0.00",
+    franquia_minima_km: editing?.franquia_minima_km?.toString() || "0",
+    valor_hora_estadia: editing?.valor_hora_estadia?.toString() || "0.00",
+    valor_diaria: editing?.valor_diaria?.toString() || "0.00",
+    vrp_base: editing?.vrp_base?.toString() || "0.00",
+    adicional_noturno_vrp_pct: editing?.adicional_noturno_vrp_pct?.toString() || "0",
+    adicional_noturno_km_pct: editing?.adicional_noturno_km_pct?.toString() || "0",
+    adicional_periculosidade_pct: editing?.adicional_periculosidade_pct?.toString() || "0",
+    periculosidade_horas_limite: editing?.periculosidade_horas_limite?.toString() || "0",
     valor_acionamento: editing?.valor_acionamento?.toString() || "0",
     franquia_horas: editing?.franquia_horas?.toString() || "0",
     franquia_km: editing?.franquia_km?.toString() || "0",
@@ -752,21 +752,6 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_minima_km} onChange={e => sf("franquia_minima_km", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Hora Estadia</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_estadia} onChange={e => sf("valor_hora_estadia", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Diária</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_diaria} onChange={e => sf("valor_diaria", e.target.value)} /></div>
-            </div>
-          </div>
-          <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
-            <p className="text-[10px] font-black text-amber-700 uppercase mb-3 tracking-widest">Pagamento Vigilante</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">VRP Base (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vrp_base} onChange={e => sf("vrp_base", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Limite Horas</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.periculosidade_horas_limite} onChange={e => sf("periculosidade_horas_limite", e.target.value)} /></div>
-            </div>
-          </div>
-          <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
-            <p className="text-[10px] font-black text-neutral-500 uppercase mb-3 tracking-widest">Adicionais (%)</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Periculosidade</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_periculosidade_pct} onChange={e => sf("adicional_periculosidade_pct", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Noturno VRP</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_noturno_vrp_pct} onChange={e => sf("adicional_noturno_vrp_pct", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Noturno KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_noturno_km_pct} onChange={e => sf("adicional_noturno_km_pct", e.target.value)} /></div>
             </div>
           </div>
           <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
