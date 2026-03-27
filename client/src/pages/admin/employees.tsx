@@ -2521,6 +2521,7 @@ export default function EmployeesPage() {
   const [editItem, setEditItem] = useState<Employee | undefined>();
   const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
   const [pastaEmployee, setPastaEmployee] = useState<Employee | null>(null);
+  const [docAlertOpen, setDocAlertOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -2563,6 +2564,61 @@ export default function EmployeesPage() {
             </Button>
           </div>
 
+          {(() => {
+            const getMissing = (e: Employee) => {
+              const m: string[] = [];
+              if (!e.photoUrl) m.push("Foto");
+              if (!e.cnhNumber) m.push("CNH");
+              if (!e.cnhExpiry) m.push("Validade CNH");
+              if (!(e as any).cnvNumber) m.push("CNV");
+              if (!(e as any).cnvExpiry) m.push("Validade CNV");
+              if (!(e as any).vestNumber) m.push("Colete Nº");
+              if (!(e as any).vestExpiry) m.push("Validade Colete");
+              if (!e.rg) m.push("RG");
+              if (!e.phone) m.push("Telefone");
+              if (!e.address) m.push("Endereço");
+              if (!e.hireDate) m.push("Data Admissão");
+              return m;
+            };
+            const activeEmps = (employees || []).filter(e => e.status === "ativo");
+            const empsWithMissing = activeEmps.map(e => ({ emp: e, missing: getMissing(e) })).filter(x => x.missing.length > 0);
+            const [showDocAlert, setShowDocAlert] = [docAlertOpen, setDocAlertOpen];
+
+            if (empsWithMissing.length > 0) return (
+              <div className="mb-4">
+                <button
+                  onClick={() => setShowDocAlert(!showDocAlert)}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                  data-testid="alert-missing-docs"
+                >
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <span className="text-sm font-semibold text-amber-800 flex-1 text-left">
+                    {empsWithMissing.length} funcionário{empsWithMissing.length > 1 ? "s" : ""} com documentação pendente
+                  </span>
+                  <span className="text-xs text-amber-600 font-medium">{showDocAlert ? "Ocultar" : "Ver detalhes"}</span>
+                </button>
+                {showDocAlert && (
+                  <div className="mt-2 border border-amber-100 rounded-lg bg-white overflow-hidden max-h-[400px] overflow-y-auto shadow-sm">
+                    {empsWithMissing.map(({ emp, missing }) => (
+                      <div key={emp.id} className="px-4 py-3 border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(emp)} data-testid={`alert-doc-${emp.id}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-bold text-neutral-800">{emp.name}</span>
+                          <span className="text-[10px] font-mono text-neutral-400">{emp.matricula}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {missing.map(doc => (
+                            <span key={doc} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-semibold border border-red-100">{doc}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+            return null;
+          })()}
+
           <Card className="bg-white border-neutral-200 overflow-hidden">
             {isLoading ? (
               <div className="p-8 text-center text-neutral-400">Carregando...</div>
@@ -2579,12 +2635,26 @@ export default function EmployeesPage() {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CPF</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cargo</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Categoria</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Docs</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(employees || []).map((e) => (
+                    {(employees || []).map((e) => {
+                      const missingDocs: string[] = [];
+                      if (!e.photoUrl) missingDocs.push("Foto");
+                      if (!e.cnhNumber) missingDocs.push("CNH");
+                      if (!e.cnhExpiry) missingDocs.push("Val. CNH");
+                      if (!(e as any).cnvNumber) missingDocs.push("CNV");
+                      if (!(e as any).cnvExpiry) missingDocs.push("Val. CNV");
+                      if (!(e as any).vestNumber) missingDocs.push("Colete");
+                      if (!(e as any).vestExpiry) missingDocs.push("Val. Colete");
+                      if (!e.rg) missingDocs.push("RG");
+                      if (!e.phone) missingDocs.push("Telefone");
+                      if (!e.address) missingDocs.push("Endereço");
+                      if (!e.hireDate) missingDocs.push("Admissão");
+                      return (
                       <tr key={e.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => setPastaEmployee(e)} data-testid={`row-employee-${e.id}`}>
                         <td className="p-3">
                           <div className="w-8 h-8 rounded-full bg-neutral-100 overflow-hidden">
@@ -2602,6 +2672,17 @@ export default function EmployeesPage() {
                         <td className="p-3 text-neutral-600 text-xs font-mono">{e.cpf}</td>
                         <td className="p-3 text-neutral-600">{e.role}</td>
                         <td className="p-3 text-neutral-600 text-xs">{e.category || "-"}</td>
+                        <td className="p-3">
+                          {missingDocs.length === 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 font-semibold border border-emerald-100" data-testid={`docs-ok-${e.id}`}>
+                              <CheckCircle2 className="w-3 h-3" /> OK
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold border border-amber-100 cursor-help" title={missingDocs.join(", ")} data-testid={`docs-missing-${e.id}`}>
+                              <AlertTriangle className="w-3 h-3" /> {missingDocs.length}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-3">
                           <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide inline-block w-fit ${
                             e.status === "ativo" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
@@ -2623,7 +2704,8 @@ export default function EmployeesPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>
