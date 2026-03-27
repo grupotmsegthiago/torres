@@ -692,7 +692,29 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
   app.get("/api/service-orders", requireAuth, async (_req, res) => {
     const data = await storage.getServiceOrders();
-    res.json(data);
+    const enriched = await Promise.all(data.map(async (os) => {
+      const photos = await storage.getMissionPhotosByOS(os.id);
+      const findLast = (step: string) => {
+        for (let i = photos.length - 1; i >= 0; i--) {
+          if (photos[i].step === step) return photos[i];
+        }
+        return undefined;
+      };
+      const kmSaida = photos.find(p => p.step === "km_saida");
+      const kmChegada = findLast("km_chegada");
+      const kmFinal = findLast("km_final");
+      const baseHodometro = findLast("base_hodometro");
+      return {
+        ...os,
+        missionKm: {
+          saida_base: kmSaida?.kmValue ?? null,
+          chegada_origem: kmChegada?.kmValue ?? null,
+          chegada_destino: kmFinal?.kmValue ?? null,
+          fim_missao: baseHodometro?.kmValue ?? kmFinal?.kmValue ?? null,
+        },
+      };
+    }));
+    res.json(enriched);
   });
 
   app.get("/api/boletim-medicao/os-concluidas", requireAuth, async (_req, res) => {

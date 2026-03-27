@@ -15,6 +15,33 @@ import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem,
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
+type StepLogEntry = { step: string; completedAt: string; agentName?: string; agentId?: number; geo?: { lat: number; lng: number } | null; nextStep?: string };
+
+function getStepTime(stepLogs: StepLogEntry[] | null | undefined, stepNames: string[]): string | null {
+  if (!stepLogs || !Array.isArray(stepLogs)) return null;
+  for (const name of stepNames) {
+    const entry = stepLogs.find((e: StepLogEntry) => e.step === name);
+    if (entry?.completedAt) return entry.completedAt;
+  }
+  return null;
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch { return "—"; }
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch { return "—"; }
+}
+
 const MISSION_STATUS_LABELS: Record<string, string> = {
   missao_paga: "Missão Paga",
   aguardando: "Saída da Base",
@@ -734,6 +761,14 @@ export default function ServiceOrdersPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída Base</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Cliente</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Destino</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim Missão</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Saída</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Origem</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Destino</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Final</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
@@ -791,6 +826,26 @@ export default function ServiceOrdersPage() {
                         <span className="text-xs text-neutral-400">-</span>
                       )}
                     </td>
+                    {(() => {
+                      const logs = o.stepLogs as StepLogEntry[] | null;
+                      const mk = (o as any).missionKm as { saida_base: number | null; chegada_origem: number | null; chegada_destino: number | null; fim_missao: number | null } | null;
+                      const tSaida = getStepTime(logs, ["checkout_km_saida"]);
+                      const tChegCliente = getStepTime(logs, ["em_transito_origem"]);
+                      const tChegDestino = getStepTime(logs, ["em_transito_destino"]);
+                      const tFim = getStepTime(logs, ["encerrada", "finalizada"]);
+                      return (
+                        <>
+                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
+                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegcliente-${o.id}`}>{formatTime(tChegCliente)}</td>
+                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegdestino-${o.id}`}>{formatTime(tChegDestino)}</td>
+                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-fim-${o.id}`}>{formatTime(tFim)}</td>
+                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-saida-${o.id}`}>{mk?.saida_base != null ? mk.saida_base.toLocaleString("pt-BR") : "—"}</td>
+                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-origem-${o.id}`}>{mk?.chegada_origem != null ? mk.chegada_origem.toLocaleString("pt-BR") : "—"}</td>
+                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-destino-${o.id}`}>{mk?.chegada_destino != null ? mk.chegada_destino.toLocaleString("pt-BR") : "—"}</td>
+                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-final-${o.id}`}>{mk?.fim_missao != null ? mk.fim_missao.toLocaleString("pt-BR") : "—"}</td>
+                        </>
+                      );
+                    })()}
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
                         {(o.status === "aberta" || o.status === "agendada") && !o.missionStatus && (
