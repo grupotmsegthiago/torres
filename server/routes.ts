@@ -6959,7 +6959,7 @@ Regras:
       const allVehicles = await db.execute(sql`
         SELECT id, plate, model, km, last_oil_change_km, frota
         FROM vehicles
-        WHERE status = 'active' OR status IS NULL
+        WHERE status IS NULL OR status NOT IN ('inativo', 'vendido', 'baixado')
         ORDER BY plate ASC
       `);
       res.json(allVehicles.rows || []);
