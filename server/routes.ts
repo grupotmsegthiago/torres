@@ -798,7 +798,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const allOrders = await storage.getServiceOrders();
         const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         if (activeWithKit) {
-          return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber}` });
+          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "missao_paga";
+          if (isEmAndamento) {
+            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+          }
+          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
         }
         await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
       }
@@ -839,7 +843,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const allOrders = await storage.getServiceOrders();
         const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         if (activeWithKit) {
-          return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber}` });
+          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "missao_paga";
+          if (isEmAndamento) {
+            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+          }
+          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
         }
         await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
       }
