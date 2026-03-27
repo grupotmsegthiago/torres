@@ -3770,7 +3770,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const updates: any = {
         status: "cancelada",
         missionStatus: so.missionStatus,
-        completedDate: new Date().toISOString(),
+        completedDate: new Date(),
       };
 
       if (so.kitId) {
@@ -3807,7 +3807,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const updates: any = {
         status: "concluída",
         missionStatus: "encerrada",
-        completedDate: new Date().toISOString(),
+        completedDate: new Date(),
       };
 
       if (so.kitId) {
