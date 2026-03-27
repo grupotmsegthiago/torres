@@ -418,6 +418,8 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   }
 }
 
+const seenUpdateIds = new Set<number>();
+
 function getFirstLastName(fullName: string | null | undefined): string {
   if (!fullName) return "—";
   const parts = fullName.trim().split(/\s+/);
@@ -1990,11 +1992,11 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
   const [preAlertLoading, setPreAlertLoading] = useState(false);
-  const [copiedUpdateId, setCopiedUpdateId] = useState<number | null>(null);
   const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
+  const [, forceUpdate] = useState(0);
 
   const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
-  const hasNewUpdate = !!(lastUpdateId && lastUpdateId !== copiedUpdateId);
+  const hasNewUpdate = !!(lastUpdateId && !seenUpdateIds.has(lastUpdateId));
 
   const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
 
@@ -2143,7 +2145,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             onClick={(e) => {
               e.stopPropagation();
               setPhotoModalUrl(v.activeOs?.lastAgentUpdate?.photoUrl || "__no_photo__");
-              if (lastUpdateId) setCopiedUpdateId(lastUpdateId);
+              if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); }
             }}
             data-testid={`btn-copy-report-${v.id}`}
           >
