@@ -1935,19 +1935,30 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             missionStep: lastUpdate[0].missionStep,
             agentName: lastUpdate[0].employeeName,
             createdAt: lastUpdate[0].createdAt,
+            photoUrl: lastUpdate[0].photoUrl || null,
+            latitude: lastUpdate[0].latitude || null,
+            longitude: lastUpdate[0].longitude || null,
           } : null,
           clientName: client?.name || "—",
+          origin: o.origin || null,
+          destination: o.destination || null,
+          escortedDriverName: o.escortedDriverName || null,
+          escortedDriverPhone: o.escortedDriverPhone || null,
+          escortedVehiclePlate: o.escortedVehiclePlate || null,
           employee1: emp1 ? {
             name: formatName(emp1.name),
+            fullName: emp1.name,
             phone: emp1.phone || null,
           } : null,
           employee2: emp2 ? {
             name: formatName(emp2.name),
+            fullName: emp2.name,
             phone: emp2.phone || null,
           } : null,
           vehicle: vehicle ? {
             plate: vehicle.plate,
             model: vehicle.model,
+            brand: vehicle.brand || "",
             hasTracker: vHasTracker,
           } : null,
           tracker: trackerData,
@@ -2159,6 +2170,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                     missionStep: lastUpd[0].missionStep,
                     agentName: lastUpd[0].employeeName,
                     createdAt: lastUpd[0].createdAt,
+                    photoUrl: lastUpd[0].photoUrl || null,
+                    latitude: lastUpd[0].latitude || null,
+                    longitude: lastUpd[0].longitude || null,
                   } : null,
                   scheduledDate: linkedOrder.scheduledDate,
                   clientName: client?.name || "—",
@@ -2692,9 +2706,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
-    const { serviceOrderId, message, missionStep, latitude, longitude } = req.body;
+    const { serviceOrderId, message, missionStep, latitude, longitude, photoUrl } = req.body;
     if (!serviceOrderId || !message?.trim()) {
       return res.status(400).json({ message: "OS e mensagem são obrigatórios" });
+    }
+
+    let validatedPhotoUrl: string | null = null;
+    if (photoUrl) {
+      if (typeof photoUrl === "string" && photoUrl.startsWith("data:image/") && photoUrl.length <= 5 * 1024 * 1024) {
+        validatedPhotoUrl = photoUrl;
+      }
     }
 
     const so = await storage.getServiceOrder(serviceOrderId);
@@ -2712,6 +2733,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         missionStep: missionStep || so.missionStatus || null,
         latitude: latitude || null,
         longitude: longitude || null,
+        photoUrl: validatedPhotoUrl,
         readByAdmin: 0,
       });
       console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${message.trim().substring(0, 50)}"`);

@@ -356,6 +356,27 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mission_updates (
+        id SERIAL PRIMARY KEY,
+        service_order_id INTEGER NOT NULL,
+        os_number TEXT,
+        employee_id INTEGER,
+        employee_name TEXT,
+        message TEXT NOT NULL,
+        mission_step TEXT,
+        latitude TEXT,
+        longitude TEXT,
+        photo_url TEXT,
+        read_by_admin INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS photo_url TEXT
+    `).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);

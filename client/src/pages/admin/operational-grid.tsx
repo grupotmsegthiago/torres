@@ -16,7 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  Bell, BellOff, MessageSquareText,
+  Bell, BellOff, MessageSquareText, ClipboardCheck, ImageIcon,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -217,6 +217,9 @@ interface TrackedVehicle {
       missionStep: string | null;
       agentName: string | null;
       createdAt: string | null;
+      photoUrl?: string | null;
+      latitude?: string | null;
+      longitude?: string | null;
     } | null;
     scheduledDate?: string | null;
     clientName: string;
@@ -257,11 +260,26 @@ interface GridItem {
   priority: string;
   missionStatus: string;
   clientName: string;
-  employee1: GridEmployee | null;
-  employee2: GridEmployee | null;
+  origin?: string | null;
+  destination?: string | null;
+  escortedDriverName?: string | null;
+  escortedDriverPhone?: string | null;
+  escortedVehiclePlate?: string | null;
+  lastAgentUpdate?: {
+    message: string;
+    missionStep: string | null;
+    agentName: string | null;
+    createdAt: string | null;
+    photoUrl?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+  } | null;
+  employee1: (GridEmployee & { fullName?: string }) | null;
+  employee2: (GridEmployee & { fullName?: string }) | null;
   vehicle: {
     plate: string;
     model: string;
+    brand?: string;
     hasTracker: boolean;
   } | null;
   tracker: {
@@ -354,6 +372,72 @@ function getHoursUntilMission(scheduledDate: string | null | undefined): number 
   const now = new Date();
   const scheduled = new Date(scheduledDate);
   return (scheduled.getTime() - now.getTime()) / (1000 * 60 * 60);
+}
+
+function getMissionProgress(missionStatus: string | null): number {
+  const steps = [
+    "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+    "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
+    "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
+    "finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada",
+  ];
+  if (!missionStatus) return 0;
+  const idx = steps.indexOf(missionStatus);
+  if (idx < 0) return 0;
+  return Math.round(((idx + 1) / steps.length) * 100);
+}
+
+function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
+  const os = v.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, scheduledDate: gridItem.scheduledDate, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
+  if (!os) return "";
+
+  const now = new Date();
+  const date = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+  const statusLabel = os.lastAgentUpdate?.missionStep
+    ? getMissionLabel(os.lastAgentUpdate.missionStep)
+    : getMissionLabel(os.missionStatus);
+
+  const origin = gridItem?.origin || "—";
+  const destination = gridItem?.destination || "—";
+  const driverName = gridItem?.escortedDriverName || "—";
+  const driverPhone = gridItem?.escortedDriverPhone || "—";
+  const driverPlate = gridItem?.escortedVehiclePlate || "—";
+  const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
+  const vehicleModel = `${gridItem?.vehicle?.brand || v.brand || ""} ${gridItem?.vehicle?.model || v.model || ""}`.trim() || "—";
+  const agent1 = os.employee1?.fullName || os.employee1?.name || "—";
+  const agent2 = os.employee2?.fullName || os.employee2?.name || "—";
+  const progress = getMissionProgress(os.missionStatus);
+  const occurrence = os.lastAgentUpdate?.message || "Sem ocorrência";
+
+  const lat = os.lastAgentUpdate?.latitude || v.tracker?.latitude;
+  const lng = os.lastAgentUpdate?.longitude || v.tracker?.longitude;
+  const locationAddr = v.tracker?.address || "—";
+  const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : "—";
+
+  return `*TORRES VIGILÂNCIA PATRIMONIAL*
+TOR: ${os.osNumber} | STATUS: ${statusLabel}
+
+🗓 DATA: ${date} HORA: ${time}
+🛡 OPERAÇÃO: CARACTERIZADA
+🏢 CLIENTE: ${os.clientName?.toUpperCase() || "—"}
+
+📍 ORIGEM: ${origin?.toUpperCase() || "—"}
+🏁 DESTINO: ${destination?.toUpperCase() || "—"}
+
+🚛 VEÍCULO: ${driverPlate} (${driverName})
+👤 MOTORISTA: ${driverName}
+📞 CONTATO: ${driverPhone}
+
+🚔 VIATURA: ${vehiclePlate}
+👮 AGENTE 01: ${agent1?.toUpperCase()}
+👮 AGENTE 02: ${agent2?.toUpperCase()}
+
+📈PROGRESSO DA MISSÃO: ${progress}%
+📣 OCORRÊNCIA: ${occurrence?.toUpperCase()}
+🏙️ LOCALIZAÇÃO: ${locationAddr}
+🗾 LINK DO GOOGLE: ${mapsLink}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
@@ -2208,6 +2292,7 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
 function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void }) {
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
+  const { toast } = useToast();
 
   const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
 
@@ -2552,13 +2637,50 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {v.activeOs.clientName}
                           </p>
                           {v.activeOs.lastAgentUpdate && (
-                            <div className="mt-1 bg-blue-50/50 border border-blue-100 rounded-lg px-2 py-1">
+                            <div className="mt-1 bg-blue-50/50 border border-blue-100 rounded-lg px-2 py-1 space-y-1">
                               <p className="text-[10px] text-blue-700 font-medium truncate" title={v.activeOs.lastAgentUpdate.message}>
                                 "{v.activeOs.lastAgentUpdate.message}"
                               </p>
                               <p className="text-[9px] text-blue-400">
                                 {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
                               </p>
+                              {v.activeOs.lastAgentUpdate.photoUrl && (
+                                <div className="flex items-center gap-1">
+                                  <ImageIcon className="w-3 h-3 text-blue-500" />
+                                  <span className="text-[9px] text-blue-500 font-medium">Foto anexada</span>
+                                </div>
+                              )}
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                                  const reportText = generateReport(v, gridItem || null);
+                                  const photoUrl = v.activeOs?.lastAgentUpdate?.photoUrl;
+                                  try {
+                                    if (photoUrl && navigator.clipboard?.write) {
+                                      const resp = await fetch(photoUrl);
+                                      const blob = await resp.blob();
+                                      await navigator.clipboard.write([
+                                        new ClipboardItem({
+                                          "text/plain": new Blob([reportText], { type: "text/plain" }),
+                                          [blob.type]: blob,
+                                        }),
+                                      ]);
+                                    } else {
+                                      await navigator.clipboard.writeText(reportText);
+                                    }
+                                    toast({ title: "Relatório copiado!", description: photoUrl ? "Texto e foto copiados." : "Texto copiado." });
+                                  } catch {
+                                    await navigator.clipboard.writeText(reportText);
+                                    toast({ title: "Relatório copiado!", description: "Texto copiado (foto indisponível para copiar)." });
+                                  }
+                                }}
+                                className="w-full flex items-center justify-center gap-1.5 h-6 bg-blue-600 text-white rounded-md text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 active:scale-[0.98] transition-all"
+                                data-testid={`button-copy-report-${v.id}`}
+                              >
+                                <ClipboardCheck className="w-3 h-3" />
+                                Atualização Recente
+                              </button>
                             </div>
                           )}
                           {v.activeOs.scheduledDate && (

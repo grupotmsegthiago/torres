@@ -380,13 +380,16 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   statusUpdate: string;
   setStatusUpdate: (v: string) => void;
   submitting: boolean;
-  handleSendStatusUpdate: () => void;
+  handleSendStatusUpdate: (photoDataUrl?: string) => Promise<boolean>;
   handleTransitAdvance: () => void;
   getPosition: () => Promise<{ lat: string; lng: string } | null>;
 }) {
   const [confirmArrival, setConfirmArrival] = useState(false);
   const [nearOrigin, setNearOrigin] = useState(false);
   const [distanceInfo, setDistanceInfo] = useState<string | null>(null);
+  const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
+  const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const isGoingToOrigin = currentStep === "em_transito_origem";
   const targetLat = isGoingToOrigin ? mission.originLat : mission.destinationLat;
@@ -430,6 +433,52 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
     return () => clearInterval(interval);
   }, [targetLat, targetLng, getPosition, currentStep]);
 
+  const getSuggestions = () => {
+    const suggestions: string[] = [];
+    if (nearOrigin && isGoingToOrigin) {
+      suggestions.push("Chegada na Origem");
+    }
+    if (nearOrigin && !isGoingToOrigin) {
+      suggestions.push("Chegada no Destino");
+    }
+    suggestions.push("Missão segue padrão, sem novidades");
+    suggestions.push("Trânsito intenso na rodovia");
+    suggestions.push("Parada para abastecimento");
+    suggestions.push("Pernoite");
+    suggestions.push("Aguardando liberação");
+    return suggestions;
+  };
+
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setUpdatePhoto(reader.result as string);
+      setUpdateStep("message");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSkipPhoto = () => {
+    setUpdatePhoto(null);
+    setUpdateStep("message");
+  };
+
+  const handleCancelUpdate = () => {
+    setUpdateStep("idle");
+    setUpdatePhoto(null);
+    setStatusUpdate("");
+  };
+
+  const handleSubmitUpdate = async () => {
+    const success = await handleSendStatusUpdate(updatePhoto || undefined);
+    if (success) {
+      setUpdateStep("idle");
+      setUpdatePhoto(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
@@ -458,29 +507,125 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-neutral-700" />
-          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Enviar Atualização ao Admin</span>
-        </div>
-        <textarea
-          value={statusUpdate}
-          onChange={(e) => setStatusUpdate(e.target.value)}
-          placeholder="Ex: Tráfego intenso na BR-101, previsão de chegada 14h30..."
-          className="w-full h-20 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400 resize-none"
-          data-testid="input-status-update"
-        />
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handlePhotoCapture}
+        data-testid="input-update-photo"
+      />
+
+      {updateStep === "idle" && (
         <button
-          onClick={handleSendStatusUpdate}
-          disabled={submitting || !statusUpdate.trim()}
-          className="w-full h-12 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-          data-testid="button-send-status"
+          onClick={() => setUpdateStep("photo")}
+          disabled={submitting}
+          className="w-full h-14 bg-blue-600 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+          data-testid="button-start-update"
         >
-          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+          <Camera className="w-5 h-5" />
           Enviar Atualização
         </button>
-        <p className="text-[10px] text-neutral-400 text-center">Esta mensagem será enviada ao admin. Não avança a etapa.</p>
-      </div>
+      )}
+
+      {updateStep === "photo" && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Camera className="w-4 h-4 text-neutral-700" />
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Etapa 1 — Foto da Situação</span>
+          </div>
+          <p className="text-xs text-neutral-500">Tire uma foto do momento atual da operação.</p>
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            className="w-full h-14 bg-neutral-900 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+            data-testid="button-take-photo"
+          >
+            <Camera className="w-5 h-5" />
+            Tirar Foto
+          </button>
+          <button
+            onClick={handleSkipPhoto}
+            className="w-full h-10 bg-neutral-100 text-neutral-500 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center active:scale-[0.98]"
+            data-testid="button-skip-photo"
+          >
+            Pular foto
+          </button>
+          <button
+            onClick={handleCancelUpdate}
+            className="w-full h-8 text-neutral-400 text-[10px] font-bold uppercase tracking-wider"
+            data-testid="button-cancel-update"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {updateStep === "message" && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <MessageSquare className="w-4 h-4 text-neutral-700" />
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Etapa 2 — Descreva a Situação</span>
+          </div>
+
+          {updatePhoto && (
+            <div className="relative">
+              <img src={updatePhoto} alt="Foto" className="w-full h-32 object-cover rounded-xl border border-neutral-200" />
+              <button
+                onClick={() => { setUpdatePhoto(null); setUpdateStep("photo"); }}
+                className="absolute top-2 right-2 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center text-xs"
+                data-testid="button-retake-photo"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-1.5">
+            {getSuggestions().map((s, i) => (
+              <button
+                key={i}
+                onClick={() => setStatusUpdate(s)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all active:scale-95 ${
+                  statusUpdate === s
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-neutral-50 text-neutral-600 border-neutral-200"
+                }`}
+                data-testid={`suggestion-${i}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          <textarea
+            value={statusUpdate}
+            onChange={(e) => setStatusUpdate(e.target.value)}
+            placeholder="Ou digite sua mensagem..."
+            className="w-full h-16 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400 resize-none"
+            data-testid="input-status-update"
+          />
+
+          <button
+            onClick={handleSubmitUpdate}
+            disabled={submitting || !statusUpdate.trim()}
+            className="w-full h-12 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+            data-testid="button-send-status"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+            Enviar Atualização
+          </button>
+
+          <button
+            onClick={handleCancelUpdate}
+            className="w-full h-8 text-neutral-400 text-[10px] font-bold uppercase tracking-wider"
+            data-testid="button-cancel-update-msg"
+          >
+            Cancelar
+          </button>
+          <p className="text-[10px] text-neutral-400 text-center">Esta mensagem será enviada ao admin. Não avança a etapa.</p>
+        </div>
+      )}
 
       <div className="border-t border-neutral-200 pt-4">
         {!confirmArrival ? (
@@ -819,10 +964,10 @@ export default function MobileMissaoPage() {
     }
   };
 
-  const handleSendStatusUpdate = async () => {
+  const handleSendStatusUpdate = async (photoDataUrl?: string): Promise<boolean> => {
     if (!statusUpdate.trim()) {
       toast({ title: "Informe o status", description: "Digite uma mensagem de atualização.", variant: "destructive" });
-      return;
+      return false;
     }
     setSubmitting(true);
     try {
@@ -833,12 +978,15 @@ export default function MobileMissaoPage() {
         missionStep: currentStep,
         latitude: pos?.lat || null,
         longitude: pos?.lng || null,
+        photoUrl: photoDataUrl || null,
       });
       logAuditAction("mission_status_update", "/mobile/missao", `Status: ${statusUpdate.trim()} | Etapa: ${currentStep} | OS #${mission.serviceOrderId}`);
       toast({ title: "Atualização enviada!", description: "O admin foi notificado." });
       setStatusUpdate("");
+      return true;
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
+      return false;
     } finally {
       setSubmitting(false);
     }
