@@ -759,7 +759,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 01:</b> ${_agent1}</div>
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
               </div>
-              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
+              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
               ${v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
@@ -2433,9 +2433,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </Tooltip>
                             )}
                             <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
-                              getStatusDisplay(v.activeOs.missionStatus, "em_andamento").className
+                              getStatusDisplay(v.activeOs.status === "agendada" ? "missao_paga" : v.activeOs.missionStatus, v.activeOs.status).className
                             }`}>
-                              {getMissionLabel(v.activeOs.missionStatus)}
+                              {v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}
                             </span>
                           </div>
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>

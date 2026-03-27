@@ -510,8 +510,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Kit de Armamento</FieldLabel>
                 <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-kit">
                   <option value="">Sem kit</option>
-                  {kits.filter(k => k.status === "disponível" || (order?.kitId && k.id === order.kitId)).map((k) => (
-                    <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas)</option>
+                  {kits.map((k) => (
+                    <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas){k.status === "em_uso" && k.id !== order?.kitId ? " — EM USO" : ""}</option>
                   ))}
                 </select>
               </div>
@@ -768,11 +768,14 @@ export default function ServiceOrdersPage() {
                       )}
                     </td>
                     <td className="p-3">
-                      {o.missionStatus ? (
-                        <Badge variant="secondary" className={`text-xs ${getMissionStatusColor(o.missionStatus)}`} data-testid={`badge-mission-${o.id}`}>
-                          {MISSION_STATUS_LABELS[o.missionStatus] || o.missionStatus}
-                        </Badge>
-                      ) : (
+                      {o.missionStatus ? (() => {
+                        const displayStatus = (o.status === "agendada" || o.status === "aberta") && o.missionStatus !== "missao_paga" ? "missao_paga" : o.missionStatus;
+                        return (
+                          <Badge variant="secondary" className={`text-xs ${getMissionStatusColor(displayStatus)}`} data-testid={`badge-mission-${o.id}`}>
+                            {MISSION_STATUS_LABELS[displayStatus] || displayStatus}
+                          </Badge>
+                        );
+                      })() : (
                         <span className="text-xs text-neutral-400">-</span>
                       )}
                     </td>

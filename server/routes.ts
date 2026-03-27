@@ -752,7 +752,14 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (parsed.data.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      if (kit.status === "em_uso") return res.status(400).json({ message: "Kit já está em uso em outra OS" });
+      if (kit.status === "em_uso") {
+        const allOrders = await storage.getServiceOrders();
+        const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+        if (activeWithKit) {
+          return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber}` });
+        }
+        await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+      }
     }
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
@@ -786,7 +793,14 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
-      if (kit.status === "em_uso") return res.status(400).json({ message: "Kit já está em uso em outra OS" });
+      if (kit.status === "em_uso") {
+        const allOrders = await storage.getServiceOrders();
+        const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+        if (activeWithKit) {
+          return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber}` });
+        }
+        await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+      }
     }
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
