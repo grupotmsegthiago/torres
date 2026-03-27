@@ -10,6 +10,7 @@ import {
   Shield, Car, Users, Clock, Crosshair,
   AlertTriangle, CheckCircle2, Truck, User, Siren,
   DollarSign, Loader2, MapPin, Wifi, WifiOff, History,
+  Undo2, XCircle,
 } from "lucide-react";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
@@ -579,6 +580,37 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
   });
 
+  const rollbackMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/mission/rollback-step", { serviceOrderId: mission.id });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      toast({ title: "Etapa retrocedida", description: "O vigilante foi movido para a etapa anterior." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao voltar etapa", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const cancelMissionMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const res = await apiRequest("POST", "/api/mission/cancel", { serviceOrderId: mission.id, reason });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      toast({ title: "Missão cancelada", description: "A missão foi cancelada com sucesso." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao cancelar missão", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const isAdmin = user?.role === "admin" || user?.role === "diretoria";
+
   const handlePhotoUpload = useCallback(async (slotKey: string, file: File) => {
     setUploadingSlot(slotKey);
     try {
@@ -653,14 +685,31 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
               <MissionTimer startedAt={mission.missionStartedAt} />
             </div>
           )}
+          {isAdmin && (
+            <div className="mt-6 w-full max-w-xs">
+              <button
+                onClick={() => {
+                  if (confirm(`Reabrir missão ${mission.osNumber}?\n\nA missão voltará para a etapa anterior (chegada_base).`)) {
+                    rollbackMutation.mutate();
+                  }
+                }}
+                disabled={rollbackMutation.isPending}
+                className="w-full py-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                data-testid="button-admin-reopen"
+              >
+                {rollbackMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                Reabrir Missão
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   if (mission.missionStatus === "missao_paga") {
-    const isAdmin = user?.role === "admin" || user?.role === "diretoria";
     const isAgendada = mission.status === "agendada" || mission.status === "aberta";
+    /* isAdmin already declared above */
     const scheduledDateFormatted = mission.scheduledDate
       ? new Date(mission.scheduledDate).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
       : null;
@@ -737,6 +786,23 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
             </div>
           )}
 
+          {isAdmin && (
+            <button
+              onClick={() => {
+                const reason = prompt(`Cancelar missão ${mission.osNumber}?\n\nDigite o motivo do cancelamento:`);
+                if (reason !== null) {
+                  cancelMissionMutation.mutate(reason || "Cancelada pelo administrador");
+                }
+              }}
+              disabled={cancelMissionMutation.isPending}
+              className="w-full py-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2 mb-4"
+              data-testid="button-admin-cancel-payment"
+            >
+              {cancelMissionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+              Cancelar Missão
+            </button>
+          )}
+
           {mission.scheduledMissions && mission.scheduledMissions.length > 0 && (
             <ScheduledMissionsList missions={mission.scheduledMissions} />
           )}
@@ -783,6 +849,36 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
           >
             {advanceMutation.isPending ? "INICIANDO..." : "INICIAR CHECK-OUT"}
           </button>
+
+          {isAdmin && (
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => {
+                  if (confirm(`Voltar para etapa de pagamento da OS ${mission.osNumber}?`)) {
+                    rollbackMutation.mutate();
+                  }
+                }}
+                disabled={rollbackMutation.isPending}
+                className="flex-1 py-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                data-testid="button-admin-rollback-aguardando"
+              >
+                {rollbackMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                Voltar Etapa
+              </button>
+              <button
+                onClick={() => {
+                  const reason = prompt(`Cancelar missão ${mission.osNumber}?\n\nDigite o motivo:`);
+                  if (reason !== null) cancelMissionMutation.mutate(reason || "Cancelada pelo administrador");
+                }}
+                disabled={cancelMissionMutation.isPending}
+                className="flex-1 py-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                data-testid="button-admin-cancel-aguardando"
+              >
+                {cancelMissionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Cancelar Missão
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -960,6 +1056,43 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
         <div className="mt-4 flex items-center justify-center">
           <MissionTimer startedAt={mission.missionStartedAt} />
         </div>
+
+        {isAdmin && (
+          <div className="mt-6 border-t border-border pt-4">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-center mb-3">
+              Controles Administrativos
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (confirm(`Voltar etapa da OS ${mission.osNumber}?\n\nEtapa atual: ${currentStepDef?.label || mission.missionStatus}\n\nO vigilante será movido para a etapa anterior.`)) {
+                    rollbackMutation.mutate();
+                  }
+                }}
+                disabled={rollbackMutation.isPending || mission.missionStatus === "missao_paga"}
+                className="flex-1 py-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                data-testid="button-admin-rollback"
+              >
+                {rollbackMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                Voltar Etapa
+              </button>
+              <button
+                onClick={() => {
+                  const reason = prompt(`Cancelar missão ${mission.osNumber}?\n\nDigite o motivo do cancelamento:`);
+                  if (reason !== null) {
+                    cancelMissionMutation.mutate(reason || "Cancelada pelo administrador");
+                  }
+                }}
+                disabled={cancelMissionMutation.isPending}
+                className="flex-1 py-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                data-testid="button-admin-cancel"
+              >
+                {cancelMissionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Cancelar Missão
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

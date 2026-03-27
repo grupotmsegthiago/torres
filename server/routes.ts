@@ -1714,19 +1714,19 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const destinoLink = os.destinationLat && os.destinationLng ? gmapsUrl(os.destinationLat, os.destinationLng) : (destinoStepGeo ? gmapsUrl(destinoStepGeo.lat, destinoStepGeo.lng) : null);
 
       sectionTitle("Dados da Missao");
-      const halfW = (W - 16) / 2;
+      const halfW = (W - 12) / 2;
       const row1Y = doc.y;
-      drawLabelValue(LM + 8, row1Y, halfW, "Solicitante:", sanitize(os.requesterName));
-      drawLabelValueWithLink(LM + halfW + 16, row1Y, halfW, "Origem:", sanitize(origemText), origemLink);
-      doc.y = row1Y + 24;
+      drawLabelValue(LM + 6, row1Y, halfW, "Solicitante:", sanitize(os.requesterName));
+      drawLabelValueWithLink(LM + halfW + 12, row1Y, halfW, "Origem:", sanitize(origemText), origemLink);
+      doc.y = row1Y + 26;
       const row2Y = doc.y;
-      drawLabelValue(LM + 8, row2Y, halfW, "Data Agendada:", fmtDate(os.scheduledDate));
-      drawLabelValueWithLink(LM + halfW + 16, row2Y, halfW, "Destino:", sanitize(destinoText), destinoLink);
-      doc.y = row2Y + 24;
+      drawLabelValue(LM + 6, row2Y, halfW, "Data Agendada:", fmtDate(os.scheduledDate));
+      drawLabelValueWithLink(LM + halfW + 12, row2Y, halfW, "Destino:", sanitize(destinoText), destinoLink);
+      doc.y = row2Y + 26;
       const row3Y = doc.y;
-      drawLabelValue(LM + 8, row3Y, halfW, "Inicio Missao:", fmtDate(os.missionStartedAt), { valueColor: BLUE });
-      drawLabelValue(LM + halfW + 16, row3Y, halfW, "Conclusao:", fmtDate(os.completedDate), { valueColor: GREEN });
-      doc.y = row3Y + 24;
+      drawLabelValue(LM + 6, row3Y, halfW, "Inicio Missao:", fmtDate(os.missionStartedAt), { valueColor: BLUE });
+      drawLabelValue(LM + halfW + 12, row3Y, halfW, "Conclusao:", fmtDate(os.completedDate), { valueColor: GREEN });
+      doc.y = row3Y + 26;
       if (os.route) {
         drawLabelValue(LM + 8, doc.y, W - 16, "Rota:", sanitize(os.route));
         doc.y += 24;
@@ -1894,42 +1894,42 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           finalizada: GREEN, em_prontidao: AMBER, retorno_base: BLUE, chegada_base: GREEN, encerrada: GREEN,
         };
 
-        const colWTime = 70;
-        const colWAgent = 145;
-        const colWStep = W - colWTime - colWAgent - 20;
+        const colWStep = Math.floor(W * 0.40);
+        const colWTime = Math.floor(W * 0.22);
+        const colWAgent = W - colWStep - colWTime;
         drawTableHeader([
-          { text: "ETAPA", w: colWStep + 10 },
+          { text: "ETAPA", w: colWStep },
           { text: "HORARIO", w: colWTime },
-          { text: "AGENTE", w: colWAgent + 10 },
+          { text: "AGENTE", w: colWAgent },
         ]);
 
         for (let i = 0; i < stepLogs.length; i++) {
           const log = stepLogs[i];
-          ensureSpace(18);
           const stepName = stepLabels[log.step] || log.step;
           const dotColor = stepColors[log.step] || BLUE;
-          const rH = log.geo ? 24 : 16;
+          const rH = log.geo ? 28 : 18;
+          ensureSpace(rH + 2);
 
           doc.save();
           if (i % 2 === 0) doc.rect(LM, doc.y, W, rH).fill("#ffffff");
           else doc.rect(LM, doc.y, W, rH).fill("#f8fafc");
           doc.moveTo(LM, doc.y + rH).lineTo(LM + W, doc.y + rH).lineWidth(0.2).strokeColor(GRAY_BORDER).stroke();
 
-          doc.circle(LM + 12, doc.y + 8, 3).fill(dotColor);
+          doc.circle(LM + 12, doc.y + 6, 3).fill(dotColor);
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(PRIMARY)
-            .text(stepName, LM + 22, doc.y + 4, { width: colWStep - 12, lineBreak: false });
+            .text(stepName, LM + 22, doc.y + 3, { width: colWStep - 28, lineBreak: false });
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(dotColor)
-            .text(fmtTime(log.completedAt), LM + colWStep + 10, doc.y + 4, { width: colWTime - 4, lineBreak: false });
+            .text(fmtTime(log.completedAt), LM + colWStep + 6, doc.y + 3, { width: colWTime - 12, lineBreak: false });
 
           const agentName = sanitize(log.agentName);
-          const shortAgent = agentName.length > 28 ? agentName.substring(0, 28) + "..." : agentName;
+          const shortAgent = agentName.length > 30 ? agentName.substring(0, 30) + "..." : agentName;
           doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
-            .text(shortAgent, LM + colWStep + colWTime + 10, doc.y + 4.5, { width: colWAgent, lineBreak: false });
+            .text(shortAgent, LM + colWStep + colWTime + 6, doc.y + 4, { width: colWAgent - 12, lineBreak: false });
 
           if (log.geo) {
             const gpsLink = gmapsUrl(log.geo.lat, log.geo.lng);
-            doc.font("Helvetica").fontSize(6).fillColor("#6366f1")
-              .text(`GPS: ${Number(log.geo.lat).toFixed(5)}, ${Number(log.geo.lng).toFixed(5)}`, LM + 22, doc.y + 15, { width: colWStep, lineBreak: false, link: gpsLink || undefined });
+            doc.font("Helvetica").fontSize(5.5).fillColor("#6366f1")
+              .text(`GPS: ${Number(log.geo.lat).toFixed(5)}, ${Number(log.geo.lng).toFixed(5)}`, LM + 22, doc.y + 16, { width: colWStep - 28, lineBreak: false, link: gpsLink || undefined });
           }
           doc.restore();
           doc.y += rH;
@@ -1945,34 +1945,36 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         };
         for (const upd of updates) {
           const msgText = sanitize(upd.message);
-          const msgLines = Math.ceil(msgText.length / 80);
-          const cardH = 14 + Math.max(12, msgLines * 10) + (upd.latitude ? 10 : 0) + 4;
+          const charsPerLine = Math.floor((W - 20) / 4.5);
+          const msgLines = Math.max(1, Math.ceil(msgText.length / charsPerLine));
+          const msgBlockH = msgLines * 11;
+          const cardH = 18 + msgBlockH + (upd.latitude ? 14 : 0) + 4;
           ensureSpace(cardH + 6);
 
           doc.save();
-          doc.roundedRect(LM, doc.y, W, cardH, 2).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+          doc.roundedRect(LM, doc.y, W, cardH, 3).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
           doc.rect(LM, doc.y, 3, cardH).fill(BLUE);
 
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(BLUE)
-            .text(fmtTime(upd.createdAt), LM + 10, doc.y + 4, { width: 75, lineBreak: false });
+            .text(fmtTime(upd.createdAt), LM + 10, doc.y + 5, { width: 75, lineBreak: false });
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(PRIMARY)
-            .text(sanitize(upd.employeeName) || "Agente", LM + 85, doc.y + 4, { width: 180, lineBreak: false });
+            .text(sanitize(upd.employeeName) || "Agente", LM + 90, doc.y + 5, { width: W * 0.35, lineBreak: false });
           if (upd.missionStep) {
             doc.font("Helvetica").fontSize(6.5).fillColor(GRAY_TEXT)
-              .text(updStepLabels[upd.missionStep] || upd.missionStep, LM + W - 150, doc.y + 5, { width: 140, align: "right", lineBreak: false });
+              .text(updStepLabels[upd.missionStep] || upd.missionStep, LM + W - 155, doc.y + 6, { width: 145, align: "right", lineBreak: false });
           }
 
           doc.font("Helvetica").fontSize(7.5).fillColor(PRIMARY)
-            .text(msgText, LM + 10, doc.y + 16, { width: W - 20 });
+            .text(msgText, LM + 10, doc.y + 18, { width: W - 20 });
 
           if (upd.latitude && upd.longitude) {
-            const gpsY = doc.y + cardH - 12;
+            const gpsY = doc.y + cardH - 14;
             const updGpsLink = gmapsUrl(upd.latitude, upd.longitude);
-            doc.font("Helvetica").fontSize(6).fillColor("#6366f1")
-              .text(`GPS: ${upd.latitude}, ${upd.longitude}`, LM + 10, gpsY, { width: W - 20, lineBreak: false, link: updGpsLink || undefined });
+            doc.font("Helvetica").fontSize(5.5).fillColor("#6366f1")
+              .text(`GPS: ${Number(upd.latitude).toFixed(5)}, ${Number(upd.longitude).toFixed(5)}`, LM + 10, gpsY, { width: W - 20, lineBreak: false, link: updGpsLink || undefined });
           }
           doc.restore();
-          doc.y += cardH + 4;
+          doc.y += cardH + 5;
 
           if (upd.photoUrl) {
             try {
@@ -3741,6 +3743,43 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         nextStep: previousStep,
       };
       updates.stepLogs = [...existingLogs, rollbackEntry];
+
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/mission/cancel", requireAdminRole, async (req, res) => {
+    try {
+      const { serviceOrderId, reason } = req.body;
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+
+      const updates: any = {
+        status: "cancelada",
+        missionStatus: so.missionStatus,
+        completedDate: new Date().toISOString(),
+      };
+
+      if (so.kitId) {
+        try { await storage.updateWeaponKit(so.kitId, { status: "disponível" }); } catch (_e) {}
+      }
+      if (so.vehicleId) {
+        try { await storage.updateVehicle(so.vehicleId, { status: "disponível" }); } catch (_e) {}
+      }
+
+      const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+      const user = req.user!;
+      const cancelEntry = {
+        step: "cancelada",
+        completedAt: new Date().toISOString(),
+        agentName: `ADMIN: ${user.name}`,
+        agentId: user.id,
+        geo: null,
+        nextStep: "cancelada",
+        reason: reason || "Cancelada pelo administrador",
+      };
+      updates.stepLogs = [...existingLogs, cancelEntry];
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
