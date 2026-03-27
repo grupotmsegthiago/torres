@@ -1467,34 +1467,6 @@ export default function MobileMissaoPage() {
               )}
             </div>
 
-            {(mission.origin || mission.destination) && (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
-                <p className="text-[10px] font-black text-neutral-400 uppercase tracking-wider">Rota da Operação</p>
-                {mission.origin && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Origem</p>
-                      <p className="text-sm font-semibold text-neutral-800 leading-tight">{mission.origin}</p>
-                    </div>
-                  </div>
-                )}
-                {mission.destination && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Destino</p>
-                      <p className="text-sm font-semibold text-neutral-800 leading-tight">{mission.destination}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
               <label className="flex items-start gap-3 cursor-pointer" data-testid="label-ciente">
                 <input
