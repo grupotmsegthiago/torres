@@ -3437,7 +3437,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       so.assignedEmployee2Id === user.employeeId;
     if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
 
-    const kmSteps = ["km_saida", "km_chegada", "km_final"];
+    const kmSteps = ["km_saida", "km_chegada", "km_final", "base_hodometro"];
     if (kmSteps.includes(step) && (!kmValue || Number(kmValue) <= 0)) {
       return res.status(400).json({ message: "Valor de KM obrigatório para esta etapa" });
     }

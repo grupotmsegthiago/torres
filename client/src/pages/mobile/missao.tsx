@@ -1978,7 +1978,8 @@ export default function MobileMissaoPage() {
                         const key = label.toLowerCase().replace(/\s/g, '-');
                         const backendStep = stepMap[label] || currentStep;
                         if (photos[key]) {
-                          await uploadPhoto(backendStep, label, photos[key]);
+                          const isBaseHodo = backendStep === "base_hodometro";
+                          await uploadPhoto(backendStep, label, photos[key], isBaseHodo && baseReturnKm ? parseInt(baseReturnKm) : undefined);
                         }
                       }
                     }
