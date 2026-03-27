@@ -49,7 +49,7 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/16", icon: CheckCircle2 },
   em_prontidao: { title: "Em Prontidão", subtitle: "Operação · 14/16", icon: Shield },
   retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 15/16", icon: Home },
-  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 16/16", icon: ClipboardCheck },
+  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 16/16", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Hodômetro"] },
   encerrada: { title: "Operação Encerrada", subtitle: "Concluída", icon: Sparkles },
 };
 
