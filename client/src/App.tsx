@@ -44,6 +44,12 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
 
+  useEffect(() => {
+    if (!isLoading && !user) {
+      setLocation("/admin");
+    }
+  }, [isLoading, user, setLocation]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
@@ -53,7 +59,6 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!user) {
-    setLocation("/admin");
     return null;
   }
 

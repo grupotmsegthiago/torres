@@ -2695,14 +2695,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     const unreadOnly = req.query.unread === "true";
     const limit = parseInt(req.query.limit as string) || 50;
 
-    let query = db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+    let results;
     if (unreadOnly) {
-      query = db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit) as any;
+      results = await db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+    } else {
+      results = await db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
     }
-    const results = await query;
     res.json(results);
   });
 
