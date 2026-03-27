@@ -1917,6 +1917,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
         }
 
+        const lastUpdate = await db.select()
+          .from(missionUpdates)
+          .where(eq(missionUpdates.serviceOrderId, o.id))
+          .orderBy(desc(missionUpdates.createdAt))
+          .limit(1);
+
         return {
           id: o.id,
           osNumber: o.osNumber,
@@ -1924,6 +1930,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           status: o.status,
           priority: o.priority || "agendada",
           missionStatus: o.missionStatus,
+          lastAgentUpdate: lastUpdate.length > 0 ? {
+            message: lastUpdate[0].message,
+            missionStep: lastUpdate[0].missionStep,
+            agentName: lastUpdate[0].employeeName,
+            createdAt: lastUpdate[0].createdAt,
+          } : null,
           clientName: client?.name || "—",
           employee1: emp1 ? {
             name: formatName(emp1.name),
@@ -2132,11 +2144,22 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const client = await storage.getClient(linkedOrder.clientId);
                 const emp1 = linkedOrder.assignedEmployeeId ? await storage.getEmployee(linkedOrder.assignedEmployeeId) : null;
                 const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
+                const lastUpd = await db.select()
+                  .from(missionUpdates)
+                  .where(eq(missionUpdates.serviceOrderId, linkedOrder.id))
+                  .orderBy(desc(missionUpdates.createdAt))
+                  .limit(1);
                 return {
                   id: linkedOrder.id,
                   osNumber: linkedOrder.osNumber,
                   status: linkedOrder.status,
                   missionStatus: linkedOrder.missionStatus,
+                  lastAgentUpdate: lastUpd.length > 0 ? {
+                    message: lastUpd[0].message,
+                    missionStep: lastUpd[0].missionStep,
+                    agentName: lastUpd[0].employeeName,
+                    createdAt: lastUpd[0].createdAt,
+                  } : null,
                   scheduledDate: linkedOrder.scheduledDate,
                   clientName: client?.name || "—",
                   priority: linkedOrder.priority || "agendada",

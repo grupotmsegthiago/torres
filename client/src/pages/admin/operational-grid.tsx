@@ -212,6 +212,12 @@ interface TrackedVehicle {
     osNumber: string;
     status: string;
     missionStatus: string;
+    lastAgentUpdate?: {
+      message: string;
+      missionStep: string | null;
+      agentName: string | null;
+      createdAt: string | null;
+    } | null;
     scheduledDate?: string | null;
     clientName: string;
     priority: string;
@@ -780,7 +786,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 01:</b> ${_agent1}</div>
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
               </div>
-              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "EM SERVIÇO" : "Agendamento") : getMissionLabel(v.activeOs.missionStatus)}</span></div>` : ""}
+              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "EM SERVIÇO" : "Agendamento") : getMissionLabel(v.activeOs.lastAgentUpdate?.missionStep || v.activeOs.missionStatus)}</span>${v.activeOs.lastAgentUpdate ? `<br/><span style="color: #2563eb; font-size: 11px;">"${v.activeOs.lastAgentUpdate.message}"</span>` : ""}</div>` : ""}
               ${v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
@@ -2530,15 +2536,31 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 IMEDIATA
                               </span>
                             )}
-                            <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
-                              getStatusDisplay(v.activeOs.status === "agendada" ? "missao_paga" : v.activeOs.missionStatus, v.activeOs.status).className
-                            }`}>
-                              {v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}
-                            </span>
+                            {v.activeOs.lastAgentUpdate ? (
+                              <span className="text-xs px-2 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                                {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
+                              </span>
+                            ) : (
+                              <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
+                                getStatusDisplay(v.activeOs.status === "agendada" ? "missao_paga" : v.activeOs.missionStatus, v.activeOs.status).className
+                              }`}>
+                                {v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
                           </p>
+                          {v.activeOs.lastAgentUpdate && (
+                            <div className="mt-1 bg-blue-50/50 border border-blue-100 rounded-lg px-2 py-1">
+                              <p className="text-[10px] text-blue-700 font-medium truncate" title={v.activeOs.lastAgentUpdate.message}>
+                                "{v.activeOs.lastAgentUpdate.message}"
+                              </p>
+                              <p className="text-[9px] text-blue-400">
+                                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                              </p>
+                            </div>
+                          )}
                           {v.activeOs.scheduledDate && (
                             <p className="text-xs text-neutral-400 font-medium">
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
