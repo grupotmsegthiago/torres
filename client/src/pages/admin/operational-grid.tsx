@@ -2128,12 +2128,84 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   );
 }
 
+function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehicle | null; open: boolean; onClose: () => void }) {
+  if (!vehicle) return null;
+  const allOrders = [
+    ...(vehicle.activeOs ? [{
+      id: vehicle.activeOs.id,
+      osNumber: vehicle.activeOs.osNumber,
+      status: vehicle.activeOs.status,
+      priority: vehicle.activeOs.priority,
+      scheduledDate: vehicle.activeOs.scheduledDate || null,
+      clientName: vehicle.activeOs.clientName,
+      isCurrent: true,
+    }] : []),
+    ...(vehicle.upcomingOrders || []).map(u => ({ ...u, isCurrent: false })),
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock className="w-5 h-5 text-blue-600" />
+            Agendamentos — {vehicle.plate}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {allOrders.length === 0 ? (
+            <p className="text-sm text-neutral-400 text-center py-4">Nenhum agendamento</p>
+          ) : allOrders.map((o) => (
+            <div key={o.id} className={`rounded-lg border p-3 space-y-1.5 ${o.isCurrent ? "border-neutral-900 bg-neutral-50" : "border-neutral-200 bg-white"}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Link href={`/admin/service-orders?os=${o.id}`} className="font-bold text-sm text-neutral-800 hover:text-blue-700 hover:underline cursor-pointer">
+                    {o.osNumber}
+                  </Link>
+                  {o.isCurrent && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-neutral-900 text-white">ATUAL</span>
+                  )}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                    o.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" :
+                    "bg-blue-50 text-blue-600 border-blue-200"
+                  }`}>
+                    {o.priority === "imediata" ? "IMEDIATA" : "AGENDADA"}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
+                    o.status === "em_andamento" ? "bg-neutral-900 text-white border-neutral-900" :
+                    o.status === "agendada" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                    "bg-neutral-100 text-neutral-600 border-neutral-200"
+                  }`}>
+                    {o.status === "agendada" ? (o.priority === "imediata" ? "EM SERVIÇO" : "AGENDAMENTO") : o.status?.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-neutral-600 font-medium">{o.clientName}</p>
+              {o.scheduledDate && (
+                <p className="text-xs text-neutral-400">
+                  <CalendarClock className="w-3 h-3 inline mr-1" />
+                  {new Date(o.scheduledDate).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="pt-2">
+          <Button variant="outline" onClick={onClose} className="w-full">Fechar</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void }) {
   const [expanded, setExpanded] = useState(true);
+  const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
 
   const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
 
   return (
+    <>
     <Card className="overflow-hidden shadow-sm border-0 ring-1 ring-neutral-200">
       <div
         className="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors"
@@ -2472,24 +2544,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             </p>
                           )}
                           {v.upcomingOrders && v.upcomingOrders.length > 0 && (
-                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 space-y-1">
-                              <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">+{v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}</p>
-                              {v.upcomingOrders.map((u) => (
-                                <div key={u.id} className="flex items-center gap-1 flex-wrap">
-                                  <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
-                                    {u.osNumber}
-                                  </Link>
-                                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
-                                    {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
-                                  </span>
-                                  {u.scheduledDate && (
-                                    <span className="text-[10px] text-neutral-400">
-                                      {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                            <button
+                              onClick={() => setUpcomingVehicle(v)}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
+                              data-testid={`button-upcoming-${v.id}`}
+                            >
+                              <CalendarClock className="w-3 h-3" />
+                              +{v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}
+                            </button>
                           )}
                         </div>
                       ) : v.scheduledOs ? (
@@ -2508,44 +2570,25 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             </p>
                           )}
                           {v.upcomingOrders && v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 0 && (
-                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 space-y-1">
-                              <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">+{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length} agendamento{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 1 ? "s" : ""}</p>
-                              {v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).map((u) => (
-                                <div key={u.id} className="flex items-center gap-1 flex-wrap">
-                                  <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
-                                    {u.osNumber}
-                                  </Link>
-                                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
-                                    {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
-                                  </span>
-                                  {u.scheduledDate && (
-                                    <span className="text-[10px] text-neutral-400">
-                                      {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                            <button
+                              onClick={() => setUpcomingVehicle(v)}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
+                              data-testid={`button-upcoming-scheduled-${v.id}`}
+                            >
+                              <CalendarClock className="w-3 h-3" />
+                              +{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length} agendamento{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 1 ? "s" : ""}
+                            </button>
                           )}
                         </div>
                       ) : v.upcomingOrders && v.upcomingOrders.length > 0 ? (
-                        <div className="space-y-1">
-                          {v.upcomingOrders.map((u) => (
-                            <div key={u.id} className="flex items-center gap-1 flex-wrap">
-                              <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
-                                {u.osNumber}
-                              </Link>
-                              <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
-                                {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
-                              </span>
-                              {u.scheduledDate && (
-                                <span className="text-[10px] text-neutral-400">
-                                  {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                        <button
+                          onClick={() => setUpcomingVehicle(v)}
+                          className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
+                          data-testid={`button-upcoming-only-${v.id}`}
+                        >
+                          <CalendarClock className="w-3.5 h-3.5" />
+                          {v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}
+                        </button>
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
                       )}
@@ -2575,6 +2618,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
         </div>
       )}
     </Card>
+    <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
+    </>
   );
 }
 
