@@ -2787,7 +2787,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           <TooltipTrigger>
                             {v.tracker.ignition
                               ? <ToggleRight className="w-5 h-5 mx-auto text-emerald-600" />
-                              : <ToggleLeft className="w-5 h-5 mx-auto text-neutral-400" />
+                              : <ToggleLeft className="w-5 h-5 mx-auto text-neutral-300" />
                             }
                           </TooltipTrigger>
                           <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
