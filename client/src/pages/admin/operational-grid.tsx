@@ -2903,13 +2903,14 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             </button>
           )}
 
-          {hasOs && (
-            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
-              onClick={handlePreAlert} disabled={preAlertLoading}
-              data-testid={`ctx-prealert-${v.id}`}>
-              {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" /> : <Eye className="w-3.5 h-3.5 text-amber-500" />} Visualizar Pré-Alerta
-            </button>
-          )}
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { navigate(`/admin/service-orders?vehicleId=${v.id}`); onClose(); }}
+            data-testid={`ctx-schedules-${v.id}`}>
+            <CalendarClock className="w-3.5 h-3.5 text-blue-500" /> Ver Agendamentos
+          </button>
+
+          <div className="border-t border-neutral-100 my-1" />
+          <p className="px-3 py-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">Rastreamento</p>
 
           <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
             onClick={() => { setMirrorOpen(true); }}
@@ -2922,6 +2923,9 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             data-testid={`ctx-command-${v.id}`}>
             <Zap className="w-3.5 h-3.5 text-violet-500" /> Enviar Comando
           </button>
+
+          <div className="border-t border-neutral-100 my-1" />
+          <p className="px-3 py-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">Missão</p>
 
           <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
             onClick={async () => {
@@ -2943,6 +2947,20 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             data-testid={`ctx-return-base-${v.id}`}>
             <Home className="w-3.5 h-3.5 text-blue-500" /> Retornar à Base
           </button>
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`); onClose(); }}
+            data-testid={`ctx-new-os-${v.id}`}>
+            <Plus className="w-3.5 h-3.5 text-emerald-500" /> Nova OS
+          </button>
+
+          {hasOs && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+              onClick={handlePreAlert} disabled={preAlertLoading}
+              data-testid={`ctx-prealert-${v.id}`}>
+              {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" /> : <Eye className="w-3.5 h-3.5 text-amber-500" />} Visualizar Pré-Alerta
+            </button>
+          )}
 
           {v.activeOs && v.activeOs.missionStatus === "aguardando" && !v.activeOs.earlyStartApproved && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2.5"
@@ -2971,21 +2989,8 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             </button>
           )}
 
-          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
-            onClick={() => { navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`); onClose(); }}
-            data-testid={`ctx-new-os-${v.id}`}>
-            <Plus className="w-3.5 h-3.5 text-emerald-500" /> Nova OS
-          </button>
-
-          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
-            onClick={() => { navigate(`/admin/vehicles?id=${v.id}`); onClose(); }}
-            data-testid={`ctx-docs-${v.id}`}>
-            <FileText className="w-3.5 h-3.5 text-blue-400" /> Docs VTR
-          </button>
-
           {v.activeOs && (
             <>
-              <div className="border-t border-neutral-100 my-1" />
               <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-green-700 hover:bg-green-50 flex items-center gap-2.5"
                 onClick={() => setMissionAction("finish")}
                 data-testid={`ctx-finish-${v.id}`}>
@@ -3000,6 +3005,14 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
           )}
 
           <div className="border-t border-neutral-100 my-1" />
+          <p className="px-3 py-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">Veículo</p>
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { navigate(`/admin/vehicles?id=${v.id}`); onClose(); }}
+            data-testid={`ctx-docs-${v.id}`}>
+            <FileText className="w-3.5 h-3.5 text-blue-400" /> Docs VTR
+          </button>
+
           {hasLocation && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-indigo-700 hover:bg-indigo-50 flex items-center gap-2.5"
               onClick={() => setRefPointDialog(true)}
