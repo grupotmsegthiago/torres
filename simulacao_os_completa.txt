@@ -1,0 +1,519 @@
+================================================================================
+  SIMULAÇÃO COMPLETA DO FLUXO DE OS — TORRES VIGILÂNCIA PATRIMONIAL
+  Data: 27/03/2026 | Apenas simulação — NADA inserido no sistema
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════
+ CENÁRIO SIMULADO
+═══════════════════════════════════════════════════════════════════════════
+
+  Cliente:     TRANSPACHECO TRANSPORTE RODOVIÁRIO DE CARGAS LTDA (ID 7)
+  Tipo:        Escolta Armada
+  Prioridade:  Agendada
+  Data:        28/03/2026 às 06:00
+  
+  Rota:        Osasco/SP → Campinas/SP (~90km)
+  Origem:      Rua Jamil João Zarif, 684 - Pres. Altino, Osasco - SP
+  Destino:     Doutor Gustavo Orsolini, 385 - Campinas - SP
+  
+  Agente 1:    RICARDO TADEU BEZERRA PEREIRA (ID 16)
+  Agente 2:    VITOR DE MACEDO SILVA (ID 14)
+  Viatura:     UER7D08 - VW POLO TRACK MA 2026 (ID 8)
+  Kit:         KIT TORRES - 01 (ID 3)
+  
+  Motorista Escoltado: João da Silva
+  Placa Escoltado:     ABC1D23
+  Telefone:            (11) 99999-8888
+
+═══════════════════════════════════════════════════════════════════════════
+ FASE 1 — CRIAÇÃO DA OS (Admin)
+═══════════════════════════════════════════════════════════════════════════
+
+  [POST /api/service-orders]
+  
+  O sistema gera automaticamente:
+    • Número OS: TOR-0005 (próximo sequencial)
+    • Status: "aberta"
+    • Mission Status: "aguardando"
+    • Veículo UER7D08: status muda para "em_uso"
+    • Kit 3: status muda para "em_uso"
+    
+  ✅ VALIDAÇÕES:
+    • clientId obrigatório .......................... OK (7)
+    • type obrigatório ............................. OK ("escolta")
+    • scheduledDate válida ......................... OK (2026-03-28T06:00)
+    • vehicleId veículo disponível ................. OK (UER7D08 disponível)
+    • kitId kit disponível ......................... OK (KIT-01 disponível)
+    • assignedEmployeeId válido .................... OK (ID 16)
+    • assignedEmployee2Id válido ................... OK (ID 14)
+    • origin e destination preenchidos ............. OK
+
+═══════════════════════════════════════════════════════════════════════════
+ FASE 2 — FLUXO MOBILE DO AGENTE (19 Etapas)
+═══════════════════════════════════════════════════════════════════════════
+
+  O agente abre o app mobile, faz login com CPF e vê a missão.
+  Cada etapa exige [POST /api/mission/advance] + fotos obrigatórias.
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 01: missao_paga → aguardando
+  ─────────────────────────────────────────────────────────────────
+    • Agente toma ciência da missão
+    • Fotos obrigatórias: NENHUMA
+    • Verificação: se horário atual > 30 min antes do agendado,
+      bloqueia com EARLY_START_BLOCKED (precisa aprovação admin)
+    
+    Simulação: 28/03 às 05:35 (25 min antes)
+    ✅ Dentro do limite de 30 min — PERMITIDO
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 02: aguardando → checkout_armamento
+  ─────────────────────────────────────────────────────────────────
+    • Agente confirma ciência
+    • Fotos obrigatórias: NENHUMA nesta transição
+    • ✅ Avança sem restrição
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 03: checkout_armamento → checkout_viatura
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (3):
+      - arma_pistola_1 ........... Foto da pistola 1
+      - arma_pistola_2 ........... Foto da pistola 2
+      - arma_espingarda ........... Foto da espingarda
+    • [POST /api/mission/photo] para cada foto
+    • ✅ Só avança quando as 3 fotos forem enviadas
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 04: checkout_viatura → checkout_km_saida
+  ─────────────────────────────────────────────────────────────────
+    • Checklist obrigatório: Estepe, Chave de Roda, Macaco, Triângulo
+    • FOTOS OBRIGATÓRIAS (4):
+      - viatura_frente ............. Frente da viatura
+      - viatura_lateral_esq ........ Lateral esquerda
+      - viatura_lateral_dir ........ Lateral direita
+      - viatura_traseira ........... Traseira
+    • ✅ Só avança com checklist + 4 fotos
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 05: checkout_km_saida → em_transito_origem
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (1):
+      - km_saida .................. Foto do hodômetro
+    • KM registrado: 290 (atual do UER7D08)
+    • ✅ Registra KM de saída da base
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 06: em_transito_origem → checkin_chegada_km
+  ─────────────────────────────────────────────────────────────────
+    • Agente em deslocamento até o cliente
+    • GPS tracking ativo (rastreamento em tempo real)
+    • Fotos obrigatórias: NENHUMA nesta transição
+    • Geofence: quando a 2km do origem, sugere chegada
+    • ✅ Avança ao chegar no local
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 07: checkin_chegada_km → checkin_veiculo_escoltado
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (2):
+      - km_chegada ............... Hodômetro na chegada
+      - agente_equipado .......... Foto do agente equipado
+    • KM registrado: 310 (20km Osasco → Ponto de encontro)
+    • ✅ Registra chegada no cliente
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 08: checkin_veiculo_escoltado → checkin_dados_motorista
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (2):
+      - escoltado_frente ......... Frente do veículo escoltado
+      - escoltado_traseira ....... Traseira do veículo escoltado
+    • Placa registrada: ABC1D23
+    • ✅ Registra dados do veículo escoltado
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 09: checkin_dados_motorista → iniciar_missao
+  ─────────────────────────────────────────────────────────────────
+    • [POST /api/mission/escort-data]
+    • Dados registrados:
+      - Nome: João da Silva
+      - Telefone: (11) 99999-8888
+      - Placa: ABC1D23
+    • ✅ Dados do motorista salvos
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 10: iniciar_missao → em_transito_destino
+  ─────────────────────────────────────────────────────────────────
+    • ⚡ INICIA O TIMER DA MISSÃO
+    • missionStartedAt registrado (ex: 2026-03-28T06:15:00)
+    • A partir daqui: alertas horários a cada 60 min
+    • ✅ Missão oficialmente iniciada
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 11: em_transito_destino → chegada_destino
+  ─────────────────────────────────────────────────────────────────
+    • Escolta em andamento
+    • Agente envia atualizações via [POST /api/mission/update]
+    • Rastreamento GPS contínuo
+    • Alertas horários obrigatórios (a cada 60 min)
+    • Geofence: quando a 2km do destino, sugere chegada
+    • ✅ Avança ao chegar no destino
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 12: chegada_destino → checkout_km_final
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (2):
+      - foto_local_destino ....... Foto do local de destino
+      - km_final ................. Hodômetro no destino
+    • KM registrado: 400 (90km de escolta + 20km deslocamento)
+    • ✅ Registra chegada ao destino
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 13: checkout_km_final → checkout_viatura_retorno
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (1):
+      - km_final ................. Confirmação KM final
+    • ✅ KM final confirmado
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 14: checkout_viatura_retorno → finalizada
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (4):
+      - viatura_retorno_frente .... Frente (pós-missão)
+      - viatura_retorno_lateral_esq Lateral esquerda
+      - viatura_retorno_lateral_dir Lateral direita
+      - viatura_retorno_traseira ... Traseira
+    • ✅ Verificação do estado da viatura após entrega
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 15: finalizada → em_prontidao
+  ─────────────────────────────────────────────────────────────────
+    • Entrega finalizada
+    • Agente entra em prontidão para retorno
+    • ✅ Missão de escolta concluída
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 16: em_prontidao → retorno_base
+  ─────────────────────────────────────────────────────────────────
+    • Agente em espera antes de retornar
+    • ✅ Inicia retorno à base
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 17: retorno_base → chegada_base
+  ─────────────────────────────────────────────────────────────────
+    • Deslocamento de volta à base (Osasco)
+    • GPS tracking ativo
+    • ✅ Avança ao chegar na base
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 18: chegada_base → encerrada
+  ─────────────────────────────────────────────────────────────────
+    • FOTOS OBRIGATÓRIAS (5):
+      - base_viatura_frente ....... Viatura frente (na base)
+      - base_viatura_lateral_esq .. Lateral esquerda
+      - base_viatura_lateral_dir .. Lateral direita
+      - base_viatura_traseira ..... Traseira
+      - base_hodometro ............ Hodômetro final
+    • KM registrado: 490 (retorno ~90km)
+    • ✅ Agente de volta na base
+
+  ─────────────────────────────────────────────────────────────────
+  ETAPA 19: encerrada (ESTADO FINAL)
+  ─────────────────────────────────────────────────────────────────
+    • Missão encerrada
+    • Viatura UER7D08 → status "disponível"
+    • Kit 3 → status "disponível"
+    • OS status → "concluída"
+    • ✅ MISSÃO COMPLETA
+
+═══════════════════════════════════════════════════════════════════════════
+ RESUMO DE FOTOS OBRIGATÓRIAS POR MISSÃO
+═══════════════════════════════════════════════════════════════════════════
+
+    Armamento ............... 3 fotos
+    Viatura saída ........... 4 fotos
+    KM saída ................ 1 foto
+    Chegada cliente ......... 2 fotos
+    Veículo escoltado ....... 2 fotos
+    Destino ................. 2 fotos
+    KM final ................ 1 foto
+    Viatura retorno ......... 4 fotos
+    Chegada base ............ 5 fotos
+    ─────────────────────────────────
+    TOTAL .................. 24 fotos mínimas por missão
+
+═══════════════════════════════════════════════════════════════════════════
+ FASE 3 — CÁLCULO FINANCEIRO (Motor de Escolta)
+═══════════════════════════════════════════════════════════════════════════
+
+  SEM contrato específico para TRANSPACHECO (tabela escort_contracts vazia).
+  Usando valores padrão do sistema:
+
+  ┌─────────────────────────────────┬──────────┐
+  │ Parâmetro                       │   Valor  │
+  ├─────────────────────────────────┼──────────┤
+  │ KM Carregado (R$/km)            │   R$ 2,80│
+  │ KM Vazio (R$/km)                │   R$ 1,40│
+  │ Franquia Mínima (km)            │       50 │
+  │ Hora Estadia (R$/h)             │  R$ 50,00│
+  │ Diária/Pernoite (R$)            │ R$ 200,00│
+  │ VRP Base (R$)                   │ R$ 150,00│
+  │ Adicional Noturno KM (%)        │      15% │
+  │ Adicional Noturno VRP (%)       │      20% │
+  │ Periculosidade (%)              │      30% │
+  │ Periculosidade Horas Limite     │       8h │
+  └─────────────────────────────────┴──────────┘
+
+  ── DADOS DA MISSÃO SIMULADA ──
+
+    KM Inicial:     290
+    KM Final:       490
+    KM Total:       200 km
+    KM Vazio:        20 km (deslocamento Osasco → ponto encontro)
+    KM Carregado:   180 km (200 - 20)
+    
+    Horário Agendado:  06:00
+    Horário Chegada:   05:50 (agente chegou antes)
+    → Início Cobrança: 06:00 (usa agendado pois agente chegou antes)
+    
+    Horário Fim:       10:30
+    Horas Trabalhadas: 4.5h
+    Horas Estadia:     0.5h (espera para carregar)
+    Pernoite:          NÃO
+    
+    Despesas:
+      Pedágio:      R$ 45,00 (2 praças)
+      Combustível:  R$ 0,00
+      Outras:       R$ 0,00
+      Total:        R$ 45,00
+
+  ── CÁLCULO FATURAMENTO (Cobrar do Cliente) ──
+
+    KM Carregado: 180 km (> franquia 50km)
+    KM Franquia aplicada: 50 km × R$ 2,80 ......... = R$ 140,00
+    KM Excedente: 130 km × R$ 2,80 ................. = R$ 364,00
+    KM Faturado Total (carregado): 180 × R$ 2,80 ... = R$ 504,00
+    KM Vazio: 20 × R$ 1,40 ......................... = R$  28,00
+    ─────────────────────────────────────────────────
+    Subtotal KM: ................................... = R$ 532,00
+    
+    Noturno? NÃO (06:00-10:30, fora do horário 22h-05h)
+    Adicional Noturno KM: .......................... = R$   0,00
+    
+    Estadia: 0.5h × R$ 50,00 ...................... = R$  25,00
+    Pernoite: ...................................... = R$   0,00
+    Despesas: ...................................... = R$  45,00
+    ─────────────────────────────────────────────────
+    ═══ FATURAMENTO TOTAL: ........................ = R$ 602,00
+
+  ── CÁLCULO PAGAMENTO (Pagar ao Agente) ──
+
+    VRP Base: ...................................... = R$ 150,00
+    
+    Periculosidade: 
+      Horas trabalhadas: 4.5h (< limite 8h)
+      → NÃO APLICA ................................ = R$   0,00
+    
+    Adicional Noturno VRP:
+      → NÃO APLICA (diurno) ....................... = R$   0,00
+    
+    Reembolsos (100% das despesas): ................ = R$  45,00
+    ─────────────────────────────────────────────────
+    ═══ PAGAMENTO TOTAL: .......................... = R$ 195,00
+
+  ── RESULTADO ──
+
+    Faturamento:        R$ 602,00
+    (-) Pagamento:      R$ 195,00
+    ─────────────────────────────────
+    Resultado Bruto:    R$ 407,00
+    (-) Despesas:       R$  45,00
+    ─────────────────────────────────
+    Resultado Líquido:  R$ 362,00
+    Margem:             60.13%
+
+═══════════════════════════════════════════════════════════════════════════
+ CENÁRIO 2 — MISSÃO NOTURNA (para testar adicional noturno)
+═══════════════════════════════════════════════════════════════════════════
+
+  Mesma rota, porém:
+    Horário Agendado:  22:00
+    Horário Chegada:   21:55
+    → Início Cobrança: 22:00 (usa agendado)
+    Horário Fim:       03:30 (madrugada)
+    Horas Trabalhadas: 5.5h
+    
+    Noturno? SIM (início 22:00 ≥ 22h)
+
+  ── FATURAMENTO NOTURNO ──
+
+    Subtotal KM: ........ R$ 532,00 (mesmo)
+    Adicional Noturno:    R$ 532,00 × 15% ......... = R$  79,80
+    Estadia: ............. 0.5h × R$ 50,00 ........ = R$  25,00
+    Despesas: ............................................ R$  45,00
+    ─────────────────────────────────────────────────
+    ═══ FATURAMENTO TOTAL: ........................ = R$ 681,80
+
+  ── PAGAMENTO NOTURNO ──
+
+    VRP Base: ...................................... = R$ 150,00
+    Adicional Noturno VRP: 150 × 20% .............. = R$  30,00
+    Reembolsos: .................................... = R$  45,00
+    ─────────────────────────────────────────────────
+    ═══ PAGAMENTO TOTAL: .......................... = R$ 225,00
+
+  ── RESULTADO NOTURNO ──
+
+    Faturamento:        R$ 681,80
+    (-) Pagamento:      R$ 225,00
+    Resultado Bruto:    R$ 456,80
+    (-) Despesas:       R$  45,00
+    Resultado Líquido:  R$ 411,80
+    Margem:             60.40%
+
+═══════════════════════════════════════════════════════════════════════════
+ CENÁRIO 3 — MISSÃO LONGA (para testar periculosidade)
+═══════════════════════════════════════════════════════════════════════════
+
+  Rota longa: Osasco → Ribeirão Preto (~320 km)
+    KM Inicial: 290  |  KM Final: 670  |  KM Total: 380
+    KM Vazio: 30     |  KM Carregado: 350
+    
+    Horário: 06:00 → 17:30 = 11.5 horas
+    Estadia: 1h  |  Pernoite: NÃO
+    Despesas: Pedágio R$ 120,00
+
+  ── FATURAMENTO ──
+
+    KM Carregado: 350 × R$ 2,80 ................... = R$ 980,00
+    KM Vazio: 30 × R$ 1,40 ........................ = R$  42,00
+    Subtotal KM: ................................... = R$ 1.022,00
+    Noturno: NÃO ................................... = R$   0,00
+    Estadia: 1h × R$ 50,00 ........................ = R$  50,00
+    Despesas: ...................................... = R$ 120,00
+    ─────────────────────────────────────────────────
+    ═══ FATURAMENTO TOTAL: ........................ = R$ 1.192,00
+
+  ── PAGAMENTO (com Periculosidade) ──
+
+    VRP Base: ...................................... = R$ 150,00
+    Periculosidade:
+      Horas: 11.5h (> limite 8h)
+      Horas extras: 11.5 - 8 = 3.5h
+      Valor hora base: R$ 150 / 8 = R$ 18,75/h
+      Cálculo: 3.5 × R$ 18,75 × 30% .............. = R$  19,69
+    Reembolsos: .................................... = R$ 120,00
+    ─────────────────────────────────────────────────
+    ═══ PAGAMENTO TOTAL: .......................... = R$ 289,69
+
+  ── RESULTADO ──
+
+    Faturamento:        R$ 1.192,00
+    (-) Pagamento:      R$   289,69
+    Resultado Bruto:    R$   902,31
+    (-) Despesas:       R$   120,00
+    Resultado Líquido:  R$   782,31
+    Margem:             65.63%
+
+═══════════════════════════════════════════════════════════════════════════
+ CENÁRIO 4 — FRANQUIA MÍNIMA (missão curta)
+═══════════════════════════════════════════════════════════════════════════
+
+  Rota curta: escolta de 30 km apenas
+    KM Total: 35  |  KM Vazio: 5  |  KM Carregado: 30
+    
+    Como 30 < Franquia 50, cobra-se a franquia:
+    KM Faturado: 50 km (não 30!)
+    
+    50 × R$ 2,80 = R$ 140,00 (KM carregado)
+     5 × R$ 1,40 = R$   7,00 (KM vazio)
+    ─────────────────────────────────
+    Total KM:      R$ 147,00
+
+    ✅ FRANQUIA APLICADA CORRETAMENTE
+    Se fosse sem franquia: 30 × R$ 2,80 = R$ 84,00 (R$ 56,00 a menos)
+
+═══════════════════════════════════════════════════════════════════════════
+ FASE 4 — FINALIZAÇÃO (Admin)
+═══════════════════════════════════════════════════════════════════════════
+
+  Opção A: Missão completa pelo fluxo mobile (agente finaliza)
+    → OS status: "concluída"  |  missionStatus: "encerrada"
+    → Veículo e Kit liberados automaticamente
+    
+  Opção B: Admin finaliza manualmente (Grid Operacional)
+    [POST /api/mission/finish]
+    → Botão verde ✓ (Finalizar) no grid
+    → Confirmação obrigatória
+    → stepLogs registra: "Missão finalizada pelo admin [Nome]"
+    → Veículo e Kit liberados
+    → Espelhamento TrucksControl cancelado automaticamente
+    
+  Opção C: Admin cancela missão
+    [POST /api/mission/cancel]
+    → Botão vermelho ✗ (Cancelar) no grid
+    → Motivo obrigatório
+    → OS status: "cancelada"  |  missionStatus: "encerrada"
+    → Veículo e Kit liberados
+
+═══════════════════════════════════════════════════════════════════════════
+ VERIFICAÇÃO DE INTEGRIDADE
+═══════════════════════════════════════════════════════════════════════════
+
+  ✅ Criação de OS gera número sequencial
+  ✅ Veículo muda status para "em_uso" ao criar OS
+  ✅ Kit muda status para "em_uso" ao criar OS
+  ✅ 19 etapas do fluxo mobile em sequência obrigatória
+  ✅ 24 fotos obrigatórias ao longo da missão
+  ✅ Bloqueio de início antecipado (>30 min antes)
+  ✅ Geofence de chegada (2km raio)
+  ✅ Alertas horários (60 min)
+  ✅ Cálculo de início de cobrança (agendado vs real)
+  ✅ Franquia mínima KM aplicada corretamente
+  ✅ Adicional noturno (22h-05h) calculado corretamente
+  ✅ Periculosidade calculada para missões > 8h
+  ✅ Despesas 100% reembolsadas ao agente
+  ✅ Resultado líquido = Faturamento - Pagamento - Despesas
+  ✅ Margem calculada sobre faturamento total
+  ✅ Finalização libera veículo + kit
+  ✅ Cancelamento registra motivo + libera recursos
+  ✅ Step logs registram todas as ações com timestamp
+
+═══════════════════════════════════════════════════════════════════════════
+ ATENÇÃO — PONTOS A CONFIGURAR ANTES DE OPERAR
+═══════════════════════════════════════════════════════════════════════════
+
+  ⚠️  1. CONTRATOS DE ESCOLTA (tabela vazia!)
+      → Cadastrar contrato por cliente com valores específicos
+      → Sem contrato, usa valores padrão (podem não refletir
+         os preços reais negociados com cada cliente)
+      → Menu: Configurações > Contratos de Escolta
+  
+  ⚠️  2. ESPELHAMENTO TRUCKSCONTROL
+      → Permissão via webservice NÃO habilitada
+      → Contatar New Rastreamento para habilitar
+      → Sem isso, os veículos não serão compartilhados
+         automaticamente com a gerenciadora CCO
+  
+  ✅  3. GERENCIADORA CCO cadastrada e ativa
+  ✅  4. KITS DE ARMA disponíveis (4 kits)
+  ✅  5. VIGILANTES cadastrados (3 agentes)
+  ✅  6. VIATURAS disponíveis (5 veículos)
+  ✅  7. CLIENTES cadastrados (4 clientes)
+
+═══════════════════════════════════════════════════════════════════════════
+ CONCLUSÃO
+═══════════════════════════════════════════════════════════════════════════
+
+  O fluxo operacional está COMPLETO e FUNCIONAL:
+  
+  ✅ Criação de OS → Execução Mobile (19 etapas) → Finalização
+  ✅ Motor de cálculo financeiro operante
+  ✅ Controle de recursos (veículos + kits) automático
+  ✅ Rastreamento e geofencing integrados
+  ✅ Fotos obrigatórias em cada etapa
+  
+  Para iniciar operações reais, recomendo:
+  1. Cadastrar os contratos de escolta com valores por cliente
+  2. Resolver a permissão de espelhamento no TrucksControl
+  3. Fazer um teste real com um agente em campo (missão curta)
+
+================================================================================

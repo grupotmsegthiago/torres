@@ -12,3 +12,9 @@ id = "nelbu4Z8jbKIIUfqmG0ho"
 uri = "file://espelhamento_log_completo.txt"
 type = "text"
 title = "Log de Diagnóstico - Espelhamento TrucksControl"
+
+[[outputs]]
+id = "Cnmeso9ORDLsFAUP-gwdG"
+uri = "file://simulacao_os_completa.txt"
+type = "text"
+title = "Simulação Completa do Fluxo de OS — Torres Vigilância Patrimonial"
