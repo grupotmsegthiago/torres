@@ -53,7 +53,6 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkin_chegada_km: ["km_chegada", "agente_equipado"],
   checkin_veiculo_escoltado: ["escoltado_frente", "escoltado_traseira"],
   checkout_km_final: ["km_final"],
-  chegada_destino: ["foto_local_destino"],
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
   chegada_base: ["base_viatura_frente", "base_viatura_lateral_esq", "base_viatura_lateral_dir", "base_viatura_traseira", "base_hodometro"],
 };
@@ -3022,7 +3021,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
-    const nextStep = MISSION_STEPS[currentIdx + 1];
+    let nextStep = MISSION_STEPS[currentIdx + 1];
+    if (currentStep === "chegada_destino") {
+      nextStep = "finalizada";
+    }
     const updates: any = { missionStatus: nextStep };
 
     if (nextStep === "encerrada") {

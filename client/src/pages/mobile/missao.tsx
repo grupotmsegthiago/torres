@@ -927,15 +927,6 @@ export default function MobileMissaoPage() {
   };
 
   const handleFinalizarEntregas = async () => {
-    const allPhotos = config.photos || [];
-    for (const p of allPhotos) {
-      const key = p.toLowerCase().replace(/\s/g, '-');
-      if (!photos[key]) {
-        toast({ title: "Foto obrigatória", description: `Tire a foto: ${p}`, variant: "destructive" });
-        return;
-      }
-    }
-
     setSubmitting(true);
     try {
       if (config.photos) {
@@ -949,7 +940,7 @@ export default function MobileMissaoPage() {
         }
       }
       await advanceMission();
-      toast({ title: "Entregas finalizadas!", description: "Prossiga para a finalização." });
+      toast({ title: "Missão finalizada!", description: "Aguarde informações da base." });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
