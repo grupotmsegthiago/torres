@@ -19,13 +19,26 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const authHeaders = await getAuthHeaders();
-  return fetch(url, {
+  const res = await fetch(url, {
     ...init,
     headers: {
       ...authHeaders,
       ...(init?.headers || {}),
     },
   });
+  if (res.status === 401) {
+    const { data } = await supabase.auth.refreshSession();
+    if (data?.session?.access_token) {
+      return fetch(url, {
+        ...init,
+        headers: {
+          "Authorization": `Bearer ${data.session.access_token}`,
+          ...(init?.headers || {}),
+        },
+      });
+    }
+  }
+  return res;
 }
 
 export async function apiRequest(
