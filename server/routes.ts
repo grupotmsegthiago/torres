@@ -771,6 +771,86 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/boletim-medicao/calcular/:osId", requireAdminRole, async (req, res) => {
+    try {
+      const serviceOrderId = Number(req.params.osId);
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+      if (so.missionStatus !== "encerrada" && so.status !== "concluida") {
+        return res.status(400).json({ message: "OS nao esta encerrada/concluida" });
+      }
+
+      const { data: existing } = await supabaseAdmin.from("escort_billings")
+        .select("id").eq("service_order_id", serviceOrderId).limit(1);
+      if (existing?.length) return res.status(400).json({ message: "Billing ja existe para esta OS" });
+
+      const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+      const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+      const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+      const kmInicial = kmSaidaPhoto?.kmValue || 0;
+      const kmFinal = kmFinalPhoto?.kmValue || 0;
+
+      const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
+      const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toTimeString().slice(0, 5) : undefined;
+      const endTime = so.completedDate ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : undefined;
+
+      let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+
+      if (so.clientId) {
+        const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+        if (clientContracts?.length) contrato = clientContracts[0];
+      }
+
+      const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
+      const resultado = calcularEscolta({
+        km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
+        horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+        horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
+        despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+      });
+
+      const client = so.clientId ? await storage.getClient(so.clientId) : null;
+      const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+      const user = req.user!;
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").insert({
+        service_order_id: serviceOrderId,
+        client_id: so.clientId, client_name: client?.name || "--",
+        contract_id: contrato.id || null,
+        km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
+        km_carregado: resultado.km_carregado, km_total: resultado.km_total,
+        km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
+        km_excedente: resultado.km_excedente,
+        horario_agendado: scheduledTime || null,
+        horario_inicio: startTime || null, horario_fim: endTime || null,
+        horario_inicio_considerado: resultado.horario_inicio_considerado,
+        horas_missao: resultado.horas_trabalhadas, horas_trabalhadas: resultado.horas_trabalhadas,
+        horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
+        fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
+        fat_km_vazio: resultado.faturamento.km_vazio,
+        fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
+        fat_diaria: resultado.fat_pernoite, fat_adicional_noturno: resultado.fat_adicional_noturno,
+        fat_total: resultado.fat_total,
+        valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
+        pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
+        pag_adicional_noturno: resultado.pag_adicional_noturno,
+        pag_reembolsos: resultado.pag_reembolsos, pag_total: resultado.pag_total,
+        resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
+        margem_percentual: resultado.resultado.margem_pct,
+        vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
+        origem: so.origin || null, destino: so.destination || null,
+        placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
+        placa_escoltado: (so as any).escortedVehiclePlate || null,
+        motorista_escoltado: (so as any).escortedDriverName || null,
+        data_missao: so.scheduledDate || new Date().toISOString(),
+        status: "A_VERIFICAR", created_by: user.name,
+      }).select().single();
+      if (error) throw error;
+
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/service-orders/:id", requireAuth, async (req, res) => {
     const data = await storage.getServiceOrder(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "OS não encontrada" });

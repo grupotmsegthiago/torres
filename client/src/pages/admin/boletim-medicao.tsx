@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ export default function BoletimMedicaoPage() {
   const { data: osConcluidas = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/boletim-medicao/os-concluidas"],
     queryFn: async () => {
-      const r = await fetch("/api/boletim-medicao/os-concluidas", { credentials: "include" });
+      const r = await authFetch("/api/boletim-medicao/os-concluidas");
       const d = await r.json();
       return Array.isArray(d) ? d : [];
     },
@@ -40,7 +40,7 @@ export default function BoletimMedicaoPage() {
   const { data: escortBillings = [] } = useQuery<any[]>({
     queryKey: ["/api/escort/billings"],
     queryFn: async () => {
-      const r = await fetch("/api/escort/billings", { credentials: "include" });
+      const r = await authFetch("/api/escort/billings");
       const d = await r.json();
       return Array.isArray(d) ? d : [];
     },
@@ -72,6 +72,18 @@ export default function BoletimMedicaoPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const calcularMutation = useMutation({
+    mutationFn: async (osId: number) => {
+      return apiRequest("POST", `/api/boletim-medicao/calcular/${osId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      toast({ title: "Cálculo realizado", description: "Billing gerado com sucesso." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao calcular", description: err.message, variant: "destructive" }),
+  });
+
   const clientGroups: Record<number, { clientName: string; orders: any[] }> = {};
   osConcluidas.forEach(os => {
     const cid = os.clientId || 0;
@@ -81,14 +93,14 @@ export default function BoletimMedicaoPage() {
 
   const filteredGroups = Object.entries(clientGroups).map(([cid, group]) => {
     let orders = group.orders;
-    if (statusFilter === "PENDENTE") orders = orders.filter(o => o.billing?.status === "A_VERIFICAR");
+    if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
     if (orders.length === 0) return null;
     return { clientId: Number(cid), clientName: group.clientName, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; orders: any[] }[];
 
-  const pendingCount = osConcluidas.filter(o => o.billing?.status === "A_VERIFICAR").length;
+  const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
 
   const getBillingStatus = (os: any) => {
@@ -109,7 +121,7 @@ export default function BoletimMedicaoPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
-            <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-1">OS concluídas por cliente — validação e faturamento</p>
+            <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-1">OS com operacao encerrada — aprovacao de faturamento</p>
           </div>
           <div className="flex items-center gap-3">
             {pendingCount > 0 && (
@@ -150,7 +162,7 @@ export default function BoletimMedicaoPage() {
           <div className="space-y-4">
             {filteredGroups.map(group => {
               const isExpanded = expandedClient === group.clientId;
-              const groupPending = group.orders.filter(o => o.billing?.status === "A_VERIFICAR").length;
+              const groupPending = group.orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
               const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_total || 0), 0);
 
               return (
@@ -238,13 +250,26 @@ export default function BoletimMedicaoPage() {
                                     <Badge className={`${status.color} border-0 font-black text-[9px]`}>{status.label}</Badge>
                                   </td>
                                   <td className="px-4 py-3 text-center">
-                                    <button
-                                      onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); }}
-                                      className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
-                                      data-testid={`button-view-os-${os.id}`}
-                                    >
-                                      <Eye size={16} className="text-neutral-500" />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-1">
+                                      {!b && (
+                                        <button
+                                          onClick={() => calcularMutation.mutate(os.id)}
+                                          disabled={calcularMutation.isPending}
+                                          className="p-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+                                          title="Calcular Billing"
+                                          data-testid={`button-calc-os-${os.id}`}
+                                        >
+                                          <Calculator size={16} className="text-blue-500" />
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); }}
+                                        className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+                                        data-testid={`button-view-os-${os.id}`}
+                                      >
+                                        <Eye size={16} className="text-neutral-500" />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
