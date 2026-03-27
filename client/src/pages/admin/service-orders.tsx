@@ -686,6 +686,7 @@ export default function ServiceOrdersPage() {
   const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
   const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
+  const [filterVehicleId, setFilterVehicleId] = useState<number | null>(null);
   const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
   const [pdfViewerTitle, setPdfViewerTitle] = useState("");
   const [pdfPages, setPdfPages] = useState<string[]>([]);
@@ -782,6 +783,9 @@ export default function ServiceOrdersPage() {
       setEditItem(undefined);
       setShowForm(true);
       window.history.replaceState({}, "", window.location.pathname);
+    } else if (vehicleId && !newOs) {
+      setFilterVehicleId(Number(vehicleId));
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }, [orders]);
 
@@ -806,12 +810,33 @@ export default function ServiceOrdersPage() {
 
       {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} />}
 
+      {filterVehicleId && (() => {
+        const fv = vehicles.find(vv => vv.id === filterVehicleId);
+        return (
+          <div className="mb-3 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+            <Car className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="text-xs font-semibold text-blue-800">
+              Filtrando OS da viatura: <span className="font-black">{fv?.plate || `#${filterVehicleId}`}</span>
+              {fv ? ` — ${fv.brand} ${fv.model}` : ""}
+            </span>
+            <button onClick={() => setFilterVehicleId(null)} className="ml-auto text-blue-600 hover:text-blue-800 p-0.5" data-testid="button-clear-vehicle-filter">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })()}
+
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-neutral-400">Carregando...</div>
         ) : (orders || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
-        ) : (
+        ) : (() => {
+          const displayOrders = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
+          if (displayOrders.length === 0) return (
+            <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada para esta viatura</div>
+          );
+          return (
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-orders">
               <thead className="bg-neutral-50 border-b border-neutral-200">
@@ -835,7 +860,7 @@ export default function ServiceOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {(orders || []).map((o) => (
+                {displayOrders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
                     <td className="p-3 font-medium text-neutral-900">{o.osNumber}</td>
                     <td className="p-3 text-neutral-600">{getClientName(o.clientId)}</td>
@@ -988,7 +1013,8 @@ export default function ServiceOrdersPage() {
               </tbody>
             </table>
           </div>
-        )}
+          );
+        })()}
       </Card>
 
       {pdfViewerUrl && (
