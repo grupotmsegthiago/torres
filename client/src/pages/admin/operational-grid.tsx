@@ -830,7 +830,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const isIgnitionOn = v.tracker.ignition === true;
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
         const hasNoSignal = v.tracker.isLiveData === false && !!v.noSignalSince;
-        const statusColor = hasNoSignal ? "#6b7280" : isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#ef4444";
+        const statusColor = hasNoSignal ? "#6b7280" : isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#94a3b8";
         markerIcon = {
           url: buildCarIcon(statusColor, v.plate, v.iconType),
           scaledSize: new window.google.maps.Size(48, 62),
@@ -1124,8 +1124,8 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
             Parado (ligado)
           </span>
           <span className="flex items-center gap-2">
-            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#ef4444", background: "#1a1a1a" }}>
-              <Car className="w-3 h-3" style={{ color: "#ef4444" }} />
+            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#94a3b8", background: "#1a1a1a" }}>
+              <Car className="w-3 h-3" style={{ color: "#94a3b8" }} />
             </div>
             Desligado
           </span>
@@ -2709,7 +2709,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const samePlaceCount = v.idleSamePlace?.count ?? 0;
                 const isIgnOn = v.tracker?.ignition === true;
                 const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
-                const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444";
+                const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8";
                 const isLive = v.tracker?.isLiveData !== false;
 
                 return (
@@ -3252,7 +3252,7 @@ function ProximityResultsBar({ result, vehicles, onClear, onFocusVehicle }: {
                   className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-lg px-3 py-2.5 hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left group shadow-sm"
                   data-testid={`proximity-vehicle-${v.id}`}
                 >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#ef4444" }}>
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm" style={{ borderColor: isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8" }}>
                     <img src={v.iconType === "kwid" ? "/kwid-icon.png" : "/polo-icon.webp"} alt="VTR" className="w-full h-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
