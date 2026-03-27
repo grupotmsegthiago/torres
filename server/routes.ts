@@ -2162,6 +2162,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id);
             return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate, priority: scheduled.priority } : null;
           })(),
+          upcomingOrders: await (async () => {
+            const upcoming = orders.filter(
+              (o) => o.vehicleId === v.id && o.id !== linkedOrder?.id &&
+              o.status !== "concluída" && o.status !== "concluida" && o.status !== "cancelada" &&
+              o.missionStatus !== "encerrada"
+            );
+            const results = [];
+            for (const u of upcoming) {
+              const cl = await storage.getClient(u.clientId);
+              results.push({
+                id: u.id,
+                osNumber: u.osNumber,
+                status: u.status,
+                priority: u.priority || "agendada",
+                scheduledDate: u.scheduledDate,
+                clientName: cl?.name || "—",
+              });
+            }
+            return results;
+          })(),
         };
       })
     );
@@ -2192,6 +2212,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
         : null,
       activeOs: null,
+      scheduledOs: null,
+      upcomingOrders: [],
     }));
 
     try {

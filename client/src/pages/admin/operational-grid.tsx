@@ -227,6 +227,14 @@ interface TrackedVehicle {
     scheduledDate: string | null;
     priority: string;
   } | null;
+  upcomingOrders: {
+    id: number;
+    osNumber: string;
+    status: string;
+    priority: string;
+    scheduledDate: string | null;
+    clientName: string;
+  }[];
 }
 
 interface GridEmployee {
@@ -2463,6 +2471,26 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
+                          {v.upcomingOrders && v.upcomingOrders.length > 0 && (
+                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 space-y-1">
+                              <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">+{v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}</p>
+                              {v.upcomingOrders.map((u) => (
+                                <div key={u.id} className="flex items-center gap-1 flex-wrap">
+                                  <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
+                                    {u.osNumber}
+                                  </Link>
+                                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
+                                    {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
+                                  </span>
+                                  {u.scheduledDate && (
+                                    <span className="text-[10px] text-neutral-400">
+                                      {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
@@ -2479,6 +2507,44 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
+                          {v.upcomingOrders && v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 0 && (
+                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 space-y-1">
+                              <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">+{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length} agendamento{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 1 ? "s" : ""}</p>
+                              {v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).map((u) => (
+                                <div key={u.id} className="flex items-center gap-1 flex-wrap">
+                                  <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
+                                    {u.osNumber}
+                                  </Link>
+                                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
+                                    {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
+                                  </span>
+                                  {u.scheduledDate && (
+                                    <span className="text-[10px] text-neutral-400">
+                                      {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : v.upcomingOrders && v.upcomingOrders.length > 0 ? (
+                        <div className="space-y-1">
+                          {v.upcomingOrders.map((u) => (
+                            <div key={u.id} className="flex items-center gap-1 flex-wrap">
+                              <Link href={`/admin/service-orders?os=${u.id}`} className="font-bold text-neutral-500 text-[11px] hover:text-blue-700 hover:underline cursor-pointer">
+                                {u.osNumber}
+                              </Link>
+                              <span className={`text-[9px] px-1 py-0.5 rounded font-bold border ${u.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>
+                                {u.priority === "imediata" ? "IMEDIATA" : "AGEND."}
+                              </span>
+                              {u.scheduledDate && (
+                                <span className="text-[10px] text-neutral-400">
+                                  {new Date(u.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
