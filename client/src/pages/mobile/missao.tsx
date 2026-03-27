@@ -1148,7 +1148,7 @@ export default function MobileMissaoPage() {
               data-testid="button-start-checkout"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-              Ciente — Iniciar Check-Out
+              Iniciar Missão
             </button>
           </div>
         )}
