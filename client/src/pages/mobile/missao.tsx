@@ -300,7 +300,7 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
       </div>
       <div>
         <p className="text-sm font-bold text-amber-800 uppercase tracking-wider">Atualização Obrigatória</p>
-        <p className="text-xs text-amber-600">Envie um status atualizado. Ambos os agentes devem reportar a cada 1 hora.</p>
+        <p className="text-xs text-amber-600">Envie um status atualizado. Qualquer um dos agentes deve reportar a cada 1 hora.</p>
       </div>
     </div>
   );
