@@ -225,6 +225,7 @@ interface TrackedVehicle {
     id: number;
     osNumber: string;
     scheduledDate: string | null;
+    priority: string;
   } | null;
 }
 
@@ -349,7 +350,12 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
       return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     }
 
+    const isImediata = v.activeOs.priority === "imediata";
+
     if (osStatus === "agendada") {
+      if (isImediata) {
+        return { label: "EM SERVIÇO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
+      }
       const hoursLeft = getHoursUntilMission(v.activeOs.scheduledDate);
       if (hoursLeft !== null && hoursLeft > 6) {
         return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
@@ -359,6 +365,9 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
 
     if (osStatus === "em_andamento") {
       if (ms === "missao_paga") {
+        if (isImediata) {
+          return { label: "EM SERVIÇO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
+        }
         const hoursLeft = getHoursUntilMission(v.activeOs.scheduledDate);
         if (hoursLeft !== null && hoursLeft > 6) {
           return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
@@ -371,6 +380,9 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
     return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
   }
   if (v.scheduledOs) {
+    if (v.scheduledOs.priority === "imediata") {
+      return { label: "EM SERVIÇO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
+    }
     const hoursLeft = getHoursUntilMission(v.scheduledOs.scheduledDate);
     if (hoursLeft !== null && hoursLeft > 6) {
       return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };

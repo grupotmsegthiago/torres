@@ -2160,7 +2160,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           })(),
           scheduledOs: (() => {
             const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id);
-            return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate } : null;
+            return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate, priority: scheduled.priority } : null;
           })(),
         };
       })
