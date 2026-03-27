@@ -3679,7 +3679,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (!so.missionStatus) return res.status(400).json({ message: "OS nao possui etapa de missao" });
 
       const currentIdx = MISSION_STEPS.indexOf(so.missionStatus as any);
-      if (currentIdx <= 0) return res.status(400).json({ message: "Ja esta na primeira etapa, nao e possivel voltar" });
+      if (currentIdx < 0) return res.status(400).json({ message: "Status de missao invalido: " + so.missionStatus });
+      if (currentIdx === 0) return res.status(400).json({ message: "Ja esta na primeira etapa, nao e possivel voltar" });
 
       const previousStep = MISSION_STEPS[currentIdx - 1];
 
@@ -3688,6 +3689,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (so.missionStatus === "encerrada") {
         updates.status = "em_andamento";
         updates.completedDate = null;
+
+        if (so.kitId) {
+          try { await storage.updateWeaponKit(so.kitId, { status: "em_uso" }); } catch (_e) {}
+        }
+
+        try {
+          await supabaseAdmin.from("escort_billings")
+            .delete()
+            .eq("service_order_id", serviceOrderId);
+        } catch (_e) {}
       }
 
       const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
