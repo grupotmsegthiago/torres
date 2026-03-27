@@ -1798,69 +1798,24 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {currentStep === "finalizada" && (
+        {(currentStep === "finalizada" || currentStep === "em_prontidao" || currentStep === "retorno_base") && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
-              <div className="w-20 h-20 rounded-full bg-neutral-900 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-10 h-10 text-white" />
+              <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Entregas Finalizadas</h3>
-              <p className="text-xs text-neutral-400 mb-4">Prossiga para encerramento logístico.</p>
-              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Missão Finalizada</h3>
+              <p className="text-sm text-neutral-500 mt-2">Aguarde informações da base!</p>
             </div>
-            <button
-              onClick={() => handleSimpleAdvance("Em prontidão!")}
-              disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-em-prontidao"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
-              Em Prontidão
-            </button>
-          </div>
-        )}
-
-        {currentStep === "em_prontidao" && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-em-prontidao">
-              <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <Shield className="w-10 h-10 text-green-600" />
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                <Shield className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-lg font-black text-green-700 uppercase tracking-wider mb-1">Em Prontidão</h3>
-              <p className="text-xs text-neutral-400 mb-4">Equipe disponível. Quando liberados, inicie o retorno à base.</p>
-              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
-            </div>
-            <button
-              onClick={() => handleSimpleAdvance("Retorno à base iniciado!")}
-              disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-retorno-base"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Home className="w-5 h-5" />}
-              Retorno à Base
-            </button>
-          </div>
-        )}
-
-        {currentStep === "retorno_base" && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-retorno-base">
-              <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <Navigation className="w-10 h-10 text-blue-600" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">Em Prontidão</p>
+                <p className="text-[10px] text-amber-600">A central irá liberar o retorno à base. Aguarde.</p>
               </div>
-              <h3 className="text-lg font-black text-blue-700 uppercase tracking-wider mb-1">Retornando à Base</h3>
-              <p className="text-xs text-neutral-400 mb-4">Ao chegar na base, registre o encerramento logístico.</p>
-              {mission.missionStartedAt && <MissionTimer startedAt={mission.missionStartedAt} />}
             </div>
-            <button
-              onClick={() => handleSimpleAdvance("Chegada à base registrada!")}
-              disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-chegada-base"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ClipboardCheck className="w-5 h-5" />}
-              Cheguei na Base
-            </button>
           </div>
         )}
 
