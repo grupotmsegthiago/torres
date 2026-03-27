@@ -28,7 +28,6 @@ const MISSION_STEPS = [
   { key: "checkout_km_final", label: "KM Final", screenTitle: "KM Final", screenSub: "REGISTRO DE CHEGADA" },
   { key: "checkout_viatura_retorno", label: "Viatura Retorno", screenTitle: "Viatura Retorno", screenSub: "CHECK-OUT FINAL" },
   { key: "finalizada", label: "Entregas Finalizadas", screenTitle: "Entregas Finalizadas", screenSub: "OPERAÇÃO CONCLUÍDA" },
-  { key: "em_prontidao", label: "Em Prontidão", screenTitle: "Em Prontidão", screenSub: "EQUIPE DISPONÍVEL" },
   { key: "retorno_base", label: "Retorno à Base", screenTitle: "Retorno à Base", screenSub: "EM DESLOCAMENTO" },
   { key: "chegada_base", label: "Chegada Base", screenTitle: "Chegada na Base", screenSub: "ENCERRAMENTO LOGÍSTICO" },
 ] as const;
@@ -355,7 +354,6 @@ const STEP_LABELS: Record<string, string> = {
   checkout_km_final: "KM Final Registrado",
   checkout_viatura_retorno: "Viatura Retorno Conferida",
   finalizada: "Entregas Finalizadas",
-  em_prontidao: "Em Prontidão",
   retorno_base: "Retorno à Base",
   chegada_base: "Chegada na Base",
   encerrada: "Missão Encerrada",

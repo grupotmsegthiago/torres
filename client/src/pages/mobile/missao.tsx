@@ -19,7 +19,7 @@ const MISSION_STEPS = [
   "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
   "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
-  "finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada",
+  "finalizada", "retorno_base", "chegada_base", "encerrada",
 ] as const;
 
 type MissionStep = typeof MISSION_STEPS[number];
@@ -46,10 +46,9 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/16", icon: MapPin, photos: ["Foto do Local", "Hodômetro"], needsKm: true },
   checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
-  finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/16", icon: CheckCircle2 },
-  em_prontidao: { title: "Em Prontidão", subtitle: "Operação · 14/16", icon: Shield },
-  retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 15/16", icon: Home },
-  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 16/16", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Hodômetro"] },
+  finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/15", icon: CheckCircle2 },
+  retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 14/15", icon: Home },
+  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 15/15", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Hodômetro"] },
   encerrada: { title: "Operação Encerrada", subtitle: "Concluída", icon: Sparkles },
 };
 
@@ -323,7 +322,6 @@ const MOBILE_STEP_LABELS: Record<string, string> = {
   checkout_km_final: "KM Final",
   checkout_viatura_retorno: "Viatura Retorno",
   finalizada: "Entregas OK",
-  em_prontidao: "Em Prontidão",
   retorno_base: "Retorno Base",
   chegada_base: "Chegada Base",
   encerrada: "Encerrada",
@@ -1295,7 +1293,7 @@ export default function MobileMissaoPage() {
 
         <MobileTimeline stepLogs={mission.stepLogs || []} />
 
-        {mission.missionStartedAt && !["finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada"].includes(currentStep) && (
+        {mission.missionStartedAt && !["finalizada", "retorno_base", "chegada_base", "encerrada"].includes(currentStep) && (
           <MissionTimer startedAt={mission.missionStartedAt} />
         )}
 
@@ -1822,7 +1820,7 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {(currentStep === "finalizada" || currentStep === "em_prontidao" || currentStep === "retorno_base") && (
+        {(currentStep === "finalizada" || currentStep === "retorno_base") && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
               <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">

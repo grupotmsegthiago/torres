@@ -40,7 +40,6 @@ const MISSION_STEPS = [
   "checkout_km_final",
   "checkout_viatura_retorno",
   "finalizada",
-  "em_prontidao",
   "retorno_base",
   "chegada_base",
   "encerrada",
@@ -1894,7 +1893,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           checkin_dados_motorista: "Dados Motorista Conferidos", iniciar_missao: "Inicio da Missao",
           em_transito_destino: "Em Transito p/ Destino", chegada_destino: "Chegada ao Destino",
           checkout_km_final: "Registro KM Final", checkout_viatura_retorno: "Conf. Viatura Retorno",
-          finalizada: "Missao Finalizada", em_prontidao: "Em Prontidao", retorno_base: "Retorno a Base",
+          finalizada: "Missao Finalizada", retorno_base: "Retorno a Base",
           chegada_base: "Chegada na Base", encerrada: "Operacao Encerrada",
         };
         const stepColors: Record<string, string> = {
@@ -1902,7 +1901,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           checkout_km_saida: BLUE, em_transito_origem: BLUE, checkin_chegada_km: "#0891b2", checkin_veiculo_escoltado: "#0891b2",
           checkin_dados_motorista: "#0891b2", iniciar_missao: GREEN, em_transito_destino: BLUE,
           chegada_destino: GREEN, checkout_km_final: BLUE, checkout_viatura_retorno: AMBER,
-          finalizada: GREEN, em_prontidao: AMBER, retorno_base: BLUE, chegada_base: GREEN, encerrada: GREEN,
+          finalizada: GREEN, retorno_base: BLUE, chegada_base: GREEN, encerrada: GREEN,
         };
 
         const colWStep = Math.floor(W * 0.40);
@@ -3703,14 +3702,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       return res.status(400).json({ message: "Etapa atual não permite iniciar missão" });
     }
 
-    if (so.missionStartedAt) {
-      return res.json(so);
-    }
-
-    const updated = await storage.updateServiceOrder(serviceOrderId, {
-      missionStartedAt: new Date(),
-    });
-    res.json(updated);
+    res.json(so);
   });
 
   app.post("/api/mission/rollback-step", requireAdminRole, async (req, res) => {
@@ -3913,6 +3905,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       nextStep = "finalizada";
     }
     const updates: any = { missionStatus: nextStep };
+
+    if (currentStep === "em_transito_origem" && !so.missionStartedAt) {
+      const now = new Date();
+      if (so.scheduledDate) {
+        const scheduled = new Date(so.scheduledDate);
+        updates.missionStartedAt = now < scheduled ? scheduled : now;
+      } else {
+        updates.missionStartedAt = now;
+      }
+    }
 
     if (nextStep === "encerrada") {
       updates.status = "concluida";

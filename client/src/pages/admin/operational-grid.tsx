@@ -355,8 +355,6 @@ function getMissionLabel(status: string | null) {
       return "Término de Missão";
     case "finalizada":
       return "Entregas Finalizadas";
-    case "em_prontidao":
-      return "Em Prontidão";
     case "retorno_base":
       return "Retorno à Base";
     case "chegada_base":
@@ -380,7 +378,7 @@ function getMissionProgress(missionStatus: string | null): number {
     "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
     "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
     "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
-    "finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada",
+    "finalizada", "retorno_base", "chegada_base", "encerrada",
   ];
   if (!missionStatus) return 0;
   const idx = steps.indexOf(missionStatus);
@@ -567,8 +565,6 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
       return { label: "Término de Missão", icon: CircleCheckBig, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "finalizada":
       return { label: "Entregas Finalizadas", icon: CircleCheckBig, className: "bg-green-50 text-green-700 border-green-200" };
-    case "em_prontidao":
-      return { label: "Em Prontidão", icon: CircleDot, className: "bg-lime-50 text-lime-700 border-lime-200" };
     case "retorno_base":
       return { label: "Retorno à Base", icon: Navigation, className: "bg-sky-50 text-sky-700 border-sky-200" };
     case "chegada_base":
@@ -2188,7 +2184,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         </Tooltip>
       )}
 
-      {v.activeOs && ["finalizada", "em_prontidao", "retorno_base"].includes(v.activeOs.missionStatus) && (
+      {v.activeOs && ["finalizada", "retorno_base"].includes(v.activeOs.missionStatus) && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button

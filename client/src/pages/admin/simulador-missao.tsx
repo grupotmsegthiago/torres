@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Play, CheckCircle2, Camera, Car, Crosshair, Gauge, Route, Lock,
-  Truck, User, Siren, MapPin, Shield, Home, ClipboardCheck, Sparkles,
+  Truck, User, Siren, MapPin, Home, ClipboardCheck, Sparkles,
   Loader2, ArrowRight, RotateCcw, ChevronRight, AlertTriangle, Zap,
   FastForward,
 } from "lucide-react";
@@ -18,7 +18,7 @@ const MISSION_STEPS = [
   "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
   "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
-  "finalizada", "em_prontidao", "retorno_base", "chegada_base", "encerrada",
+  "finalizada", "retorno_base", "chegada_base", "encerrada",
 ] as const;
 
 const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
@@ -49,7 +49,6 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; c
   checkout_km_final: { title: "KM Final", subtitle: "Foto hodometro final", icon: Gauge, color: "bg-amber-600", actions: ["upload_photos", "advance"] },
   checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "4 fotos retorno", icon: Car, color: "bg-blue-600", actions: ["upload_photos", "advance"] },
   finalizada: { title: "Entregas Finalizadas", subtitle: "Operacao concluida", icon: CheckCircle2, color: "bg-green-500", actions: ["advance"] },
-  em_prontidao: { title: "Em Prontidao", subtitle: "Aguardando liberacao", icon: Shield, color: "bg-cyan-500", actions: ["advance"] },
   retorno_base: { title: "Retorno a Base", subtitle: "Deslocamento base", icon: Home, color: "bg-indigo-500", actions: ["advance"] },
   chegada_base: { title: "Chegada na Base", subtitle: "5 fotos + limpeza + KM", icon: ClipboardCheck, color: "bg-neutral-700", actions: ["upload_photos", "base_clean", "advance"] },
   encerrada: { title: "Encerrada", subtitle: "Missao concluida", icon: Sparkles, color: "bg-emerald-600", actions: [] },
