@@ -3086,9 +3086,10 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
   );
 }
 
-function MissionUpdatesAlert() {
+function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[]; gridData: GridItem[] }) {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
+  const [forwardUpdate, setForwardUpdate] = useState<any>(null);
 
   const { data: updates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -3183,6 +3184,14 @@ function MissionUpdatesAlert() {
                   Ver localização
                 </a>
               )}
+              <button
+                onClick={() => setForwardUpdate(u)}
+                className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                data-testid={`btn-forward-client-${u.id}`}
+              >
+                <Send className="w-3 h-3" />
+                Encaminhar para o Cliente
+              </button>
             </div>
             <button
               onClick={() => markReadMutation.mutate([u.id])}
@@ -3204,6 +3213,72 @@ function MissionUpdatesAlert() {
           {expanded ? "Mostrar menos" : `Ver todas (${updates.length})`}
         </button>
       )}
+
+      <Dialog open={!!forwardUpdate} onOpenChange={(open) => {
+        if (!open) {
+          const uid = forwardUpdate?.id;
+          setForwardUpdate(null);
+          if (uid) {
+            markReadMutation.mutate([uid]);
+          }
+        }
+      }}>
+        <DialogContent className={`p-0 overflow-hidden border-0 ${forwardUpdate?.photoUrl ? "max-w-2xl bg-black/95" : "max-w-md bg-white"}`}>
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${forwardUpdate?.photoUrl ? "text-white" : "text-neutral-900"}`}>
+              {forwardUpdate?.photoUrl ? "📷" : "📋"} Encaminhar — {forwardUpdate?.osNumber || ""}
+            </DialogTitle>
+          </DialogHeader>
+          {forwardUpdate?.photoUrl && (
+            <div className="flex items-center justify-center px-4">
+              <img
+                src={forwardUpdate.photoUrl}
+                alt="Foto da atualização do agente"
+                className="max-w-full max-h-[60vh] rounded-lg object-contain"
+                data-testid="forward-photo-modal-img"
+              />
+            </div>
+          )}
+          {forwardUpdate && (
+            <div className={`px-4 py-2 ${forwardUpdate.photoUrl ? "text-neutral-300" : "text-neutral-600"}`}>
+              <p className="text-sm font-medium">"{forwardUpdate.message}"</p>
+              <p className="text-[10px] mt-1 opacity-60">
+                {titleCase(forwardUpdate.employeeName)} · {forwardUpdate.createdAt ? new Date(forwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+              </p>
+            </div>
+          )}
+          <div className="px-4 pb-4 flex justify-center">
+            <button
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
+                forwardUpdate?.photoUrl
+                  ? "bg-white text-neutral-900 hover:bg-neutral-100"
+                  : "bg-neutral-900 text-white hover:bg-neutral-800"
+              }`}
+              onClick={async () => {
+                if (!forwardUpdate) return;
+                const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
+                const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
+                let reportText = "";
+                if (matchedVehicle) {
+                  reportText = generateReport(matchedVehicle, gridItem || null);
+                } else {
+                  reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                }
+                try {
+                  await navigator.clipboard.writeText(reportText);
+                  toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
+                } catch {
+                  toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
+                }
+              }}
+              data-testid="btn-forward-copy-form"
+            >
+              <Copy className="w-4 h-4" />
+              Copiar Formulário
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3361,7 +3436,7 @@ export default function OperationalGridPage() {
           </Card>
         ) : (
           <>
-            <MissionUpdatesAlert />
+            <MissionUpdatesAlert vehicles={vehicles} gridData={gridData} />
             <SpeedAlert vehicles={vehicles} />
             {proximityResult && (
               <ProximityResultsBar
