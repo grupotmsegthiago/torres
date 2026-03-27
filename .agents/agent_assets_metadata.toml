@@ -6,3 +6,9 @@ id = "i68LQUP0dsB96eUznq5-q"
 uri = "file://public/truckscontrol_debug_login.xml"
 type = "unspecified"
 title = "TrucksControl - Debug Login XML (Envio e Retorno)"
+
+[[outputs]]
+id = "nelbu4Z8jbKIIUfqmG0ho"
+uri = "file://espelhamento_log_completo.txt"
+type = "text"
+title = "Log de Diagnóstico - Espelhamento TrucksControl"
