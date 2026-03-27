@@ -54,7 +54,7 @@ interface ServiceContract {
 }
 
 interface EscortContract {
-  id: string; client_id: number | null; client_name: string | null;
+  id: string; client_id: number | null; client_name: string | null; name: string | null;
   valor_km_carregado: number; valor_km_vazio: number; franquia_minima_km: number;
   valor_hora_estadia: number; valor_diaria: number; vrp_base: number;
   adicional_noturno_vrp_pct: number; adicional_noturno_km_pct: number;
@@ -685,6 +685,7 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
 function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: () => void; editing: EscortContract | null; clientId: number; clientName: string }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
+    name: editing?.name || "",
     valor_km_carregado: editing?.valor_km_carregado?.toString() || "0.00",
     valor_km_vazio: editing?.valor_km_vazio?.toString() || "0.00",
     franquia_minima_km: editing?.franquia_minima_km?.toString() || "0",
@@ -708,7 +709,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = {
-        client_id: clientId, client_name: clientName,
+        client_id: clientId, client_name: clientName, name: form.name || null,
         valor_km_carregado: parseFloat(form.valor_km_carregado), valor_km_vazio: parseFloat(form.valor_km_vazio),
         franquia_minima_km: parseInt(form.franquia_minima_km), valor_hora_estadia: parseFloat(form.valor_hora_estadia),
         valor_diaria: parseFloat(form.valor_diaria), vrp_base: parseFloat(form.vrp_base),
@@ -742,6 +743,10 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
           <button onClick={onClose}><X size={20} className="text-neutral-400 hover:text-neutral-600" /></button>
         </div>
         <form onSubmit={e => { e.preventDefault(); saveMutation.mutate(); }} className="p-6 space-y-4">
+          <div className="mb-2">
+            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Nome da Tabela</label>
+            <input type="text" placeholder="Ex: Padrão, Premium, Emergencial..." className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-semibold" value={form.name} onChange={e => sf("name", e.target.value)} data-testid="input-price-table-name" />
+          </div>
           <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
             <p className="text-[10px] font-black text-emerald-700 uppercase mb-3 tracking-widest">Valores de Acionamento</p>
             <div className="grid grid-cols-2 gap-3">
@@ -1048,6 +1053,11 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
             ) : clientPrices.map(cp => (
               <Card key={cp.id} className="border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`}>
                 <div className="divide-y divide-neutral-100">
+                  {cp.name && (
+                    <div className="px-4 py-2.5 bg-neutral-50">
+                      <span className="text-xs font-black text-neutral-700 uppercase tracking-widest">{cp.name}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
                     <span className="text-xs font-semibold text-neutral-500">KM Carregado</span>
                     <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_km_carregado))}/km</span>

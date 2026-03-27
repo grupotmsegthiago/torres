@@ -211,6 +211,7 @@ export const serviceOrders = pgTable("service_orders", {
   baseCleanNotes: text("base_clean_notes"),
   baseChecklistConfirmed: boolean("base_checklist_confirmed"),
   earlyStartApproved: boolean("early_start_approved").default(false),
+  escortContractId: text("escort_contract_id"),
   stepLogs: jsonb("step_logs").default([]),
   createdAt: timestamp("created_at").defaultNow(),
 });

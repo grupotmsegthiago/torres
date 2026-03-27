@@ -738,7 +738,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           .select("*").eq("service_order_id", os.id).limit(1);
 
         let clientContract: any = null;
-        if (os.clientId) {
+        if (os.escortContractId) {
+          const { data: contracts } = await supabaseAdmin.from("escort_contracts")
+            .select("*").eq("id", os.escortContractId).limit(1);
+          if (contracts?.length) clientContract = contracts[0];
+        } else if (os.clientId) {
           const { data: contracts } = await supabaseAdmin.from("escort_contracts")
             .select("*").eq("client_id", os.clientId).eq("status", "Ativo").limit(1);
           if (contracts?.length) clientContract = contracts[0];
@@ -795,7 +799,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
-      if (so.clientId) {
+      if (so.escortContractId) {
+        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+        if (cc?.length) contrato = cc[0];
+      } else if (so.clientId) {
         const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
         if (clientContracts?.length) contrato = clientContracts[0];
       }
@@ -3967,7 +3974,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
-        if (so.clientId) {
+        if (so.escortContractId) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+          if (cc?.length) contrato = cc[0];
+        } else if (so.clientId) {
           const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).limit(1);
           if (clientContracts?.length) contrato = clientContracts[0];
         }

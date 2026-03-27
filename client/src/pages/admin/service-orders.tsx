@@ -117,9 +117,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
   const nowLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null }[]>({
+    queryKey: ["/api/escort/contracts"],
+  });
+
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
+    escortContractId: (order as any)?.escortContractId || "",
     type: "escolta",
     description: order?.description || "",
     status: order?.status || "agendada",
@@ -143,6 +149,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
     notes: order?.notes || "",
   });
+
+  const clientContracts = escortContracts.filter(c => c.client_id === form.clientId);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
@@ -206,6 +214,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         assignedEmployee2Id: data.assignedEmployee2Id ? Number(data.assignedEmployee2Id) : null,
         vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
         kitId: data.kitId ? Number(data.kitId) : null,
+        escortContractId: data.escortContractId || null,
         scheduledDate: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
         completedDate: data.completedDate ? new Date(data.completedDate).toISOString() : null,
       };
@@ -365,11 +374,20 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               <div>
                 <FieldLabel>Cliente *</FieldLabel>
-                <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value) })} className={selectClass} required data-testid="select-os-client">
+                <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value), escortContractId: "" })} className={selectClass} required data-testid="select-os-client">
                   <option value={0}>Selecione...</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{titleCase(c.name)}</option>)}
                 </select>
               </div>
+              {form.clientId > 0 && clientContracts.length > 0 && (
+                <div>
+                  <FieldLabel>Tabela de Preços</FieldLabel>
+                  <select value={form.escortContractId} onChange={(e) => setForm({ ...form, escortContractId: e.target.value })} className={selectClass} data-testid="select-os-price-table">
+                    <option value="">Selecione...</option>
+                    {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <FieldLabel>Solicitante</FieldLabel>
                 <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
