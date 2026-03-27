@@ -4,7 +4,7 @@ import { useGeolocation } from "@/hooks/use-geolocation";
 import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
 import { titleCase } from "@/lib/utils";
 import { useMemo } from "react";
-import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText } from "lucide-react";
+import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
@@ -61,11 +61,11 @@ function Watermark({ name }: { name: string }) {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { denied, requestPermission } = useGeolocation();
+  const { denied, position, loading, requestPermission } = useGeolocation();
   useAuditLog(location);
   useScreenshotDetection(location);
 
-  if (denied) {
+  if (!position) {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col" data-testid="mobile-layout">
         <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
@@ -76,26 +76,61 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         </header>
 
         <main className="flex-1 flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center max-w-sm w-full" data-testid="location-required-block">
-            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-              <MapPin className="w-8 h-8 text-red-500" />
+          {loading ? (
+            <div className="text-center" data-testid="location-loading">
+              <Loader2 className="w-10 h-10 text-neutral-400 animate-spin mx-auto mb-4" />
+              <p className="text-sm font-bold text-neutral-700">Obtendo localização...</p>
+              <p className="text-xs text-neutral-400 mt-1">Aguarde enquanto confirmamos sua posição.</p>
             </div>
-            <h2 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-2">Localização Obrigatória</h2>
-            <p className="text-sm text-neutral-500 mb-4">
-              Para utilizar o sistema, é necessário compartilhar sua localização em tempo real. Isso é essencial para a segurança das operações.
-            </p>
-            <Button
-              onClick={requestPermission}
-              className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold uppercase tracking-wider"
-              data-testid="btn-allow-location"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Permitir Localização
-            </Button>
-            <p className="text-[11px] text-neutral-400 mt-3">
-              Caso o botão não funcione, ative a localização nas configurações do navegador ou do aparelho.
-            </p>
-          </div>
+          ) : denied ? (
+            <div className="bg-white rounded-2xl border border-red-200 p-6 text-center max-w-sm w-full" data-testid="location-denied-block">
+              <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-8 h-8 text-red-500" />
+              </div>
+              <h2 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-2">Localização Bloqueada</h2>
+              <p className="text-sm text-neutral-500 mb-3">
+                A permissão de localização foi negada. Para acessar o sistema, ative a localização:
+              </p>
+              <ol className="text-[12px] text-neutral-600 text-left ml-4 mb-4 list-decimal space-y-1">
+                <li>Abra os <strong>Ajustes</strong> do celular</li>
+                <li>Vá em <strong>Privacidade → Serviços de Localização</strong></li>
+                <li>Encontre o <strong>navegador</strong> (Safari/Chrome)</li>
+                <li>Selecione <strong>"Ao Usar o App"</strong></li>
+              </ol>
+              <Button
+                onClick={requestPermission}
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider"
+                data-testid="btn-retry-location"
+              >
+                <MapPin className="w-4 h-4 mr-2" />
+                Tentar Novamente
+              </Button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center max-w-sm w-full" data-testid="location-required-block">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h2 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-2">Localização em Tempo Real</h2>
+              <p className="text-sm text-neutral-500 mb-2">
+                Para acessar o sistema Torres, é obrigatório habilitar a localização em tempo real.
+              </p>
+              <p className="text-xs text-neutral-400 mb-5">
+                Sua posição será monitorada durante o uso para garantir a segurança das operações.
+              </p>
+              <Button
+                onClick={requestPermission}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-wider text-sm py-3"
+                data-testid="btn-allow-location"
+              >
+                <MapPin className="w-4 h-4 mr-2" />
+                Habilitar Localização
+              </Button>
+              <p className="text-[11px] text-neutral-400 mt-3">
+                Ao tocar, o celular solicitará permissão de acesso à sua localização. Selecione <strong>"Permitir"</strong>.
+              </p>
+            </div>
+          )}
         </main>
       </div>
     );
