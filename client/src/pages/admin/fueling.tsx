@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, X, Pencil, Trash2, Fuel, TrendingDown, TrendingUp,
-  DollarSign, Gauge, BarChart3, AlertTriangle, Filter, ChevronDown, ChevronUp
+  DollarSign, Gauge, BarChart3, AlertTriangle, Filter, ChevronDown, ChevronUp,
+  MapPin, Camera, Eye, ArrowLeft, ExternalLink
 } from "lucide-react";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 
@@ -335,9 +336,162 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
   );
 }
 
+function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: VehicleFueling; vehicle?: Vehicle; driverName?: string | null; onClose: () => void }) {
+  const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+
+  const fuelTypeLabel: Record<string, string> = {
+    gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
+  };
+
+  const photos = [
+    { label: "Placa do Veículo", url: fueling.platePhoto },
+    { label: "Hodômetro", url: fueling.odometerPhoto },
+    { label: "Bomba", url: fueling.pumpPhoto },
+    { label: "Nota Fiscal / Cupom", url: fueling.receiptPhoto },
+  ].filter(p => p.url);
+
+  const hasLocation = fueling.latitude && fueling.longitude;
+  const mapsUrl = hasLocation ? `https://www.google.com/maps?q=${fueling.latitude},${fueling.longitude}` : null;
+
+  return (
+    <>
+      {zoomedPhoto && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setZoomedPhoto(null)} data-testid="modal-photo-zoom">
+          <div className="relative max-w-4xl max-h-[90vh] w-full">
+            <button onClick={() => setZoomedPhoto(null)} className="absolute -top-10 right-0 text-white hover:text-neutral-300 transition-colors" data-testid="button-close-zoom">
+              <X className="w-6 h-6" />
+            </button>
+            <img src={zoomedPhoto} alt="Foto ampliada" className="w-full h-full object-contain rounded-lg" />
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto pt-8 pb-8" onClick={onClose} data-testid="modal-fueling-detail">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-5 border-b border-neutral-100">
+            <div className="flex items-center gap-3">
+              <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors" data-testid="button-back-detail">
+                <ArrowLeft className="w-5 h-5 text-neutral-600" />
+              </button>
+              <div>
+                <h2 className="text-lg font-bold text-neutral-900">Detalhes do Abastecimento</h2>
+                <p className="text-sm text-neutral-500">{new Date(fueling.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-neutral-100 rounded-lg transition-colors" data-testid="button-close-detail">
+              <X className="w-5 h-5 text-neutral-400" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <p className="text-xs text-neutral-500 mb-0.5">Veículo</p>
+                <p className="font-bold text-neutral-900 text-sm">{vehicle?.plate || "-"}</p>
+                <p className="text-xs text-neutral-400">{vehicle?.model} {vehicle?.brand}</p>
+              </div>
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <p className="text-xs text-neutral-500 mb-0.5">Motorista</p>
+                <p className="font-bold text-neutral-900 text-sm">{driverName || "-"}</p>
+              </div>
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <p className="text-xs text-neutral-500 mb-0.5">KM Hodômetro</p>
+                <p className="font-bold text-neutral-900 text-sm">{fueling.km.toLocaleString("pt-BR")} km</p>
+              </div>
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <p className="text-xs text-neutral-500 mb-0.5">Combustível</p>
+                <p className="font-bold text-neutral-900 text-sm">{fuelTypeLabel[fueling.fuelType] || fueling.fuelType}</p>
+                {fueling.fullTank && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Tanque Cheio</span>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-blue-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-blue-600 mb-0.5">Litros</p>
+                <p className="font-bold text-blue-900 text-lg">{Number(fueling.liters).toFixed(2)}L</p>
+              </div>
+              <div className="bg-green-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-green-600 mb-0.5">Valor/Litro</p>
+                <p className="font-bold text-green-900 text-lg">{fueling.costPerLiter ? `R$ ${Number(fueling.costPerLiter).toFixed(3)}` : "-"}</p>
+              </div>
+              <div className="bg-red-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-red-600 mb-0.5">Valor Total</p>
+                <p className="font-bold text-red-900 text-lg">{fueling.totalCost ? `R$ ${Number(fueling.totalCost).toFixed(2)}` : "-"}</p>
+              </div>
+            </div>
+
+            {fueling.station && (
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <p className="text-xs text-neutral-500 mb-0.5">Posto</p>
+                <p className="font-semibold text-neutral-900 text-sm">{fueling.station}</p>
+              </div>
+            )}
+
+            {(hasLocation || fueling.address) && (
+              <div className="bg-emerald-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <MapPin className="w-4 h-4 text-emerald-600" />
+                  <p className="text-xs font-semibold text-emerald-700">Localização do Abastecimento</p>
+                </div>
+                {fueling.address && <p className="text-sm text-emerald-900 mb-1">{fueling.address}</p>}
+                {hasLocation && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-emerald-600">GPS: {Number(fueling.latitude).toFixed(6)}, {Number(fueling.longitude).toFixed(6)}</span>
+                    <a href={mapsUrl!} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-700 underline flex items-center gap-1 hover:text-emerald-900" data-testid="link-maps">
+                      Ver no mapa <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {fueling.notes && (
+              <div className="bg-amber-50 rounded-lg p-3">
+                <p className="text-xs text-amber-600 mb-0.5">Observações</p>
+                <p className="text-sm text-amber-900">{fueling.notes}</p>
+              </div>
+            )}
+
+            {photos.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Camera className="w-4 h-4 text-neutral-500" />
+                  <h3 className="text-sm font-bold text-neutral-900">Fotos ({photos.length})</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {photos.map((p, i) => (
+                    <div key={i} className="relative group cursor-pointer" onClick={() => setZoomedPhoto(p.url!)} data-testid={`photo-fueling-${i}`}>
+                      <img src={p.url!} alt={p.label} className="w-full h-48 object-cover rounded-lg border border-neutral-200" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors rounded-lg flex items-center justify-center">
+                        <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <span className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">{p.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {photos.length === 0 && !hasLocation && (
+              <div className="text-center py-6 text-neutral-400 text-sm">
+                Nenhuma foto ou localização registrada para este abastecimento.
+              </div>
+            )}
+
+            <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
+              Registrado em {fueling.createdAt ? new Date(fueling.createdAt).toLocaleString("pt-BR") : "-"} · ID #{fueling.id}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function FuelingPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<VehicleFueling | undefined>();
+  const [detailItem, setDetailItem] = useState<VehicleFueling | null>(null);
   const [filterVehicle, setFilterVehicle] = useState<number | "all">("all");
   const [filterMonth, setFilterMonth] = useState<string>("");
   const [expandedVehicle, setExpandedVehicle] = useState<number | null>(null);
@@ -528,6 +682,7 @@ export default function FuelingPage() {
                                     <td className="px-4 py-2.5 text-neutral-500 text-xs">{getDriver(orig.driverId) || "-"}</td>
                                     <td className="px-4 py-2.5 text-neutral-500 text-xs">{orig.station || "-"}</td>
                                     <td className="px-4 py-2.5 text-right">
+                                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setDetailItem(orig); }} data-testid={`button-detail-dash-${h.id}`}><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setEditItem(orig); setShowForm(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(h.id); }}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
                                     </td>
@@ -583,6 +738,7 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-neutral-500 text-xs">{f.station || "-"}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{getDriver(f.driverId) || "-"}</td>
                         <td className="px-4 py-3 text-right">
+                          <Button variant="ghost" size="icon" onClick={() => setDetailItem(f)} data-testid={`button-detail-${f.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => { setEditItem(f); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(f.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                         </td>
@@ -609,6 +765,14 @@ export default function FuelingPage() {
             </div>
           </div>
         </Card>
+      )}
+      {detailItem && (
+        <FuelingDetail
+          fueling={detailItem}
+          vehicle={getVehicle(detailItem.vehicleId)}
+          driverName={getDriver(detailItem.driverId)}
+          onClose={() => setDetailItem(null)}
+        />
       )}
     </AdminLayout>
   );
