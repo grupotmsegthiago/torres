@@ -679,6 +679,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (km !== undefined) updates.km = Number(km);
     if (initialKm !== undefined) updates.initialKm = Number(initialKm);
     updates.lastKmUpdate = new Date();
+    const vehicle = await storage.getVehicle(Number(req.params.id));
+    if (vehicle && km !== undefined) {
+      const lastOilKm = (vehicle as any).lastOilChangeKm || 0;
+      const kmRodados = Number(km) - lastOilKm;
+      if (kmRodados >= 9000 && vehicle.status !== "manutenção") {
+        updates.status = "manutenção";
+        console.log(`[auto-maint] Vehicle ${vehicle.plate} reached ${kmRodados} km since last oil change, auto-set to manutenção`);
+      }
+    }
     const data = await storage.updateVehicle(Number(req.params.id), updates);
     if (!data) return res.status(404).json({ message: "Veículo não encontrado" });
     res.json(data);

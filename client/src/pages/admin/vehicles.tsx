@@ -589,18 +589,43 @@ export default function VehiclesPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Veículo</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Atual</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Inicial</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM Rodados</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Média</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {(vehicles || []).map((v) => (
-                  <tr key={v.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-vehicle-${v.id}`}>
+                {(vehicles || []).map((v) => {
+                  const lastOilKm = (v as any).lastOilChangeKm || 0;
+                  const kmRodados = (v.km || 0) - lastOilKm;
+                  const needsMaint = kmRodados >= 9000;
+                  return (
+                  <tr key={v.id} className={`border-b border-neutral-100 hover:bg-neutral-50 ${needsMaint ? "bg-red-50/50" : ""}`} data-testid={`row-vehicle-${v.id}`}>
                     <td className="p-3 font-medium text-neutral-900">{v.plate}</td>
                     <td className="p-3 text-neutral-600">{v.brand} {v.model} {v.year}</td>
                     <td className="p-3 text-neutral-600 font-semibold">{v.km?.toLocaleString() || "0"}</td>
                     <td className="p-3 text-neutral-400 text-sm">{(v as any).initialKm?.toLocaleString() || "0"}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold ${needsMaint ? "text-red-600" : kmRodados >= 7500 ? "text-amber-600" : "text-neutral-700"}`}>
+                          {kmRodados.toLocaleString()}
+                        </span>
+                        {needsMaint && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-600 text-white font-bold uppercase animate-pulse" data-testid={`badge-maintenance-${v.id}`}>
+                            MANUTENÇÃO
+                          </span>
+                        )}
+                        {!needsMaint && kmRodados >= 7500 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500 text-white font-bold uppercase" data-testid={`badge-attention-${v.id}`}>
+                            ATENÇÃO
+                          </span>
+                        )}
+                      </div>
+                      <div className="w-full bg-neutral-200 rounded-full h-1.5 mt-1">
+                        <div className={`h-1.5 rounded-full transition-all ${needsMaint ? "bg-red-500" : kmRodados >= 7500 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((kmRodados / 9000) * 100, 100)}%` }} />
+                      </div>
+                    </td>
                     <td className="p-3 text-neutral-600">
                       <span className="flex items-center gap-1">
                         <Gauge className="w-3.5 h-3.5" />
@@ -625,7 +650,8 @@ export default function VehiclesPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
