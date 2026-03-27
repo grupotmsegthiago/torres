@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, Loader2, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Camera, Loader2, RotateCcw, CheckCircle2, MapPin } from "lucide-react";
 
 export default function SelfiePage() {
   const { user } = useAuth();
@@ -13,6 +13,8 @@ export default function SelfiePage() {
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
+  const [locationInfo, setLocationInfo] = useState<{ lat: string; lng: string; accuracy: string } | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,6 +54,10 @@ export default function SelfiePage() {
 
   useEffect(() => {
     startCamera();
+    getPosition().then(pos => {
+      setLocationInfo(pos);
+      setLocationLoading(false);
+    });
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
@@ -91,13 +97,17 @@ export default function SelfiePage() {
     startCamera();
   };
 
-  const getPosition = (): Promise<{ lat: string; lng: string } | null> => {
+  const getPosition = (): Promise<{ lat: string; lng: string; accuracy: string } | null> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) return resolve(null);
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }),
+        (pos) => resolve({
+          lat: String(pos.coords.latitude),
+          lng: String(pos.coords.longitude),
+          accuracy: String(pos.coords.accuracy),
+        }),
         () => resolve(null),
-        { timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000 }
       );
     });
   };
@@ -165,7 +175,7 @@ export default function SelfiePage() {
           </div>
         </div>
 
-        <div className="text-center">
+        <div className="text-center space-y-1">
           <p className="text-sm font-semibold text-neutral-700">
             {user.name}
           </p>
@@ -174,6 +184,18 @@ export default function SelfiePage() {
             {" · "}
             {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
           </p>
+          <div className="flex items-center justify-center gap-1 mt-1">
+            <MapPin className="w-3 h-3 text-emerald-500" />
+            {locationLoading ? (
+              <span className="text-[10px] text-neutral-400">Capturando localização...</span>
+            ) : locationInfo ? (
+              <span className="text-[10px] text-emerald-600 font-semibold">
+                Localização capturada ({parseFloat(locationInfo.lat).toFixed(6)}, {parseFloat(locationInfo.lng).toFixed(6)})
+              </span>
+            ) : (
+              <span className="text-[10px] text-red-500">Localização indisponível</span>
+            )}
+          </div>
         </div>
 
         {!capturedPhoto ? (
