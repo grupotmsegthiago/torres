@@ -285,6 +285,7 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   notes: text("notes"),
   latitude: text("latitude"),
   longitude: text("longitude"),
+  address: text("address"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

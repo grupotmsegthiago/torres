@@ -6975,7 +6975,7 @@ Regras:
     try {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
-      const { vehicleId, km, liters, costPerLiter, totalCost, fuelType, station, receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude } = req.body;
+      const { vehicleId, km, liters, costPerLiter, totalCost, fuelType, station, receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude, address } = req.body;
       if (!vehicleId || !km) return res.status(400).json({ message: "Veículo e KM obrigatórios" });
       if (!receiptPhoto || typeof receiptPhoto !== "string" || !receiptPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da NF obrigatória (formato inválido)" });
       if (!pumpPhoto || typeof pumpPhoto !== "string" || !pumpPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da bomba obrigatória (formato inválido)" });
@@ -6993,7 +6993,7 @@ Regras:
         vehicleId, driverId: employeeId, date: new Date().toISOString().split("T")[0],
         liters: liters?.toString() || "0", costPerLiter: costPerLiter?.toString(), totalCost: totalCost?.toString(),
         km, fuelType: fuelType || "diesel", fullTank: true, station,
-        receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude,
+        receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude, address,
       }).returning();
 
       await db.update(vehicles).set({ km, lastKmUpdate: new Date() }).where(eq(vehicles.id, vehicleId));

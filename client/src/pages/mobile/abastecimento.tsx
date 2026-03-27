@@ -2,10 +2,10 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { authFetch, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useRef, useCallback } from "react";
-import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin } from "lucide-react";
 import { Link } from "wouter";
 
 type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
@@ -28,9 +28,41 @@ export default function MobileAbastecimentoPage() {
   const [station, setStation] = useState("");
   const [oilAlert, setOilAlert] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [geoAddress, setGeoAddress] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`);
+      const d = await r.json();
+      if (d.display_name) setGeoAddress(d.display_name);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (geo.position && !geoAddress) {
+      reverseGeocode(geo.position.coords.latitude, geo.position.coords.longitude);
+    }
+  }, [geo.position, geoAddress, reverseGeocode]);
+
+  const requestFreshGeo = useCallback((): Promise<{ lat: number; lng: number }> => {
+    return new Promise((resolve, reject) => {
+      setGeoLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setGeoLoading(false);
+          reverseGeocode(coords.lat, coords.lng);
+          resolve(coords);
+        },
+        (err) => { setGeoLoading(false); reject(new Error("Não foi possível obter localização GPS")); },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  }, [reverseGeocode]);
 
   const { data: vehicle, isLoading: loadingVehicle } = useQuery<any>({
     queryKey: ["/api/mobile/abastecimento/vehicle"],
@@ -38,14 +70,24 @@ export default function MobileAbastecimentoPage() {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
+      const coords = await requestFreshGeo();
       const totalCost = liters && costPerLiter ? (parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2) : undefined;
-      const res = await apiRequest("POST", "/api/mobile/abastecimento", {
-        vehicleId: vehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
-        costPerLiter: parseFloat(costPerLiter) || undefined, totalCost,
-        station, ...photos,
-        latitude: geo.latitude?.toString(), longitude: geo.longitude?.toString(),
+      const res = await authFetch("/api/mobile/abastecimento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId: vehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
+          costPerLiter: parseFloat(costPerLiter) || undefined, totalCost,
+          station, ...photos,
+          latitude: coords.lat.toString(), longitude: coords.lng.toString(),
+          address: geoAddress || undefined,
+        }),
       });
-      return res.json();
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { data = { message: text }; }
+      if (!res.ok) throw new Error(data.message || "Erro ao registrar abastecimento");
+      return data;
     },
     onSuccess: (data) => {
       setSubmitted(true);
@@ -53,7 +95,7 @@ export default function MobileAbastecimentoPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/abastecimento/vehicle"] });
       toast({ title: "Abastecimento registrado!" });
     },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" }),
   });
 
   const startCamera = useCallback(async (target: PhotoKey) => {
@@ -159,6 +201,31 @@ export default function MobileAbastecimentoPage() {
                 <p className="text-sm font-black text-white">{vehicle.plate}</p>
                 <p className="text-xs text-neutral-400">{vehicle.model} · KM atual: {(vehicle.km || 0).toLocaleString("pt-BR")}</p>
               </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4" data-testid="abastecimento-location">
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin size={16} className="text-blue-600" />
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Localização do Abastecimento</p>
+              </div>
+              {geo.position ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-mono text-blue-700">
+                    {geo.position.coords.latitude.toFixed(5)}, {geo.position.coords.longitude.toFixed(5)}
+                  </p>
+                  {geoAddress ? (
+                    <p className="text-xs text-blue-600 leading-relaxed">{geoAddress}</p>
+                  ) : (
+                    <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Confirmando endereço...</p>
+                  )}
+                  <a href={`https://www.google.com/maps?q=${geo.position.coords.latitude},${geo.position.coords.longitude}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] text-blue-500 underline font-bold" data-testid="link-map-fuel">
+                    Ver no Google Maps
+                  </a>
+                </div>
+              ) : (
+                <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Obtendo localização...</p>
+              )}
             </div>
 
             <div className="space-y-3">
