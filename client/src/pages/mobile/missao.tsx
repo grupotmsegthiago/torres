@@ -11,7 +11,7 @@ import {
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
-  WifiOff, History, ChevronRight,
+  WifiOff, History, ChevronRight, Calendar, Clock,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -31,7 +31,7 @@ const VEHICLE_CHECKLIST_ITEMS = [
 ];
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
-  missao_paga: { title: "Dados da Missão", subtitle: "Revise os dados e aguarde liberação", icon: Lock },
+  missao_paga: { title: "CHECK-IN", subtitle: "Missão liberada — inicie o check-in", icon: CheckCircle2 },
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/16", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
@@ -306,7 +306,7 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
 }
 
 const MOBILE_STEP_LABELS: Record<string, string> = {
-  missao_paga: "Aguardando Liberação",
+  missao_paga: "Check-in Iniciado",
   aguardando: "Ciência da Missão",
   checkout_armamento: "Armamento Conferido",
   checkout_viatura: "Viatura Conferida",
@@ -389,10 +389,16 @@ export default function MobileMissaoPage() {
   const [baseReturnKm, setBaseReturnKm] = useState("");
   const [baseChecklistOk, setBaseChecklistOk] = useState<Record<string, boolean>>({});
   const [statusUpdate, setStatusUpdate] = useState("");
+  const [activeTab, setActiveTab] = useState<"missao" | "agendamentos">("missao");
 
   const { data: mission, isLoading } = useQuery<any>({
     queryKey: ["/api/mission/active"],
     refetchInterval: 5000,
+  });
+
+  const { data: scheduledList = [] } = useQuery<any[]>({
+    queryKey: ["/api/mission/scheduled"],
+    enabled: activeTab === "agendamentos",
   });
 
   const currentStep = (mission?.missionStatus as MissionStep) || "aguardando";
@@ -733,15 +739,144 @@ export default function MobileMissaoPage() {
     );
   }
 
+  const scheduledCount = (mission?.scheduledMissions?.length || 0) + scheduledList.length;
+
+  if (!mission && activeTab === "missao") {
+    return (
+      <MobileLayout>
+        <div className="p-4 space-y-4">
+          <div className="flex bg-neutral-100 rounded-2xl p-1">
+            <button
+              onClick={() => setActiveTab("missao")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all bg-white text-neutral-900 shadow-sm"
+              data-testid="tab-missao"
+            >
+              <Crosshair className="w-4 h-4 inline mr-1.5" />
+              Missão
+            </button>
+            <button
+              onClick={() => setActiveTab("agendamentos")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-neutral-400"
+              data-testid="tab-agendamentos"
+            >
+              <Calendar className="w-4 h-4 inline mr-1.5" />
+              Agendamentos
+            </button>
+          </div>
+          <div className="text-center min-h-[50vh] flex flex-col items-center justify-center" data-testid="mobile-no-mission">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-neutral-300" />
+            </div>
+            <h2 className="text-lg font-black text-neutral-800 uppercase tracking-wider mb-1">Nenhuma Missão</h2>
+            <p className="text-sm text-neutral-400">Aguarde a atribuição de uma OS pelo admin.</p>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  if (activeTab === "agendamentos") {
+    return (
+      <MobileLayout>
+        <div className="p-4 space-y-4" data-testid="mobile-agendamentos-page">
+          <div className="flex bg-neutral-100 rounded-2xl p-1">
+            <button
+              onClick={() => setActiveTab("missao")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-neutral-400"
+              data-testid="tab-missao"
+            >
+              <Crosshair className="w-4 h-4 inline mr-1.5" />
+              Missão
+            </button>
+            <button
+              onClick={() => setActiveTab("agendamentos")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all bg-white text-neutral-900 shadow-sm"
+              data-testid="tab-agendamentos"
+            >
+              <Calendar className="w-4 h-4 inline mr-1.5" />
+              Agendamentos
+            </button>
+          </div>
+
+          {scheduledList.length === 0 ? (
+            <div className="text-center py-12 flex flex-col items-center justify-center">
+              <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-3">
+                <Calendar className="w-7 h-7 text-neutral-300" />
+              </div>
+              <p className="text-sm font-bold text-neutral-500">Nenhum agendamento</p>
+              <p className="text-xs text-neutral-400 mt-1">Você não tem missões agendadas no momento.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-wider px-1">
+                {scheduledList.length} agendamento{scheduledList.length > 1 ? "s" : ""}
+              </p>
+              {scheduledList.map((s: any) => (
+                <div key={s.id} className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2" data-testid={`scheduled-card-${s.id}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center">
+                        <Crosshair className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-neutral-900 uppercase tracking-wider">{s.osNumber}</p>
+                        <p className="text-[10px] text-neutral-400">{s.clientName}</p>
+                      </div>
+                    </div>
+                    {s.priority === "imediata" && (
+                      <span className="bg-red-500 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full animate-pulse">Imediata</span>
+                    )}
+                  </div>
+
+                  {s.scheduledDate && (
+                    <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2">
+                      <Clock className="w-3.5 h-3.5 text-neutral-400" />
+                      <span className="font-semibold text-neutral-700">
+                        {new Date(s.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                        {" às "}
+                        {new Date(s.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                  )}
+
+                  {s.origin && (
+                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                      <MapPin className="w-3.5 h-3.5 text-green-500" />
+                      <span className="truncate">{s.origin}</span>
+                    </div>
+                  )}
+                  {s.destination && (
+                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                      <MapPin className="w-3.5 h-3.5 text-red-500" />
+                      <span className="truncate">{s.destination}</span>
+                    </div>
+                  )}
+                  {s.route && !s.origin && (
+                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span className="truncate">{s.route}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </MobileLayout>
+    );
+  }
+
   if (!mission) {
     return (
       <MobileLayout>
-        <div className="p-6 text-center min-h-[60vh] flex flex-col items-center justify-center" data-testid="mobile-no-mission">
-          <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-neutral-300" />
+        <div className="p-4">
+          <div className="text-center min-h-[50vh] flex flex-col items-center justify-center" data-testid="mobile-no-mission">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-neutral-300" />
+            </div>
+            <h2 className="text-lg font-black text-neutral-800 uppercase tracking-wider mb-1">Nenhuma Missão</h2>
+            <p className="text-sm text-neutral-400">Aguarde a atribuição de uma OS pelo admin.</p>
           </div>
-          <h2 className="text-lg font-black text-neutral-800 uppercase tracking-wider mb-1">Nenhuma Missão</h2>
-          <p className="text-sm text-neutral-400">Aguarde a atribuição de uma OS pelo admin.</p>
         </div>
       </MobileLayout>
     );
@@ -750,6 +885,29 @@ export default function MobileMissaoPage() {
   return (
     <MobileLayout>
       <div className="p-4 space-y-4" data-testid="mobile-missao-page">
+        <div className="flex bg-neutral-100 rounded-2xl p-1">
+          <button
+            onClick={() => setActiveTab("missao")}
+            className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all bg-white text-neutral-900 shadow-sm"
+            data-testid="tab-missao"
+          >
+            <Crosshair className="w-4 h-4 inline mr-1.5" />
+            Missão
+          </button>
+          <button
+            onClick={() => setActiveTab("agendamentos")}
+            className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-neutral-400 relative"
+            data-testid="tab-agendamentos"
+          >
+            <Calendar className="w-4 h-4 inline mr-1.5" />
+            Agendamentos
+            {mission?.scheduledMissions?.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {mission.scheduledMissions.length}
+              </span>
+            )}
+          </button>
+        </div>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center">
@@ -843,6 +1001,14 @@ export default function MobileMissaoPage() {
 
         {currentStep === "missao_paga" && (
           <div className="space-y-3">
+            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-center space-y-2">
+              <div className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-7 h-7 text-white" />
+              </div>
+              <p className="text-sm font-black text-emerald-800 uppercase tracking-wider">Missão Liberada</p>
+              <p className="text-xs text-emerald-600">O pagamento foi confirmado. Inicie o check-in para começar a operação.</p>
+            </div>
+
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2">
               <div className="flex items-center gap-2 text-xs text-neutral-500">
                 <Crosshair className="w-3.5 h-3.5" />
@@ -852,6 +1018,24 @@ export default function MobileMissaoPage() {
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <Car className="w-3.5 h-3.5" />
                   <span><strong className="text-neutral-700">Viatura:</strong> {mission.vehiclePlate} · {mission.vehicleModel || ""}</span>
+                </div>
+              )}
+              {mission.employee1Name && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <User className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Agente 1:</strong> {mission.employee1Name}</span>
+                </div>
+              )}
+              {mission.employee2Name && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <User className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Agente 2:</strong> {mission.employee2Name}</span>
+                </div>
+              )}
+              {mission.scheduledDate && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <Bell className="w-3.5 h-3.5" />
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR")}</span>
                 </div>
               )}
               {mission.origin && (
@@ -866,14 +1050,30 @@ export default function MobileMissaoPage() {
                   <span><strong className="text-neutral-700">Destino:</strong> {mission.destination}</span>
                 </div>
               )}
+              {mission.description && (
+                <p className="text-xs text-neutral-500 border-t border-neutral-100 pt-2 mt-2">{mission.description}</p>
+              )}
             </div>
-            <div className="bg-amber-50 rounded-2xl border border-amber-200 p-4 text-center space-y-2">
-              <div className="flex items-center justify-center gap-2 text-xs text-amber-700 font-semibold">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Aguardando liberação da administração...</span>
-              </div>
-              <p className="text-[11px] text-amber-600">Você será notificado quando a missão for liberada para iniciar o check-out.</p>
-            </div>
+
+            <button
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  await advanceMission();
+                  toast({ title: "Check-in iniciado!" });
+                } catch (err: any) {
+                  toast({ title: "Erro", description: err.message, variant: "destructive" });
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              disabled={submitting}
+              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 shadow-lg"
+              data-testid="button-iniciar-checkin"
+            >
+              {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowRight className="w-6 h-6" />}
+              Iniciar Check-in
+            </button>
           </div>
         )}
 
