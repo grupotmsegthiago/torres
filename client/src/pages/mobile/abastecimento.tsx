@@ -35,6 +35,7 @@ export default function MobileAbastecimentoPage() {
   const [submitted, setSubmitted] = useState(false);
   const [geoAddress, setGeoAddress] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [searchPlate, setSearchPlate] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -44,12 +45,13 @@ export default function MobileAbastecimentoPage() {
     queryKey: ["/api/mobile/abastecimento/vehicles"],
   });
 
-  useEffect(() => {
-    if (!loadingVehicles && vehicles.length === 1 && step === "SELECT") {
-      setSelectedVehicle(vehicles[0]);
-      setStep("PLATE");
-    }
-  }, [vehicles, loadingVehicles, step]);
+  const filteredVehicles = vehicles.filter((v: any) => {
+    if (!searchPlate) return true;
+    const q = searchPlate.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const plate = (v.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const model = (v.model || "").toUpperCase();
+    return plate.includes(q) || model.includes(q);
+  });
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -237,18 +239,25 @@ export default function MobileAbastecimentoPage() {
 
         {step === "SELECT" && (
           <>
-            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Viaturas Vinculadas</p>
+            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Selecione a Viatura</p>
+            <input type="text" value={searchPlate} onChange={e => setSearchPlate(e.target.value)}
+              placeholder="Buscar por placa ou modelo..."
+              className="w-full p-3 border border-neutral-200 rounded-xl text-sm bg-white" data-testid="input-search-vehicle" />
             {loadingVehicles ? (
               <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>
             ) : vehicles.length === 0 ? (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
                 <AlertTriangle className="mx-auto text-amber-500 mb-2" size={28} />
-                <p className="text-sm font-bold text-amber-800">Nenhuma viatura vinculada</p>
-                <p className="text-xs text-amber-600 mt-1">Solicite ao administrador a vinculação de viatura.</p>
+                <p className="text-sm font-bold text-amber-800">Nenhuma viatura cadastrada</p>
+                <p className="text-xs text-amber-600 mt-1">Entre em contato com o administrador.</p>
+              </div>
+            ) : filteredVehicles.length === 0 ? (
+              <div className="bg-neutral-50 rounded-2xl p-6 text-center">
+                <p className="text-sm text-neutral-500">Nenhuma viatura encontrada para "<span className="font-bold">{searchPlate}</span>"</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {vehicles.map((v: any) => (
+                {filteredVehicles.map((v: any) => (
                   <button key={v.id} onClick={() => { setSelectedVehicle(v); setStep("PLATE"); }}
                     className="w-full bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3 text-left active:bg-neutral-50"
                     data-testid={`vehicle-card-${v.id}`}>

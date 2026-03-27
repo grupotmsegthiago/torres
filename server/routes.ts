@@ -6956,16 +6956,13 @@ Regras:
   // ─── MOBILE: Abastecimento ──────────────────────────────────────────
   app.get("/api/mobile/abastecimento/vehicles", requireAuth, async (req: any, res) => {
     try {
-      const employeeId = req.user?.employeeId;
-      if (!employeeId) return res.json([]);
-      const assignments = await db.execute(sql`
-        SELECT v.id, v.plate, v.model, v.km, v.last_oil_change_km, v.frota
-        FROM vehicle_assignments va
-        JOIN vehicles v ON v.id = va.vehicle_id
-        WHERE va.employee_id = ${employeeId} AND va.active = true
-        ORDER BY v.plate ASC
+      const allVehicles = await db.execute(sql`
+        SELECT id, plate, model, km, last_oil_change_km, frota
+        FROM vehicles
+        WHERE status = 'active' OR status IS NULL
+        ORDER BY plate ASC
       `);
-      res.json(assignments.rows || []);
+      res.json(allVehicles.rows || []);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -6998,10 +6995,8 @@ Regras:
       if (!pumpPhoto || typeof pumpPhoto !== "string" || !pumpPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da bomba obrigatória (formato inválido)" });
       if (!odometerPhoto || typeof odometerPhoto !== "string" || !odometerPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto do hodômetro obrigatória (formato inválido)" });
 
-      const assignCheck = await db.execute(sql`SELECT 1 FROM vehicle_assignments WHERE employee_id = ${employeeId} AND vehicle_id = ${vehicleId} AND active = true LIMIT 1`);
-      if (!assignCheck.rows?.length) return res.status(403).json({ message: "Veículo não vinculado ao seu usuário" });
-
       const vehicle = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+      if (!vehicle.length) return res.status(404).json({ message: "Veículo não encontrado" });
       if (vehicle[0] && km < (vehicle[0].km || 0)) {
         return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${vehicle[0].km})` });
       }
