@@ -2673,24 +2673,24 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 {v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}
                               </span>
                             )}
+                            {v.activeOs.lastAgentUpdate && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Info className="w-3.5 h-3.5 text-blue-500 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[250px]">
+                                  <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
+                                  <p className="text-[10px] text-neutral-400 mt-0.5">
+                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                                    {v.activeOs.lastAgentUpdate.photoUrl ? " · 📷 Foto" : ""}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                           </div>
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
                           </p>
-                          {v.activeOs.lastAgentUpdate && (
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="w-3.5 h-3.5 text-blue-500 cursor-help inline-block ml-1" />
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="max-w-[250px]">
-                                <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
-                                <p className="text-[10px] text-neutral-400 mt-0.5">
-                                  {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
-                                  {v.activeOs.lastAgentUpdate.photoUrl ? " · 📷 Foto" : ""}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
                           {v.activeOs.scheduledDate && (
                             <p className="text-xs text-neutral-400 font-medium">
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
