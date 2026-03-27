@@ -30,12 +30,45 @@ export default function MobilePontoPage() {
     refetchInterval: 30000,
   });
 
+  const [freshGeo, setFreshGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+
+  const requestFreshGeo = useCallback((): Promise<{ lat: number; lng: number }> => {
+    setGeoLoading(true);
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        setGeoLoading(false);
+        reject(new Error("Geolocalização não disponível neste dispositivo"));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setFreshGeo(coords);
+          setGeoLoading(false);
+          resolve(coords);
+        },
+        (err) => {
+          setGeoLoading(false);
+          if (err.code === err.PERMISSION_DENIED) {
+            reject(new Error("Permissão de localização negada. Ative a localização nas configurações do celular e tente novamente."));
+          } else if (err.code === err.TIMEOUT) {
+            reject(new Error("Não foi possível obter sua localização. Verifique se o GPS está ativado e tente novamente."));
+          } else {
+            reject(new Error("Erro ao obter localização. Ative o GPS e tente novamente."));
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  }, []);
+
   const clockMutation = useMutation({
-    mutationFn: async ({ action, photo }: { action: string; photo: string }) => {
+    mutationFn: async ({ action, photo, lat, lng }: { action: string; photo: string; lat: number; lng: number }) => {
       const res = await apiRequest("POST", "/api/mobile/ponto/clock", {
         action, photo,
-        latitude: geo.latitude?.toString(),
-        longitude: geo.longitude?.toString(),
+        latitude: lat.toString(),
+        longitude: lng.toString(),
       });
       return res.json();
     },
@@ -73,18 +106,23 @@ export default function MobilePontoPage() {
     setActiveAction(null);
   }, []);
 
-  const capturePhoto = useCallback(() => {
+  const capturePhoto = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || !activeAction) return;
-    const cv = canvasRef.current;
-    const video = videoRef.current;
-    cv.width = Math.min(video.videoWidth, 1280);
-    cv.height = Math.min(video.videoHeight, 1280);
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, cv.width, cv.height);
-    const dataUrl = cv.toDataURL("image/jpeg", 0.7);
-    clockMutation.mutate({ action: activeAction, photo: dataUrl });
-  }, [activeAction, clockMutation]);
+    try {
+      const coords = await requestFreshGeo();
+      const cv = canvasRef.current;
+      const video = videoRef.current;
+      cv.width = Math.min(video.videoWidth, 1280);
+      cv.height = Math.min(video.videoHeight, 1280);
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, cv.width, cv.height);
+      const dataUrl = cv.toDataURL("image/jpeg", 0.7);
+      clockMutation.mutate({ action: activeAction, photo: dataUrl, lat: coords.lat, lng: coords.lng });
+    } catch (err: any) {
+      toast({ title: "Localização obrigatória", description: err.message, variant: "destructive" });
+    }
+  }, [activeAction, clockMutation, requestFreshGeo, toast]);
 
   const nextStep = STEPS.find(s => !s.done(record));
   const now = new Date();
@@ -101,12 +139,12 @@ export default function MobilePontoPage() {
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
               <div className="flex items-center justify-between text-white text-xs mb-3">
                 <span className="flex items-center gap-1"><Clock size={12} /> {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="flex items-center gap-1"><MapPin size={12} /> {geo.latitude ? `${Number(geo.latitude).toFixed(4)}, ${Number(geo.longitude).toFixed(4)}` : "Obtendo..."}</span>
+                <span className="flex items-center gap-1"><MapPin size={12} /> {freshGeo ? `${freshGeo.lat.toFixed(4)}, ${freshGeo.lng.toFixed(4)}` : geo.position ? `${geo.position.coords.latitude.toFixed(4)}, ${geo.position.coords.longitude.toFixed(4)}` : "Obtendo..."}</span>
               </div>
-              <button onClick={capturePhoto} disabled={clockMutation.isPending} data-testid="button-capture-ponto"
+              <button onClick={capturePhoto} disabled={clockMutation.isPending || geoLoading} data-testid="button-capture-ponto"
                 className="w-full py-3 bg-white rounded-xl text-black font-black uppercase text-sm tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
-                {clockMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-                Registrar Ponto
+                {(clockMutation.isPending || geoLoading) ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                {geoLoading ? "Obtendo GPS..." : "Registrar Ponto"}
               </button>
             </div>
           </div>
@@ -135,8 +173,8 @@ export default function MobilePontoPage() {
           <p className="text-3xl font-black text-white font-mono" data-testid="text-current-time">
             {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </p>
-          <p className="text-xs text-neutral-400 mt-1 flex items-center justify-center gap-1">
-            <MapPin size={10} /> {geo.latitude ? "Localização ativa" : "Obtendo localização..."}
+          <p className={`text-xs mt-1 flex items-center justify-center gap-1 ${geo.denied ? "text-red-400" : geo.position ? "text-emerald-400" : "text-neutral-400"}`}>
+            <MapPin size={10} /> {geo.denied ? "Localização negada — ative nas configurações" : geo.position ? "Localização ativa" : "Obtendo localização..."}
           </p>
         </div>
 
@@ -144,6 +182,18 @@ export default function MobilePontoPage() {
           <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>
         ) : (
           <div className="space-y-3">
+            {geo.denied && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3" data-testid="alert-geo-denied">
+                <MapPin className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-red-700 uppercase">Localização Obrigatória</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">Ative a localização (GPS) nas configurações do celular para registrar o ponto.</p>
+                  <button onClick={geo.requestPermission} className="mt-2 px-3 py-1.5 bg-red-600 text-white text-[11px] font-bold rounded-lg" data-testid="button-retry-geo">
+                    Tentar Novamente
+                  </button>
+                </div>
+              </div>
+            )}
             {STEPS.map(step => {
               const done = step.done(record);
               const isNext = step.key === nextStep?.key;

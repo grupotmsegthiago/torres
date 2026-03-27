@@ -6893,6 +6893,13 @@ Regras:
       }
       if (!record) return res.status(400).json({ message: "Registre a entrada primeiro" });
 
+      if (!latitude || !longitude) return res.status(400).json({ message: "Localização obrigatória para registrar o ponto" });
+      const pLat = parseFloat(latitude);
+      const pLng = parseFloat(longitude);
+      if (!Number.isFinite(pLat) || !Number.isFinite(pLng) || pLat < -90 || pLat > 90 || pLng < -180 || pLng > 180) {
+        return res.status(400).json({ message: "Coordenadas de localização inválidas" });
+      }
+
       const updateMap: Record<string, any> = {
         lunch_out: { lunchOut: timeStr, lunchOutPhoto: photo, lunchOutLat: latitude, lunchOutLng: longitude },
         lunch_in: { lunchIn: timeStr, lunchInPhoto: photo, lunchInLat: latitude, lunchInLng: longitude },
