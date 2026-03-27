@@ -392,8 +392,8 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
     const pngBlob = await new Promise<Blob>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        const maxW = 800;
-        const maxH = 800;
+        const maxW = 1280;
+        const maxH = 1280;
         let w = img.naturalWidth;
         let h = img.naturalHeight;
         if (w > maxW || h > maxH) {
