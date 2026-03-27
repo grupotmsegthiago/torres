@@ -3453,6 +3453,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       notes: null,
     });
 
+    if (kmValue && Number(kmValue) > 0 && so.vehicleId && ["km_saida", "km_chegada", "km_final", "base_hodometro"].includes(step)) {
+      try {
+        const veh = await storage.getVehicle(so.vehicleId);
+        if (veh && Number(kmValue) >= (veh.km || 0)) {
+          await storage.updateVehicle(so.vehicleId, { km: Number(kmValue), lastKmUpdate: new Date() });
+        }
+      } catch {}
+    }
+
     const { photoData: _, ...safePhoto } = photo;
     res.status(201).json(safePhoto);
   });
@@ -3739,6 +3748,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       baseReturnKm: String(baseReturnKm),
       baseChecklistConfirmed: true,
     });
+
+    if (so.vehicleId && Number(baseReturnKm) > 0) {
+      try {
+        const veh = await storage.getVehicle(so.vehicleId);
+        if (veh && Number(baseReturnKm) >= (veh.km || 0)) {
+          await storage.updateVehicle(so.vehicleId, { km: Number(baseReturnKm), lastKmUpdate: new Date() });
+        }
+      } catch {}
+    }
+
     res.json(updated);
   });
 
