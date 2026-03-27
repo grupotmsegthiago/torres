@@ -208,9 +208,27 @@ export default function MobilePontoPage() {
           <p className="text-3xl font-black text-white font-mono" data-testid="text-current-time">
             {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </p>
-          <p className={`text-xs mt-1 flex items-center justify-center gap-1 ${geo.denied ? "text-red-400" : geo.position ? "text-emerald-400" : "text-neutral-400"}`}>
-            <MapPin size={10} /> {geo.denied ? "Localização negada — ative nas configurações" : geo.position ? "Localização ativa" : "Obtendo localização..."}
-          </p>
+          {geo.denied ? (
+            <p className="text-xs mt-1 flex items-center justify-center gap-1 text-red-400">
+              <MapPin size={10} /> Localização negada — ative nas configurações
+            </p>
+          ) : geo.position ? (
+            <p className="text-xs mt-1 flex items-center justify-center gap-1 text-emerald-400">
+              <MapPin size={10} /> Localização ativa
+            </p>
+          ) : !geo.loading && !geo.position ? (
+            <button
+              onClick={geo.requestPermission}
+              className="mt-2 px-4 py-2 bg-emerald-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-2 mx-auto"
+              data-testid="button-allow-location"
+            >
+              <MapPin size={14} /> Permitir Localização
+            </button>
+          ) : (
+            <p className="text-xs mt-1 flex items-center justify-center gap-1 text-neutral-400">
+              <Loader2 size={10} className="animate-spin" /> Obtendo localização...
+            </p>
+          )}
         </div>
 
         {geo.position && (
@@ -253,10 +271,28 @@ export default function MobilePontoPage() {
               <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3" data-testid="alert-geo-denied">
                 <MapPin className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold text-red-700 uppercase">Localização Obrigatória</p>
-                  <p className="text-[11px] text-red-600 mt-0.5">Ative a localização (GPS) nas configurações do celular para registrar o ponto.</p>
-                  <button onClick={geo.requestPermission} className="mt-2 px-3 py-1.5 bg-red-600 text-white text-[11px] font-bold rounded-lg" data-testid="button-retry-geo">
-                    Tentar Novamente
+                  <p className="text-xs font-bold text-red-700 uppercase">Localização Bloqueada</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">A permissão de localização foi negada. Para registrar o ponto, você precisa:</p>
+                  <ol className="text-[11px] text-red-600 mt-1 ml-3 list-decimal space-y-0.5">
+                    <li>Abrir <strong>Ajustes</strong> do celular</li>
+                    <li>Ir em <strong>Privacidade → Serviços de Localização</strong></li>
+                    <li>Encontrar o <strong>navegador</strong> (Safari/Chrome)</li>
+                    <li>Selecionar <strong>"Ao Usar o App"</strong></li>
+                  </ol>
+                  <button onClick={geo.requestPermission} className="mt-3 w-full px-3 py-2.5 bg-red-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2" data-testid="button-retry-geo">
+                    <MapPin size={14} /> Tentar Novamente
+                  </button>
+                </div>
+              </div>
+            )}
+            {!geo.denied && !geo.position && !geo.loading && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3" data-testid="alert-geo-needed">
+                <MapPin className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-amber-700 uppercase">Localização Necessária</p>
+                  <p className="text-[11px] text-amber-600 mt-0.5">Para registrar o ponto, precisamos acessar sua localização. Toque no botão abaixo para permitir.</p>
+                  <button onClick={geo.requestPermission} className="mt-3 w-full px-3 py-2.5 bg-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2" data-testid="button-request-geo">
+                    <MapPin size={14} /> Permitir Localização
                   </button>
                 </div>
               </div>
