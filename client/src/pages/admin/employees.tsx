@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1265,6 +1265,18 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/timesheets/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); toast({ title: "Ponto removido" }); },
   });
+  const [pontoDetalhe, setPontoDetalhe] = useState<any>(null);
+  const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+  const openPontoDetalhe = async (tsId: number) => {
+    setLoadingDetalhe(true);
+    try {
+      const r = await authFetch(`/api/employees/${employee.id}/ponto-detalhado/${tsId}`);
+      if (!r.ok) throw new Error("Erro ao carregar detalhes");
+      const data = await r.json();
+      setPontoDetalhe(data);
+    } catch { toast({ title: "Erro ao carregar detalhes do ponto", variant: "destructive" }); }
+    setLoadingDetalhe(false);
+  };
 
   const [showPsForm, setShowPsForm] = useState(false);
   const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
@@ -1513,10 +1525,11 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                   <tr>
                     <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th>
                     <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th>
-                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída Almoço</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saida Almoco</th>
                     <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th>
-                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saida</th>
                     <th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th>
+                    <th className="text-center px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Local</th>
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
@@ -1529,12 +1542,89 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                       <td className="px-3 py-2">{t.lunchIn || "-"}</td>
                       <td className="px-3 py-2">{t.clockOut || "-"}</td>
                       <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
-                      <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
+                      <td className="px-3 py-2 text-center">{t.clockInLat ? <MapPin className="w-3.5 h-3.5 text-green-500 inline" /> : <span className="text-neutral-300">-</span>}</td>
+                      <td className="px-3 py-2 flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openPontoDetalhe(t.id)} disabled={loadingDetalhe} title="Ver Relatorio Completo"><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+
+        {pontoDetalhe && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setPontoDetalhe(null)}>
+            <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-testid="modal-ponto-detalhe-old">
+              <div className="sticky top-0 bg-white border-b border-neutral-100 px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h3 className="font-black text-neutral-800 uppercase text-sm tracking-widest">Relatorio de Ponto</h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">{pontoDetalhe.employeeName} - {fmtDate(pontoDetalhe.date)}</p>
+                </div>
+                <button onClick={() => setPontoDetalhe(null)} className="p-1 rounded-lg hover:bg-neutral-100"><X className="w-5 h-5 text-neutral-400" /></button>
+              </div>
+              <div className="p-6 space-y-5">
+                {[
+                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo },
+                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo },
+                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo },
+                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo },
+                ].filter(s => s.time).map((step, idx) => (
+                  <div key={idx} className="border border-neutral-200 rounded-xl overflow-hidden">
+                    <div className="bg-neutral-50 px-4 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-neutral-500" />
+                        <span className="text-xs font-black text-neutral-700 uppercase tracking-wider">{step.label}</span>
+                        <span className="text-sm font-mono font-bold text-neutral-900">{step.time}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {step.geo?.atHQ && <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle2 className="w-3 h-3" /> Na Sede</span>}
+                        {step.geo?.lat && !step.geo?.atHQ && <span className="flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full"><AlertTriangle className="w-3 h-3" /> Fora da Sede ({step.geo.distance}m)</span>}
+                        {step.geo?.atHome && <span className="flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full"><Home className="w-3 h-3" /> Na Residencia ({step.geo.distHome}m)</span>}
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 gap-4">
+                      <div>
+                        {step.photo ? (
+                          <img src={step.photo} alt={step.label} className="w-full rounded-lg border border-neutral-200 object-cover max-h-48" />
+                        ) : (
+                          <div className="flex items-center justify-center h-32 bg-neutral-50 rounded-lg border border-neutral-200"><Camera className="w-8 h-8 text-neutral-300" /><span className="text-xs text-neutral-400 ml-2">Sem foto</span></div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {step.geo?.lat ? (
+                          <>
+                            <div className="bg-neutral-50 p-3 rounded-lg">
+                              <p className="text-[9px] font-black text-neutral-400 uppercase">Coordenadas</p>
+                              <p className="text-xs font-mono text-neutral-700">{step.geo.lat?.toFixed(6)}, {step.geo.lng?.toFixed(6)}</p>
+                            </div>
+                            <div className="bg-neutral-50 p-3 rounded-lg">
+                              <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Sede</p>
+                              <p className={`text-sm font-black ${step.geo.atHQ ? "text-green-700" : "text-red-700"}`}>{step.geo.distance}m</p>
+                              <p className="text-[9px] text-neutral-400">{pontoDetalhe.hqAddress}</p>
+                            </div>
+                            {step.geo.distHome !== null && (
+                              <div className={`p-3 rounded-lg ${step.geo.atHome ? "bg-orange-50 border border-orange-200" : "bg-neutral-50"}`}>
+                                <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Residencia</p>
+                                <p className={`text-sm font-black ${step.geo.atHome ? "text-orange-700" : "text-neutral-700"}`}>{step.geo.distHome}m</p>
+                                {step.geo.atHome && <p className="text-[9px] text-orange-600 font-bold mt-0.5">ALERTA: Ponto batido proximo a residencia!</p>}
+                              </div>
+                            )}
+                            <a href={`https://www.google.com/maps?q=${step.geo.lat},${step.geo.lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-blue-600 font-bold hover:underline">
+                              <MapPin className="w-3 h-3" /> Ver no Google Maps
+                            </a>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-center h-full bg-neutral-50 rounded-lg"><MapPin className="w-6 h-6 text-neutral-300" /><span className="text-xs text-neutral-400 ml-2">Sem localizacao</span></div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1720,6 +1810,18 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/timesheets/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "timesheets"] }); toast({ title: "Removido" }); },
   });
+  const [pontoDetalhe, setPontoDetalhe] = useState<any>(null);
+  const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+  const openPontoDetalhe = async (tsId: number) => {
+    setLoadingDetalhe(true);
+    try {
+      const r = await authFetch(`/api/employees/${employee.id}/ponto-detalhado/${tsId}`);
+      if (!r.ok) throw new Error("Erro ao carregar detalhes");
+      const data = await r.json();
+      setPontoDetalhe(data);
+    } catch { toast({ title: "Erro ao carregar detalhes do ponto", variant: "destructive" }); }
+    setLoadingDetalhe(false);
+  };
 
   const [showPsForm, setShowPsForm] = useState(false);
   const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
@@ -2198,9 +2300,12 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <p className="text-sm text-neutral-400 text-center py-4">Nenhum ponto registrado</p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">S. Almoço</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saída</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th>{canEdit && <th className="px-3 py-2"></th>}</tr></thead>
+                <thead className="bg-neutral-50 border-b border-neutral-200"><tr><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Data</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Entrada</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">S. Almoco</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Retorno</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Saida</th><th className="text-left px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">HE</th><th className="text-center px-3 py-2 text-xs font-semibold text-neutral-500 uppercase">Local</th><th className="px-3 py-2"></th></tr></thead>
                 <tbody>
-                  {timesheets.map((t: any) => (
+                  {timesheets.map((t: any) => {
+                    const hasPhoto = !!t.clockInPhoto || !!t.clockOutPhoto;
+                    const hasGeo = !!t.clockInLat;
+                    return (
                     <tr key={t.id} className="border-b border-neutral-100">
                       <td className="px-3 py-2">{fmtDate(t.date)}</td>
                       <td className="px-3 py-2">{t.clockIn || "-"}</td>
@@ -2208,12 +2313,103 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                       <td className="px-3 py-2">{t.lunchIn || "-"}</td>
                       <td className="px-3 py-2">{t.clockOut || "-"}</td>
                       <td className="px-3 py-2">{t.overtime ? `${t.overtime}h` : "-"}</td>
-                      {canEdit && <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>}
+                      <td className="px-3 py-2 text-center">{hasGeo ? <MapPin className="w-3.5 h-3.5 text-green-500 inline" /> : hasPhoto ? <Camera className="w-3.5 h-3.5 text-blue-400 inline" /> : <span className="text-neutral-300">-</span>}</td>
+                      <td className="px-3 py-2 flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openPontoDetalhe(t.id)} disabled={loadingDetalhe} title="Ver Relatorio Completo" data-testid={`button-ponto-detail-${t.id}`}><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
+                        {canEdit && <Button variant="ghost" size="icon" onClick={() => deleteTimesheet.mutate(t.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+
+        {pontoDetalhe && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setPontoDetalhe(null)}>
+            <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-testid="modal-ponto-detalhe">
+              <div className="sticky top-0 bg-white border-b border-neutral-100 px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h3 className="font-black text-neutral-800 uppercase text-sm tracking-widest">Relatorio de Ponto</h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">{pontoDetalhe.employeeName} - {fmtDate(pontoDetalhe.date)}</p>
+                </div>
+                <button onClick={() => setPontoDetalhe(null)} className="p-1 rounded-lg hover:bg-neutral-100"><X className="w-5 h-5 text-neutral-400" /></button>
+              </div>
+              <div className="p-6 space-y-5">
+                {[
+                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo },
+                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo },
+                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo },
+                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo },
+                ].filter(s => s.time).map((step, idx) => (
+                  <div key={idx} className="border border-neutral-200 rounded-xl overflow-hidden">
+                    <div className="bg-neutral-50 px-4 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-neutral-500" />
+                        <span className="text-xs font-black text-neutral-700 uppercase tracking-wider">{step.label}</span>
+                        <span className="text-sm font-mono font-bold text-neutral-900">{step.time}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {step.geo?.atHQ && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full"><CheckCircle2 className="w-3 h-3" /> Na Sede</span>
+                        )}
+                        {step.geo?.lat && !step.geo?.atHQ && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full"><AlertTriangle className="w-3 h-3" /> Fora da Sede ({step.geo.distance}m)</span>
+                        )}
+                        {step.geo?.atHome && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full"><Home className="w-3 h-3" /> Na Residencia ({step.geo.distHome}m)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 gap-4">
+                      <div>
+                        {step.photo ? (
+                          <img src={step.photo} alt={step.label} className="w-full rounded-lg border border-neutral-200 object-cover max-h-48" />
+                        ) : (
+                          <div className="flex items-center justify-center h-32 bg-neutral-50 rounded-lg border border-neutral-200"><Camera className="w-8 h-8 text-neutral-300" /><span className="text-xs text-neutral-400 ml-2">Sem foto</span></div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {step.geo?.lat ? (
+                          <>
+                            <div className="bg-neutral-50 p-3 rounded-lg">
+                              <p className="text-[9px] font-black text-neutral-400 uppercase">Coordenadas</p>
+                              <p className="text-xs font-mono text-neutral-700">{step.geo.lat?.toFixed(6)}, {step.geo.lng?.toFixed(6)}</p>
+                            </div>
+                            <div className="bg-neutral-50 p-3 rounded-lg">
+                              <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Sede</p>
+                              <p className={`text-sm font-black ${step.geo.atHQ ? "text-green-700" : "text-red-700"}`}>{step.geo.distance}m</p>
+                              <p className="text-[9px] text-neutral-400">{pontoDetalhe.hqAddress}</p>
+                            </div>
+                            {step.geo.distHome !== null && (
+                              <div className={`p-3 rounded-lg ${step.geo.atHome ? "bg-orange-50 border border-orange-200" : "bg-neutral-50"}`}>
+                                <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Residencia</p>
+                                <p className={`text-sm font-black ${step.geo.atHome ? "text-orange-700" : "text-neutral-700"}`}>{step.geo.distHome}m</p>
+                                {step.geo.atHome && <p className="text-[9px] text-orange-600 font-bold mt-0.5">ALERTA: Ponto batido proximo a residencia!</p>}
+                              </div>
+                            )}
+                            <a href={`https://www.google.com/maps?q=${step.geo.lat},${step.geo.lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-blue-600 font-bold hover:underline">
+                              <MapPin className="w-3 h-3" /> Ver no Google Maps
+                            </a>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-center h-full bg-neutral-50 rounded-lg"><MapPin className="w-6 h-6 text-neutral-300" /><span className="text-xs text-neutral-400 ml-2">Sem localizacao</span></div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {pontoDetalhe.notes && (
+                  <div className="bg-neutral-50 p-3 rounded-xl">
+                    <p className="text-[9px] font-black text-neutral-400 uppercase">Observacoes</p>
+                    <p className="text-xs text-neutral-700">{pontoDetalhe.notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

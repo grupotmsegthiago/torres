@@ -6573,6 +6573,18 @@ Regras:
   });
 
   // ─── MOBILE: Folha de Ponto (Clock In/Out with photo + GPS) ──────────
+  const HQ_LAT = -23.4827;
+  const HQ_LNG = -46.7346;
+  const HQ_RADIUS_METERS = 300;
+
+  function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   app.get("/api/mobile/ponto/today", requireAuth, async (req: any, res) => {
     try {
       const employeeId = req.user?.employeeId;
@@ -6619,6 +6631,20 @@ Regras:
       const record = existing[0];
       if (action === "clock_in") {
         if (record?.clockIn) return res.status(400).json({ message: "Entrada já registrada hoje" });
+        if (!latitude || !longitude) return res.status(400).json({ message: "Localizacao obrigatoria para bater o ponto de entrada" });
+        const parsedLat = parseFloat(latitude);
+        const parsedLng = parseFloat(longitude);
+        if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
+          return res.status(400).json({ message: "Coordenadas de localizacao invalidas" });
+        }
+        const distToHQ = haversineMeters(parsedLat, parsedLng, HQ_LAT, HQ_LNG);
+        if (distToHQ > HQ_RADIUS_METERS) {
+          return res.status(403).json({
+            message: `Voce nao esta na sede da empresa. Distancia: ${Math.round(distToHQ)}m (maximo ${HQ_RADIUS_METERS}m). Dirija-se a Av. Raimundo Pereira de Magalhaes, 5720 - Pirituba, SP.`,
+            code: "GEOFENCE_BLOCKED",
+            distance: Math.round(distToHQ),
+          });
+        }
         if (record) {
           const [updated] = await db.update(employeeTimesheets)
             .set({ clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude })
@@ -6653,6 +6679,42 @@ Regras:
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
+  });
+
+  app.get("/api/employees/:id/ponto-detalhado/:timesheetId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const ts = await db.select().from(employeeTimesheets).where(and(eq(employeeTimesheets.id, Number(req.params.timesheetId)), eq(employeeTimesheets.employeeId, empId))).limit(1);
+      if (!ts[0]) return res.status(404).json({ message: "Registro nao encontrado" });
+      const record = ts[0];
+
+      const employee = await storage.getEmployee(empId);
+
+      const checkLocation = (lat: string | null, lng: string | null) => {
+        if (!lat || !lng) return { lat: null, lng: null, distance: null, atHQ: false, atHome: false };
+        const la = parseFloat(lat), lo = parseFloat(lng);
+        const distHQ = haversineMeters(la, lo, HQ_LAT, HQ_LNG);
+        let distHome: number | null = null;
+        let atHome = false;
+        if (employee && (employee as any).addressLat && (employee as any).addressLng) {
+          distHome = haversineMeters(la, lo, parseFloat((employee as any).addressLat), parseFloat((employee as any).addressLng));
+          atHome = distHome <= 500;
+        }
+        return { lat: la, lng: lo, distance: Math.round(distHQ), atHQ: distHQ <= HQ_RADIUS_METERS, atHome, distHome: distHome !== null ? Math.round(distHome) : null };
+      };
+
+      res.json({
+        ...record,
+        employeeName: employee?.name || "--",
+        employeeAddress: employee?.address || null,
+        clockInGeo: checkLocation(record.clockInLat, record.clockInLng),
+        clockOutGeo: checkLocation(record.clockOutLat, record.clockOutLng),
+        lunchOutGeo: checkLocation(record.lunchOutLat, record.lunchOutLng),
+        lunchInGeo: checkLocation(record.lunchInLat, record.lunchInLng),
+        hqAddress: "Av. Raimundo Pereira de Magalhaes, 5720 - Pirituba, SP",
+        hqRadius: HQ_RADIUS_METERS,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // ─── MOBILE: Abastecimento ──────────────────────────────────────────
