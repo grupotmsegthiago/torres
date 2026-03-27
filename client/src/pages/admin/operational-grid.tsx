@@ -1960,6 +1960,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [, navigate] = useLocation();
   const [preAlertLoading, setPreAlertLoading] = useState(false);
   const [copiedUpdateId, setCopiedUpdateId] = useState<number | null>(null);
+  const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
 
   const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
   const hasNewUpdate = !!(lastUpdateId && lastUpdateId !== copiedUpdateId);
@@ -2114,23 +2115,12 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               const reportText = generateReport(v, gridItem || null);
               const photoUrl = v.activeOs?.lastAgentUpdate?.photoUrl;
               try {
-                if (photoUrl && navigator.clipboard?.write) {
-                  const resp = await fetch(photoUrl);
-                  const blob = await resp.blob();
-                  await navigator.clipboard.write([
-                    new ClipboardItem({
-                      "text/plain": new Blob([reportText], { type: "text/plain" }),
-                      [blob.type]: blob,
-                    }),
-                  ]);
-                } else {
-                  await navigator.clipboard.writeText(reportText);
-                }
-                toast({ title: "Relatório copiado!", description: photoUrl ? "Texto e foto copiados." : "Texto copiado para a área de transferência." });
-              } catch {
                 await navigator.clipboard.writeText(reportText);
-                toast({ title: "Relatório copiado!", description: "Texto copiado." });
+                toast({ title: "Relatório copiado!", description: "Texto copiado para a área de transferência." });
+              } catch {
+                toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
               }
+              if (photoUrl) setPhotoModalUrl(photoUrl);
               if (lastUpdateId) setCopiedUpdateId(lastUpdateId);
             }}
             data-testid={`btn-copy-report-${v.id}`}
@@ -2140,6 +2130,27 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         </TooltipTrigger>
         <TooltipContent>{hasNewUpdate ? "Atualização Recente — Copiar Relatório" : v.activeOs?.lastAgentUpdate ? "Copiar Relatório" : "Sem atualização recente"}</TooltipContent>
       </Tooltip>
+
+      <Dialog open={!!photoModalUrl} onOpenChange={(open) => { if (!open) setPhotoModalUrl(null); }}>
+        <DialogContent className="max-w-2xl p-0 overflow-hidden bg-black/95 border-0">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="text-white text-sm font-bold flex items-center gap-2">
+              📷 Foto do Agente — {v.activeOs?.osNumber || ""}
+              <span className="text-[10px] text-neutral-400 font-normal">Tire um print para colar no WhatsApp</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-4 pt-0">
+            {photoModalUrl && (
+              <img
+                src={photoModalUrl}
+                alt="Foto da atualização do agente"
+                className="max-w-full max-h-[70vh] rounded-lg object-contain"
+                data-testid={`photo-modal-img-${v.id}`}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Tooltip>
         <TooltipTrigger asChild>
