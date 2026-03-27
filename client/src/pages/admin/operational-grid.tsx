@@ -2444,6 +2444,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <TooltipContent>Ver veículos próximos</TooltipContent>
                               </Tooltip>
                             )}
+                            {v.activeOs.priority === "imediata" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-black border bg-red-600 text-white border-red-700 animate-pulse">
+                                IMEDIATA
+                              </span>
+                            )}
                             <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
                               getStatusDisplay(v.activeOs.status === "agendada" ? "missao_paga" : v.activeOs.missionStatus, v.activeOs.status).className
                             }`}>
