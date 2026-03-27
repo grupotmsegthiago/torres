@@ -2109,18 +2109,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"
             }`}
             disabled={!v.activeOs?.lastAgentUpdate}
-            onClick={async (e) => {
+            onClick={(e) => {
               e.stopPropagation();
-              const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-              const reportText = generateReport(v, gridItem || null);
-              const photoUrl = v.activeOs?.lastAgentUpdate?.photoUrl;
-              try {
-                await navigator.clipboard.writeText(reportText);
-                toast({ title: "Relatório copiado!", description: "Texto copiado para a área de transferência." });
-              } catch {
-                toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
-              }
-              if (photoUrl) setPhotoModalUrl(photoUrl);
+              setPhotoModalUrl(v.activeOs?.lastAgentUpdate?.photoUrl || "__no_photo__");
               if (lastUpdateId) setCopiedUpdateId(lastUpdateId);
             }}
             data-testid={`btn-copy-report-${v.id}`}
@@ -2131,23 +2122,66 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         <TooltipContent>{hasNewUpdate ? "Atualização Recente — Copiar Relatório" : v.activeOs?.lastAgentUpdate ? "Copiar Relatório" : "Sem atualização recente"}</TooltipContent>
       </Tooltip>
 
-      <Dialog open={!!photoModalUrl} onOpenChange={(open) => { if (!open) setPhotoModalUrl(null); }}>
-        <DialogContent className="max-w-2xl p-0 overflow-hidden bg-black/95 border-0">
+      <Dialog open={!!photoModalUrl} onOpenChange={(open) => {
+        if (!open) {
+          setPhotoModalUrl(null);
+          if (lastUpdateId) {
+            authFetch("/api/mission/updates/mark-read", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids: [lastUpdateId] }),
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] });
+            }).catch(() => {});
+          }
+        }
+      }}>
+        <DialogContent className={`p-0 overflow-hidden border-0 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "max-w-2xl bg-black/95" : "max-w-md bg-white"}`}>
           <DialogHeader className="px-4 pt-4 pb-2">
-            <DialogTitle className="text-white text-sm font-bold flex items-center gap-2">
-              📷 Foto do Agente — {v.activeOs?.osNumber || ""}
-              <span className="text-[10px] text-neutral-400 font-normal">Tire um print para colar no WhatsApp</span>
+            <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-white" : "text-neutral-900"}`}>
+              {photoModalUrl && photoModalUrl !== "__no_photo__" ? "📷" : "📋"} Atualização — {v.activeOs?.osNumber || ""}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-center p-4 pt-0">
-            {photoModalUrl && (
+          {photoModalUrl && photoModalUrl !== "__no_photo__" && (
+            <div className="flex items-center justify-center px-4">
               <img
                 src={photoModalUrl}
                 alt="Foto da atualização do agente"
-                className="max-w-full max-h-[70vh] rounded-lg object-contain"
+                className="max-w-full max-h-[60vh] rounded-lg object-contain"
                 data-testid={`photo-modal-img-${v.id}`}
               />
-            )}
+            </div>
+          )}
+          {v.activeOs?.lastAgentUpdate && (
+            <div className={`px-4 py-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
+              <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
+              <p className="text-[10px] mt-1 opacity-60">
+                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+              </p>
+            </div>
+          )}
+          <div className="px-4 pb-4 flex justify-center">
+            <button
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
+                photoModalUrl && photoModalUrl !== "__no_photo__"
+                  ? "bg-white text-neutral-900 hover:bg-neutral-100"
+                  : "bg-neutral-900 text-white hover:bg-neutral-800"
+              }`}
+              onClick={async () => {
+                const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                const reportText = generateReport(v, gridItem || null);
+                try {
+                  await navigator.clipboard.writeText(reportText);
+                  toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
+                } catch {
+                  toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
+                }
+              }}
+              data-testid={`btn-copy-form-modal-${v.id}`}
+            >
+              <Copy className="w-4 h-4" />
+              Copiar Formulário
+            </button>
           </div>
         </DialogContent>
       </Dialog>
