@@ -2923,7 +2923,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             <Zap className="w-3.5 h-3.5 text-violet-500" /> Enviar Comando
           </button>
 
-          {v.activeOs && v.activeOs.missionStatus === "finalizada" && (
+          {v.activeOs && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
               onClick={async () => {
                 if (!confirm("Liberar retorno à base para esta viatura?")) return;
