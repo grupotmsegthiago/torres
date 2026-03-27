@@ -1158,7 +1158,7 @@ export default function MobileMissaoPage() {
                       </div>
                       <div>
                         <p className="text-xs font-black text-neutral-900 uppercase tracking-wider">{s.osNumber}</p>
-                        <p className="text-[10px] text-neutral-400">{s.clientName}</p>
+                        <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(s.scheduledDate).toLocaleString("pt-BR") : "Agendada"}</p>
                       </div>
                     </div>
                     {s.priority === "imediata" && (
