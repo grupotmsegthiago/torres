@@ -16,7 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera,
+  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -2130,6 +2130,34 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         <TooltipContent>Espelhar</TooltipContent>
       </Tooltip>
       <MirrorVehicleDialog vehicle={v as any} open={mirrorOpen} onOpenChange={setMirrorOpen} gerenciadoras={gerenciadoras} />
+
+      {v.activeOs && ["finalizada", "em_prontidao", "retorno_base"].includes(v.activeOs.missionStatus) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-green-400 bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-800 transition-colors animate-pulse"
+              onClick={async () => {
+                try {
+                  await authFetch(`/api/service-orders/${v.activeOs!.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ missionStatus: "chegada_base" }),
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                  toast({ title: "Retorno liberado!", description: "O agente foi direcionado para checklist da base." });
+                } catch {
+                  toast({ title: "Erro", description: "Não foi possível liberar retorno.", variant: "destructive" });
+                }
+              }}
+              data-testid={`btn-liberar-retorno-${v.id}`}
+            >
+              <Home className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Liberar Retorno à Base</TooltipContent>
+        </Tooltip>
+      )}
 
       <Tooltip>
         <TooltipTrigger asChild>
