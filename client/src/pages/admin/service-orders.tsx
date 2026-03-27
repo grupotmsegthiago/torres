@@ -118,9 +118,6 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 }) {
   const { toast } = useToast();
   const [step, setStep] = useState(order ? 3 : 1);
-  const [showRouteForm, setShowRouteForm] = useState(false);
-  const [routeOrigin, setRouteOrigin] = useState("");
-  const [routeDestination, setRouteDestination] = useState("");
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -161,31 +158,48 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     setForm({ ...form, ...updates });
   };
 
-  const addRoute = async () => {
-    if (!routeOrigin.trim() || !routeDestination.trim()) return;
-    const routeStr = `${routeOrigin.trim()} → ${routeDestination.trim()}`;
-    setForm({
-      ...form,
+  const calcRoute = async (orig: string, dest: string) => {
+    if (!orig.trim() || !dest.trim()) { setRouteInfo(null); return; }
+    const routeStr = `${orig.trim()} → ${dest.trim()}`;
+    setForm(prev => ({
+      ...prev,
       route: routeStr,
-      origin: routeOrigin.trim(),
+      origin: orig.trim(),
       originLat: originCoords?.lat || null,
       originLng: originCoords?.lng || null,
-      destination: routeDestination.trim(),
+      destination: dest.trim(),
       destinationLat: destCoords?.lat || null,
       destinationLng: destCoords?.lng || null,
-    });
-    setShowRouteForm(false);
+    }));
     setCalculatingRoute(true);
     try {
-      const info = await calculateRouteInfo(routeOrigin.trim(), routeDestination.trim());
+      const info = await calculateRouteInfo(orig.trim(), dest.trim());
       setRouteInfo(info);
     } catch {
       setRouteInfo(null);
     }
     setCalculatingRoute(false);
-    setRouteOrigin("");
-    setRouteDestination("");
   };
+
+  const handleOriginSelect = (p: { lat: number; lng: number }, address: string) => {
+    setOriginCoords({ lat: p.lat, lng: p.lng });
+    const newForm = { ...form, origin: address, originLat: p.lat, originLng: p.lng };
+    setForm(newForm);
+    if (form.destination) calcRoute(address, form.destination);
+  };
+
+  const handleDestSelect = (p: { lat: number; lng: number }, address: string) => {
+    setDestCoords({ lat: p.lat, lng: p.lng });
+    const newForm = { ...form, destination: address, destinationLat: p.lat, destinationLng: p.lng };
+    setForm(newForm);
+    if (form.origin) calcRoute(form.origin, address);
+  };
+
+  useEffect(() => {
+    if (order && (order as any).origin && (order as any).destination && !routeInfo) {
+      calcRoute((order as any).origin, (order as any).destination);
+    }
+  }, []);
 
   const googleMapsUrl = form.route ? `https://www.google.com/maps/dir/${encodeURIComponent(form.route.replace(" → ", "/"))}` : null;
 
@@ -399,9 +413,33 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} className="text-sm" data-testid="input-os-completed" />
                 </div>
               )}
-              <div className="md:col-span-2">
-                <FieldLabel>Rota (Origem → Destino)</FieldLabel>
-                {form.route ? (
+              <div>
+                <FieldLabel>Origem</FieldLabel>
+                <PlacesAutocomplete
+                  value={form.origin}
+                  onChange={(v) => setForm({ ...form, origin: v })}
+                  onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
+                  placeholder="Ex: Sao Paulo, SP"
+                  className="text-sm"
+                  theme="light"
+                  data-testid="input-route-origin"
+                />
+              </div>
+              <div>
+                <FieldLabel>Destino</FieldLabel>
+                <PlacesAutocomplete
+                  value={form.destination}
+                  onChange={(v) => setForm({ ...form, destination: v })}
+                  onPlaceSelect={(p) => handleDestSelect(p, p.address)}
+                  placeholder="Ex: Campinas, SP"
+                  className="text-sm"
+                  theme="light"
+                  data-testid="input-route-destination"
+                />
+              </div>
+              {form.route && (
+                <div className="md:col-span-2">
+                  <FieldLabel>Rota Vinculada</FieldLabel>
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 border border-neutral-200 rounded px-3 py-2 text-sm bg-neutral-50 flex items-center gap-2">
@@ -413,14 +451,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }); setRouteInfo(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }); setRouteInfo(null); setOriginCoords(null); setDestCoords(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>
                     {calculatingRoute && (
                       <div className="text-xs text-neutral-400 flex items-center gap-1.5">
                         <span className="animate-spin w-3 h-3 border border-neutral-300 border-t-neutral-600 rounded-full inline-block" />
-                        Calculando distância...
+                        Calculando distancia...
                       </div>
                     )}
                     {routeInfo && !calculatingRoute && (
@@ -436,29 +474,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       </div>
                     )}
                   </div>
-                ) : showRouteForm ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <PlacesAutocomplete value={routeOrigin} onChange={setRouteOrigin} onPlaceSelect={(p) => setOriginCoords({ lat: p.lat, lng: p.lng })} placeholder="Origem (ex: São Paulo, SP)" className="text-sm" theme="light" data-testid="input-route-origin" />
-                      </div>
-                      <span className="text-neutral-400 text-xs font-bold shrink-0">→</span>
-                      <div className="flex-1">
-                        <PlacesAutocomplete value={routeDestination} onChange={setRouteDestination} onPlaceSelect={(p) => setDestCoords({ lat: p.lat, lng: p.lng })} placeholder="Destino (ex: Rio de Janeiro, RJ)" className="text-sm" theme="light" data-testid="input-route-destination" />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" size="sm" onClick={addRoute} className="bg-neutral-900 hover:bg-neutral-800 text-xs h-7">Confirmar</Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => setShowRouteForm(false)} className="text-xs h-7">Cancelar</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setShowRouteForm(true)} className="w-full border border-dashed border-neutral-300 rounded px-3 py-2 text-sm text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 transition-colors flex items-center gap-2" data-testid="button-add-route">
-                    <Plus className="w-3.5 h-3.5" />
-                    Adicionar rota
-                  </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
