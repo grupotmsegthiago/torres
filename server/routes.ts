@@ -2857,7 +2857,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const so = await storage.getServiceOrder(serviceOrderId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
-    if (so.status !== "em_andamento") {
+    if (so.status !== "em_andamento" && so.status !== "agendada") {
       return res.status(403).json({ message: "OS não está em andamento. Aguarde a liberação pela administração." });
     }
 
@@ -2873,8 +2873,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const currentStep = MISSION_STEPS[currentIdx];
 
-    if (currentStep === "missao_paga") {
-      return res.status(403).json({ message: "Aguardando confirmação de pagamento pela administração" });
+    if (so.status === "agendada" && (currentStep === "missao_paga" || currentStep === "aguardando")) {
+      await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
     }
     const requiredPhotos = STEP_REQUIRED_PHOTOS[currentStep];
     if (requiredPhotos) {
