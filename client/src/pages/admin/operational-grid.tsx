@@ -3437,7 +3437,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </Tooltip>
                             )}
                             {v.trackerType === "truckscontrol" && (
-                              <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded font-bold uppercase">Onixsat</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-neutral-900 text-amber-400 rounded font-bold uppercase">Onixsat</span>
                             )}
                             {isOverSpeed && (
                               <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
