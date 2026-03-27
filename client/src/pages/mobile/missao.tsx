@@ -981,7 +981,7 @@ export default function MobileMissaoPage() {
         photoUrl: photoDataUrl || null,
       });
       logAuditAction("mission_status_update", "/mobile/missao", `Status: ${statusUpdate.trim()} | Etapa: ${currentStep} | OS #${mission.serviceOrderId}`);
-      toast({ title: "Atualização enviada!", description: "O admin foi notificado." });
+      toast({ title: "Atualização enviada!", description: "A central foi notificada, obrigado." });
       setStatusUpdate("");
       return true;
     } catch (err: any) {
