@@ -834,6 +834,25 @@ export default function ServiceOrdersPage() {
                             toast({ title: "Erro ao visualizar PDF", variant: "destructive" });
                           }
                         }} title="Visualizar OS" data-testid={`button-view-order-${o.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
+                        {(o.status === "concluida" || o.status === "em_andamento" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada") && (
+                          <Button variant="ghost" size="icon" onClick={async () => {
+                            try {
+                              const res = await authFetch(`/api/service-orders/${o.id}/relatorio-missao`);
+                              if (!res.ok) throw new Error("Falha ao gerar relatório");
+                              const blob = await res.blob();
+                              const url = URL.createObjectURL(blob);
+                              const isInsideIframe = window.self !== window.top;
+                              if (isInsideIframe) {
+                                window.open(url, "_blank");
+                              } else {
+                                setPdfViewerUrl(url);
+                                setPdfViewerTitle(`Relatório Missão ${o.osNumber}`);
+                              }
+                            } catch {
+                              toast({ title: "Erro ao gerar relatório", variant: "destructive" });
+                            }
+                          }} title="Relatório Completo da Missão" data-testid={`button-report-order-${o.id}`}><FileText className="w-4 h-4 text-emerald-500" /></Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={async () => {
                           try {
                             const res = await authFetch(`/api/service-orders/${o.id}/pdf`);

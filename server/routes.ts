@@ -1387,6 +1387,299 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  app.get("/api/service-orders/:id/relatorio-missao", requireAuth, async (req, res) => {
+    try {
+      const PDFDocument = (await import("pdfkit")).default;
+      const path = await import("path");
+      const fs = await import("fs");
+
+      const os = await storage.getServiceOrder(Number(req.params.id));
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const client = os.clientId ? await storage.getClient(os.clientId) : null;
+      const emp1 = os.assignedEmployeeId ? await storage.getEmployee(os.assignedEmployeeId) : null;
+      const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
+      const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
+      const photos = await storage.getMissionPhotosByOS(os.id);
+      const updates = await db.select().from(missionUpdates).where(eq(missionUpdates.serviceOrderId, os.id)).orderBy(missionUpdates.createdAt);
+      const stepLogs: any[] = Array.isArray(os.stepLogs) ? os.stepLogs : [];
+
+      let kitItems: any[] = [];
+      if (os.kitId) {
+        const rawItems = await storage.getWeaponKitItems(os.kitId);
+        kitItems = await Promise.all(rawItems.map(async (item) => {
+          const weapon = await storage.getWeapon(item.weaponId);
+          return { ...item, weapon };
+        }));
+      }
+
+      const sharpMod = (await import("sharp")).default;
+      let osLogoBuffer: Buffer | null = null;
+      try {
+        const logoSrc = path.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+        if (fs.existsSync(logoSrc)) {
+          osLogoBuffer = await sharpMod(logoSrc).resize(120).png().toBuffer();
+        }
+      } catch {}
+
+      const PAGE_H = 841.89;
+      const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false, bufferPages: true });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename=Relatorio_Missao_${os.osNumber}.pdf`);
+      doc.pipe(res);
+
+      const W = 535;
+      const LM = 30;
+      const PAD = 10;
+      const DARK = "#1a1a1a";
+      const ACCENT = "#2563eb";
+
+      function ensureSpace(needed: number) {
+        if (doc.y + needed > PAGE_H - 50) {
+          doc.addPage({ size: "A4", margin: 30 });
+        }
+      }
+
+      function sectionTitle(title: string) {
+        ensureSpace(35);
+        doc.rect(LM, doc.y, W, 24).fill(DARK);
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#ffffff").text(title.toUpperCase(), LM + PAD, doc.y - 24 + 6, { width: W - 20 });
+        doc.fillColor(DARK);
+        doc.y += 6;
+      }
+
+      function fieldRow(label: string, value: string, indent = 0) {
+        ensureSpace(16);
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#666666").text(label, LM + PAD + indent, doc.y, { continued: true, width: 130 });
+        doc.font("Helvetica").fontSize(9).fillColor(DARK).text(` ${value}`, { width: W - 150 - indent });
+        doc.y += 2;
+      }
+
+      function fmtDate(d: any) {
+        if (!d) return "—";
+        return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      }
+
+      function fmtTime(d: any) {
+        if (!d) return "—";
+        return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+
+      doc.addPage({ size: "A4", margin: 30 });
+
+      if (osLogoBuffer) {
+        doc.image(osLogoBuffer, LM, 30, { width: 60 });
+      }
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(DARK).text("TORRES VIGILÂNCIA PATRIMONIAL", LM + 70, 35, { width: W - 80 });
+      doc.font("Helvetica").fontSize(8).fillColor("#666").text("CNPJ: 36.982.392/0001-89", LM + 70);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(ACCENT).text(`RELATÓRIO COMPLETO DE MISSÃO`, LM + 70);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor(DARK).text(`OS ${os.osNumber}`, LM + 70);
+      doc.y = 95;
+      doc.rect(LM, doc.y, W, 1).fill("#e5e5e5");
+      doc.y += 10;
+
+      sectionTitle("Dados da Ordem de Serviço");
+      fieldRow("Número OS:", os.osNumber);
+      fieldRow("Status:", os.status?.toUpperCase() || "—");
+      fieldRow("Prioridade:", os.priority?.toUpperCase() || "—");
+      fieldRow("Cliente:", client?.name || "—");
+      fieldRow("Solicitante:", os.requesterName || "—");
+      fieldRow("Descrição:", os.description || "—");
+      fieldRow("Data Agendada:", fmtDate(os.scheduledDate));
+      fieldRow("Início Missão:", fmtDate(os.missionStartedAt));
+      fieldRow("Conclusão:", fmtDate(os.completedDate));
+      fieldRow("Origem:", os.origin || "—");
+      fieldRow("Destino:", os.destination || "—");
+      if (os.route) fieldRow("Rota:", os.route);
+      if (os.notes) fieldRow("Observações:", os.notes);
+      doc.y += 8;
+
+      sectionTitle("Equipe e Viatura");
+      if (emp1) {
+        fieldRow("Agente Principal:", emp1.fullName || emp1.name || "—");
+        if (emp1.cpf) fieldRow("CPF:", emp1.cpf, 10);
+        if ((emp1 as any).cnhNumber) fieldRow("CNH:", (emp1 as any).cnhNumber, 10);
+        if ((emp1 as any).cnvNumber) fieldRow("CNV:", (emp1 as any).cnvNumber, 10);
+      }
+      if (emp2) {
+        fieldRow("Agente Auxiliar:", emp2.fullName || emp2.name || "—");
+        if (emp2.cpf) fieldRow("CPF:", emp2.cpf, 10);
+      }
+      if (vehicle) {
+        fieldRow("Viatura:", `${vehicle.plate} — ${vehicle.brand} ${vehicle.model} ${vehicle.color || ""}`);
+        if (vehicle.chassi) fieldRow("Chassi:", vehicle.chassi, 10);
+        if (vehicle.renavam) fieldRow("RENAVAM:", vehicle.renavam, 10);
+      }
+      doc.y += 8;
+
+      if (kitItems.length > 0) {
+        sectionTitle("Armamento Designado");
+        for (const item of kitItems) {
+          const w = item.weapon;
+          if (w) {
+            fieldRow("Arma:", `${w.type} ${w.model} — Cal. ${w.caliber} — Nº ${w.serialNumber}`);
+          }
+        }
+        doc.y += 8;
+      }
+
+      if (os.escortedDriverName || os.escortedVehiclePlate) {
+        sectionTitle("Veículo Escoltado");
+        fieldRow("Motorista:", os.escortedDriverName || "—");
+        fieldRow("Telefone:", os.escortedDriverPhone || "—");
+        fieldRow("Placa:", os.escortedVehiclePlate || "—");
+        doc.y += 8;
+      }
+
+      const kmSaida = photos.find(p => p.step === "km_saida");
+      const kmFinal = photos.find(p => p.step === "km_final");
+      if (kmSaida || kmFinal) {
+        sectionTitle("Quilometragem");
+        if (kmSaida) fieldRow("KM Saída:", String(kmSaida.kmValue || 0));
+        if (kmFinal) fieldRow("KM Final:", String(kmFinal.kmValue || 0));
+        if (kmSaida?.kmValue && kmFinal?.kmValue) {
+          fieldRow("KM Total:", String((kmFinal.kmValue || 0) - (kmSaida.kmValue || 0)));
+        }
+        if (os.baseReturnKm) fieldRow("KM Retorno Base:", os.baseReturnKm);
+        doc.y += 8;
+      }
+
+      if (os.baseCleanStatus) {
+        sectionTitle("Status Viatura (Retorno)");
+        fieldRow("Limpeza:", os.baseCleanStatus.toUpperCase());
+        if (os.baseCleanNotes) fieldRow("Obs. Limpeza:", os.baseCleanNotes);
+        if (os.baseChecklistConfirmed) fieldRow("Checklist:", "CONFIRMADO");
+        doc.y += 8;
+      }
+
+      if (stepLogs.length > 0) {
+        sectionTitle("Cronologia da Missão (Step Logs)");
+        const stepLabels: Record<string, string> = {
+          missao_paga: "Check-in", aguardando: "Ciência", checkout_armamento: "Armamento",
+          checkout_viatura: "Viatura", checkout_km_saida: "KM Saída", em_transito_origem: "Trânsito Origem",
+          checkin_chegada_km: "Chegada KM", checkin_veiculo_escoltado: "Veículo Escoltado",
+          checkin_dados_motorista: "Dados Motorista", iniciar_missao: "Início Missão",
+          em_transito_destino: "Trânsito Destino", chegada_destino: "Chegada Destino",
+          checkout_km_final: "KM Final", checkout_viatura_retorno: "Viatura Retorno",
+          finalizada: "Finalizada", em_prontidao: "Em Prontidão", retorno_base: "Retorno Base",
+          chegada_base: "Chegada Base", encerrada: "Encerrada",
+        };
+        for (const log of stepLogs) {
+          ensureSpace(18);
+          const stepName = stepLabels[log.step] || log.step;
+          const timeStr = fmtTime(log.completedAt);
+          const geoStr = log.geo ? `(${Number(log.geo.lat).toFixed(5)}, ${Number(log.geo.lng).toFixed(5)})` : "";
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(ACCENT).text(`● ${stepName}`, LM + PAD, doc.y, { continued: true, width: 130 });
+          doc.font("Helvetica").fontSize(8).fillColor(DARK).text(` ${timeStr}  ${geoStr}  — ${log.agentName || ""}`, { width: W - 150 });
+          doc.y += 1;
+        }
+        doc.y += 8;
+      }
+
+      if (updates.length > 0) {
+        sectionTitle("Atualizações do Agente em Campo");
+        for (const upd of updates) {
+          ensureSpace(40);
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(ACCENT).text(`${fmtTime(upd.createdAt)} — ${upd.employeeName || "Agente"}`, LM + PAD, doc.y);
+          if (upd.missionStep) {
+            doc.font("Helvetica").fontSize(7).fillColor("#999").text(`Etapa: ${upd.missionStep}`, LM + PAD);
+          }
+          doc.font("Helvetica").fontSize(8).fillColor(DARK).text(upd.message, LM + PAD, doc.y, { width: W - 20 });
+          if (upd.latitude && upd.longitude) {
+            doc.font("Helvetica").fontSize(7).fillColor("#999").text(`GPS: ${upd.latitude}, ${upd.longitude}`, LM + PAD);
+          }
+          if (upd.photoUrl) {
+            try {
+              const isBase64 = upd.photoUrl.startsWith("data:");
+              if (isBase64) {
+                const base64Data = upd.photoUrl.split(",")[1];
+                const imgBuf = Buffer.from(base64Data, "base64");
+                ensureSpace(120);
+                doc.image(imgBuf, LM + PAD + 10, doc.y, { width: 150 });
+                doc.y += 110;
+              }
+            } catch {}
+          }
+          doc.rect(LM + PAD, doc.y + 2, W - 20, 0.5).fill("#e5e5e5");
+          doc.y += 8;
+        }
+        doc.y += 5;
+      }
+
+      if (photos.length > 0) {
+        sectionTitle("Registro Fotográfico da Missão");
+        const photoLabels: Record<string, string> = {
+          arma_pistola_1: "Pistola 1", arma_pistola_2: "Pistola 2", arma_espingarda: "Espingarda",
+          viatura_frente: "Viatura Frente", viatura_lateral_esq: "Viatura Lat. Esq.",
+          viatura_lateral_dir: "Viatura Lat. Dir.", viatura_traseira: "Viatura Traseira",
+          km_saida: "Hodômetro Saída", km_chegada: "Hodômetro Chegada", agente_equipado: "Agente Equipado",
+          escoltado_frente: "Escoltado Frente", escoltado_traseira: "Escoltado Traseira",
+          foto_local_destino: "Local de Destino", km_final: "Hodômetro Final",
+          viatura_retorno_frente: "Retorno Frente", viatura_retorno_lateral_esq: "Retorno Lat. Esq.",
+          viatura_retorno_lateral_dir: "Retorno Lat. Dir.", viatura_retorno_traseira: "Retorno Traseira",
+          base_viatura_frente: "Base Frente", base_viatura_lateral_esq: "Base Lat. Esq.",
+          base_viatura_lateral_dir: "Base Lat. Dir.", base_viatura_traseira: "Base Traseira",
+          base_hodometro: "Base Hodômetro",
+        };
+
+        const imgW = 240;
+        const imgH = 180;
+        let col = 0;
+
+        for (const photo of photos) {
+          try {
+            if (!photo.photoData) continue;
+            const isBase64 = photo.photoData.startsWith("data:");
+            const base64Data = isBase64 ? photo.photoData.split(",")[1] : photo.photoData;
+            const imgBuf = Buffer.from(base64Data, "base64");
+
+            ensureSpace(imgH + 30);
+
+            const x = col === 0 ? LM + 5 : LM + imgW + 20;
+
+            doc.font("Helvetica-Bold").fontSize(7).fillColor(ACCENT)
+              .text(photoLabels[photo.step] || photo.step, x, doc.y, { width: imgW });
+            const labelBottom = doc.y;
+            const gps = photo.latitude && photo.longitude
+              ? `GPS: ${photo.latitude}, ${photo.longitude}`
+              : "";
+            const km = photo.kmValue ? `KM: ${photo.kmValue}` : "";
+            const meta = [fmtTime(photo.createdAt), km, gps].filter(Boolean).join(" | ");
+            doc.font("Helvetica").fontSize(6).fillColor("#999").text(meta, x, doc.y, { width: imgW });
+
+            try {
+              doc.image(imgBuf, x, doc.y, { width: imgW, height: imgH, fit: [imgW, imgH] });
+            } catch {}
+
+            if (col === 1) {
+              doc.y += imgH + 10;
+              col = 0;
+            } else {
+              doc.y = labelBottom;
+              col = 1;
+            }
+          } catch {}
+        }
+        if (col === 1) {
+          doc.y += imgH + 10;
+        }
+      }
+
+      ensureSpace(50);
+      doc.rect(LM, doc.y, W, 1).fill("#e5e5e5");
+      doc.y += 10;
+      doc.font("Helvetica").fontSize(7).fillColor("#999")
+        .text(`Relatório gerado em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} — Torres Vigilância Patrimonial — Documento interno e confidencial`, LM, doc.y, { width: W, align: "center" });
+
+      doc.end();
+    } catch (error: any) {
+      console.error("Mission report PDF error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Erro ao gerar relatório da missão" });
+      }
+    }
+  });
+
   app.get("/api/trips", requireAuth, async (_req, res) => {
     const data = await storage.getTrips();
     res.json(data);
@@ -3094,9 +3387,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           if (clientContracts?.length) contrato = clientContracts[0];
         }
 
-        if (kmFinal > kmInicial) {
+        {
           const resultado = calcularEscolta({
-            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+            km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
             despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
