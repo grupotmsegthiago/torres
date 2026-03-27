@@ -3647,19 +3647,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.post("/api/auth/register", requireAuth, requireAdminRole, async (req, res) => {
-    const { email, name, role, employeeId } = req.body;
-    if (!email || !name) {
+    const { email, username, name, role, employeeId, password: reqPassword } = req.body;
+    const emailToUse = email || username;
+    if (!emailToUse || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });
     }
     if (role === "diretoria" && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Sem permissão para criar usuários Diretoria" });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = emailToUse.toLowerCase().trim();
     const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) return res.status(409).json({ message: "Usuário já existe" });
 
-    const tempPassword = "Torres@" + randomBytes(4).toString("hex");
+    const tempPassword = reqPassword || "torres@123";
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,

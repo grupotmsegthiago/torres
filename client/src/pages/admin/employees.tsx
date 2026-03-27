@@ -29,25 +29,24 @@ function formatCpf(value: string): string {
 
 function CreateAccessModal({ employee, open, onClose }: { employee: Employee; open: boolean; onClose: () => void }) {
   const { toast } = useToast();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("funcionario");
+
+  const cpfDigits = employee.cpf ? employee.cpf.replace(/\D/g, "") : "";
+  const hasEmail = !!employee.email;
+  const hasCpf = cpfDigits.length === 11;
 
   const mutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/auth/register", {
-        username,
-        password,
+        username: employee.email,
+        password: "torres@123",
         name: employee.name,
-        role,
+        role: "funcionario",
         employeeId: employee.id,
       });
     },
     onSuccess: () => {
-      toast({ title: "Acesso criado com sucesso" });
-      setUsername("");
-      setPassword("");
-      setRole("funcionario");
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "Acesso criado", description: `Login: CPF do funcionário. Senha padrão: torres@123 (será alterada no primeiro acesso).` });
       onClose();
     },
     onError: (err: any) => {
@@ -61,35 +60,40 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
         <DialogHeader>
           <DialogTitle>Criar Acesso - {employee.name}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }} className="space-y-4">
-          <div>
-            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Usuário *</label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="Ex: joao.silva" data-testid="input-access-username" />
-          </div>
-          <div>
-            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Senha *</label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Senha de acesso" data-testid="input-access-password" />
-          </div>
-          <div>
-            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Perfil</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200"
-              data-testid="select-access-role"
-            >
-              <option value="funcionario">Funcionário</option>
-              <option value="admin">Administrador</option>
-              <option value="diretoria">Diretoria</option>
-            </select>
-          </div>
+        <div className="space-y-4">
+          {!hasEmail || !hasCpf ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+              <p className="font-semibold mb-1">Dados incompletos</p>
+              <p>Para criar o acesso automático, o funcionário precisa ter <strong>CPF</strong> e <strong>e-mail</strong> cadastrados.</p>
+              {!hasCpf && <p className="mt-1">• CPF não cadastrado</p>}
+              {!hasEmail && <p className="mt-1">• E-mail não cadastrado</p>}
+            </div>
+          ) : (
+            <>
+              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Login:</span>
+                  <span className="font-semibold text-neutral-800">CPF ({formatCpf(cpfDigits)})</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Senha padrão:</span>
+                  <span className="font-semibold text-neutral-800">torres@123</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-500">Perfil:</span>
+                  <span className="font-semibold text-neutral-800">Funcionário</span>
+                </div>
+              </div>
+              <p className="text-xs text-neutral-500">O funcionário deverá alterar a senha no primeiro acesso.</p>
+            </>
+          )}
           <div className="flex gap-3">
-            <Button type="submit" disabled={mutation.isPending} data-testid="button-save-access">
-              {mutation.isPending ? "Criando..." : "Criar Acesso"}
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !hasEmail || !hasCpf} data-testid="button-save-access">
+              {mutation.isPending ? "Criando..." : "Criar Acesso Automático"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
