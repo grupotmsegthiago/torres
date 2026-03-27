@@ -2161,10 +2161,28 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <DialogHeader className="px-4 pt-4 pb-2">
+          <DialogHeader className="px-4 pt-4 pb-2 relative">
             <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-white" : "text-neutral-900"}`}>
               {photoModalUrl && photoModalUrl !== "__no_photo__" ? "📷" : "📋"} Atualização — {v.activeOs?.osNumber || ""}
             </DialogTitle>
+            <button
+              className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-white/60 hover:text-white hover:bg-white/10" : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"}`}
+              onClick={() => {
+                setPhotoModalUrl(null);
+                if (lastUpdateId) {
+                  authFetch("/api/mission/updates/mark-read", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: [lastUpdateId] }),
+                  }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] });
+                  }).catch(() => {});
+                }
+              }}
+              data-testid={`btn-close-photo-modal-${v.id}`}
+            >
+              <X className="w-4 h-4" />
+            </button>
           </DialogHeader>
           {photoModalUrl && photoModalUrl !== "__no_photo__" && (
             <div className="flex items-center justify-center px-4">
@@ -3281,10 +3299,21 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <DialogHeader className="px-4 pt-4 pb-2">
+          <DialogHeader className="px-4 pt-4 pb-2 relative">
             <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${forwardUpdate?.photoUrl ? "text-white" : "text-neutral-900"}`}>
               {forwardUpdate?.photoUrl ? "📷" : "📋"} Encaminhar — {forwardUpdate?.osNumber || ""}
             </DialogTitle>
+            <button
+              className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${forwardUpdate?.photoUrl ? "text-white/60 hover:text-white hover:bg-white/10" : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"}`}
+              onClick={() => {
+                const uid = forwardUpdate?.id;
+                setForwardUpdate(null);
+                if (uid) markReadMutation.mutate([uid]);
+              }}
+              data-testid="btn-close-forward-modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </DialogHeader>
           {forwardUpdate?.photoUrl && (
             <div className="flex items-center justify-center px-4">
