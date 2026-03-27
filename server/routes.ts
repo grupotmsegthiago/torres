@@ -387,46 +387,47 @@ export async function registerRoutes(
 
     let autoUserCreated = false;
     let autoUserError: string | null = null;
-    let autoUserEmail: string | null = null;
-    if (data.email && data.cpf) {
-      const normalizedEmail = data.email.toLowerCase().trim();
-      const existingUser = await storage.getUserByEmail(normalizedEmail);
-      if (existingUser) {
-        autoUserError = "Já existe um login com este e-mail";
-      } else {
-        try {
-          const defaultPassword = "torres@123";
-          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-            email: normalizedEmail,
-            password: defaultPassword,
-            email_confirm: true,
-          });
-          if (authError) {
-            autoUserError = authError.message;
-          } else {
-            try {
-              await storage.createUser({
-                supabaseUid: authData.user.id,
-                email: normalizedEmail,
-                name: data.name,
-                role: "funcionario",
-                employeeId: data.id,
-                mustChangePassword: 1,
-              });
-              autoUserCreated = true;
-              autoUserEmail = normalizedEmail;
-            } catch (dbErr: any) {
-              await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
-              autoUserError = dbErr.message;
+    if (data.cpf) {
+      const cleanCpf = data.cpf.replace(/\D/g, "");
+      if (cleanCpf.length === 11) {
+        const syntheticEmail = `cpf_${cleanCpf}@torresseguranca.local`;
+        const existingUser = await storage.getUserByEmail(syntheticEmail);
+        if (existingUser) {
+          autoUserError = "Já existe um login para este CPF";
+        } else {
+          try {
+            const defaultPassword = "torres@123";
+            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email: syntheticEmail,
+              password: defaultPassword,
+              email_confirm: true,
+            });
+            if (authError) {
+              autoUserError = authError.message;
+            } else {
+              try {
+                await storage.createUser({
+                  supabaseUid: authData.user.id,
+                  email: syntheticEmail,
+                  name: data.name,
+                  role: "funcionario",
+                  employeeId: data.id,
+                  mustChangePassword: 1,
+                });
+                autoUserCreated = true;
+              } catch (dbErr: any) {
+                await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+                autoUserError = dbErr.message;
+              }
             }
+          } catch (err: any) {
+            autoUserError = err.message;
           }
-        } catch (err: any) {
-          autoUserError = err.message;
         }
       }
     }
 
-    res.status(201).json({ ...data, autoUserCreated, autoUserError, autoUserEmail });
+    res.status(201).json({ ...data, autoUserCreated, autoUserError });
   });
 
   app.patch("/api/employees/:id", requireAuth, async (req, res) => {
@@ -3688,6 +3689,50 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
 
     res.status(201).json({ ...toSafeUser(user), tempPassword });
+  });
+
+  app.post("/api/auth/register-by-cpf", requireAuth, requireAdminRole, async (req, res) => {
+    const { cpf, name, employeeId } = req.body;
+    if (!cpf || !name) {
+      return res.status(400).json({ message: "Campos obrigatórios: cpf, name" });
+    }
+    const cleanCpf = cpf.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) {
+      return res.status(400).json({ message: "CPF inválido" });
+    }
+
+    const syntheticEmail = `cpf_${cleanCpf}@torresseguranca.local`;
+    const existing = await storage.getUserByEmail(syntheticEmail);
+    if (existing) return res.status(409).json({ message: "Já existe um acesso para este CPF" });
+
+    const defaultPassword = "torres@123";
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: syntheticEmail,
+      password: defaultPassword,
+      email_confirm: true,
+    });
+
+    if (authError) {
+      return res.status(400).json({ message: "Erro ao criar conta: " + authError.message });
+    }
+
+    let user;
+    try {
+      user = await storage.createUser({
+        supabaseUid: authData.user.id,
+        email: syntheticEmail,
+        name,
+        role: "funcionario",
+        employeeId: employeeId || null,
+        mustChangePassword: 1,
+      });
+    } catch (dbErr: any) {
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      return res.status(500).json({ message: "Erro ao criar usuário local: " + dbErr.message });
+    }
+
+    res.status(201).json({ ...toSafeUser(user) });
   });
 
   // ===== EMPLOYEE DOCUMENTS =====

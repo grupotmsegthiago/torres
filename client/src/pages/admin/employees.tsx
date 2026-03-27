@@ -31,16 +31,13 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
   const { toast } = useToast();
 
   const cpfDigits = employee.cpf ? employee.cpf.replace(/\D/g, "") : "";
-  const hasEmail = !!employee.email;
   const hasCpf = cpfDigits.length === 11;
 
   const mutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/register", {
-        username: employee.email,
-        password: "torres@123",
+      await apiRequest("POST", "/api/auth/register-by-cpf", {
+        cpf: cpfDigits,
         name: employee.name,
-        role: "funcionario",
         employeeId: employee.id,
       });
     },
@@ -61,12 +58,10 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
           <DialogTitle>Criar Acesso - {employee.name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {!hasEmail || !hasCpf ? (
+          {!hasCpf ? (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
               <p className="font-semibold mb-1">Dados incompletos</p>
-              <p>Para criar o acesso automático, o funcionário precisa ter <strong>CPF</strong> e <strong>e-mail</strong> cadastrados.</p>
-              {!hasCpf && <p className="mt-1">• CPF não cadastrado</p>}
-              {!hasEmail && <p className="mt-1">• E-mail não cadastrado</p>}
+              <p>Para criar o acesso automático, o funcionário precisa ter <strong>CPF</strong> cadastrado.</p>
             </div>
           ) : (
             <>
@@ -88,7 +83,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
             </>
           )}
           <div className="flex gap-3">
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !hasEmail || !hasCpf} data-testid="button-save-access">
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !hasCpf} data-testid="button-save-access">
               {mutation.isPending ? "Criando..." : "Criar Acesso Automático"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
@@ -722,7 +717,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         matricula: employee ? employee.matricula : (nextMatricula?.matricula || data.matricula),
       };
       let employeeId: number;
-      let autoUserInfo: { autoUserCreated?: boolean; autoUserError?: string | null; autoUserEmail?: string | null } = {};
+      let autoUserInfo: { autoUserCreated?: boolean; autoUserError?: string | null } = {};
       if (employee) {
         const { matricula, ...updateData } = payload;
         const res = await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
@@ -757,7 +752,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
       const docMsg = !employee && attachedCount > 0 ? ` com ${attachedCount} documento(s)` : "";
       if (!employee && autoUserInfo?.autoUserCreated) {
-        toast({ title: `Funcionário cadastrado${docMsg}`, description: `Login criado: ${autoUserInfo.autoUserEmail || "e-mail do funcionário"}. Senha padrão: torres@123 (será alterada no primeiro acesso).` });
+        toast({ title: `Funcionário cadastrado${docMsg}`, description: "Login criado automaticamente via CPF. Senha padrão: torres@123 (será alterada no primeiro acesso)." });
       } else if (!employee && autoUserInfo?.autoUserError) {
         toast({ title: `Funcionário cadastrado${docMsg}`, description: `Aviso: login não criado — ${autoUserInfo.autoUserError}` });
       } else {
