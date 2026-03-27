@@ -1044,9 +1044,9 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
               <Button onClick={() => { setEditingPrice(null); setShowPriceModal(true); }} size="sm" className="bg-neutral-900 hover:bg-black text-white text-xs font-black uppercase" data-testid="button-new-price"><Plus size={14} className="mr-1" /> Nova Tabela</Button>
             </div>
             {clientPrices.length === 0 ? (
-              <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400" style={{ fontFamily: "Inter, sans-serif" }}>Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
+              <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-semibold text-neutral-400">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
             ) : clientPrices.map(cp => (
-              <Card key={cp.id} className="border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`} style={{ fontFamily: "Inter, sans-serif" }}>
+              <Card key={cp.id} className="border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`}>
                 <div className="divide-y divide-neutral-100">
                   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
                     <span className="text-xs font-semibold text-neutral-500">KM Carregado</span>

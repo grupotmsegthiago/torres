@@ -177,10 +177,15 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  *, *::before, *::after {
+    font-family: inherit;
   }
 
   h1, h2, h3, h4, h5, h6 {
