@@ -6976,7 +6976,8 @@ Regras:
         SELECT v.id, v.plate, v.model, v.km, v.last_oil_change_km
         FROM vehicle_assignments va
         JOIN vehicles v ON v.id = va.vehicle_id
-        WHERE va.employee_id = ${employeeId} AND va.active = true
+        WHERE va.employee_id = ${employeeId}
+        ORDER BY va.created_at DESC
         LIMIT 1
       `);
       res.json(assignments.rows?.[0] || null);
