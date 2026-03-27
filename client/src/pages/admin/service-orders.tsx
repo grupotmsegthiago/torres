@@ -43,7 +43,6 @@ function formatDateTime(iso: string | null): string {
 }
 
 const MISSION_STATUS_LABELS: Record<string, string> = {
-  missao_paga: "Missão Paga",
   aguardando: "Saída da Base",
   checkout_armamento: "Saída da Base",
   checkout_viatura: "Saída da Base",
@@ -66,8 +65,6 @@ const MISSION_STATUS_LABELS: Record<string, string> = {
 function getMissionStatusColor(status: string | null) {
   if (!status) return "bg-neutral-100 text-neutral-600";
   switch (status) {
-    case "missao_paga":
-      return "bg-emerald-100 text-emerald-700";
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":
@@ -215,7 +212,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       if (order) {
         await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
       } else {
-        payload.missionStatus = "missao_paga";
+        payload.missionStatus = "aguardando";
         await apiRequest("POST", "/api/service-orders", payload);
       }
     },
@@ -723,32 +720,18 @@ export default function ServiceOrdersPage() {
     mutationFn: async (id: number) => {
       await apiRequest("PATCH", `/api/service-orders/${id}`, {
         status: "em_andamento",
-        missionStatus: "missao_paga",
+        missionStatus: "aguardando",
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      toast({ title: "Missão iniciada — aguardando confirmação de pagamento" });
+      toast({ title: "Missão iniciada — agente liberado para saída" });
     },
     onError: (err: any) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
   });
 
-  const confirmPaymentMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("PATCH", `/api/service-orders/${id}`, {
-        missionStatus: "aguardando",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      toast({ title: "Pagamento confirmado — agente liberado para saída" });
-    },
-    onError: (err: any) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
-  });
 
   const rollbackStepMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -877,7 +860,7 @@ export default function ServiceOrdersPage() {
                     </td>
                     <td className="p-3">
                       {o.missionStatus ? (() => {
-                        const displayStatus = (o.status === "agendada" || o.status === "aberta") && o.missionStatus !== "missao_paga" ? "missao_paga" : o.missionStatus;
+                        const displayStatus = o.missionStatus;
                         return (
                           <Badge variant="secondary" className={`text-xs ${getMissionStatusColor(displayStatus)}`} data-testid={`badge-mission-${o.id}`}>
                             {MISSION_STATUS_LABELS[displayStatus] || displayStatus}
@@ -921,19 +904,7 @@ export default function ServiceOrdersPage() {
                             <Play className="w-4 h-4 text-green-600" />
                           </Button>
                         )}
-                        {o.missionStatus === "missao_paga" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => confirmPaymentMutation.mutate(o.id)}
-                            disabled={confirmPaymentMutation.isPending}
-                            title="Confirmar Pagamento"
-                            data-testid={`button-confirm-payment-${o.id}`}
-                          >
-                            <DollarSign className="w-4 h-4 text-emerald-600" />
-                          </Button>
-                        )}
-                        {o.missionStatus && o.missionStatus !== "missao_paga" && (
+                        {o.missionStatus && (
                           <Button
                             variant="ghost"
                             size="icon"

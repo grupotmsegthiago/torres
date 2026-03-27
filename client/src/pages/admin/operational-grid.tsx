@@ -335,8 +335,6 @@ function getLastPositionInfo(lastPositionTime?: string) {
 function getMissionLabel(status: string | null) {
   if (!status) return "—";
   switch (status) {
-    case "missao_paga":
-      return "Missão Paga";
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":
@@ -376,7 +374,7 @@ function getHoursUntilMission(scheduledDate: string | null | undefined): number 
 
 function getMissionProgress(missionStatus: string | null): number {
   const steps = [
-    "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+    "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
     "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
     "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
     "finalizada", "retorno_base", "chegada_base", "encerrada",
@@ -498,7 +496,7 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
     }
 
     if (osStatus === "em_andamento") {
-      if (ms === "missao_paga") {
+      if (ms === "aguardando") {
         if (isImediata) {
           return { label: "EM SERVIÇO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
         }
@@ -544,8 +542,6 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     return { label: "Aguardando Despacho", icon: Clock, className: "bg-slate-50 text-slate-600 border-slate-200" };
   }
   switch (missionStatus) {
-    case "missao_paga":
-      return { label: "Missão Paga", icon: Clock, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "aguardando":
     case "checkout_armamento":
     case "checkout_viatura":
@@ -2231,7 +2227,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       </Tooltip>
       <MirrorVehicleDialog vehicle={v as any} open={mirrorOpen} onOpenChange={setMirrorOpen} gerenciadoras={gerenciadoras} />
 
-      {v.activeOs && v.activeOs.missionStatus === "missao_paga" && !v.activeOs.earlyStartApproved && (
+      {v.activeOs && v.activeOs.missionStatus === "aguardando" && !v.activeOs.earlyStartApproved && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -2944,7 +2940,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             </button>
           )}
 
-          {v.activeOs && v.activeOs.missionStatus === "missao_paga" && !v.activeOs.earlyStartApproved && (
+          {v.activeOs && v.activeOs.missionStatus === "aguardando" && !v.activeOs.earlyStartApproved && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2.5"
               onClick={async () => {
                 try {
@@ -3670,9 +3666,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </span>
                             ) : (
                               <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
-                                getStatusDisplay(v.activeOs.status === "agendada" ? "missao_paga" : v.activeOs.missionStatus, v.activeOs.status).className
+                                getStatusDisplay(v.activeOs.missionStatus, v.activeOs.status).className
                               }`}>
-                                {v.activeOs.status === "agendada" ? "Missão Paga" : getMissionLabel(v.activeOs.missionStatus)}
+                                {getMissionLabel(v.activeOs.missionStatus)}
                               </span>
                             )}
                             {v.activeOs.lastAgentUpdate && (

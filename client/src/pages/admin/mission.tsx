@@ -9,7 +9,7 @@ import {
   Camera, Check, ChevronRight,
   Shield, Car, Users, Clock, Crosshair,
   AlertTriangle, CheckCircle2, Truck, User, Siren,
-  DollarSign, Loader2, MapPin, Wifi, WifiOff, History,
+  Loader2, MapPin, Wifi, WifiOff, History,
   Undo2, XCircle,
 } from "lucide-react";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
@@ -339,7 +339,6 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
 }
 
 const STEP_LABELS: Record<string, string> = {
-  missao_paga: "Pagamento Confirmado",
   aguardando: "Ciência da Missão",
   checkout_armamento: "Armamento Conferido",
   checkout_viatura: "Viatura Conferida",
@@ -562,21 +561,6 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
   });
 
-  const confirmPaymentMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("PATCH", `/api/service-orders/${mission.id}`, {
-        missionStatus: "aguardando",
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
-      toast({ title: "Pagamento confirmado!", description: "Missão liberada para os agentes." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    },
-  });
 
   const rollbackMutation = useMutation({
     mutationFn: async () => {
@@ -705,110 +689,6 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     );
   }
 
-  if (mission.missionStatus === "missao_paga") {
-    const isAgendada = mission.status === "agendada" || mission.status === "aberta";
-    /* isAdmin already declared above */
-    const scheduledDateFormatted = mission.scheduledDate
-      ? new Date(mission.scheduledDate).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
-      : null;
-
-    return (
-      <div className="min-h-[80vh] bg-gradient-to-b from-card to-muted relative rounded-2xl overflow-hidden border border-border no-print-zone">
-        <ShieldWatermark />
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] p-6 text-center">
-          {isAgendada ? (
-            <>
-              <div className="w-20 h-20 rounded-full bg-blue-100 border-2 border-blue-300 flex items-center justify-center mb-4">
-                <Clock className="w-10 h-10 text-blue-600" />
-              </div>
-              <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-mission-scheduled">
-                Missão Agendada
-              </h2>
-              {scheduledDateFormatted && (
-                <p className="text-sm font-semibold text-blue-600 mb-4">
-                  {scheduledDateFormatted}
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
-                {isAdmin
-                  ? "Confirme o pagamento para liberar o início da missão."
-                  : "Sua próxima missão está agendada. Aguarde a liberação pela administração."}
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="w-20 h-20 rounded-full bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center mb-4">
-                <DollarSign className="w-10 h-10 text-emerald-600" />
-              </div>
-              <h2 className="text-xl font-black text-foreground uppercase tracking-wider mb-2" data-testid="text-awaiting-payment">
-                Aguardando Pagamento
-              </h2>
-              <p className="text-sm text-muted-foreground mb-6 max-w-[280px]">
-                {isAdmin
-                  ? "Confirme o recebimento do pagamento para liberar a missão aos agentes."
-                  : "Aguarde a confirmação de pagamento pela administração."}
-              </p>
-            </>
-          )}
-
-          <div className="bg-muted/60 rounded-xl border border-border p-4 w-full mb-4 space-y-2 text-left">
-            <p className="text-sm text-foreground"><span className="font-bold">OS:</span> {mission.osNumber}</p>
-            <p className="text-sm text-foreground"><span className="font-bold">Cliente:</span> {mission.clientName}</p>
-            <p className="text-sm text-foreground"><span className="font-bold">Viatura:</span> {mission.vehiclePlate}</p>
-            {mission.origin && (
-              <p className="text-sm text-foreground"><span className="font-bold">Origem:</span> {mission.origin}</p>
-            )}
-            {mission.destination && (
-              <p className="text-sm text-foreground"><span className="font-bold">Destino:</span> {mission.destination}</p>
-            )}
-            {mission.route && (
-              <p className="text-sm text-foreground"><span className="font-bold">Rota:</span> {mission.route}</p>
-            )}
-          </div>
-
-          {isAdmin ? (
-            <button
-              onClick={() => confirmPaymentMutation.mutate()}
-              disabled={confirmPaymentMutation.isPending}
-              className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base uppercase tracking-wider shadow-lg transition-all disabled:opacity-50 mb-4"
-              data-testid="button-confirm-payment"
-            >
-              {confirmPaymentMutation.isPending
-                ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                : "CONFIRMAR PAGAMENTO"}
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 text-muted-foreground mb-4">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm font-medium">Atualizando automaticamente...</span>
-            </div>
-          )}
-
-          {isAdmin && (
-            <button
-              onClick={() => {
-                const reason = prompt(`Cancelar missão ${mission.osNumber}?\n\nDigite o motivo do cancelamento:`);
-                if (reason !== null) {
-                  cancelMissionMutation.mutate(reason || "Cancelada pelo administrador");
-                }
-              }}
-              disabled={cancelMissionMutation.isPending}
-              className="w-full py-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2 mb-4"
-              data-testid="button-admin-cancel-payment"
-            >
-              {cancelMissionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-              Cancelar Missão
-            </button>
-          )}
-
-          {mission.scheduledMissions && mission.scheduledMissions.length > 0 && (
-            <ScheduledMissionsList missions={mission.scheduledMissions} />
-          )}
-        </div>
-      </div>
-    );
-  }
-
   if (mission.missionStatus === "aguardando") {
     return (
       <div className="min-h-[80vh] bg-gradient-to-b from-card to-muted relative rounded-2xl overflow-hidden border border-border no-print-zone">
@@ -850,19 +730,6 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
 
           {isAdmin && (
             <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => {
-                  if (confirm(`Voltar para etapa de pagamento da OS ${mission.osNumber}?`)) {
-                    rollbackMutation.mutate();
-                  }
-                }}
-                disabled={rollbackMutation.isPending}
-                className="flex-1 py-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 flex items-center justify-center gap-2"
-                data-testid="button-admin-rollback-aguardando"
-              >
-                {rollbackMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
-                Voltar Etapa
-              </button>
               <button
                 onClick={() => {
                   const reason = prompt(`Cancelar missão ${mission.osNumber}?\n\nDigite o motivo:`);
@@ -1067,7 +934,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
                     rollbackMutation.mutate();
                   }
                 }}
-                disabled={rollbackMutation.isPending || mission.missionStatus === "missao_paga"}
+                disabled={rollbackMutation.isPending || mission.missionStatus === "aguardando"}
                 className="flex-1 py-3 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-700 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 data-testid="button-admin-rollback"
               >

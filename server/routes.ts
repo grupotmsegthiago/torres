@@ -26,7 +26,6 @@ import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
 const MISSION_STEPS = [
-  "missao_paga",
   "aguardando",
   "checkout_armamento",
   "checkout_viatura",
@@ -912,7 +911,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (kit.status === "em_uso") {
         const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         if (activeWithKit) {
-          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "missao_paga";
+          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
             return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
           }
@@ -935,7 +934,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
 
-    if (parsed.data.status === "em_andamento" && (parsed.data.missionStatus === "missao_paga" || parsed.data.missionStatus === "aguardando")) {
+    if (parsed.data.status === "em_andamento" && parsed.data.missionStatus === "aguardando") {
       const existing = await storage.getServiceOrder(Number(req.params.id));
       if (existing && !existing.assignedEmployeeId) {
         return res.status(400).json({ message: "Atribua pelo menos um funcionário antes de iniciar a missão" });
@@ -944,12 +943,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const existing = await storage.getServiceOrder(Number(req.params.id));
 
-    if (parsed.data.missionStatus && existing?.missionStatus === "missao_paga" && parsed.data.missionStatus !== "missao_paga") {
-      const user = req.user!;
-      if (user.role !== "admin" && user.role !== "diretoria") {
-        return res.status(403).json({ message: "Apenas administradores podem confirmar o pagamento da missão" });
-      }
-    }
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
@@ -957,7 +950,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const allOrders = await storage.getServiceOrders();
         const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
         if (activeWithKit) {
-          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "missao_paga";
+          const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
             return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
           }
@@ -983,11 +976,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
     }
     if (data.vehicleId && (!existing || existing.vehicleId !== data.vehicleId)) {
-      if (data.missionStatus && data.missionStatus !== "missao_paga") {
-        await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
-      }
-    }
-    if (data.vehicleId && existing?.missionStatus === "missao_paga" && data.missionStatus === "aguardando") {
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
     const isFinished = data.missionStatus === "encerrada" || data.missionStatus === "finalizada" ||
@@ -1888,7 +1876,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (stepLogs.length > 0) {
         sectionTitle("Cronologia da Missao");
         const stepLabels: Record<string, string> = {
-          missao_paga: "Check-in / Ciencia", aguardando: "Ciencia da Missao", checkout_armamento: "Conf. Armamento",
+          aguardando: "Ciencia da Missao", checkout_armamento: "Conf. Armamento",
           checkout_viatura: "Conf. Viatura", checkout_km_saida: "Registro KM Saida", em_transito_origem: "Em Transito p/ Origem",
           checkin_chegada_km: "Chegada KM Registrado", checkin_veiculo_escoltado: "Veic. Escoltado Conferido",
           checkin_dados_motorista: "Dados Motorista Conferidos", iniciar_missao: "Inicio da Missao",
@@ -1898,7 +1886,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           chegada_base: "Chegada na Base", encerrada: "Operacao Encerrada",
         };
         const stepColors: Record<string, string> = {
-          missao_paga: "#6366f1", aguardando: "#6366f1", checkout_armamento: AMBER, checkout_viatura: AMBER,
+          aguardando: "#6366f1", checkout_armamento: AMBER, checkout_viatura: AMBER,
           checkout_km_saida: BLUE, em_transito_origem: BLUE, checkin_chegada_km: "#0891b2", checkin_veiculo_escoltado: "#0891b2",
           checkin_dados_motorista: "#0891b2", iniciar_missao: GREEN, em_transito_destino: BLUE,
           chegada_destino: GREEN, checkout_km_final: BLUE, checkout_viatura_retorno: AMBER,
@@ -3068,7 +3056,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (command === "bloquear") {
       const orders = await storage.getServiceOrders();
       const activeOs = orders.find(
-        (o) => o.vehicleId === vehicleId && o.status === "em_andamento" && o.missionStatus && o.missionStatus !== "encerrada" && o.missionStatus !== "missao_paga"
+        (o) => o.vehicleId === vehicleId && o.status === "em_andamento" && o.missionStatus && o.missionStatus !== "encerrada"
       );
       if (!activeOs) {
         return res.status(403).json({ success: false, message: "Bloqueio permitido apenas quando a viatura estiver EM SERVIÇO (com missão em andamento)." });
@@ -3852,7 +3840,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const currentStep = MISSION_STEPS[currentIdx];
 
-    if (currentStep === "missao_paga" && so.scheduledDate) {
+    if (currentStep === "aguardando" && so.scheduledDate) {
       const now = new Date();
       const scheduled = new Date(so.scheduledDate);
       const diffMs = scheduled.getTime() - now.getTime();
@@ -3865,7 +3853,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
-    if (so.status === "agendada" && (currentStep === "missao_paga" || currentStep === "aguardando")) {
+    if (so.status === "agendada" && currentStep === "aguardando") {
       await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
     }
     const requiredPhotos = STEP_REQUIRED_PHOTOS[currentStep];
@@ -4097,7 +4085,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         return res.status(400).json({ message: "Missao ja finalizada ou status invalido" });
       }
 
-      if (so.status === "agendada" && (currentStep === "missao_paga" || currentStep === "aguardando")) {
+      if (so.status === "agendada" && currentStep === "aguardando") {
         await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
       }
 

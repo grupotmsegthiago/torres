@@ -436,6 +436,10 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      UPDATE service_orders SET mission_status = 'aguardando' WHERE mission_status = 'missao_paga'
+    `).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);

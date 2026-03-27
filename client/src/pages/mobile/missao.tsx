@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 const MISSION_STEPS = [
-  "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+  "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
   "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
   "finalizada", "retorno_base", "chegada_base", "encerrada",
@@ -32,7 +32,6 @@ const VEHICLE_CHECKLIST_ITEMS = [
 ];
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
-  missao_paga: { title: "CHECK-IN", subtitle: "Missão liberada — inicie o check-in", icon: CheckCircle2 },
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/15", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/15", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
@@ -307,7 +306,6 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
 }
 
 const MOBILE_STEP_LABELS: Record<string, string> = {
-  missao_paga: "Check-in Iniciado",
   aguardando: "Ciência da Missão",
   checkout_armamento: "Armamento Conferido",
   checkout_viatura: "Viatura Conferida",
@@ -710,7 +708,7 @@ export default function MobileMissaoPage() {
   const Icon = config.icon;
 
   useEffect(() => {
-    if (mission && currentStep === "missao_paga" && mission.scheduledDate) {
+    if (mission && currentStep === "aguardando" && mission.scheduledDate) {
       const now = new Date();
       const scheduled = new Date(mission.scheduledDate);
       const diffMin = (scheduled.getTime() - now.getTime()) / (1000 * 60);
@@ -1335,14 +1333,14 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {currentStep === "missao_paga" && (
+        {currentStep === "aguardando" && (
           <div className="space-y-3">
             <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-center space-y-2">
               <div className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-7 h-7 text-white" />
               </div>
               <p className="text-sm font-black text-emerald-800 uppercase tracking-wider">Missão Liberada</p>
-              <p className="text-xs text-emerald-600">O pagamento foi confirmado. Inicie o check-in para começar a operação.</p>
+              <p className="text-xs text-emerald-600">Inicie o check-in para começar a operação.</p>
             </div>
 
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2">

@@ -15,7 +15,7 @@ import {
 import type { ServiceOrder, Employee, Vehicle } from "@shared/schema";
 
 const MISSION_STEPS = [
-  "missao_paga", "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+  "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
   "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
   "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
   "finalizada", "retorno_base", "chegada_base", "encerrada",
@@ -34,7 +34,6 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
 };
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; color: string; actions: string[] }> = {
-  missao_paga: { title: "CHECK-IN", subtitle: "Missao liberada", icon: CheckCircle2, color: "bg-green-500", actions: ["advance"] },
   aguardando: { title: "Dados da Missao", subtitle: "Confirmar ciencia", icon: Lock, color: "bg-neutral-500", actions: ["advance"] },
   checkout_armamento: { title: "Armamento", subtitle: "3 fotos obrigatorias", icon: Crosshair, color: "bg-red-500", actions: ["upload_photos", "advance"] },
   checkout_viatura: { title: "Viatura", subtitle: "4 fotos + checklist", icon: Car, color: "bg-blue-500", actions: ["upload_photos", "advance"] },
