@@ -2697,16 +2697,16 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
 
-                    <td className="px-2 py-1.5 max-w-[200px]">
+                    <td className="px-2 py-1.5" style={{ maxWidth: "200px" }}>
                       {v.tracker?.address ? (
                         <button
                           type="button"
                           onClick={() => { if (hasLocation && onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                          className={`inline-flex items-start gap-1.5 group text-left ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
+                          className={`flex items-start gap-1.5 group text-left w-full max-w-full overflow-hidden ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
                           data-testid={`link-map-${v.id}`}
                         >
                           <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-neutral-500 group-hover:text-neutral-700" : "text-neutral-300"}`} />
-                          <span className={`text-xs font-medium leading-tight truncate ${hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
+                          <span className={`text-xs font-medium leading-tight block truncate ${hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
                             {v.tracker.address}
                           </span>
                         </button>
