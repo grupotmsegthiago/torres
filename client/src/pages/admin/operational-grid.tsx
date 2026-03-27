@@ -1995,6 +1995,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [preAlertLoading, setPreAlertLoading] = useState(false);
   const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
   const [, forceUpdate] = useState(0);
+  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
   const hasNewUpdate = !!(lastUpdateId && !seenUpdateIds.has(lastUpdateId));
@@ -2022,6 +2024,33 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
     onError: (err: Error & { notifId?: string }, variables) => {
       updateNotification(variables.notifId, { status: "error", message: err.message });
       setCmdConfirm(null);
+    },
+  });
+
+  const missionMutation = useMutation({
+    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel"; serviceOrderId: number; reason?: string }) => {
+      const url = action === "finish" ? "/api/mission/finish" : "/api/mission/cancel";
+      const res = await authFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceOrderId, reason }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Erro desconhecido" }));
+        throw new Error(data.message);
+      }
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
+      setMissionAction(null);
+      setCancelReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
   });
 
@@ -2447,6 +2476,97 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           </div>
         </DialogContent>
       </Dialog>
+
+      {v.activeOs && (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-green-200 bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-700 transition-colors"
+                onClick={() => setMissionAction("finish")}
+                data-testid={`btn-finish-mission-${v.id}`}
+              >
+                <CheckCircle2 className="w-3 h-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Finalizar Missão</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-600 transition-colors"
+                onClick={() => setMissionAction("cancel")}
+                data-testid={`btn-cancel-mission-${v.id}`}
+              >
+                <XCircle className="w-3 h-3" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Cancelar Missão</TooltipContent>
+          </Tooltip>
+          <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); } }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-sm">
+                  {missionAction === "finish" ? (
+                    <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</>
+                  ) : (
+                    <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {missionAction === "finish"
+                    ? `Tem certeza que deseja finalizar a missão ${v.activeOs.osNumber}? O veículo e o kit serão liberados.`
+                    : `Tem certeza que deseja cancelar a missão ${v.activeOs.osNumber}?`
+                  }
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="bg-neutral-50 rounded-lg p-3 space-y-1">
+                  <p className="text-xs text-neutral-500">OS</p>
+                  <p className="text-sm font-bold text-neutral-900">{v.activeOs.osNumber}</p>
+                  <p className="text-xs text-neutral-500 mt-1">Veículo</p>
+                  <p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
+                </div>
+                {missionAction === "cancel" && (
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo do cancelamento</label>
+                    <textarea
+                      className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300"
+                      rows={2}
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="Informe o motivo..."
+                      data-testid={`input-cancel-reason-${v.id}`}
+                    />
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
+                    onClick={() => {
+                      if (v.activeOs) {
+                        missionMutation.mutate({
+                          action: missionAction!,
+                          serviceOrderId: v.activeOs.id,
+                          reason: missionAction === "cancel" ? cancelReason : undefined,
+                        });
+                      }
+                    }}
+                    disabled={missionMutation.isPending || (missionAction === "cancel" && !cancelReason.trim())}
+                    data-testid={`btn-confirm-mission-action-${v.id}`}
+                  >
+                    {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                    {missionAction === "finish" ? "Confirmar Finalização" : "Confirmar Cancelamento"}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); }} data-testid={`btn-dismiss-mission-action-${v.id}`}>
+                    Voltar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }

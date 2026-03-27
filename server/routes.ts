@@ -3798,6 +3798,43 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/mission/finish", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { serviceOrderId } = req.body;
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      const updates: any = {
+        status: "concluída",
+        missionStatus: "encerrada",
+        completedDate: new Date().toISOString(),
+      };
+
+      if (so.kitId) {
+        try { await storage.updateWeaponKit(so.kitId, { status: "disponível" }); } catch (_e) {}
+      }
+      if (so.vehicleId) {
+        try { await storage.updateVehicle(so.vehicleId, { status: "disponível" }); } catch (_e) {}
+      }
+
+      const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+      const user = req.user!;
+      const finishEntry = {
+        step: "encerrada",
+        completedAt: new Date().toISOString(),
+        agentName: `ADMIN: ${user.name}`,
+        agentId: user.id,
+        geo: null,
+        nextStep: "encerrada",
+        reason: "Missão finalizada pelo administrador",
+      };
+      updates.stepLogs = [...existingLogs, finishEntry];
+
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/mission/advance", requireAuth, async (req, res) => {
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
