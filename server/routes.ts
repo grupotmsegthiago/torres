@@ -1690,15 +1690,38 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       doc.restore();
       doc.y += 4;
 
+      function drawLabelValueWithLink(x: number, y: number, w: number, label: string, value: string, link: string | null, options?: { valueColor?: string; valueBold?: boolean }) {
+        doc.save();
+        doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
+          .text(label, x, y, { width: w, lineBreak: false });
+        const valColor = link ? BLUE : (options?.valueColor || PRIMARY);
+        doc.font(options?.valueBold !== false ? "Helvetica-Bold" : "Helvetica").fontSize(8).fillColor(valColor)
+          .text(value || "--", x, y + 10, { width: w, link: link || undefined });
+        doc.restore();
+      }
+
+      function gmapsUrl(lat: number | string | null, lng: number | string | null): string | null {
+        if (lat == null || lng == null) return null;
+        return `https://www.google.com/maps?q=${lat},${lng}`;
+      }
+
+      const origemStepGeo = stepLogs.find((l: any) => l.step === "em_transito_origem")?.geo;
+      const destinoStepGeo = stepLogs.find((l: any) => l.step === "chegada_destino")?.geo;
+
+      const origemText = os.origin || (origemStepGeo ? `GPS: ${Number(origemStepGeo.lat).toFixed(5)}, ${Number(origemStepGeo.lng).toFixed(5)}` : null);
+      const destinoText = os.destination || (destinoStepGeo ? `GPS: ${Number(destinoStepGeo.lat).toFixed(5)}, ${Number(destinoStepGeo.lng).toFixed(5)}` : null);
+      const origemLink = os.originLat && os.originLng ? gmapsUrl(os.originLat, os.originLng) : (origemStepGeo ? gmapsUrl(origemStepGeo.lat, origemStepGeo.lng) : null);
+      const destinoLink = os.destinationLat && os.destinationLng ? gmapsUrl(os.destinationLat, os.destinationLng) : (destinoStepGeo ? gmapsUrl(destinoStepGeo.lat, destinoStepGeo.lng) : null);
+
       sectionTitle("Dados da Missao");
       const halfW = (W - 16) / 2;
       const row1Y = doc.y;
       drawLabelValue(LM + 8, row1Y, halfW, "Solicitante:", sanitize(os.requesterName));
-      drawLabelValue(LM + halfW + 16, row1Y, halfW, "Origem:", sanitize(os.origin));
+      drawLabelValueWithLink(LM + halfW + 16, row1Y, halfW, "Origem:", sanitize(origemText), origemLink);
       doc.y = row1Y + 24;
       const row2Y = doc.y;
       drawLabelValue(LM + 8, row2Y, halfW, "Data Agendada:", fmtDate(os.scheduledDate));
-      drawLabelValue(LM + halfW + 16, row2Y, halfW, "Destino:", sanitize(os.destination));
+      drawLabelValueWithLink(LM + halfW + 16, row2Y, halfW, "Destino:", sanitize(destinoText), destinoLink);
       doc.y = row2Y + 24;
       const row3Y = doc.y;
       drawLabelValue(LM + 8, row3Y, halfW, "Inicio Missao:", fmtDate(os.missionStartedAt), { valueColor: BLUE });
@@ -1803,7 +1826,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
       doc.y = kmY + 42;
 
-      const totalKm = (kmFinalPhoto?.kmValue || 0) - (kmSaidaPhoto?.kmValue || 0);
+      const allKmValues = photos.filter(p => p.kmValue).map(p => p.kmValue!);
+      if (os.baseReturnKm) allKmValues.push(os.baseReturnKm);
+      const maxKm = allKmValues.length > 0 ? Math.max(...allKmValues) : 0;
+      const minKm = kmSaidaPhoto?.kmValue || (allKmValues.length > 0 ? Math.min(...allKmValues) : 0);
+      const totalKm = maxKm - minKm;
       if (totalKm > 0) {
         doc.save();
         doc.roundedRect(LM, doc.y, W, 18, 2).fill("#d1fae5");
@@ -1900,8 +1927,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             .text(shortAgent, LM + colWStep + colWTime + 10, doc.y + 4.5, { width: colWAgent, lineBreak: false });
 
           if (log.geo) {
-            doc.font("Helvetica").fontSize(6).fillColor("#94a3b8")
-              .text(`GPS: ${Number(log.geo.lat).toFixed(5)}, ${Number(log.geo.lng).toFixed(5)}`, LM + 22, doc.y + 15, { width: colWStep, lineBreak: false });
+            const gpsLink = gmapsUrl(log.geo.lat, log.geo.lng);
+            doc.font("Helvetica").fontSize(6).fillColor("#6366f1")
+              .text(`GPS: ${Number(log.geo.lat).toFixed(5)}, ${Number(log.geo.lng).toFixed(5)}`, LM + 22, doc.y + 15, { width: colWStep, lineBreak: false, link: gpsLink || undefined });
           }
           doc.restore();
           doc.y += rH;
@@ -1939,8 +1967,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
           if (upd.latitude && upd.longitude) {
             const gpsY = doc.y + cardH - 12;
-            doc.font("Helvetica").fontSize(6).fillColor("#94a3b8")
-              .text(`GPS: ${upd.latitude}, ${upd.longitude}`, LM + 10, gpsY, { width: W - 20, lineBreak: false });
+            const updGpsLink = gmapsUrl(upd.latitude, upd.longitude);
+            doc.font("Helvetica").fontSize(6).fillColor("#6366f1")
+              .text(`GPS: ${upd.latitude}, ${upd.longitude}`, LM + 10, gpsY, { width: W - 20, lineBreak: false, link: updGpsLink || undefined });
           }
           doc.restore();
           doc.y += cardH + 4;
