@@ -2679,19 +2679,24 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const emp = await storage.getEmployee(user.employeeId);
 
-    await db.insert(missionUpdates).values({
-      serviceOrderId,
-      osNumber: so.osNumber || null,
-      employeeId: user.employeeId,
-      employeeName: emp?.name || user.name || "—",
-      message: message.trim(),
-      missionStep: missionStep || so.missionStatus || null,
-      latitude: latitude || null,
-      longitude: longitude || null,
-      readByAdmin: 0,
-    });
-
-    res.json({ success: true });
+    try {
+      await db.insert(missionUpdates).values({
+        serviceOrderId,
+        osNumber: so.osNumber || null,
+        employeeId: user.employeeId,
+        employeeName: emp?.name || user.name || "—",
+        message: message.trim(),
+        missionStep: missionStep || so.missionStatus || null,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        readByAdmin: 0,
+      });
+      console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${message.trim().substring(0, 50)}"`);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[mission-update] Erro ao salvar:", err.message);
+      res.status(500).json({ message: "Erro ao salvar atualização" });
+    }
   });
 
   app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
