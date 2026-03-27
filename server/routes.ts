@@ -3821,6 +3821,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
     }
 
+    if (nextStep === "encerrada" && so.vehicleId) {
+      try {
+        const veh = await storage.getVehicle(so.vehicleId);
+        const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+        const allKmValues = [
+          so.baseReturnKm ? Number(so.baseReturnKm) : 0,
+          ...photos.filter(p => p.kmValue).map(p => Number(p.kmValue)),
+        ].filter(v => v > 0);
+        const highestKm = Math.max(...allKmValues, 0);
+        if (veh && highestKm > 0 && highestKm >= (veh.km || 0)) {
+          await storage.updateVehicle(so.vehicleId, { km: highestKm, lastKmUpdate: new Date() });
+        }
+      } catch (kmErr: any) {
+        console.error("Vehicle KM update on encerrada failed:", kmErr.message);
+      }
+    }
+
     if (nextStep === "encerrada") {
       try {
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
