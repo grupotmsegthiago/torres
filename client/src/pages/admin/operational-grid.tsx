@@ -387,6 +387,13 @@ function getMissionProgress(missionStatus: string | null): number {
   return Math.round(((idx + 1) / steps.length) * 100);
 }
 
+function getFirstLastName(fullName: string | null | undefined): string {
+  if (!fullName) return "—";
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length <= 1) return fullName;
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
 function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
   const os = v.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, scheduledDate: gridItem.scheduledDate, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
   if (!os) return "";
@@ -405,39 +412,33 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
   const driverPhone = gridItem?.escortedDriverPhone || "—";
   const driverPlate = gridItem?.escortedVehiclePlate || "—";
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
-  const vehicleModel = `${gridItem?.vehicle?.brand || v.brand || ""} ${gridItem?.vehicle?.model || v.model || ""}`.trim() || "—";
-  const agent1 = os.employee1?.fullName || os.employee1?.name || "—";
-  const agent2 = os.employee2?.fullName || os.employee2?.name || "—";
+  const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
+  const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
   const progress = getMissionProgress(os.missionStatus);
   const occurrence = os.lastAgentUpdate?.message || "Sem ocorrência";
-
-  const lat = os.lastAgentUpdate?.latitude || v.tracker?.latitude;
-  const lng = os.lastAgentUpdate?.longitude || v.tracker?.longitude;
   const locationAddr = v.tracker?.address || "—";
-  const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : "—";
 
   return `*TORRES VIGILÂNCIA PATRIMONIAL*
-TOR: ${os.osNumber} | STATUS: ${statusLabel}
+*OS* ${os.osNumber} | *STATUS:* ${statusLabel}
 
-🗓 DATA: ${date} HORA: ${time}
-🛡 OPERAÇÃO: CARACTERIZADA
-🏢 CLIENTE: ${os.clientName?.toUpperCase() || "—"}
+🗓 *DATA:* ${date}    *HORA:* ${time}
+🛡 *OPERAÇÃO:* CARACTERIZADA
+🏢 *CLIENTE:* ${os.clientName?.toUpperCase() || "—"}
 
-📍 ORIGEM: ${origin?.toUpperCase() || "—"}
-🏁 DESTINO: ${destination?.toUpperCase() || "—"}
+📍 *ORIGEM:* ${origin?.toUpperCase() || "—"}
+🏁 *DESTINO:* ${destination?.toUpperCase() || "—"}
 
-🚛 VEÍCULO: ${driverPlate} (${driverName})
-👤 MOTORISTA: ${driverName}
-📞 CONTATO: ${driverPhone}
+🚛 *VEÍCULO:* ${driverPlate}
+👤 *MOTORISTA:* ${driverName}
+📞 *CONTATO:* ${driverPhone}
 
-🚔 VIATURA: ${vehiclePlate}
-👮 AGENTE 01: ${agent1?.toUpperCase()}
-👮 AGENTE 02: ${agent2?.toUpperCase()}
+🚔 *VIATURA:* ${vehiclePlate}
+👮 *AGENTE 01:* ${agent1?.toUpperCase()}
+👮 *AGENTE 02:* ${agent2?.toUpperCase()}
 
-📈PROGRESSO DA MISSÃO: ${progress}%
-📣 OCORRÊNCIA: ${occurrence?.toUpperCase()}
-🏙️ LOCALIZAÇÃO: ${locationAddr}
-🗾 LINK DO GOOGLE: ${mapsLink}`;
+📈*PROGRESSO DA MISSÃO:* ${progress}%
+📣 *OCORRÊNCIA:* ${occurrence?.toUpperCase()}
+🏙️ *LOCALIZAÇÃO:* ${locationAddr}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
