@@ -889,7 +889,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       } catch {}
       const hasLogo = !!osLogoBuffer;
 
-      const doc = new PDFDocument({ size: "A4", margin: 30 });
+      const PAGE_H = 841.89;
+      const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false, bufferPages: true });
+      doc.addPage({ size: "A4", margin: 30 });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename=OS_${os.osNumber}.pdf`);
       doc.pipe(res);
@@ -903,6 +905,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const LIGHT_GRAY = "#999999";
       const BG_ALT = "#f5f5f5";
       let y = 30;
+      const MAX_Y = PAGE_H - 120;
 
       const parseDataUri = (dataUri: string | null | undefined): Buffer | null => {
         try {
@@ -935,43 +938,46 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       };
 
       const sectionHeader = (title: string) => {
-        gradientRect(LM, y, W, 22);
+        if (y > MAX_Y) return;
+        gradientRect(LM, y, W, 20);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#ffffff").text(title.toUpperCase(), LM, y + 6, { width: W, align: "center", lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff").text(title.toUpperCase(), LM, y + 5, { width: W, align: "center", lineBreak: false });
         doc.restore();
-        y += 22;
+        y += 20;
       };
 
       const fieldRow = (label: string, value: string, valueX = 160) => {
-        const rH = 18;
+        if (y > MAX_Y) return;
+        const rH = 16;
         const vPad = Math.floor((rH - 8) / 2);
         hLine(LM, y + rH, W);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(label.toUpperCase() + ":", LABEL_X, y + vPad, { width: valueX - LABEL_X - 5, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text(label.toUpperCase() + ":", LABEL_X, y + vPad, { width: valueX - LABEL_X - 5, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(value || "\u2014", LM + valueX, y + vPad, { width: W - valueX - PAD, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text(value || "\u2014", LM + valueX, y + vPad, { width: W - valueX - PAD, lineBreak: false });
         doc.restore();
         y += rH;
       };
 
       const fieldRow2 = (l1: string, v1: string, l2: string, v2: string, splitAt = 0.5) => {
-        const rH = 18;
+        if (y > MAX_Y) return;
+        const rH = 16;
         const vPad = Math.floor((rH - 8) / 2);
         hLine(LM, y + rH, W);
         const col1W = Math.floor(W * splitAt);
         const vOff = 120;
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + vPad, { width: vOff - PAD, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text(l1.toUpperCase() + ":", LABEL_X, y + vPad, { width: vOff - PAD, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", LM + vOff, y + vPad, { width: col1W - vOff - 10, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text(v1 || "\u2014", LM + vOff, y + vPad, { width: col1W - vOff - 10, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + col1W + PAD, y + vPad, { width: vOff - PAD, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text(l2.toUpperCase() + ":", LM + col1W + PAD, y + vPad, { width: vOff - PAD, lineBreak: false });
         doc.restore();
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", LM + col1W + vOff, y + vPad, { width: W - col1W - vOff - PAD, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text(v2 || "\u2014", LM + col1W + vOff, y + vPad, { width: W - col1W - vOff - PAD, lineBreak: false });
         doc.restore();
         y += rH;
       };
@@ -1009,15 +1015,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       y += 20;
 
       if (os.route) {
-        fillRect(LM, y, W, 28, "#ffffff");
-        borderRect(LM, y, W, 28);
+        fillRect(LM, y, W, 24, "#ffffff");
+        borderRect(LM, y, W, 24);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("ROTA", LABEL_X, y + 10, { width: osLabelW, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text("ROTA", LABEL_X, y + 8, { width: osLabelW, lineBreak: false });
         doc.restore();
+        const routeText = os.route.length > 200 ? os.route.substring(0, 200) + "..." : os.route;
         doc.save();
-        doc.font("Helvetica").fontSize(7.5).fillColor(DARK).text(os.route, LM + osLabelW + PAD, y + 7, { width: W - osLabelW - PAD * 3 });
+        doc.font("Helvetica").fontSize(6.5).fillColor(DARK).text(routeText, LM + osLabelW + PAD, y + 5, { width: W - osLabelW - PAD * 3, lineBreak: true, height: 16, ellipsis: true });
         doc.restore();
-        y += 28;
+        y += 24;
       }
 
       sectionHeader("Empresa Contratante / Cliente");
@@ -1055,13 +1062,14 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       doc.restore();
       y += 18;
 
-      y += 4;
+      y += 2;
 
       const renderAgent = (emp: any, roleLabel: string) => {
+        if (y > MAX_Y) return;
         sectionHeader(`Identifica\u00e7\u00e3o do Agente : ${roleLabel}`);
 
-        const photoSize = 72;
-        const photoMargin = 8;
+        const photoSize = 65;
+        const photoMargin = 6;
         const hasPhoto = emp?.photoUrl && emp.photoUrl.startsWith("data:");
         const photoBuffer = hasPhoto ? parseDataUri(emp.photoUrl) : null;
 
@@ -1086,28 +1094,29 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           doc.restore();
         }
 
-        const rH = 16;
-        const vPad = Math.floor((rH - 8) / 2);
+        const rH = 14;
+        const vPad = Math.floor((rH - 7) / 2);
         const labelX = dataStartX + 4;
         const labelW = 55;
         const valX = labelX + labelW;
         const rightCol = Math.floor(dataW * 0.55);
 
         const agentRow = (l1: string, v1: string, l2: string, v2: string) => {
+          if (y > MAX_Y) return;
           hLine(dataStartX, y + rH, dataW);
           doc.save();
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l1.toUpperCase() + ":", labelX, y + vPad, { width: labelW, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v1 || "\u2014", valX, y + vPad, { width: rightCol - labelW - 5, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text(l2.toUpperCase() + ":", labelX + rightCol, y + vPad, { width: labelW, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(8).fillColor(DARK).text(v2 || "\u2014", valX + rightCol, y + vPad, { width: dataW - rightCol - labelW - 5, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text(l1.toUpperCase() + ":", labelX, y + vPad, { width: labelW, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text(v1 || "\u2014", valX, y + vPad, { width: rightCol - labelW - 5, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text(l2.toUpperCase() + ":", labelX + rightCol, y + vPad, { width: labelW, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text(v2 || "\u2014", valX + rightCol, y + vPad, { width: dataW - rightCol - labelW - 5, lineBreak: false });
           doc.restore();
           y += rH;
         };
 
         hLine(dataStartX, y + rH, dataW);
         doc.save();
-        doc.font("Helvetica-Bold").fontSize(8).fillColor(GRAY).text("NOME:", labelX, y + vPad, { width: labelW, lineBreak: false });
-        doc.font("Helvetica-Bold").fontSize(9).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), valX, y + vPad - 1, { width: dataW - labelW - 10, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor(GRAY).text("NOME:", labelX, y + vPad, { width: labelW, lineBreak: false });
+        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(DARK).text((emp?.name || "\u2014").toUpperCase(), valX, y + vPad - 1, { width: dataW - labelW - 10, lineBreak: false });
         doc.restore();
         y += rH;
 
@@ -1120,8 +1129,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           agentRow("Colete", `${emp.vestNumber} ${emp.vestBrand || ""}`.trim(), "Val Colete", emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "\u2014");
         }
 
-        y = Math.max(y, photoY + photoSize + 4);
-        y += 6;
+        y = Math.max(y, photoY + photoSize + 2);
+        y += 4;
       };
 
       if (emp1) renderAgent(emp1, "L\u00cdDER / MOTORISTA");
@@ -1161,7 +1170,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           doc.restore();
           y += 18;
         }
-        y += 6;
+        y += 4;
       }
 
       if (vehicle) {
@@ -1205,9 +1214,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           return buf && buf.length > 100;
         });
 
-        if (validPhotos.length > 0) {
-          y += 4;
-          const photoRowH = 65;
+        if (validPhotos.length > 0 && y < MAX_Y) {
+          y += 2;
+          const photoRowH = 55;
           const gap = 6;
           const totalGaps = (validPhotos.length - 1) * gap;
           const photoW = Math.floor((W - totalGaps) / validPhotos.length);
@@ -1231,10 +1240,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             }
             px += photoW + gap;
           }
-          y += photoRowH + 12;
+          y += photoRowH + 10;
         }
 
-        y += 6;
+        y += 4;
       }
 
       if (os.escortedDriverName || os.escortedVehiclePlate) {
@@ -1248,47 +1257,59 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         y += 6;
       }
 
-      if (os.description || os.notes) {
+      if ((os.description || os.notes) && y < MAX_Y) {
         sectionHeader("Informa\u00e7\u00f5es Complementares / Observa\u00e7\u00f5es");
-        fillRect(LM, y, W, 40, "#ffffff");
-        borderRect(LM, y, W, 40);
+        const obsH = 30;
+        fillRect(LM, y, W, obsH, "#ffffff");
+        borderRect(LM, y, W, obsH);
         doc.save();
-        doc.font("Helvetica").fontSize(8).fillColor(DARK);
-        const infoText = [os.description, os.notes].filter(Boolean).join("\n");
-        doc.text(infoText || "\u2014", LABEL_X, y + 16, { width: W - PAD * 2 });
+        doc.font("Helvetica").fontSize(7).fillColor(DARK);
+        const infoText = [os.description, os.notes].filter(Boolean).join(" | ");
+        const truncInfo = infoText.length > 300 ? infoText.substring(0, 300) + "..." : infoText;
+        doc.text(truncInfo || "\u2014", LABEL_X, y + 6, { width: W - PAD * 2, height: obsH - 10, lineBreak: true, ellipsis: true });
         doc.restore();
-        y += 44;
+        y += obsH + 2;
       }
 
-      const footerY = Math.max(y + 30, 720);
+      const footerH = 80;
+      const footerY = Math.min(Math.max(y + 20, 700), PAGE_H - 30 - footerH);
 
-      gradientRect(LM, footerY, W, 28);
+      gradientRect(LM, footerY, W, 24);
       doc.save();
-      doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#ffffff").text(
+      doc.font("Helvetica-Bold").fontSize(7).fillColor("#ffffff").text(
         "ATENCIOSAMENTE, DEPARTAMENTO DE ESCOLTA ARMADA \u2014 TORRES VIGIL\u00c2NCIA PATRIMONIAL",
-        LM, footerY + 9, { width: W, align: "center", lineBreak: false }
+        LM, footerY + 7, { width: W, align: "center", lineBreak: false }
       );
       doc.restore();
 
-      const infoY = footerY + 32;
-      const qrSize = 55;
+      const infoY = footerY + 28;
+      const qrSize = 48;
       doc.image(qrBuffer, LM + W - qrSize - 2, infoY, { width: qrSize });
 
       const infoW = W - qrSize - 20;
       doc.save();
-      doc.font("Helvetica-Bold").fontSize(7.5).fillColor(DARK).text("TORRES VIGIL\u00c2NCIA PATRIMONIAL LTDA", LM, infoY + 2, { width: infoW, align: "center", lineBreak: false });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT_GRAY).text("CNPJ 36.982.392/0001-89", LM, infoY + 14, { width: infoW, align: "center", lineBreak: false });
-      doc.font("Helvetica").fontSize(7).fillColor(LIGHT_GRAY).text("Tel: (11) 96369-6699  |  www.torresseguranca.com.br", LM, infoY + 25, { width: infoW, align: "center", lineBreak: false });
-      doc.font("Helvetica").fontSize(6.5).fillColor("#a3a3a3").text(
+      doc.font("Helvetica-Bold").fontSize(7).fillColor(DARK).text("TORRES VIGIL\u00c2NCIA PATRIMONIAL LTDA", LM, infoY + 2, { width: infoW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(6.5).fillColor(LIGHT_GRAY).text("CNPJ 36.982.392/0001-89", LM, infoY + 12, { width: infoW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(6.5).fillColor(LIGHT_GRAY).text("Tel: (11) 96369-6699  |  www.torresseguranca.com.br", LM, infoY + 22, { width: infoW, align: "center", lineBreak: false });
+      doc.font("Helvetica").fontSize(6).fillColor("#a3a3a3").text(
         `Documento gerado eletronicamente em ${new Date().toLocaleDateString("pt-BR")}, ${new Date().toLocaleTimeString("pt-BR")}`,
-        LM, infoY + 40, { width: infoW, align: "center", lineBreak: false }
+        LM, infoY + 34, { width: infoW, align: "center", lineBreak: false }
       );
       doc.restore();
+
+      const pageRange = doc.bufferedPageRange();
+      if (pageRange.count > 1) {
+        for (let i = pageRange.count - 1; i > 0; i--) {
+          doc.removePage(i);
+        }
+      }
 
       doc.end();
     } catch (error: any) {
       console.error("PDF generation error:", error);
-      res.status(500).json({ message: "Erro ao gerar PDF" });
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Erro ao gerar PDF" });
+      }
     }
   });
 

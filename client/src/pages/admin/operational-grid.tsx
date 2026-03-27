@@ -1845,6 +1845,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
   const [cmdOpen, setCmdOpen] = useState(false);
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
+  const [preAlertLoading, setPreAlertLoading] = useState(false);
 
   const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
 
@@ -1896,8 +1897,51 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
 
   void gerenciadoras;
 
+  const handlePreAlert = async () => {
+    const osId = v.activeOs?.id || v.scheduledOs?.id;
+    if (!osId) {
+      toast({ title: "Sem OS vinculada", description: "Esta viatura não possui OS ativa ou agendada para gerar o pré-alerta.", variant: "destructive" });
+      return;
+    }
+    setPreAlertLoading(true);
+    try {
+      const res = await authFetch(`/api/service-orders/${osId}/pdf`);
+      if (!res.ok) throw new Error("Falha ao gerar PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (!win) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `PreAlerta_OS_${v.activeOs?.osNumber || v.scheduledOs?.osNumber}.pdf`;
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast({ title: "Pré-Alerta gerado", description: `OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber} aberta em nova aba.` });
+    } catch (err: any) {
+      toast({ title: "Erro ao gerar pré-alerta", description: err.message, variant: "destructive" });
+    } finally {
+      setPreAlertLoading(false);
+    }
+  };
+
+  const hasOs = !!(v.activeOs || v.scheduledOs);
+
   return (
     <div className="flex items-center gap-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasOs ? "border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
+            onClick={handlePreAlert}
+            disabled={!hasOs || preAlertLoading}
+            data-testid={`btn-pre-alert-${v.id}`}
+          >
+            {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{hasOs ? "Pré-Alerta (Gerar OS)" : "Sem OS para pré-alerta"}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
