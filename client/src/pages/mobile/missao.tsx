@@ -1577,7 +1577,7 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {config.photos && !config.needsKm && !config.needsChecklist && currentStep !== "aguardando" && currentStep !== "checkout_armamento" && currentStep !== "checkout_viatura" && currentStep !== "chegada_destino" && (
+        {config.photos && !config.needsKm && !config.needsChecklist && currentStep !== "aguardando" && currentStep !== "checkout_armamento" && currentStep !== "checkout_viatura" && currentStep !== "chegada_destino" && currentStep !== "chegada_base" && (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
               {config.photos.map((label) => {
