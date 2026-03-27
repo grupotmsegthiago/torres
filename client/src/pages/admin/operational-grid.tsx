@@ -2134,15 +2134,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       if (!res.ok) throw new Error("Falha ao gerar PDF");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `PreAlerta_OS_${v.activeOs?.osNumber || v.scheduledOs?.osNumber}.pdf`;
-        a.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast({ title: "Pré-Alerta gerado", description: `OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber} aberta em nova aba.` });
+      setPdfOverlayUrl(url);
+      setPdfOverlayTitle(`Pré-Alerta — OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber}`);
     } catch (err: any) {
       toast({ title: "Erro ao gerar pré-alerta", description: err.message, variant: "destructive" });
     } finally {
@@ -2150,22 +2143,55 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
     }
   };
 
+  const [pdfOverlayUrl, setPdfOverlayUrl] = useState<string | null>(null);
+  const [pdfOverlayTitle, setPdfOverlayTitle] = useState("");
+  const [relatorioLoading, setRelatorioLoading] = useState(false);
+
+  const handleRelatorioMissao = async () => {
+    const osId = v.activeOs?.id || v.scheduledOs?.id;
+    if (!osId) { toast({ title: "Sem OS vinculada", variant: "destructive" }); return; }
+    setRelatorioLoading(true);
+    try {
+      const res = await authFetch(`/api/service-orders/${osId}/relatorio-missao`);
+      if (!res.ok) throw new Error("Falha ao gerar relatório");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPdfOverlayUrl(url);
+      setPdfOverlayTitle(`Relatório de Missão — OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber}`);
+    } catch (err: any) { toast({ title: "Erro ao gerar relatório", description: err.message, variant: "destructive" }); }
+    finally { setRelatorioLoading(false); }
+  };
+
   const hasOs = !!(v.activeOs || v.scheduledOs);
+  const hasActiveOrFinished = v.activeOs && ["em_transito_origem", "em_transito_destino", "chegada_destino", "finalizada", "retorno_base", "chegada_base", "encerrada", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista", "iniciar_missao", "checkout_km_final", "checkout_viatura_retorno"].includes(v.activeOs.missionStatus);
 
   return (
     <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasOs ? "border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
+            className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasOs ? "border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
             onClick={handlePreAlert}
             disabled={!hasOs || preAlertLoading}
             data-testid={`btn-pre-alert-${v.id}`}
           >
-            {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
           </button>
         </TooltipTrigger>
-        <TooltipContent>{hasOs ? "Pré-Alerta (Gerar OS)" : "Sem OS para pré-alerta"}</TooltipContent>
+        <TooltipContent>{hasOs ? "Visualizar Pré-Alerta" : "Sem OS para pré-alerta"}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasActiveOrFinished ? "border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
+            onClick={handleRelatorioMissao}
+            disabled={!hasActiveOrFinished || relatorioLoading}
+            data-testid={`btn-relatorio-missao-${v.id}`}
+          >
+            {relatorioLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{hasActiveOrFinished ? "Relatório de Missão" : "Sem missão ativa"}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -2613,6 +2639,30 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           </Dialog>
         </>
       )}
+
+      <Dialog open={!!pdfOverlayUrl} onOpenChange={(open) => { if (!open) { if (pdfOverlayUrl) URL.revokeObjectURL(pdfOverlayUrl); setPdfOverlayUrl(null); } }}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden" data-testid="pdf-overlay-dialog">
+          <DialogHeader className="px-4 pt-3 pb-2 border-b border-neutral-200 bg-white">
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" /> {pdfOverlayTitle}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-neutral-400">Clique em "Baixar" para salvar o arquivo.</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 h-[calc(85vh-80px)]">
+            {pdfOverlayUrl && (
+              <iframe src={pdfOverlayUrl} className="w-full h-full border-0" title={pdfOverlayTitle} />
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-neutral-200 bg-white">
+            <Button size="sm" variant="outline" onClick={() => { if (pdfOverlayUrl) { const a = document.createElement("a"); a.href = pdfOverlayUrl; a.download = `${pdfOverlayTitle.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`; a.click(); } }} data-testid="btn-download-pdf">
+              <Send className="w-3.5 h-3.5 mr-1.5" /> Baixar PDF
+            </Button>
+            <Button size="sm" onClick={() => { if (pdfOverlayUrl) URL.revokeObjectURL(pdfOverlayUrl); setPdfOverlayUrl(null); }} data-testid="btn-close-pdf">
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2730,6 +2780,8 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
   const [missionAction, setMissionAction] = useState<"finish" | "cancel" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [preAlertLoading, setPreAlertLoading] = useState(false);
+  const [ctxPdfUrl, setCtxPdfUrl] = useState<string | null>(null);
+  const [ctxPdfTitle, setCtxPdfTitle] = useState("");
   const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
   const [, forceUpdate] = useState(0);
   const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
@@ -2796,13 +2848,10 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
       if (!res.ok) throw new Error("Falha ao gerar PDF");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank");
-      if (!win) { const a = document.createElement("a"); a.href = url; a.download = `PreAlerta_OS_${v.activeOs?.osNumber || v.scheduledOs?.osNumber}.pdf`; a.click(); }
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast({ title: "Pré-Alerta gerado" });
+      setCtxPdfUrl(url);
+      setCtxPdfTitle(`Pré-Alerta — OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber}`);
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
     finally { setPreAlertLoading(false); }
-    onClose();
   };
 
   const handleSaveRefPoint = async () => {
@@ -2831,7 +2880,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  const anyDialogOpen = cmdOpen || mirrorOpen || !!missionAction || !!photoModalUrl || refPointDialog || manageRefOpen;
+  const anyDialogOpen = cmdOpen || mirrorOpen || !!missionAction || !!photoModalUrl || refPointDialog || manageRefOpen || !!ctxPdfUrl;
 
   const menuStyle: React.CSSProperties = {
     position: "fixed",
@@ -3136,6 +3185,28 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
               </Button>
               <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); onClose(); }}>Voltar</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!ctxPdfUrl} onOpenChange={(open) => { if (!open) { if (ctxPdfUrl) URL.revokeObjectURL(ctxPdfUrl); setCtxPdfUrl(null); onClose(); } }}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden" data-testid="ctx-pdf-overlay-dialog">
+          <DialogHeader className="px-4 pt-3 pb-2 border-b border-neutral-200 bg-white">
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" /> {ctxPdfTitle}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-neutral-400">Clique em "Baixar" para salvar o arquivo.</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 h-[calc(85vh-80px)]">
+            {ctxPdfUrl && <iframe src={ctxPdfUrl} className="w-full h-full border-0" title={ctxPdfTitle} />}
+          </div>
+          <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-neutral-200 bg-white">
+            <Button size="sm" variant="outline" onClick={() => { if (ctxPdfUrl) { const a = document.createElement("a"); a.href = ctxPdfUrl; a.download = `${ctxPdfTitle.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`; a.click(); } }} data-testid="ctx-btn-download-pdf">
+              <Send className="w-3.5 h-3.5 mr-1.5" /> Baixar PDF
+            </Button>
+            <Button size="sm" onClick={() => { if (ctxPdfUrl) URL.revokeObjectURL(ctxPdfUrl); setCtxPdfUrl(null); onClose(); }} data-testid="ctx-btn-close-pdf">
+              Fechar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
