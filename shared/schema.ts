@@ -169,6 +169,7 @@ export const vehicles = pgTable("vehicles", {
   stoppedSince: text("stopped_since"),
   ignitionOnSince: text("ignition_on_since"),
   noSignalSince: text("no_signal_since"),
+  lastOilChangeKm: integer("last_oil_change_km"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -279,7 +280,11 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   fullTank: boolean("full_tank").default(true),
   station: text("station"),
   receiptPhoto: text("receipt_photo"),
+  pumpPhoto: text("pump_photo"),
+  odometerPhoto: text("odometer_photo"),
   notes: text("notes"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -553,6 +558,18 @@ export const employeeTimesheets = pgTable("employee_timesheets", {
   lunchOut: text("lunch_out"),
   lunchIn: text("lunch_in"),
   overtime: real("overtime"),
+  clockInPhoto: text("clock_in_photo"),
+  clockOutPhoto: text("clock_out_photo"),
+  lunchOutPhoto: text("lunch_out_photo"),
+  lunchInPhoto: text("lunch_in_photo"),
+  clockInLat: text("clock_in_lat"),
+  clockInLng: text("clock_in_lng"),
+  clockOutLat: text("clock_out_lat"),
+  clockOutLng: text("clock_out_lng"),
+  lunchOutLat: text("lunch_out_lat"),
+  lunchOutLng: text("lunch_out_lng"),
+  lunchInLat: text("lunch_in_lat"),
+  lunchInLng: text("lunch_in_lng"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -663,3 +680,21 @@ export const missionUpdates = pgTable("mission_updates", {
 export const insertMissionUpdateSchema = createInsertSchema(missionUpdates).omit({ id: true, createdAt: true });
 export type InsertMissionUpdate = z.infer<typeof insertMissionUpdateSchema>;
 export type MissionUpdate = typeof missionUpdates.$inferSelect;
+
+export const employeeOccurrences = pgTable("employee_occurrences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  vehicleId: integer("vehicle_id"),
+  type: text("type").notNull(),
+  description: text("description").notNull(),
+  photos: text("photos").array(),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
+  status: text("status").notNull().default("aberta"),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeOccurrenceSchema = createInsertSchema(employeeOccurrences).omit({ id: true, createdAt: true });
+export type InsertEmployeeOccurrence = z.infer<typeof insertEmployeeOccurrenceSchema>;
+export type EmployeeOccurrence = typeof employeeOccurrences.$inferSelect;

@@ -378,6 +378,42 @@ export async function ensureDbSchema() {
       ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS photo_url TEXT
     `).catch(() => {});
 
+    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_oil_change_km INTEGER`).catch(() => {});
+
+    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS pump_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS odometer_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
+
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_photo TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lat TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lng TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lat TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lng TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lat TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lng TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lat TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lng TEXT`).catch(() => {});
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS employee_occurrences (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        vehicle_id INTEGER,
+        type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        photos TEXT[],
+        latitude TEXT,
+        longitude TEXT,
+        status TEXT NOT NULL DEFAULT 'aberta',
+        admin_notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);

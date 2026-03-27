@@ -36,6 +36,9 @@ import MobileChecklistPage from "@/pages/mobile/checklist";
 import MobilePerfilPage from "@/pages/mobile/perfil";
 import MobileRHPage from "@/pages/mobile/meu-rh";
 import MobileSelfiePage from "@/pages/mobile/selfie";
+import MobilePontoPage from "@/pages/mobile/ponto";
+import MobileAbastecimentoPage from "@/pages/mobile/abastecimento";
+import MobileOcorrenciaPage from "@/pages/mobile/ocorrencia";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -151,6 +154,9 @@ function Router() {
       <Route path="/mobile/perfil">{() => <MobileProtectedRoute component={MobilePerfilPage} />}</Route>
       <Route path="/mobile/meu-rh">{() => <MobileProtectedRoute component={MobileRHPage} />}</Route>
       <Route path="/mobile/selfie">{() => <MobileProtectedRoute component={MobileSelfiePage} skipSelfieCheck />}</Route>
+      <Route path="/mobile/ponto">{() => <MobileProtectedRoute component={MobilePontoPage} />}</Route>
+      <Route path="/mobile/abastecimento">{() => <MobileProtectedRoute component={MobileAbastecimentoPage} />}</Route>
+      <Route path="/mobile/ocorrencia">{() => <MobileProtectedRoute component={MobileOcorrenciaPage} />}</Route>
       <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>

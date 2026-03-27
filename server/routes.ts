@@ -14,7 +14,7 @@ import {
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
-  employeeDisciplinary,
+  employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
   auditLogs, users, loginSelfies,
   companyDocuments, homologationLogs, missionUpdates,
 } from "@shared/schema";
@@ -6031,6 +6031,223 @@ Regras:
     } catch (err: any) {
       console.error("Erro ao enviar e-mail de homologação:", err);
       res.status(500).json({ message: `Erro ao enviar e-mail: ${err.message}` });
+    }
+  });
+
+  // ─── MOBILE: Folha de Ponto (Clock In/Out with photo + GPS) ──────────
+  app.get("/api/mobile/ponto/today", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.json(null);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const rows = await db.select().from(employeeTimesheets)
+        .where(and(
+          eq(employeeTimesheets.employeeId, employeeId),
+          gte(employeeTimesheets.date, today),
+          lte(employeeTimesheets.date, tomorrow),
+        )).limit(1);
+      res.json(rows[0] || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/mobile/ponto/clock", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
+      const { action, photo, latitude, longitude } = req.body;
+      if (!action) return res.status(400).json({ message: "Ação obrigatória" });
+      if (!photo || typeof photo !== "string" || !photo.startsWith("data:image/")) return res.status(400).json({ message: "Foto obrigatória (formato inválido)" });
+      if (photo.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Foto excede 5MB" });
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const existing = await db.select().from(employeeTimesheets)
+        .where(and(
+          eq(employeeTimesheets.employeeId, employeeId),
+          gte(employeeTimesheets.date, today),
+          lte(employeeTimesheets.date, tomorrow),
+        )).limit(1);
+
+      const record = existing[0];
+      if (action === "clock_in") {
+        if (record?.clockIn) return res.status(400).json({ message: "Entrada já registrada hoje" });
+        if (record) {
+          const [updated] = await db.update(employeeTimesheets)
+            .set({ clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude })
+            .where(eq(employeeTimesheets.id, record.id)).returning();
+          return res.json(updated);
+        }
+        const [created] = await db.insert(employeeTimesheets).values({
+          employeeId, date: now,
+          clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude,
+        }).returning();
+        return res.json(created);
+      }
+      if (!record) return res.status(400).json({ message: "Registre a entrada primeiro" });
+
+      const updateMap: Record<string, any> = {
+        lunch_out: { lunchOut: timeStr, lunchOutPhoto: photo, lunchOutLat: latitude, lunchOutLng: longitude },
+        lunch_in: { lunchIn: timeStr, lunchInPhoto: photo, lunchInLat: latitude, lunchInLng: longitude },
+        clock_out: { clockOut: timeStr, clockOutPhoto: photo, clockOutLat: latitude, clockOutLng: longitude },
+      };
+      const updates = updateMap[action];
+      if (!updates) return res.status(400).json({ message: "Ação inválida" });
+
+      if (action === "lunch_out" && record.lunchOut) return res.status(400).json({ message: "Saída almoço já registrada" });
+      if (action === "lunch_in" && !record.lunchOut) return res.status(400).json({ message: "Registre a saída almoço primeiro" });
+      if (action === "lunch_in" && record.lunchIn) return res.status(400).json({ message: "Retorno almoço já registrado" });
+      if (action === "clock_out" && record.clockOut) return res.status(400).json({ message: "Saída já registrada" });
+
+      const [updated] = await db.update(employeeTimesheets)
+        .set(updates)
+        .where(eq(employeeTimesheets.id, record.id)).returning();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── MOBILE: Abastecimento ──────────────────────────────────────────
+  app.get("/api/mobile/abastecimento/vehicle", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.json(null);
+      const assignments = await db.execute(sql`
+        SELECT v.id, v.plate, v.model, v.km, v.last_oil_change_km
+        FROM vehicle_assignments va
+        JOIN vehicles v ON v.id = va.vehicle_id
+        WHERE va.employee_id = ${employeeId} AND va.active = true
+        LIMIT 1
+      `);
+      res.json(assignments.rows?.[0] || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/mobile/abastecimento", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
+      const { vehicleId, km, liters, costPerLiter, totalCost, fuelType, station, receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude } = req.body;
+      if (!vehicleId || !km) return res.status(400).json({ message: "Veículo e KM obrigatórios" });
+      if (!receiptPhoto || typeof receiptPhoto !== "string" || !receiptPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da NF obrigatória (formato inválido)" });
+      if (!pumpPhoto || typeof pumpPhoto !== "string" || !pumpPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da bomba obrigatória (formato inválido)" });
+      if (!odometerPhoto || typeof odometerPhoto !== "string" || !odometerPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto do hodômetro obrigatória (formato inválido)" });
+
+      const assignCheck = await db.execute(sql`SELECT 1 FROM vehicle_assignments WHERE employee_id = ${employeeId} AND vehicle_id = ${vehicleId} AND active = true LIMIT 1`);
+      if (!assignCheck.rows?.length) return res.status(403).json({ message: "Veículo não vinculado ao seu usuário" });
+
+      const vehicle = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+      if (vehicle[0] && km < (vehicle[0].km || 0)) {
+        return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${vehicle[0].km})` });
+      }
+
+      const [fueling] = await db.insert(vehicleFueling).values({
+        vehicleId, driverId: employeeId, date: new Date().toISOString().split("T")[0],
+        liters: liters?.toString() || "0", costPerLiter: costPerLiter?.toString(), totalCost: totalCost?.toString(),
+        km, fuelType: fuelType || "diesel", fullTank: true, station,
+        receiptPhoto, pumpPhoto, odometerPhoto, latitude, longitude,
+      }).returning();
+
+      await db.update(vehicles).set({ km, lastKmUpdate: new Date() }).where(eq(vehicles.id, vehicleId));
+
+      const oilKm = vehicle[0]?.lastOilChangeKm || 0;
+      const kmSinceOil = km - oilKm;
+      let oilAlert = null;
+      if (oilKm > 0 && kmSinceOil >= 9000) {
+        oilAlert = kmSinceOil >= 10000
+          ? `ATENÇÃO: Troca de óleo VENCIDA! ${kmSinceOil.toLocaleString("pt-BR")} km desde última troca.`
+          : `Aviso: Faltam ${(10000 - kmSinceOil).toLocaleString("pt-BR")} km para troca de óleo.`;
+      }
+
+      res.status(201).json({ fueling, oilAlert });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── MOBILE: Ocorrências ───────────────────────────────────────────
+  app.get("/api/mobile/ocorrencias", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.json([]);
+      const rows = await db.select().from(employeeOccurrences)
+        .where(eq(employeeOccurrences.employeeId, employeeId))
+        .orderBy(desc(employeeOccurrences.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/mobile/ocorrencias", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
+      const { type, description, photos, vehicleId, latitude, longitude } = req.body;
+      if (!type || !description) return res.status(400).json({ message: "Tipo e descrição obrigatórios" });
+      const validTypes = ["acidente", "quebra", "avaria", "manutencao", "seguranca", "outro"];
+      if (!validTypes.includes(type)) return res.status(400).json({ message: "Tipo inválido" });
+      const validPhotos = (photos || []).filter((p: any) => typeof p === "string" && p.startsWith("data:image/")).slice(0, 5);
+      const [record] = await db.insert(employeeOccurrences).values({
+        employeeId, vehicleId: vehicleId || null, type, description: description.substring(0, 2000),
+        photos: validPhotos, latitude, longitude,
+      }).returning();
+      res.status(201).json(record);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── ADMIN: Ocorrências management ─────────────────────────────────
+  app.get("/api/ocorrencias", requireAdminRole, async (_req, res) => {
+    try {
+      const rows = await db.select().from(employeeOccurrences).orderBy(desc(employeeOccurrences.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/ocorrencias/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { status, adminNotes } = req.body;
+      const [updated] = await db.update(employeeOccurrences)
+        .set({ ...(status && { status }), ...(adminNotes !== undefined && { adminNotes }) })
+        .where(eq(employeeOccurrences.id, Number(req.params.id))).returning();
+      if (!updated) return res.status(404).json({ message: "Ocorrência não encontrada" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Oil change alert check ─────────────────────────────────────────
+  app.get("/api/mobile/oil-alert/:vehicleId", requireAuth, async (req, res) => {
+    try {
+      const v = await db.select().from(vehicles).where(eq(vehicles.id, Number(req.params.vehicleId))).limit(1);
+      if (!v[0]) return res.json({ alert: null });
+      const oilKm = v[0].lastOilChangeKm || 0;
+      const currentKm = v[0].km || 0;
+      if (oilKm === 0) return res.json({ alert: null, oilKm: 0, currentKm });
+      const diff = currentKm - oilKm;
+      let alert = null;
+      if (diff >= 10000) alert = `Troca de óleo VENCIDA! ${diff.toLocaleString("pt-BR")} km desde última troca.`;
+      else if (diff >= 9000) alert = `Faltam ${(10000 - diff).toLocaleString("pt-BR")} km para troca de óleo.`;
+      res.json({ alert, oilKm, currentKm, kmSinceOil: diff });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

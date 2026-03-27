@@ -59,6 +59,9 @@ interface EscortContract {
   valor_hora_estadia: number; valor_diaria: number; vrp_base: number;
   adicional_noturno_vrp_pct: number; adicional_noturno_km_pct: number;
   adicional_periculosidade_pct: number; periculosidade_horas_limite: number;
+  valor_acionamento: number; franquia_horas: number; franquia_km: number;
+  valor_hora_extra: number; valor_km_extra: number;
+  valor_cancelamento: number; custo_deslocamento_100km: number;
   status: string;
 }
 
@@ -692,6 +695,13 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
     adicional_noturno_km_pct: editing?.adicional_noturno_km_pct?.toString() || "15",
     adicional_periculosidade_pct: editing?.adicional_periculosidade_pct?.toString() || "30",
     periculosidade_horas_limite: editing?.periculosidade_horas_limite?.toString() || "8",
+    valor_acionamento: editing?.valor_acionamento?.toString() || "0",
+    franquia_horas: editing?.franquia_horas?.toString() || "0",
+    franquia_km: editing?.franquia_km?.toString() || "0",
+    valor_hora_extra: editing?.valor_hora_extra?.toString() || "0",
+    valor_km_extra: editing?.valor_km_extra?.toString() || "0",
+    valor_cancelamento: editing?.valor_cancelamento?.toString() || "0",
+    custo_deslocamento_100km: editing?.custo_deslocamento_100km?.toString() || "0",
   });
   const sf = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
@@ -704,6 +714,13 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
         valor_diaria: parseFloat(form.valor_diaria), vrp_base: parseFloat(form.vrp_base),
         adicional_noturno_vrp_pct: parseFloat(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: parseFloat(form.adicional_noturno_km_pct),
         adicional_periculosidade_pct: parseFloat(form.adicional_periculosidade_pct), periculosidade_horas_limite: parseInt(form.periculosidade_horas_limite),
+        valor_acionamento: parseFloat(form.valor_acionamento) || 0,
+        franquia_horas: parseFloat(form.franquia_horas) || 0,
+        franquia_km: parseFloat(form.franquia_km) || 0,
+        valor_hora_extra: parseFloat(form.valor_hora_extra) || 0,
+        valor_km_extra: parseFloat(form.valor_km_extra) || 0,
+        valor_cancelamento: parseFloat(form.valor_cancelamento) || 0,
+        custo_deslocamento_100km: parseFloat(form.custo_deslocamento_100km) || 0,
         status: "Ativo",
       };
       if (editing) return apiRequest("PUT", `/api/escort/contracts/${editing.id}`, payload);
@@ -750,6 +767,30 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Periculosidade</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_periculosidade_pct} onChange={e => sf("adicional_periculosidade_pct", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Noturno VRP</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_noturno_vrp_pct} onChange={e => sf("adicional_noturno_vrp_pct", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Noturno KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.adicional_noturno_km_pct} onChange={e => sf("adicional_noturno_km_pct", e.target.value)} /></div>
+            </div>
+          </div>
+          <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
+            <p className="text-[10px] font-black text-emerald-700 uppercase mb-3 tracking-widest">Valores de Acionamento</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Acionamento</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_acionamento} onChange={e => sf("valor_acionamento", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancelamento (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_cancelamento} onChange={e => sf("valor_cancelamento", e.target.value)} /></div>
+            </div>
+          </div>
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <p className="text-[10px] font-black text-purple-700 uppercase mb-3 tracking-widest">Franquias e Extras</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia Horas</label><input type="number" step="0.5" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_horas} onChange={e => sf("franquia_horas", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Hora Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_extra} onChange={e => sf("valor_hora_extra", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ KM Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_extra} onChange={e => sf("valor_km_extra", e.target.value)} /></div>
+            </div>
+          </div>
+          <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+            <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest">Custos Especiais</p>
+            <div>
+              <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Custo Deslocamento acima de 100km (R$)</label>
+              <input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.custo_deslocamento_100km} onChange={e => sf("custo_deslocamento_100km", e.target.value)} />
+              <p className="text-[9px] text-neutral-400 mt-1">Rodando com saída da base</p>
             </div>
           </div>
           <button type="submit" disabled={saveMutation.isPending} data-testid="button-save-price-table"
@@ -1033,12 +1074,19 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
               <Card className="p-8 border-neutral-200 shadow-sm text-center"><DollarSign size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhuma tabela de preços. Valores padrão serão utilizados.</p></Card>
             ) : clientPrices.map(cp => (
               <Card key={cp.id} className="p-4 border-neutral-200 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setEditingPrice(cp); setShowPriceModal(true); }} data-testid={`card-price-${cp.id}`}>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-2">
                   <div><p className="text-[9px] font-black text-blue-600 uppercase">KM Carregado</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_carregado))}/km</p></div>
                   <div><p className="text-[9px] font-black text-neutral-400 uppercase">KM Vazio</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_vazio))}/km</p></div>
                   <div><p className="text-[9px] font-black text-neutral-400 uppercase">Estadia</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_hora_estadia))}/h</p></div>
                   <div><p className="text-[9px] font-black text-amber-600 uppercase">VRP</p><p className="text-sm font-black font-mono">{fmt(Number(cp.vrp_base))}</p></div>
-                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Franquia</p><p className="text-sm font-black font-mono">{cp.franquia_minima_km} km</p></div>
+                  <div><p className="text-[9px] font-black text-neutral-400 uppercase">Franquia KM</p><p className="text-sm font-black font-mono">{cp.franquia_minima_km} km</p></div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-neutral-100">
+                  <div><p className="text-[9px] font-black text-emerald-600 uppercase">R$/KM Acion.</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_acionamento || 0))}</p></div>
+                  <div><p className="text-[9px] font-black text-purple-600 uppercase">Franq. Horas</p><p className="text-sm font-black font-mono">{cp.franquia_horas || 0}h</p></div>
+                  <div><p className="text-[9px] font-black text-purple-600 uppercase">Hora Extra</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_hora_extra || 0))}</p></div>
+                  <div><p className="text-[9px] font-black text-purple-600 uppercase">KM Extra</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_km_extra || 0))}</p></div>
+                  <div><p className="text-[9px] font-black text-red-600 uppercase">Cancelamento</p><p className="text-sm font-black font-mono">{fmt(Number(cp.valor_cancelamento || 0))}</p></div>
                 </div>
               </Card>
             ))}
