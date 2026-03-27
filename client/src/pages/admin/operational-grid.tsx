@@ -389,17 +389,26 @@ function getMissionProgress(missionStatus: string | null): number {
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const pngBlob = blob.type === "image/png" ? blob : await new Promise<Blob>((resolve) => {
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
+        const maxW = 800;
+        const maxH = 800;
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
         const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext("2d")!.drawImage(img, 0, 0);
-        canvas.toBlob((b) => resolve(b!), "image/png");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((b) => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
       };
+      img.onerror = reject;
       img.src = dataUrl;
     });
     await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
