@@ -2880,6 +2880,121 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
   );
 }
 
+function MissionUpdatesAlert() {
+  const { toast } = useToast();
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: updates = [] } = useQuery<any[]>({
+    queryKey: ["/api/mission/updates", "unread"],
+    queryFn: async () => {
+      const res = await authFetch("/api/mission/updates?unread=true");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (ids?: number[]) => {
+      await authFetch("/api/mission/updates/mark-read", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ids ? { ids } : {}),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+    },
+  });
+
+  if (updates.length === 0) return null;
+
+  const displayUpdates = expanded ? updates : updates.slice(0, 3);
+
+  return (
+    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden animate-pulse-slow" data-testid="mission-updates-alert">
+      <div className="px-4 py-3 flex items-center justify-between bg-amber-100/50">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center">
+            <MessageSquareText className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-amber-900">
+              {updates.length} atualização{updates.length > 1 ? "ões" : ""} dos agentes
+            </p>
+            <p className="text-[10px] text-amber-600">Mensagens em tempo real das missões em andamento</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs border-amber-300 text-amber-700 hover:bg-amber-100 h-7"
+            onClick={() => markReadMutation.mutate()}
+            disabled={markReadMutation.isPending}
+            data-testid="button-mark-all-read"
+          >
+            <CheckCircle2 className="w-3 h-3 mr-1" />
+            Marcar lidas
+          </Button>
+        </div>
+      </div>
+      <div className="divide-y divide-amber-200">
+        {displayUpdates.map((u: any) => (
+          <div key={u.id} className="px-4 py-3 flex items-start gap-3 hover:bg-amber-50/80" data-testid={`update-${u.id}`}>
+            <div className="w-7 h-7 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Bell className="w-3.5 h-3.5 text-amber-700" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-amber-900">{u.employeeName}</span>
+                {u.osNumber && (
+                  <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">{u.osNumber}</span>
+                )}
+                <span className="text-[10px] text-amber-500">
+                  {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  {" · "}
+                  {new Date(u.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                </span>
+              </div>
+              <p className="text-sm text-amber-800 mt-0.5">{u.message}</p>
+              {u.latitude && u.longitude && (
+                <a
+                  href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-0.5"
+                  data-testid={`link-location-${u.id}`}
+                >
+                  <MapPin className="w-3 h-3" />
+                  Ver localização
+                </a>
+              )}
+            </div>
+            <button
+              onClick={() => markReadMutation.mutate([u.id])}
+              className="text-amber-400 hover:text-amber-600 flex-shrink-0 mt-1"
+              title="Marcar como lida"
+              data-testid={`button-dismiss-${u.id}`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      {updates.length > 3 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-100 border-t border-amber-200"
+          data-testid="button-toggle-updates"
+        >
+          {expanded ? "Mostrar menos" : `Ver todas (${updates.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
@@ -3033,6 +3148,7 @@ export default function OperationalGridPage() {
           </Card>
         ) : (
           <>
+            <MissionUpdatesAlert />
             <SpeedAlert vehicles={vehicles} />
             {proximityResult && (
               <ProximityResultsBar

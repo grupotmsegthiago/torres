@@ -16,7 +16,7 @@ import {
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary,
   auditLogs, users, loginSelfies,
-  companyDocuments, homologationLogs,
+  companyDocuments, homologationLogs, missionUpdates,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
@@ -2663,6 +2663,59 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     );
 
     res.json(result);
+  });
+
+  app.post("/api/mission/update", requireAuth, async (req, res) => {
+    const user = req.user!;
+    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+
+    const { serviceOrderId, message, missionStep, latitude, longitude } = req.body;
+    if (!serviceOrderId || !message?.trim()) {
+      return res.status(400).json({ message: "OS e mensagem são obrigatórios" });
+    }
+
+    const so = await storage.getServiceOrder(serviceOrderId);
+    if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+    const emp = await storage.getEmployee(user.employeeId);
+
+    await db.insert(missionUpdates).values({
+      serviceOrderId,
+      osNumber: so.osNumber || null,
+      employeeId: user.employeeId,
+      employeeName: emp?.name || user.name || "—",
+      message: message.trim(),
+      missionStep: missionStep || so.missionStatus || null,
+      latitude: latitude || null,
+      longitude: longitude || null,
+      readByAdmin: 0,
+    });
+
+    res.json({ success: true });
+  });
+
+  app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
+    const unreadOnly = req.query.unread === "true";
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    let query = db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+    if (unreadOnly) {
+      query = db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit) as any;
+    }
+    const results = await query;
+    res.json(results);
+  });
+
+  app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {
+    const { ids } = req.body;
+    if (ids && Array.isArray(ids)) {
+      for (const id of ids) {
+        await db.update(missionUpdates).set({ readByAdmin: 1 }).where(eq(missionUpdates.id, id));
+      }
+    } else {
+      await db.update(missionUpdates).set({ readByAdmin: 1 }).where(eq(missionUpdates.readByAdmin, 0));
+    }
+    res.json({ success: true });
   });
 
   app.get("/api/mission/status/:serviceOrderId", requireAuth, async (req, res) => {

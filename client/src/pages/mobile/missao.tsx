@@ -672,8 +672,16 @@ export default function MobileMissaoPage() {
     }
     setSubmitting(true);
     try {
+      const pos = await getPosition();
+      await apiRequest("POST", "/api/mission/update", {
+        serviceOrderId: mission.serviceOrderId,
+        message: statusUpdate.trim(),
+        missionStep: currentStep,
+        latitude: pos?.lat || null,
+        longitude: pos?.lng || null,
+      });
       logAuditAction("mission_status_update", "/mobile/missao", `Status: ${statusUpdate.trim()} | Etapa: ${currentStep} | OS #${mission.serviceOrderId}`);
-      toast({ title: "Status enviado!" });
+      toast({ title: "Atualização enviada!", description: "O admin foi notificado." });
       setStatusUpdate("");
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });

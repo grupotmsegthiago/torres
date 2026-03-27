@@ -643,3 +643,21 @@ export const homologationLogs = pgTable("homologation_logs", {
 export const insertHomologationLogSchema = createInsertSchema(homologationLogs).omit({ id: true, sentAt: true });
 export type InsertHomologationLog = z.infer<typeof insertHomologationLogSchema>;
 export type HomologationLog = typeof homologationLogs.$inferSelect;
+
+export const missionUpdates = pgTable("mission_updates", {
+  id: serial("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  osNumber: text("os_number"),
+  employeeId: integer("employee_id"),
+  employeeName: text("employee_name"),
+  message: text("message").notNull(),
+  missionStep: text("mission_step"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
+  readByAdmin: integer("read_by_admin").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMissionUpdateSchema = createInsertSchema(missionUpdates).omit({ id: true, createdAt: true });
+export type InsertMissionUpdate = z.infer<typeof insertMissionUpdateSchema>;
+export type MissionUpdate = typeof missionUpdates.$inferSelect;
