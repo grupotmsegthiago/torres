@@ -878,13 +878,8 @@ export default function ServiceOrdersPage() {
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);
-                            const isInsideIframe = window.self !== window.top;
-                            if (isInsideIframe) {
-                              window.open(url, "_blank");
-                            } else {
-                              setPdfViewerUrl(url);
-                              setPdfViewerTitle(`OS ${o.osNumber}`);
-                            }
+                            setPdfViewerUrl(url);
+                            setPdfViewerTitle(`OS ${o.osNumber}`);
                           } catch {
                             toast({ title: "Erro ao visualizar PDF", variant: "destructive" });
                           }
@@ -896,13 +891,8 @@ export default function ServiceOrdersPage() {
                               if (!res.ok) throw new Error("Falha ao gerar relatório");
                               const blob = await res.blob();
                               const url = URL.createObjectURL(blob);
-                              const isInsideIframe = window.self !== window.top;
-                              if (isInsideIframe) {
-                                window.open(url, "_blank");
-                              } else {
-                                setPdfViewerUrl(url);
-                                setPdfViewerTitle(`Relatório Missão ${o.osNumber}`);
-                              }
+                              setPdfViewerUrl(url);
+                              setPdfViewerTitle(`Relatório Missão ${o.osNumber}`);
                             } catch {
                               toast({ title: "Erro ao gerar relatório", variant: "destructive" });
                             }
@@ -936,49 +926,34 @@ export default function ServiceOrdersPage() {
       </Card>
 
       {pdfViewerUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-2xl w-[95vw] max-w-4xl h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
-              <h3 className="font-bold text-sm" data-testid="text-pdf-viewer-title">{pdfViewerTitle}</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="overlay-pdf-viewer">
+          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl w-[95vw] max-w-5xl h-[92vh] flex flex-col overflow-hidden border border-neutral-200" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 shrink-0">
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => {
+                <FileText className="w-4 h-4 text-blue-600" />
+                <h3 className="font-bold text-sm text-neutral-900 dark:text-white" data-testid="text-pdf-viewer-title">{pdfViewerTitle}</h3>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
                   const a = document.createElement("a");
                   a.href = pdfViewerUrl;
                   a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
                   a.click();
                 }} data-testid="button-download-from-viewer">
-                  <Download className="w-4 h-4 mr-1" /> Baixar
+                  <Download className="w-3.5 h-3.5 mr-1" /> Baixar
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => {
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
                   window.open(pdfViewerUrl, "_blank");
                 }} data-testid="button-open-new-tab">
-                  <ExternalLink className="w-4 h-4 mr-1" /> Nova Aba
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Nova Aba
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="button-close-pdf-viewer">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="button-close-pdf-viewer">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
             </div>
             <div className="flex-1 overflow-hidden bg-neutral-100">
-              <object data={pdfViewerUrl} type="application/pdf" className="w-full h-full">
-                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-                  <FileText className="w-16 h-16 text-neutral-400" />
-                  <p className="text-sm text-neutral-500 text-center">Seu navegador não suporta visualização de PDF embutida.</p>
-                  <div className="flex gap-2">
-                    <Button variant="default" size="sm" onClick={() => {
-                      const a = document.createElement("a");
-                      a.href = pdfViewerUrl;
-                      a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
-                      a.click();
-                    }} data-testid="button-fallback-download">
-                      <Download className="w-4 h-4 mr-1" /> Baixar PDF
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => window.open(pdfViewerUrl, "_blank")} data-testid="button-fallback-open">
-                      <ExternalLink className="w-4 h-4 mr-1" /> Abrir em Nova Aba
-                    </Button>
-                  </div>
-                </div>
-              </object>
+              <iframe src={pdfViewerUrl} className="w-full h-full border-0" title={pdfViewerTitle} data-testid="iframe-pdf-viewer" />
             </div>
           </div>
         </div>
