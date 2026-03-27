@@ -100,12 +100,19 @@ export default function MobilePontoPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, photo, latitude: lat.toString(), longitude: lng.toString(), address: geoAddress || undefined }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { data = { message: text }; }
       if (!res.ok) {
-        const err: any = new Error(data.message || "Erro ao registrar ponto");
-        err.code = data.code;
-        err.distance = data.distance;
-        throw err;
+        if (data.code === "GEOFENCE_BLOCKED") {
+          setGeofenceBlock({
+            distance: data.distance || 0,
+            address: geoAddress || "Localização fora da sede",
+          });
+          stopCamera();
+          throw new Error("__GEOFENCE__");
+        }
+        throw new Error(data.message || "Erro ao registrar ponto");
       }
       return data;
     },
@@ -116,14 +123,8 @@ export default function MobilePontoPage() {
     },
     onError: (err: any) => {
       stopCamera();
-      if (err.code === "GEOFENCE_BLOCKED") {
-        setGeofenceBlock({
-          distance: err.distance || 0,
-          address: geoAddress || "Localização fora da sede",
-        });
-      } else {
-        toast({ title: "Erro", description: err.message, variant: "destructive" });
-      }
+      if (err.message === "__GEOFENCE__") return;
+      toast({ title: "Erro ao registrar ponto", description: err.message, variant: "destructive" });
     },
   });
 
