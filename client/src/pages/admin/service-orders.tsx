@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn } from "@/lib/queryClient";
 import { titleCase } from "@/lib/utils";
@@ -659,6 +659,40 @@ export default function ServiceOrdersPage() {
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
   const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
   const [pdfViewerTitle, setPdfViewerTitle] = useState("");
+  const [pdfPages, setPdfPages] = useState<string[]>([]);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  useEffect(() => {
+    if (!pdfViewerUrl) { setPdfPages([]); return; }
+    let cancelled = false;
+    (async () => {
+      setPdfLoading(true);
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+        const response = await fetch(pdfViewerUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, disableWorker: true }).promise;
+        const pages: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const scale = 2;
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext("2d")!;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          pages.push(canvas.toDataURL("image/png"));
+        }
+        if (!cancelled) setPdfPages(pages);
+      } catch (e) {
+        console.error("PDF render error:", e);
+      }
+      if (!cancelled) setPdfLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [pdfViewerUrl]);
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -981,8 +1015,36 @@ export default function ServiceOrdersPage() {
                 </Button>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden bg-neutral-100">
-              <iframe src={pdfViewerUrl} className="w-full h-full border-0" title={pdfViewerTitle} data-testid="iframe-pdf-viewer" />
+            <div className="flex-1 overflow-auto bg-neutral-100 p-4" id="pdf-canvas-container" data-testid="iframe-pdf-viewer">
+              {pdfLoading && (
+                <div className="flex flex-col items-center justify-center h-full gap-3">
+                  <div className="w-8 h-8 border-2 border-neutral-300 border-t-blue-600 rounded-full animate-spin" />
+                  <p className="text-sm text-neutral-500">Renderizando PDF...</p>
+                </div>
+              )}
+              {!pdfLoading && pdfPages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full gap-4">
+                  <FileText className="w-16 h-16 text-neutral-300" />
+                  <p className="text-sm text-neutral-500">Nao foi possivel renderizar o PDF.</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = pdfViewerUrl!;
+                      a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
+                      a.click();
+                    }}>
+                      <Download className="w-3.5 h-3.5 mr-1" /> Baixar PDF
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {!pdfLoading && pdfPages.length > 0 && (
+                <div className="flex flex-col items-center gap-4">
+                  {pdfPages.map((src, idx) => (
+                    <img key={idx} src={src} alt={`Pagina ${idx + 1}`} className="w-full max-w-3xl shadow-lg rounded bg-white" />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
