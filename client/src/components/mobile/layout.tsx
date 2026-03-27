@@ -61,7 +61,7 @@ function Watermark({ name }: { name: string }) {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { denied, position, loading, requestPermission } = useGeolocation();
+  const { denied, position, loading, error, requestPermission } = useGeolocation();
   useAuditLog(location);
   useScreenshotDetection(location);
 
@@ -79,8 +79,8 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
           {loading ? (
             <div className="text-center" data-testid="location-loading">
               <Loader2 className="w-10 h-10 text-neutral-400 animate-spin mx-auto mb-4" />
-              <p className="text-sm font-bold text-neutral-700">Obtendo localização...</p>
-              <p className="text-xs text-neutral-400 mt-1">Aguarde enquanto confirmamos sua posição.</p>
+              <p className="text-sm font-bold text-neutral-700">Capturando localização...</p>
+              <p className="text-xs text-neutral-400 mt-1">GPS de alta precisão ativo. Aguarde...</p>
             </div>
           ) : denied ? (
             <div className="bg-white rounded-2xl border border-red-200 p-6 text-center max-w-sm w-full" data-testid="location-denied-block">
@@ -89,7 +89,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
               </div>
               <h2 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-2">Localização Bloqueada</h2>
               <p className="text-sm text-neutral-500 mb-3">
-                A permissão de localização foi negada. Para acessar o sistema, ative a localização:
+                Você precisa permitir o acesso ao GPS para continuar. Ative a localização:
               </p>
               <ol className="text-[12px] text-neutral-600 text-left ml-4 mb-4 list-decimal space-y-1">
                 <li>Abra os <strong>Ajustes</strong> do celular</li>
@@ -97,6 +97,9 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
                 <li>Encontre o <strong>navegador</strong> (Safari/Chrome)</li>
                 <li>Selecione <strong>"Ao Usar o App"</strong></li>
               </ol>
+              {error && (
+                <p className="text-[11px] text-red-600 bg-red-50 rounded-lg p-2 mb-3" data-testid="text-geo-error">{error}</p>
+              )}
               <Button
                 onClick={requestPermission}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider"
@@ -118,6 +121,9 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
               <p className="text-xs text-neutral-400 mb-5">
                 Sua posição será monitorada durante o uso para garantir a segurança das operações.
               </p>
+              {error && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2 mb-3" data-testid="text-geo-error">{error}</p>
+              )}
               <Button
                 onClick={requestPermission}
                 className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-wider text-sm py-3"

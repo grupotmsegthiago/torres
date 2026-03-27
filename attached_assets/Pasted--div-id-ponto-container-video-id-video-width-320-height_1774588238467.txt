@@ -1,0 +1,66 @@
+<div id="ponto-container">
+  <video id="video" width="320" height="240" autoplay></video>
+  <canvas id="canvas" style="display:none;"></canvas>
+  
+  <button id="btn-bater-ponto" onclick="processarPonto()">Bater Ponto agora</button>
+  
+  <p id="status-msg"></p>
+</div>
+
+<script>
+async function processarPonto() {
+    const status = document.getElementById('status-msg');
+    status.innerText = "Capturando localização e foto...";
+
+    // 1. Configurações de ALTA PRECISÃO para o GPS
+    const geoOptions = {
+        enableHighAccuracy: true, 
+        timeout: 15000,           // 15 segundos de margem
+        maximumAge: 0            // Força busca de localização nova
+    };
+
+    try {
+        // Captura a localização primeiro (Geralmente o que mais demora)
+        const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, geoOptions);
+        });
+
+        const { latitude, longitude, accuracy } = position.coords;
+
+        // 2. Captura a Foto do Vídeo
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const fotoBase64 = canvas.toDataURL('image/jpeg');
+
+        // 3. Preparar os dados para o Supabase
+        const dadosPonto = {
+            latitude: latitude,
+            longitude: longitude,
+            precisao_metros: accuracy,
+            foto: fotoBase64,
+            timestamp: new Date().toISOString()
+        };
+
+        console.log("Dados prontos para o banco:", dadosPonto);
+        
+        // Aqui você chamaria sua função do Supabase:
+        // await supabase.from('folha_ponto').insert([dadosPonto]);
+
+        status.innerText = `Ponto batido com sucesso! Precisão: ${accuracy.toFixed(1)}m`;
+        status.style.color = "green";
+
+    } catch (error) {
+        status.style.color = "red";
+        if (error.code === 1) {
+            status.innerText = "Erro: Você precisa permitir o acesso ao GPS e Câmera.";
+        } else {
+            status.innerText = "Erro ao capturar localização. Tente novamente em local aberto.";
+        }
+    }
+}
+
+// Inicializar câmera ao carregar
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then(stream => { document.getElementById('video').srcObject = stream; });
+</script>

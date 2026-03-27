@@ -4,11 +4,18 @@ import { authFetch } from "@/lib/queryClient";
 
 const INTERVAL_MS = 2 * 60 * 1000;
 
+const GPS_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 15000,
+  maximumAge: 0,
+};
+
 export function useGeolocation() {
   const { user } = useAuth();
   const [denied, setDenied] = useState(false);
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const watchRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initDone = useRef(false);
@@ -17,6 +24,7 @@ export function useGeolocation() {
     setPosition(pos);
     setLoading(false);
     setDenied(false);
+    setError(null);
     try {
       await authFetch("/api/agent/location", {
         method: "POST",
@@ -40,9 +48,10 @@ export function useGeolocation() {
         setDenied(false);
         setPosition(pos);
         setLoading(false);
+        setError(null);
       },
       () => {},
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, maximumAge: 0 }
     );
   }, []);
 
@@ -53,18 +62,32 @@ export function useGeolocation() {
       navigator.geolocation.getCurrentPosition(
         (pos) => sendLocation(pos),
         () => {},
-        { enableHighAccuracy: true, timeout: 15000 }
+        GPS_OPTIONS
       );
     }, INTERVAL_MS);
   }, [sendLocation]);
+
+  const handleGeoError = useCallback((err: GeolocationPositionError) => {
+    setLoading(false);
+    if (err.code === err.PERMISSION_DENIED) {
+      setDenied(true);
+      setError("Você precisa permitir o acesso ao GPS para continuar.");
+    } else if (err.code === err.TIMEOUT) {
+      setError("Não foi possível obter sua localização. Tente novamente em local aberto.");
+    } else {
+      setError("Erro ao capturar localização. Verifique se o GPS está ativado.");
+    }
+  }, []);
 
   const requestPermission = useCallback(() => {
     if (!navigator.geolocation) {
       setDenied(true);
       setLoading(false);
+      setError("Geolocalização não disponível neste dispositivo.");
       return;
     }
     setLoading(true);
+    setError(null);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -72,21 +95,17 @@ export function useGeolocation() {
         startWatch();
         startInterval();
       },
-      (err) => {
-        setLoading(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          setDenied(true);
-        }
-      },
-      { enableHighAccuracy: true, timeout: 20000 }
+      handleGeoError,
+      GPS_OPTIONS
     );
-  }, [sendLocation, startWatch, startInterval]);
+  }, [sendLocation, startWatch, startInterval, handleGeoError]);
 
   useEffect(() => {
     if (!user || !navigator.geolocation || initDone.current) return;
     initDone.current = true;
 
     const autoFetch = () => {
+      setLoading(true);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           sendLocation(pos);
@@ -94,14 +113,13 @@ export function useGeolocation() {
           startInterval();
         },
         () => { setLoading(false); },
-        { enableHighAccuracy: true, timeout: 10000 }
+        GPS_OPTIONS
       );
     };
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "geolocation" as PermissionName }).then((result) => {
         if (result.state === "granted") {
-          setLoading(true);
           autoFetch();
         } else if (result.state === "denied") {
           setDenied(true);
@@ -110,7 +128,6 @@ export function useGeolocation() {
         result.addEventListener("change", () => {
           if (result.state === "granted") {
             setDenied(false);
-            setLoading(true);
             autoFetch();
           } else if (result.state === "denied") {
             setDenied(true);
@@ -118,11 +135,8 @@ export function useGeolocation() {
           }
         });
       }).catch(() => {
-        // iOS Safari: Permissions API not supported for geolocation
-        // Do NOT auto-request — wait for user gesture via requestPermission()
       });
     }
-    // No Permissions API at all (older browsers) — wait for user gesture
 
     return () => {
       if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
@@ -130,5 +144,5 @@ export function useGeolocation() {
     };
   }, [user, sendLocation, startWatch, startInterval]);
 
-  return { denied, position, loading, requestPermission };
+  return { denied, position, loading, error, requestPermission };
 }
