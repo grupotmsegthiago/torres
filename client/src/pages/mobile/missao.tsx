@@ -43,7 +43,7 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/16", icon: User, needsForm: true },
   iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/16", icon: Siren },
   em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/16", icon: Route },
-  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/16", icon: MapPin, photos: ["Foto do Local"] },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/16", icon: MapPin, photos: ["Foto do Local", "Hodômetro"], needsKm: true },
   checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/16", icon: CheckCircle2 },
@@ -78,6 +78,7 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
   },
   chegada_destino: {
     "Foto do Local": "foto_local_destino",
+    "Hodômetro": "km_final",
   },
   checkout_km_final: {
     "Hodômetro": "km_final",
@@ -900,6 +901,10 @@ export default function MobileMissaoPage() {
         return;
       }
     }
+    if (config.needsKm && !kmValue.trim()) {
+      toast({ title: "KM obrigatório", description: "Informe a quilometragem atual.", variant: "destructive" });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -909,7 +914,8 @@ export default function MobileMissaoPage() {
           const key = label.toLowerCase().replace(/\s/g, '-');
           const backendStep = stepMap[label] || currentStep;
           if (photos[key]) {
-            await uploadPhoto(backendStep, label, photos[key]);
+            const isKmPhoto = label === "Hodômetro";
+            await uploadPhoto(backendStep, label, photos[key], isKmPhoto && config.needsKm ? parseInt(kmValue) : undefined);
           }
         }
       }
@@ -927,6 +933,19 @@ export default function MobileMissaoPage() {
   };
 
   const handleFinalizarEntregas = async () => {
+    const allPhotos = config.photos || [];
+    for (const p of allPhotos) {
+      const key = p.toLowerCase().replace(/\s/g, '-');
+      if (!photos[key]) {
+        toast({ title: "Foto obrigatória", description: `Tire a foto: ${p}`, variant: "destructive" });
+        return;
+      }
+    }
+    if (config.needsKm && !kmValue.trim()) {
+      toast({ title: "KM obrigatório", description: "Informe a quilometragem atual.", variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (config.photos) {
@@ -935,7 +954,8 @@ export default function MobileMissaoPage() {
           const key = label.toLowerCase().replace(/\s/g, '-');
           const backendStep = stepMap[label] || currentStep;
           if (photos[key]) {
-            await uploadPhoto(backendStep, label, photos[key]);
+            const isKmPhoto = label === "Hodômetro";
+            await uploadPhoto(backendStep, label, photos[key], isKmPhoto && config.needsKm ? parseInt(kmValue) : undefined);
           }
         }
       }
@@ -1584,7 +1604,7 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {config.needsKm && (
+        {config.needsKm && currentStep !== "chegada_destino" && (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-4">
               <div>
@@ -1648,7 +1668,7 @@ export default function MobileMissaoPage() {
                 <MapPin className="w-10 h-10 text-green-600" />
               </div>
               <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Chegou no Destino</h3>
-              <p className="text-xs text-neutral-400 mb-1">Registre a foto do local de destino</p>
+              <p className="text-xs text-neutral-400 mb-1">Registre a foto do local, KM e hodômetro</p>
             </div>
 
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
@@ -1660,10 +1680,23 @@ export default function MobileMissaoPage() {
                     label={label}
                     onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
                     captured={!!photos[key]}
-                    hint="Fotografia do local de destino/entrega"
+                    hint={label === "Hodômetro" ? "Foto do hodômetro com KM visível" : "Fotografia do local de destino/entrega"}
                   />
                 );
               })}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2">KM Final (Hodômetro)</p>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={kmValue}
+                onChange={(e) => setKmValue(e.target.value)}
+                placeholder="Ex: 145320"
+                className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-center text-lg font-mono font-bold text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400"
+                data-testid="input-km-final-destino"
+              />
             </div>
 
             <p className="text-xs text-neutral-500 text-center">Há mais entregas nesta missão?</p>

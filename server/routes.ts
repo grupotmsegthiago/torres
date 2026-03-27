@@ -52,6 +52,7 @@ const STEP_REQUIRED_PHOTOS: Record<string, string[]> = {
   checkout_km_saida: ["km_saida"],
   checkin_chegada_km: ["km_chegada", "agente_equipado"],
   checkin_veiculo_escoltado: ["escoltado_frente", "escoltado_traseira"],
+  chegada_destino: ["foto_local_destino", "km_final"],
   checkout_km_final: ["km_final"],
   checkout_viatura_retorno: ["viatura_retorno_frente", "viatura_retorno_lateral_esq", "viatura_retorno_lateral_dir", "viatura_retorno_traseira"],
   chegada_base: ["base_viatura_frente", "base_viatura_lateral_esq", "base_viatura_lateral_dir", "base_viatura_traseira", "base_hodometro"],
