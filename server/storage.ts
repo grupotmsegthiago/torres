@@ -2,7 +2,7 @@ import { eq, desc, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, clientVehicles, employees, vehicles, serviceOrders, trips,
-  vehicleMaintenance, vehicleFueling, timesheets, missionPhotos, apiLogs, employeeSalaries,
+  vehicleMaintenance, vehicleFueling, timesheets, employeeTimesheets, missionPhotos, apiLogs, employeeSalaries,
   perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, weaponKits, weaponKitItems, gerenciadoras,
   telemetryEvents,
   type User, type InsertUser,
@@ -428,7 +428,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteTimesheet(id: number): Promise<void> {
-    await db.delete(timesheets).where(eq(timesheets.id, id));
+    await db.delete(employeeTimesheets).where(eq(employeeTimesheets.id, id));
   }
 
   async getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]> {

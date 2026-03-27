@@ -4486,11 +4486,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.status(201).json(row);
   });
 
-  app.delete("/api/timesheets/:id", requireAuth, requireAdmin, async (req, res) => {
-    await db.delete(employeeTimesheets).where(eq(employeeTimesheets.id, Number(req.params.id)));
-    res.json({ ok: true });
-  });
-
   app.get("/api/employees/:id/folha-ponto-excel", requireAuth, requireAdmin, async (req, res) => {
     try {
       const XLSX = await import("xlsx");
