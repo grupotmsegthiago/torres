@@ -2181,10 +2181,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   priority: linkedOrder.priority || "agendada",
                   employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null, addressLat: emp1.addressLat || null, addressLng: emp1.addressLng || null } : null,
                   employee2: emp2 ? { id: emp2.id, name: emp2.name, phone: emp2.phone || null, addressLat: emp2.addressLat || null, addressLng: emp2.addressLng || null } : null,
+                  origin: linkedOrder.origin || null,
+                  destination: linkedOrder.destination || null,
                   originLat: linkedOrder.originLat || null,
                   originLng: linkedOrder.originLng || null,
                   destinationLat: linkedOrder.destinationLat || null,
                   destinationLng: linkedOrder.destinationLng || null,
+                  escortedDriverName: linkedOrder.escortedDriverName || null,
+                  escortedDriverPhone: linkedOrder.escortedDriverPhone || null,
+                  escortedVehiclePlate: linkedOrder.escortedVehiclePlate || null,
                 };
               })()
             : null,
