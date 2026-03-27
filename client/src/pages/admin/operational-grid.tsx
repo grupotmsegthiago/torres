@@ -21,6 +21,7 @@ import {
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient } from "@/lib/queryClient";
+import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 type OpNotifStatus = "pending" | "success" | "error";
@@ -2465,7 +2466,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <div className="flex items-center gap-1.5">
                               <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
                               <span className="font-bold text-xs text-neutral-900 leading-tight">
-                                {v.activeOs.employee1.name}
+                                {titleCase(v.activeOs.employee1.name)}
                               </span>
                               {v.activeOs.employee1.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
@@ -2480,7 +2481,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {v.activeOs.employee2 && (
                             <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
                               <span className="font-semibold text-xs text-neutral-500 leading-tight">
-                                {v.activeOs.employee2.name}
+                                {titleCase(v.activeOs.employee2.name)}
                               </span>
                               {v.activeOs.employee2.phone && (
                                 <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
@@ -2947,7 +2948,7 @@ function MissionUpdatesAlert() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-amber-900">{u.employeeName}</span>
+                <span className="text-xs font-bold text-amber-900">{titleCase(u.employeeName)}</span>
                 {u.osNumber && (
                   <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">{u.osNumber}</span>
                 )}

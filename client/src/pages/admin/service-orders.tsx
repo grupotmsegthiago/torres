@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn } from "@/lib/queryClient";
+import { titleCase } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -331,7 +332,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Cliente *</FieldLabel>
                 <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value) })} className={selectClass} required data-testid="select-os-client">
                   <option value={0}>Selecione...</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{titleCase(c.name)}</option>)}
                 </select>
               </div>
               <div>
@@ -474,14 +475,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Agente 1</FieldLabel>
                 <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee">
                   <option value="">Selecione...</option>
-                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{titleCase(emp.name)}</option>)}
                 </select>
               </div>
               <div>
                 <FieldLabel>Agente 2</FieldLabel>
                 <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm({ ...form, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee2">
                   <option value="">Selecione...</option>
-                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  {employees.map((emp) => <option key={emp.id} value={emp.id}>{titleCase(emp.name)}</option>)}
                 </select>
               </div>
             </div>
@@ -695,10 +696,11 @@ export default function ServiceOrdersPage() {
     }
   }, [orders]);
 
-  const getClientName = (id: number) => (clients || []).find((c) => c.id === id)?.name || "-";
+  const getClientName = (id: number) => titleCase((clients || []).find((c) => c.id === id)?.name) || "-";
   const getEmployeeName = (id: number | null) => {
     if (!id) return null;
-    return (employees || []).find((e) => e.id === id)?.name || null;
+    const name = (employees || []).find((e) => e.id === id)?.name;
+    return name ? titleCase(name) : null;
   };
 
   return (

@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { logAuditAction } from "@/hooks/use-audit";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError } from "@/lib/offlineQueue";
@@ -358,7 +359,7 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
               </div>
               <div className="pb-2 flex-1 min-w-0">
                 <p className="text-[11px] font-bold text-neutral-800 leading-tight">{MOBILE_STEP_LABELS[log.step] || log.step}</p>
-                <p className="text-[10px] text-neutral-400 font-mono">{dateStr} {timeStr} — {log.agentName}</p>
+                <p className="text-[10px] text-neutral-400 font-mono">{dateStr} {timeStr} — {titleCase(log.agentName)}</p>
               </div>
             </div>
           );
@@ -1184,13 +1185,13 @@ export default function MobileMissaoPage() {
               {mission.employee1Name && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <User className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Agente 1:</strong> {mission.employee1Name}</span>
+                  <span><strong className="text-neutral-700">Agente 1:</strong> {titleCase(mission.employee1Name)}</span>
                 </div>
               )}
               {mission.employee2Name && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <User className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Agente 2:</strong> {mission.employee2Name}</span>
+                  <span><strong className="text-neutral-700">Agente 2:</strong> {titleCase(mission.employee2Name)}</span>
                 </div>
               )}
               {mission.scheduledDate && (
@@ -1254,13 +1255,13 @@ export default function MobileMissaoPage() {
               {mission.employee1Name && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <User className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Agente 1:</strong> {mission.employee1Name}</span>
+                  <span><strong className="text-neutral-700">Agente 1:</strong> {titleCase(mission.employee1Name)}</span>
                 </div>
               )}
               {mission.employee2Name && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <User className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Agente 2:</strong> {mission.employee2Name}</span>
+                  <span><strong className="text-neutral-700">Agente 2:</strong> {titleCase(mission.employee2Name)}</span>
                 </div>
               )}
               {mission.scheduledDate && (

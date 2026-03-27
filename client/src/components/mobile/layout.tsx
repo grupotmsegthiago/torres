@@ -2,6 +2,7 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
+import { titleCase } from "@/lib/utils";
 import { useMemo } from "react";
 import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -110,7 +111,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         </div>
         {user && (
           <span className="text-xs text-neutral-500 font-medium truncate max-w-[140px]" data-testid="text-mobile-user">
-            {user.name?.split(" ")[0]}
+            {titleCase(user.name?.split(" ")[0])}
           </span>
         )}
       </header>

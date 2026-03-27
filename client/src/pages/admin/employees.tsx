@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
+import { titleCase } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -83,7 +84,7 @@ function CreateAccessModal({ employee, open, onClose }: { employee: Employee; op
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{hasAccess ? "Gerenciar Acesso" : "Criar Acesso"} - {employee.name}</DialogTitle>
+          <DialogTitle>{hasAccess ? "Gerenciar Acesso" : "Criar Acesso"} - {titleCase(employee.name)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {checkingUser ? (
@@ -193,7 +194,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Salários - {employee.name}</DialogTitle>
+          <DialogTitle>Salários - {titleCase(employee.name)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -397,7 +398,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
-            <span>Documentos - {employee.name}</span>
+            <span>Documentos - {titleCase(employee.name)}</span>
             <Button variant="outline" size="sm" onClick={generateContract} data-testid="button-generate-contract">
               <FileText className="w-4 h-4 mr-1" /> Gerar Contrato
             </Button>
@@ -1283,7 +1284,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-lg font-bold">RH — {employee.name}</DialogTitle>
+          <DialogTitle className="text-lg font-bold">RH — {titleCase(employee.name)}</DialogTitle>
         </DialogHeader>
 
         <div className="flex gap-1 border-b border-neutral-200 mb-4">
@@ -1827,12 +1828,12 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <img src={employee.photoUrl} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-neutral-400 text-lg font-bold">
-                {employee.name.charAt(0)}
+                {employee.name.charAt(0).toUpperCase()}
               </div>
             )}
           </div>
           <div>
-            <h1 className="text-xl font-bold text-neutral-900" data-testid="text-pasta-employee-name">{employee.name}</h1>
+            <h1 className="text-xl font-bold text-neutral-900" data-testid="text-pasta-employee-name">{titleCase(employee.name)}</h1>
             <div className="flex items-center gap-3 text-xs text-neutral-500">
               <span className="font-mono">{employee.matricula}</span>
               <span>•</span>
@@ -2014,7 +2015,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
             <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 space-y-3">
               <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome</span><span className="font-medium">{employee.name}</span></div>
+                <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Nome</span><span className="font-medium">{titleCase(employee.name)}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">CPF</span><span className="font-mono">{employee.cpf}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Cargo</span><span>{employee.role}</span></div>
                 <div><span className="text-[10px] font-bold text-neutral-400 uppercase block">Categoria</span><span>{employee.category || "Mensalista"}</span></div>
