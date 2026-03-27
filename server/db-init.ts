@@ -389,6 +389,7 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS plate_photo TEXT`).catch(() => {});
 
     await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_photo TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_photo TEXT`).catch(() => {});

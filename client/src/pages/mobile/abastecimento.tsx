@@ -1,27 +1,32 @@
 import MobileLayout from "@/components/mobile/layout";
-import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin } from "lucide-react";
+import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin, Car, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 
 type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
+type Step = "SELECT" | "PLATE" | "FORM";
+type CaptureMode = "plate" | PhotoKey;
 
-const PHOTO_STEPS: { key: PhotoKey; label: string; icon: typeof Camera }[] = [
+const FUEL_STEPS: { key: PhotoKey; label: string; icon: typeof Camera }[] = [
   { key: "pumpPhoto", label: "Foto da Bomba", icon: Fuel },
   { key: "receiptPhoto", label: "Foto da NF", icon: Receipt },
   { key: "odometerPhoto", label: "Foto do Hodômetro", icon: Gauge },
 ];
 
 export default function MobileAbastecimentoPage() {
-  const { user } = useAuth();
   const geo = useGeolocation();
   const { toast } = useToast();
+
+  const [step, setStep] = useState<Step>("SELECT");
+  const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  const [platePhoto, setPlatePhoto] = useState("");
+  const [plateConfirmed, setPlateConfirmed] = useState(false);
+  const [captureMode, setCaptureMode] = useState<CaptureMode | null>(null);
   const [photos, setPhotos] = useState<Record<PhotoKey, string>>({ pumpPhoto: "", receiptPhoto: "", odometerPhoto: "" });
-  const [captureTarget, setCaptureTarget] = useState<PhotoKey | null>(null);
   const [km, setKm] = useState("");
   const [liters, setLiters] = useState("");
   const [costPerLiter, setCostPerLiter] = useState("");
@@ -30,9 +35,21 @@ export default function MobileAbastecimentoPage() {
   const [submitted, setSubmitted] = useState(false);
   const [geoAddress, setGeoAddress] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const { data: vehicles = [], isLoading: loadingVehicles } = useQuery<any[]>({
+    queryKey: ["/api/mobile/abastecimento/vehicles"],
+  });
+
+  useEffect(() => {
+    if (!loadingVehicles && vehicles.length === 1 && step === "SELECT") {
+      setSelectedVehicle(vehicles[0]);
+      setStep("PLATE");
+    }
+  }, [vehicles, loadingVehicles, step]);
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -58,15 +75,45 @@ export default function MobileAbastecimentoPage() {
           reverseGeocode(coords.lat, coords.lng);
           resolve(coords);
         },
-        (err) => { setGeoLoading(false); reject(new Error("Não foi possível obter localização GPS")); },
+        () => { setGeoLoading(false); reject(new Error("Não foi possível obter localização GPS")); },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     });
   }, [reverseGeocode]);
 
-  const { data: vehicle, isLoading: loadingVehicle } = useQuery<any>({
-    queryKey: ["/api/mobile/abastecimento/vehicle"],
-  });
+  const startCamera = useCallback(async (mode: CaptureMode) => {
+    setCaptureMode(mode);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 960 } });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+    } catch {
+      toast({ title: "Erro ao acessar câmera", variant: "destructive" });
+      setCaptureMode(null);
+    }
+  }, [toast]);
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setCaptureMode(null);
+  }, []);
+
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || !captureMode) return;
+    const cv = canvasRef.current; const video = videoRef.current;
+    cv.width = Math.min(video.videoWidth, 1280); cv.height = Math.min(video.videoHeight, 1280);
+    const ctx = cv.getContext("2d"); if (!ctx) return;
+    ctx.drawImage(video, 0, 0, cv.width, cv.height);
+    const dataUrl = cv.toDataURL("image/jpeg", 0.7);
+    if (captureMode === "plate") {
+      setPlatePhoto(dataUrl);
+      setPlateConfirmed(false);
+    } else {
+      setPhotos(p => ({ ...p, [captureMode]: dataUrl }));
+    }
+    stopCamera();
+  }, [captureMode, stopCamera]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -76,9 +123,9 @@ export default function MobileAbastecimentoPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicleId: vehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
+          vehicleId: selectedVehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
           costPerLiter: parseFloat(costPerLiter) || undefined, totalCost,
-          station, ...photos,
+          station, ...photos, platePhoto,
           latitude: coords.lat.toString(), longitude: coords.lng.toString(),
           address: geoAddress || undefined,
         }),
@@ -92,49 +139,30 @@ export default function MobileAbastecimentoPage() {
     onSuccess: (data) => {
       setSubmitted(true);
       if (data.oilAlert) setOilAlert(data.oilAlert);
-      queryClient.invalidateQueries({ queryKey: ["/api/mobile/abastecimento/vehicle"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mobile/abastecimento/vehicles"] });
       toast({ title: "Abastecimento registrado!" });
     },
     onError: (err: Error) => toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" }),
   });
 
-  const startCamera = useCallback(async (target: PhotoKey) => {
-    setCaptureTarget(target);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 960 } });
-      streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
-    } catch { toast({ title: "Erro ao acessar câmera", variant: "destructive" }); setCaptureTarget(null); }
-  }, [toast]);
-
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    setCaptureTarget(null);
-  }, []);
-
-  const capturePhoto = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !captureTarget) return;
-    const cv = canvasRef.current; const video = videoRef.current;
-    cv.width = Math.min(video.videoWidth, 1280); cv.height = Math.min(video.videoHeight, 1280);
-    const ctx = cv.getContext("2d"); if (!ctx) return;
-    ctx.drawImage(video, 0, 0, cv.width, cv.height);
-    const dataUrl = cv.toDataURL("image/jpeg", 0.7);
-    setPhotos(p => ({ ...p, [captureTarget]: dataUrl }));
-    stopCamera();
-  }, [captureTarget, stopCamera]);
-
-  if (captureTarget) {
-    const step = PHOTO_STEPS.find(s => s.key === captureTarget);
+  if (captureMode) {
+    const label = captureMode === "plate" ? "Foto da Placa" : FUEL_STEPS.find(s => s.key === captureMode)?.label;
     return (
       <MobileLayout>
         <div className="p-4 space-y-4" data-testid="abastecimento-camera">
-          <button onClick={stopCamera} className="flex items-center gap-2 text-sm text-neutral-500"><ArrowLeft size={18} /> Voltar</button>
-          <p className="text-center font-bold text-neutral-700 text-sm uppercase tracking-wider">{step?.label}</p>
+          <button onClick={stopCamera} className="flex items-center gap-2 text-sm text-neutral-500" data-testid="button-back-camera">
+            <ArrowLeft size={18} /> Voltar
+          </button>
+          <p className="text-center font-bold text-neutral-700 text-sm uppercase tracking-wider">{label}</p>
+          {captureMode === "plate" && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-xs text-amber-700">Fotografe a placa do veículo <span className="font-black">{selectedVehicle?.plate}</span></p>
+            </div>
+          )}
           <div className="bg-black rounded-2xl overflow-hidden relative">
             <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[4/3] object-cover" />
             <div className="absolute bottom-0 left-0 right-0 p-4">
-              <button onClick={capturePhoto} data-testid="button-capture-fuel"
+              <button onClick={capturePhoto} data-testid="button-capture-photo"
                 className="w-full py-3 bg-white rounded-xl text-black font-black uppercase text-sm tracking-wider flex items-center justify-center gap-2">
                 <Camera size={18} /> Capturar
               </button>
@@ -153,7 +181,7 @@ export default function MobileAbastecimentoPage() {
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center">
             <CheckCircle className="mx-auto text-emerald-600 mb-3" size={40} />
             <h2 className="text-lg font-black text-emerald-800">Abastecimento Registrado!</h2>
-            <p className="text-sm text-emerald-600 mt-1">{vehicle?.plate} · {km} km</p>
+            <p className="text-sm text-emerald-600 mt-1">{selectedVehicle?.plate} · {km} km</p>
           </div>
           {oilAlert && (
             <div className={`rounded-2xl p-4 border flex items-start gap-3 ${oilAlert.includes("VENCIDA") ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
@@ -165,7 +193,9 @@ export default function MobileAbastecimentoPage() {
             </div>
           )}
           <Link href="/mobile">
-            <button className="w-full py-3 bg-neutral-900 text-white rounded-xl font-bold text-sm uppercase tracking-wider" data-testid="button-back-home">Voltar ao Início</button>
+            <button className="w-full py-3 bg-neutral-900 text-white rounded-xl font-bold text-sm uppercase tracking-wider" data-testid="button-back-home">
+              Voltar ao Início
+            </button>
           </Link>
         </div>
       </MobileLayout>
@@ -175,31 +205,154 @@ export default function MobileAbastecimentoPage() {
   return (
     <MobileLayout>
       <div className="p-4 space-y-4" data-testid="mobile-abastecimento-page">
+
         <div className="flex items-center gap-3 mb-2">
-          <Link href="/mobile"><button className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center" data-testid="button-back"><ArrowLeft size={18} className="text-neutral-600" /></button></Link>
+          {step === "SELECT" ? (
+            <Link href="/mobile">
+              <button className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center" data-testid="button-back">
+                <ArrowLeft size={18} className="text-neutral-600" />
+              </button>
+            </Link>
+          ) : (
+            <button onClick={() => { if (step === "PLATE") setStep("SELECT"); else if (step === "FORM") setStep("PLATE"); }}
+              className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center" data-testid="button-back">
+              <ArrowLeft size={18} className="text-neutral-600" />
+            </button>
+          )}
           <div>
             <h1 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Abastecimento</h1>
-            <p className="text-xs text-neutral-400">Registrar abastecimento do veículo</p>
+            <p className="text-xs text-neutral-400">
+              {step === "SELECT" ? "Selecione a viatura" : step === "PLATE" ? "Confirmar placa" : "Dados do abastecimento"}
+            </p>
           </div>
         </div>
 
-        {loadingVehicle ? (
-          <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>
-        ) : !vehicle ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-            <AlertTriangle className="mx-auto text-amber-500 mb-2" size={28} />
-            <p className="text-sm font-bold text-amber-800">Nenhum veículo vinculado</p>
-            <p className="text-xs text-amber-600 mt-1">Solicite ao administrador a vinculação de viatura.</p>
-          </div>
-        ) : (
+        <div className="flex items-center gap-2">
+          {(["SELECT", "PLATE", "FORM"] as Step[]).map((s, i) => (
+            <div key={s} className="flex items-center gap-2 flex-1">
+              <div className={`h-1.5 rounded-full flex-1 transition-colors ${step === s || (i === 0 && step !== "SELECT") || (i === 1 && step === "FORM") ? "bg-neutral-900" : "bg-neutral-200"}`} />
+            </div>
+          ))}
+        </div>
+
+        {step === "SELECT" && (
+          <>
+            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Viaturas Vinculadas</p>
+            {loadingVehicles ? (
+              <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>
+            ) : vehicles.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
+                <AlertTriangle className="mx-auto text-amber-500 mb-2" size={28} />
+                <p className="text-sm font-bold text-amber-800">Nenhuma viatura vinculada</p>
+                <p className="text-xs text-amber-600 mt-1">Solicite ao administrador a vinculação de viatura.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {vehicles.map((v: any) => (
+                  <button key={v.id} onClick={() => { setSelectedVehicle(v); setStep("PLATE"); }}
+                    className="w-full bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3 text-left active:bg-neutral-50"
+                    data-testid={`vehicle-card-${v.id}`}>
+                    <div className="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shrink-0">
+                      <Car size={20} className="text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-black text-neutral-900 tracking-wider">{v.plate}</p>
+                      <p className="text-xs text-neutral-500 truncate">{v.model}{v.frota ? ` · Frota ${v.frota}` : ""}</p>
+                      <p className="text-[10px] text-neutral-400 font-mono">KM atual: {(v.km || 0).toLocaleString("pt-BR")}</p>
+                    </div>
+                    <ChevronRight size={18} className="text-neutral-300 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {step === "PLATE" && selectedVehicle && (
+          <>
+            <div className="bg-neutral-900 rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-neutral-700 flex items-center justify-center">
+                <Car size={20} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-white tracking-wider">{selectedVehicle.plate}</p>
+                <p className="text-xs text-neutral-400">{selectedVehicle.model} · KM: {(selectedVehicle.km || 0).toLocaleString("pt-BR")}</p>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-blue-600" />
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Verificação de Placa</p>
+              </div>
+              <p className="text-xs text-blue-700">Fotografe a placa física do veículo para confirmar que está abastecendo a viatura correta.</p>
+
+              {!platePhoto ? (
+                <button onClick={() => startCamera("plate")} data-testid="button-take-plate-photo"
+                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
+                  <Camera size={16} /> Fotografar Placa
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-xl overflow-hidden border-2 border-emerald-400">
+                    <img src={platePhoto} alt="Foto da placa" className="w-full object-cover" data-testid="img-plate-photo" />
+                  </div>
+                  <div className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-neutral-400 uppercase">Placa cadastrada</p>
+                      <p className="text-xl font-black text-neutral-900 tracking-[0.2em]">{selectedVehicle.plate}</p>
+                    </div>
+                    <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-retake-plate"
+                      className="flex items-center gap-1 text-xs text-neutral-500 border border-neutral-200 rounded-lg px-2 py-1.5">
+                      <RefreshCw size={12} /> Refazer
+                    </button>
+                  </div>
+
+                  {!plateConfirmed ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-neutral-700 text-center">A placa na foto confere com <span className="text-neutral-900">{selectedVehicle.plate}</span>?</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-plate-no"
+                          className="py-3 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-black uppercase">
+                          Não confere
+                        </button>
+                        <button onClick={() => setPlateConfirmed(true)} data-testid="button-plate-yes"
+                          className="py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase">
+                          Confere ✓
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+                        <CheckCircle size={16} className="text-emerald-600" />
+                        <p className="text-xs font-bold text-emerald-700">Placa confirmada!</p>
+                      </div>
+                      <button onClick={() => setStep("FORM")} data-testid="button-proceed-form"
+                        className="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
+                        <Fuel size={16} /> Prosseguir com Abastecimento
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {step === "FORM" && selectedVehicle && (
           <>
             <div className="bg-neutral-900 rounded-2xl p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-neutral-700 flex items-center justify-center">
                 <Fuel size={20} className="text-white" />
               </div>
-              <div>
-                <p className="text-sm font-black text-white">{vehicle.plate}</p>
-                <p className="text-xs text-neutral-400">{vehicle.model} · KM atual: {(vehicle.km || 0).toLocaleString("pt-BR")}</p>
+              <div className="flex-1">
+                <p className="text-sm font-black text-white tracking-wider">{selectedVehicle.plate}</p>
+                <p className="text-xs text-neutral-400">{selectedVehicle.model} · KM: {(selectedVehicle.km || 0).toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="flex items-center gap-1 bg-emerald-600/20 rounded-lg px-2 py-1">
+                <ShieldCheck size={12} className="text-emerald-400" />
+                <p className="text-[10px] font-bold text-emerald-400">Verificado</p>
               </div>
             </div>
 
@@ -230,19 +383,19 @@ export default function MobileAbastecimentoPage() {
 
             <div className="space-y-3">
               <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Fotos Obrigatórias</p>
-              {PHOTO_STEPS.map(step => {
-                const done = !!photos[step.key];
-                const Icon = step.icon;
+              {FUEL_STEPS.map(s => {
+                const done = !!photos[s.key];
+                const Icon = s.icon;
                 return (
-                  <div key={step.key} className={`rounded-2xl border p-3 flex items-center justify-between ${done ? "bg-emerald-50 border-emerald-200" : "bg-white border-neutral-200"}`} data-testid={`photo-${step.key}`}>
+                  <div key={s.key} className={`rounded-2xl border p-3 flex items-center justify-between ${done ? "bg-emerald-50 border-emerald-200" : "bg-white border-neutral-200"}`} data-testid={`photo-${s.key}`}>
                     <div className="flex items-center gap-3">
                       {done ? <CheckCircle size={20} className="text-emerald-600" /> : <Icon size={20} className="text-neutral-400" />}
-                      <span className="text-sm font-bold text-neutral-700">{step.label}</span>
+                      <span className="text-sm font-bold text-neutral-700">{s.label}</span>
                     </div>
                     {done ? (
-                      <img src={photos[step.key]} className="w-12 h-12 rounded-lg object-cover border" alt={step.label} />
+                      <img src={photos[s.key]} className="w-12 h-12 rounded-lg object-cover border" alt={s.label} />
                     ) : (
-                      <button onClick={() => startCamera(step.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${step.key}`}>
+                      <button onClick={() => startCamera(s.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${s.key}`}>
                         <Camera size={12} /> Tirar Foto
                       </button>
                     )}
@@ -285,13 +438,16 @@ export default function MobileAbastecimentoPage() {
               </div>
             </div>
 
-            <button onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending || !km || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto} data-testid="button-submit-fuel"
+            <button onClick={() => submitMutation.mutate()}
+              disabled={submitMutation.isPending || geoLoading || !km || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
+              data-testid="button-submit-fuel"
               className="w-full py-4 bg-neutral-900 text-white rounded-xl font-black uppercase text-sm tracking-wider flex items-center justify-center gap-2 disabled:opacity-40">
-              {submitMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Droplets size={18} />}
-              Registrar Abastecimento
+              {(submitMutation.isPending || geoLoading) ? <Loader2 size={18} className="animate-spin" /> : <Droplets size={18} />}
+              {geoLoading ? "Obtendo GPS..." : "Registrar Abastecimento"}
             </button>
           </>
         )}
+
       </div>
     </MobileLayout>
   );

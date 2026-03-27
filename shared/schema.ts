@@ -283,6 +283,7 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   pumpPhoto: text("pump_photo"),
   odometerPhoto: text("odometer_photo"),
   notes: text("notes"),
+  platePhoto: text("plate_photo"),
   latitude: text("latitude"),
   longitude: text("longitude"),
   address: text("address"),
