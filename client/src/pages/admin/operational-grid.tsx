@@ -2923,23 +2923,26 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             <Zap className="w-3.5 h-3.5 text-violet-500" /> Enviar Comando
           </button>
 
-          {v.activeOs && (
-            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
-              onClick={async () => {
-                if (!confirm("Liberar retorno à base para esta viatura?")) return;
-                try {
-                  await authFetch(`/api/service-orders/${v.activeOs!.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ missionStatus: "retorno_base" }) });
-                  queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-                  toast({ title: "Retorno liberado!" });
-                } catch { toast({ title: "Erro", variant: "destructive" }); }
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
+            onClick={async () => {
+              if (!v.activeOs) {
+                toast({ title: "Sem OS ativa", description: "Esta viatura não possui missão em andamento.", variant: "destructive" });
                 onClose();
-              }}
-              data-testid={`ctx-return-base-${v.id}`}>
-              <Home className="w-3.5 h-3.5 text-blue-500" /> Retornar à Base
-            </button>
-          )}
+                return;
+              }
+              if (!confirm("Liberar retorno à base para esta viatura?")) return;
+              try {
+                await authFetch(`/api/service-orders/${v.activeOs.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ missionStatus: "retorno_base" }) });
+                queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+                toast({ title: "Retorno liberado!" });
+              } catch { toast({ title: "Erro", variant: "destructive" }); }
+              onClose();
+            }}
+            data-testid={`ctx-return-base-${v.id}`}>
+            <Home className="w-3.5 h-3.5 text-blue-500" /> Retornar à Base
+          </button>
 
           {v.activeOs && v.activeOs.missionStatus === "aguardando" && !v.activeOs.earlyStartApproved && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2.5"
