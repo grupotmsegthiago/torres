@@ -11,7 +11,7 @@ import {
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
-  WifiOff, History, ChevronRight, Calendar, Clock,
+  WifiOff, History, ChevronRight, Calendar, Clock, MessageSquare,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -369,6 +369,159 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
           Ver todas ({sorted.length})
         </button>
       )}
+    </div>
+  );
+}
+
+function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, submitting, handleSendStatusUpdate, handleTransitAdvance, getPosition }: {
+  currentStep: string;
+  mission: any;
+  statusUpdate: string;
+  setStatusUpdate: (v: string) => void;
+  submitting: boolean;
+  handleSendStatusUpdate: () => void;
+  handleTransitAdvance: () => void;
+  getPosition: () => Promise<{ lat: string; lng: string } | null>;
+}) {
+  const [confirmArrival, setConfirmArrival] = useState(false);
+  const [nearOrigin, setNearOrigin] = useState(false);
+  const [distanceInfo, setDistanceInfo] = useState<string | null>(null);
+
+  const isGoingToOrigin = currentStep === "em_transito_origem";
+  const targetLat = isGoingToOrigin ? mission.originLat : mission.destinationLat;
+  const targetLng = isGoingToOrigin ? mission.originLng : mission.destinationLng;
+  const targetLabel = isGoingToOrigin ? "origem" : "destino";
+
+  const GEOFENCE_RADIUS_KM = 2;
+
+  useEffect(() => {
+    setNearOrigin(false);
+    setDistanceInfo(null);
+    setConfirmArrival(false);
+  }, [currentStep]);
+
+  useEffect(() => {
+    if (!targetLat || !targetLng) return;
+
+    const checkProximity = async () => {
+      const pos = await getPosition();
+      if (!pos) return;
+
+      const lat1 = parseFloat(pos.lat);
+      const lng1 = parseFloat(pos.lng);
+      const lat2 = parseFloat(targetLat);
+      const lng2 = parseFloat(targetLng);
+
+      if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) return;
+
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      setDistanceInfo(dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`);
+      setNearOrigin(dist <= GEOFENCE_RADIUS_KM);
+    };
+
+    checkProximity();
+    const interval = setInterval(checkProximity, 30000);
+    return () => clearInterval(interval);
+  }, [targetLat, targetLng, getPosition, currentStep]);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto mb-3 animate-pulse">
+          <Car className="w-8 h-8 text-neutral-600" />
+        </div>
+        <p className="text-sm font-bold text-neutral-800 uppercase tracking-wider">
+          {isGoingToOrigin ? "Em deslocamento para origem" : "Em deslocamento para destino"}
+        </p>
+        {distanceInfo && (
+          <p className="text-xs text-neutral-400 mt-1">
+            Distância até {targetLabel}: <span className="font-bold text-neutral-700">{distanceInfo}</span>
+          </p>
+        )}
+      </div>
+
+      {nearOrigin && (
+        <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 flex items-center gap-3" data-testid="alert-near-origin">
+          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <MapPin className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-emerald-800">Você está próximo da {targetLabel}!</p>
+            <p className="text-[10px] text-emerald-600">Confirme a chegada quando estiver no local.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Bell className="w-4 h-4 text-neutral-700" />
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Enviar Atualização ao Admin</span>
+        </div>
+        <textarea
+          value={statusUpdate}
+          onChange={(e) => setStatusUpdate(e.target.value)}
+          placeholder="Ex: Tráfego intenso na BR-101, previsão de chegada 14h30..."
+          className="w-full h-20 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400 resize-none"
+          data-testid="input-status-update"
+        />
+        <button
+          onClick={handleSendStatusUpdate}
+          disabled={submitting || !statusUpdate.trim()}
+          className="w-full h-12 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+          data-testid="button-send-status"
+        >
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+          Enviar Atualização
+        </button>
+        <p className="text-[10px] text-neutral-400 text-center">Esta mensagem será enviada ao admin. Não avança a etapa.</p>
+      </div>
+
+      <div className="border-t border-neutral-200 pt-4">
+        {!confirmArrival ? (
+          <button
+            onClick={() => setConfirmArrival(true)}
+            disabled={submitting}
+            className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+            data-testid="button-confirm-arrival"
+          >
+            <MapPin className="w-5 h-5" />
+            Confirmar Chegada
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+              <p className="text-xs font-bold text-amber-800">Tem certeza que chegou na {targetLabel}?</p>
+              <p className="text-[10px] text-amber-600 mt-0.5">Esta ação vai avançar para a próxima etapa da missão.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setConfirmArrival(false)}
+                className="h-12 bg-white border-2 border-neutral-300 text-neutral-700 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+                data-testid="button-cancel-arrival"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmArrival(false);
+                  handleTransitAdvance();
+                }}
+                disabled={submitting}
+                className="h-12 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                data-testid="button-confirm-arrival-yes"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                Sim, Cheguei
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1331,48 +1484,16 @@ export default function MobileMissaoPage() {
         )}
 
         {(currentStep === "em_transito_origem" || currentStep === "em_transito_destino") && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center mx-auto mb-3 animate-pulse">
-                <Car className="w-8 h-8 text-neutral-600" />
-              </div>
-              <p className="text-sm font-bold text-neutral-800 uppercase tracking-wider">Em deslocamento</p>
-              <p className="text-xs text-neutral-400 mt-1">Confirme a chegada ao destino</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-neutral-700" />
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Atualização de Status</span>
-              </div>
-              <textarea
-                value={statusUpdate}
-                onChange={(e) => setStatusUpdate(e.target.value)}
-                placeholder="Ex: Tráfego intenso na BR-101, previsão de chegada 14h30..."
-                className="w-full h-20 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400 resize-none"
-                data-testid="input-status-update"
-              />
-              <button
-                onClick={handleSendStatusUpdate}
-                disabled={submitting || !statusUpdate.trim()}
-                className="w-full h-12 bg-white border-2 border-neutral-900 text-neutral-900 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                data-testid="button-send-status"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                Enviar Atualização
-              </button>
-            </div>
-
-            <button
-              onClick={handleTransitAdvance}
-              disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-confirm-arrival"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <MapPin className="w-5 h-5" />}
-              Confirmar Chegada
-            </button>
-          </div>
+          <TransitStepView
+            currentStep={currentStep}
+            mission={mission}
+            statusUpdate={statusUpdate}
+            setStatusUpdate={setStatusUpdate}
+            submitting={submitting}
+            handleSendStatusUpdate={handleSendStatusUpdate}
+            handleTransitAdvance={handleTransitAdvance}
+            getPosition={getPosition}
+          />
         )}
 
         {currentStep === "chegada_destino" && (
