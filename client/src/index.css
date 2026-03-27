@@ -44,7 +44,7 @@
   --chart-4: 0 0% 60%;
   --chart-5: 0 0% 75%;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-heading: 'Montserrat', 'Inter', sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'JetBrains Mono', Menlo, monospace;
   --radius: .5rem;

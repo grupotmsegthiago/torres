@@ -43,7 +43,7 @@ export function TorresLogo({ size = 120, className = "", showText = true, color 
           <span
             className="font-black tracking-wider"
             style={{
-              fontFamily: "'Montserrat', sans-serif",
+              fontFamily: "'Inter', sans-serif",
               fontSize: size * 0.28,
               lineHeight: 1.1,
               letterSpacing: "0.06em",
@@ -54,7 +54,7 @@ export function TorresLogo({ size = 120, className = "", showText = true, color 
           <span
             className="font-medium tracking-widest"
             style={{
-              fontFamily: "'Montserrat', sans-serif",
+              fontFamily: "'Inter', sans-serif",
               fontSize: size * 0.1,
               lineHeight: 1.4,
               letterSpacing: "0.12em",
