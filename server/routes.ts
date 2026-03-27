@@ -1931,6 +1931,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           priority: o.priority || "agendada",
           missionStatus: o.missionStatus,
           lastAgentUpdate: lastUpdate.length > 0 ? {
+            id: lastUpdate[0].id,
             message: lastUpdate[0].message,
             missionStep: lastUpdate[0].missionStep,
             agentName: lastUpdate[0].employeeName,
@@ -2166,6 +2167,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   status: linkedOrder.status,
                   missionStatus: linkedOrder.missionStatus,
                   lastAgentUpdate: lastUpd.length > 0 ? {
+                    id: lastUpd[0].id,
                     message: lastUpd[0].message,
                     missionStep: lastUpd[0].missionStep,
                     agentName: lastUpd[0].employeeName,

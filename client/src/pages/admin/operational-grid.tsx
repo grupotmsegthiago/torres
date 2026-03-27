@@ -1959,6 +1959,10 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
   const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
   const [, navigate] = useLocation();
   const [preAlertLoading, setPreAlertLoading] = useState(false);
+  const [copiedUpdateId, setCopiedUpdateId] = useState<number | null>(null);
+
+  const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
+  const hasNewUpdate = !!(lastUpdateId && lastUpdateId !== copiedUpdateId);
 
   const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
 
@@ -2097,9 +2101,11 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
         <TooltipTrigger asChild>
           <button
             className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${
-              v.activeOs?.lastAgentUpdate
+              hasNewUpdate
                 ? "border-amber-400 bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-800 animate-pulse"
-                : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"
+                : v.activeOs?.lastAgentUpdate
+                  ? "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                  : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"
             }`}
             disabled={!v.activeOs?.lastAgentUpdate}
             onClick={async (e) => {
@@ -2125,13 +2131,14 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 await navigator.clipboard.writeText(reportText);
                 toast({ title: "Relatório copiado!", description: "Texto copiado." });
               }
+              if (lastUpdateId) setCopiedUpdateId(lastUpdateId);
             }}
             data-testid={`btn-copy-report-${v.id}`}
           >
             <ClipboardCheck className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent>{v.activeOs?.lastAgentUpdate ? "Atualização Recente — Copiar Relatório" : "Sem atualização recente"}</TooltipContent>
+        <TooltipContent>{hasNewUpdate ? "Atualização Recente — Copiar Relatório" : v.activeOs?.lastAgentUpdate ? "Copiar Relatório" : "Sem atualização recente"}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
