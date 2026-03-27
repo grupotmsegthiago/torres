@@ -384,7 +384,49 @@ export async function registerRoutes(
     if (data.cpf) {
       apibrasil.autoConsultaFuncionario(data.cpf, req.user!.id).catch(() => {});
     }
-    res.status(201).json(data);
+
+    let autoUserCreated = false;
+    let autoUserError: string | null = null;
+    let autoUserEmail: string | null = null;
+    if (data.email && data.cpf) {
+      const normalizedEmail = data.email.toLowerCase().trim();
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        autoUserError = "Já existe um login com este e-mail";
+      } else {
+        try {
+          const defaultPassword = "torres@123";
+          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: normalizedEmail,
+            password: defaultPassword,
+            email_confirm: true,
+          });
+          if (authError) {
+            autoUserError = authError.message;
+          } else {
+            try {
+              await storage.createUser({
+                supabaseUid: authData.user.id,
+                email: normalizedEmail,
+                name: data.name,
+                role: "funcionario",
+                employeeId: data.id,
+                mustChangePassword: 1,
+              });
+              autoUserCreated = true;
+              autoUserEmail = normalizedEmail;
+            } catch (dbErr: any) {
+              await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+              autoUserError = dbErr.message;
+            }
+          }
+        } catch (err: any) {
+          autoUserError = err.message;
+        }
+      }
+    }
+
+    res.status(201).json({ ...data, autoUserCreated, autoUserError, autoUserEmail });
   });
 
   app.patch("/api/employees/:id", requireAuth, async (req, res) => {

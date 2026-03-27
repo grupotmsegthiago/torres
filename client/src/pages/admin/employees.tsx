@@ -718,6 +718,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         matricula: employee ? employee.matricula : (nextMatricula?.matricula || data.matricula),
       };
       let employeeId: number;
+      let autoUserInfo: { autoUserCreated?: boolean; autoUserError?: string | null; autoUserEmail?: string | null } = {};
       if (employee) {
         const { matricula, ...updateData } = payload;
         const res = await apiRequest("PATCH", `/api/employees/${employee.id}`, updateData);
@@ -726,6 +727,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         const res = await apiRequest("POST", "/api/employees", payload);
         const created = await res.json();
         employeeId = created.id;
+        autoUserInfo = created;
       }
 
       if (!employee) {
@@ -743,12 +745,20 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           } catch {}
         }
       }
+      return autoUserInfo;
     },
-    onSuccess: () => {
+    onSuccess: (autoUserInfo) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
       const docMsg = !employee && attachedCount > 0 ? ` com ${attachedCount} documento(s)` : "";
-      toast({ title: employee ? "Funcionário atualizado" : `Funcionário cadastrado${docMsg}` });
+      if (!employee && autoUserInfo?.autoUserCreated) {
+        toast({ title: `Funcionário cadastrado${docMsg}`, description: `Login criado: ${autoUserInfo.autoUserEmail || "e-mail do funcionário"}. Senha padrão: torres@123 (será alterada no primeiro acesso).` });
+      } else if (!employee && autoUserInfo?.autoUserError) {
+        toast({ title: `Funcionário cadastrado${docMsg}`, description: `Aviso: login não criado — ${autoUserInfo.autoUserError}` });
+      } else {
+        toast({ title: employee ? "Funcionário atualizado" : `Funcionário cadastrado${docMsg}` });
+      }
       onClose();
     },
     onError: (err: any) => {
