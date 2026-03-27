@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2 } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
 
@@ -702,6 +702,19 @@ export default function ServiceOrdersPage() {
     },
   });
 
+  const rollbackStepMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("POST", "/api/mission/rollback-step", { serviceOrderId: id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      toast({ title: "Etapa retrocedida", description: "O vigilante foi movido para a etapa anterior." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao voltar etapa", description: err.message, variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const osId = params.get("os");
@@ -870,6 +883,22 @@ export default function ServiceOrdersPage() {
                             data-testid={`button-confirm-payment-${o.id}`}
                           >
                             <DollarSign className="w-4 h-4 text-emerald-600" />
+                          </Button>
+                        )}
+                        {o.missionStatus && o.missionStatus !== "missao_paga" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm(`Voltar etapa da OS ${o.osNumber}?\nEtapa atual: ${MISSION_STATUS_LABELS[o.missionStatus] || o.missionStatus}\nO vigilante sera movido para a etapa anterior.`)) {
+                                rollbackStepMutation.mutate(o.id);
+                              }
+                            }}
+                            disabled={rollbackStepMutation.isPending}
+                            title="Voltar Etapa"
+                            data-testid={`button-rollback-step-${o.id}`}
+                          >
+                            <Undo2 className="w-4 h-4 text-orange-500" />
                           </Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={async () => {

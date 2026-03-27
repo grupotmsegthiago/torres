@@ -3670,6 +3670,43 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(updated);
   });
 
+  app.post("/api/mission/rollback-step", requireAdminRole, async (req, res) => {
+    try {
+      const { serviceOrderId } = req.body;
+      const so = await storage.getServiceOrder(serviceOrderId);
+      if (!so) return res.status(404).json({ message: "OS nao encontrada" });
+
+      if (!so.missionStatus) return res.status(400).json({ message: "OS nao possui etapa de missao" });
+
+      const currentIdx = MISSION_STEPS.indexOf(so.missionStatus as any);
+      if (currentIdx <= 0) return res.status(400).json({ message: "Ja esta na primeira etapa, nao e possivel voltar" });
+
+      const previousStep = MISSION_STEPS[currentIdx - 1];
+
+      const updates: any = { missionStatus: previousStep };
+
+      if (so.missionStatus === "encerrada") {
+        updates.status = "em_andamento";
+        updates.completedDate = null;
+      }
+
+      const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
+      const user = req.user!;
+      const rollbackEntry = {
+        step: `rollback_${so.missionStatus}_to_${previousStep}`,
+        completedAt: new Date().toISOString(),
+        agentName: `ADMIN: ${user.name}`,
+        agentId: user.id,
+        geo: null,
+        nextStep: previousStep,
+      };
+      updates.stepLogs = [...existingLogs, rollbackEntry];
+
+      const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/mission/advance", requireAuth, async (req, res) => {
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
