@@ -312,9 +312,13 @@ export async function ensureDbSchema() {
         details TEXT,
         ip_address TEXT,
         user_agent TEXT,
+        latitude REAL,
+        longitude REAL,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS latitude REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS longitude REAL`).catch(() => {});
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS login_selfies (

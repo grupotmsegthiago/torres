@@ -625,6 +625,8 @@ export const auditLogs = pgTable("audit_logs", {
   details: text("details"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

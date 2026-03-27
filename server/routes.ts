@@ -3788,7 +3788,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
   app.post("/api/audit-log", requireAuth, async (req, res) => {
     const user = req.user!;
-    const { action, page, details } = req.body;
+    const { action, page, details, latitude, longitude } = req.body;
     if (!action) return res.status(400).json({ message: "action obrigatória" });
     const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
@@ -3801,7 +3801,82 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       details: details || null,
       ipAddress,
       userAgent,
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
     });
+
+    const securityActions = ["screenshot_attempt", "tab_hidden", "window_blur"];
+    if (securityActions.includes(action) && latitude && longitude && user.employeeId) {
+      try {
+        const emp = await storage.getEmployee(user.employeeId);
+        if (emp && emp.addressLat && emp.addressLng) {
+          const dlat = (Number(latitude) - Number(emp.addressLat)) * 111320;
+          const dlng = (Number(longitude) - Number(emp.addressLng)) * 111320 * Math.cos(Number(emp.addressLat) * Math.PI / 180);
+          const distMeters = Math.sqrt(dlat * dlat + dlng * dlng);
+          if (distMeters <= 500) {
+            const actionLabels: Record<string, string> = {
+              screenshot_attempt: "Captura de Tela (Print Screen)",
+              tab_hidden: "Aba Oculta (troca de app/print)",
+              window_blur: "Perda de Foco (possível captura)",
+            };
+            const timeStr = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+            const html = `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+                <div style="background:#0f172a;padding:20px 24px;border-radius:8px 8px 0 0">
+                  <h2 style="color:#fff;margin:0;font-size:18px">⚠️ ALERTA DE SEGURANÇA — Torres Vigilância</h2>
+                </div>
+                <div style="background:#fff;border:1px solid #e2e8f0;padding:24px;border-radius:0 0 8px 8px">
+                  <p style="color:#dc2626;font-weight:bold;font-size:15px;margin:0 0 16px">
+                    Evento de segurança detectado na RESIDÊNCIA do funcionário
+                  </p>
+                  <table style="width:100%;border-collapse:collapse;font-size:14px">
+                    <tr><td style="padding:8px 0;color:#64748b;width:140px">Funcionário:</td><td style="padding:8px 0;font-weight:bold">${emp.fullName || emp.name}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">CPF:</td><td style="padding:8px 0">${emp.cpf || "—"}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">Evento:</td><td style="padding:8px 0;color:#dc2626;font-weight:bold">${actionLabels[action] || action}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">Página:</td><td style="padding:8px 0">${page || "—"}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">Data/Hora:</td><td style="padding:8px 0">${timeStr}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">GPS Evento:</td><td style="padding:8px 0">${Number(latitude).toFixed(6)}, ${Number(longitude).toFixed(6)}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">GPS Residência:</td><td style="padding:8px 0">${Number(emp.addressLat).toFixed(6)}, ${Number(emp.addressLng).toFixed(6)}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">Distância:</td><td style="padding:8px 0;font-weight:bold">${Math.round(distMeters)} metros</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">Endereço:</td><td style="padding:8px 0">${emp.address || "—"}</td></tr>
+                    <tr><td style="padding:8px 0;color:#64748b">IP:</td><td style="padding:8px 0;font-size:12px">${ipAddress || "—"}</td></tr>
+                  </table>
+                  <div style="margin-top:20px;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px">
+                    <p style="margin:0;font-size:13px;color:#991b1b">
+                      Este alerta indica que o funcionário realizou uma ação suspeita enquanto estava
+                      na proximidade de sua residência cadastrada (raio de 500m).
+                    </p>
+                  </div>
+                </div>
+                <p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:16px">
+                  Torres Vigilância Patrimonial — Sistema de Auditoria Automatizada
+                </p>
+              </div>
+            `;
+            const host = process.env.SMTP_HOST;
+            const smtpUser = process.env.SMTP_USER;
+            const pass = process.env.SMTP_PASS;
+            if (host && smtpUser && pass) {
+              const port = parseInt(process.env.SMTP_PORT || "587");
+              const transporter = nodemailer.createTransport({
+                host, port, secure: port === 465,
+                auth: { user: smtpUser, pass },
+                tls: { rejectUnauthorized: false },
+              });
+              transporter.sendMail({
+                from: process.env.SMTP_FROM || smtpUser,
+                to: "thiago@grupotmseg.com.br",
+                subject: `⚠️ ALERTA: ${actionLabels[action] || action} na residência — ${emp.fullName || emp.name}`,
+                html,
+              }).catch((err: any) => console.error("[audit-alert] Erro ao enviar email:", err.message));
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("[audit-alert] Erro na verificação de proximidade:", err.message);
+      }
+    }
+
     res.json({ ok: true });
   });
 
