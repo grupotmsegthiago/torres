@@ -3112,6 +3112,13 @@ function MissionUpdatesAlert() {
                 </span>
               </div>
               <p className="text-sm text-amber-800 mt-0.5">{u.message}</p>
+              {u.photoUrl && (
+                <div className="mt-1.5">
+                  <a href={u.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-block">
+                    <img src={u.photoUrl} alt="Foto da atualização" className="w-20 h-20 rounded-lg object-cover border-2 border-amber-300 shadow-sm hover:shadow-md transition-shadow cursor-pointer" />
+                  </a>
+                </div>
+              )}
               {u.latitude && u.longitude && (
                 <a
                   href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}`}
