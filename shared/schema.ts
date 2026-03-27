@@ -570,6 +570,10 @@ export const employeeTimesheets = pgTable("employee_timesheets", {
   lunchOutLng: text("lunch_out_lng"),
   lunchInLat: text("lunch_in_lat"),
   lunchInLng: text("lunch_in_lng"),
+  clockInAddress: text("clock_in_address"),
+  clockOutAddress: text("clock_out_address"),
+  lunchOutAddress: text("lunch_out_address"),
+  lunchInAddress: text("lunch_in_address"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });

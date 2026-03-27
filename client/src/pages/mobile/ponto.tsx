@@ -4,8 +4,8 @@ import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useRef, useCallback } from "react";
-import { Camera, Clock, MapPin, CheckCircle, ArrowLeft, Loader2, Sun, Coffee, LogOut } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, Clock, MapPin, CheckCircle, ArrowLeft, Loader2, Sun, Coffee, LogOut, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 
 const STEPS = [
@@ -32,6 +32,34 @@ export default function MobilePontoPage() {
 
   const [freshGeo, setFreshGeo] = useState<{ lat: number; lng: number } | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [geoAddress, setGeoAddress] = useState<string | null>(null);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const lastGeoRef = useRef<string | null>(null);
+
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (lastGeoRef.current === key) return;
+    lastGeoRef.current = key;
+    setAddressLoading(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+        headers: { "Accept-Language": "pt-BR" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.display_name) {
+          setGeoAddress(data.display_name);
+        }
+      }
+    } catch {}
+    setAddressLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (geo.position) {
+      reverseGeocode(geo.position.coords.latitude, geo.position.coords.longitude);
+    }
+  }, [geo.position, reverseGeocode]);
 
   const requestFreshGeo = useCallback((): Promise<{ lat: number; lng: number }> => {
     setGeoLoading(true);
@@ -46,6 +74,7 @@ export default function MobilePontoPage() {
           const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setFreshGeo(coords);
           setGeoLoading(false);
+          reverseGeocode(coords.lat, coords.lng);
           resolve(coords);
         },
         (err) => {
@@ -61,7 +90,7 @@ export default function MobilePontoPage() {
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     });
-  }, []);
+  }, [reverseGeocode]);
 
   const clockMutation = useMutation({
     mutationFn: async ({ action, photo, lat, lng }: { action: string; photo: string; lat: number; lng: number }) => {
@@ -69,6 +98,7 @@ export default function MobilePontoPage() {
         action, photo,
         latitude: lat.toString(),
         longitude: lng.toString(),
+        address: geoAddress || undefined,
       });
       return res.json();
     },
@@ -137,9 +167,14 @@ export default function MobilePontoPage() {
           <div className="bg-black rounded-2xl overflow-hidden relative">
             <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[4/3] object-cover" />
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-              <div className="flex items-center justify-between text-white text-xs mb-3">
-                <span className="flex items-center gap-1"><Clock size={12} /> {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
-                <span className="flex items-center gap-1"><MapPin size={12} /> {freshGeo ? `${freshGeo.lat.toFixed(4)}, ${freshGeo.lng.toFixed(4)}` : geo.position ? `${geo.position.coords.latitude.toFixed(4)}, ${geo.position.coords.longitude.toFixed(4)}` : "Obtendo..."}</span>
+              <div className="space-y-1.5 mb-3">
+                <div className="flex items-center justify-between text-white text-xs">
+                  <span className="flex items-center gap-1"><Clock size={12} /> {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="flex items-center gap-1"><MapPin size={12} /> {freshGeo ? `${freshGeo.lat.toFixed(4)}, ${freshGeo.lng.toFixed(4)}` : geo.position ? `${geo.position.coords.latitude.toFixed(4)}, ${geo.position.coords.longitude.toFixed(4)}` : "Obtendo..."}</span>
+                </div>
+                {geoAddress && (
+                  <p className="text-[10px] text-white/70 leading-tight truncate">{geoAddress}</p>
+                )}
               </div>
               <button onClick={capturePhoto} disabled={clockMutation.isPending || geoLoading} data-testid="button-capture-ponto"
                 className="w-full py-3 bg-white rounded-xl text-black font-black uppercase text-sm tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
@@ -177,6 +212,38 @@ export default function MobilePontoPage() {
             <MapPin size={10} /> {geo.denied ? "Localização negada — ative nas configurações" : geo.position ? "Localização ativa" : "Obtendo localização..."}
           </p>
         </div>
+
+        {geo.position && (
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="card-geo-address">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <MapPin className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Sua Localização Confirmada</p>
+                {addressLoading ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-3 h-3 text-neutral-400 animate-spin" />
+                    <p className="text-xs text-neutral-400">Confirmando endereço...</p>
+                  </div>
+                ) : geoAddress ? (
+                  <p className="text-xs text-neutral-700 leading-relaxed" data-testid="text-geo-address">{geoAddress}</p>
+                ) : (
+                  <p className="text-xs text-neutral-500">{geo.position.coords.latitude.toFixed(6)}, {geo.position.coords.longitude.toFixed(6)}</p>
+                )}
+                <a
+                  href={`https://www.google.com/maps?q=${geo.position.coords.latitude},${geo.position.coords.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] text-blue-600 font-bold mt-1.5"
+                  data-testid="link-google-maps"
+                >
+                  <ExternalLink className="w-3 h-3" /> Ver no Google Maps
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>

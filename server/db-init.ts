@@ -401,6 +401,10 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lng TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lat TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lng TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_address TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_address TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_address TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_address TEXT`).catch(() => {});
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS employee_occurrences (

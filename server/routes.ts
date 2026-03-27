@@ -6843,7 +6843,7 @@ Regras:
     try {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
-      const { action, photo, latitude, longitude } = req.body;
+      const { action, photo, latitude, longitude, address } = req.body;
       if (!action) return res.status(400).json({ message: "Ação obrigatória" });
       if (!photo || typeof photo !== "string" || !photo.startsWith("data:image/")) return res.status(400).json({ message: "Foto obrigatória (formato inválido)" });
       if (photo.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Foto excede 5MB" });
@@ -6881,13 +6881,13 @@ Regras:
         }
         if (record) {
           const [updated] = await db.update(employeeTimesheets)
-            .set({ clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude })
+            .set({ clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude, clockInAddress: address || null })
             .where(eq(employeeTimesheets.id, record.id)).returning();
           return res.json(updated);
         }
         const [created] = await db.insert(employeeTimesheets).values({
           employeeId, date: now,
-          clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude,
+          clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude, clockInAddress: address || null,
         }).returning();
         return res.json(created);
       }
@@ -6901,9 +6901,9 @@ Regras:
       }
 
       const updateMap: Record<string, any> = {
-        lunch_out: { lunchOut: timeStr, lunchOutPhoto: photo, lunchOutLat: latitude, lunchOutLng: longitude },
-        lunch_in: { lunchIn: timeStr, lunchInPhoto: photo, lunchInLat: latitude, lunchInLng: longitude },
-        clock_out: { clockOut: timeStr, clockOutPhoto: photo, clockOutLat: latitude, clockOutLng: longitude },
+        lunch_out: { lunchOut: timeStr, lunchOutPhoto: photo, lunchOutLat: latitude, lunchOutLng: longitude, lunchOutAddress: address || null },
+        lunch_in: { lunchIn: timeStr, lunchInPhoto: photo, lunchInLat: latitude, lunchInLng: longitude, lunchInAddress: address || null },
+        clock_out: { clockOut: timeStr, clockOutPhoto: photo, clockOutLat: latitude, clockOutLng: longitude, clockOutAddress: address || null },
       };
       const updates = updateMap[action];
       if (!updates) return res.status(400).json({ message: "Ação inválida" });

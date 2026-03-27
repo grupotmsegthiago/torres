@@ -1567,10 +1567,10 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
               </div>
               <div className="p-6 space-y-5">
                 {[
-                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo },
-                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo },
-                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo },
-                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo },
+                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo, address: pontoDetalhe.clockInAddress },
+                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo, address: pontoDetalhe.lunchOutAddress },
+                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo, address: pontoDetalhe.lunchInAddress },
+                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo, address: pontoDetalhe.clockOutAddress },
                 ].filter(s => s.time).map((step, idx) => (
                   <div key={idx} className="border border-neutral-200 rounded-xl overflow-hidden">
                     <div className="bg-neutral-50 px-4 py-2.5 flex items-center justify-between">
@@ -1610,6 +1610,12 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                                 <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Residencia</p>
                                 <p className={`text-sm font-black ${step.geo.atHome ? "text-orange-700" : "text-neutral-700"}`}>{step.geo.distHome}m</p>
                                 {step.geo.atHome && <p className="text-[9px] text-orange-600 font-bold mt-0.5">ALERTA: Ponto batido proximo a residencia!</p>}
+                              </div>
+                            )}
+                            {step.address && (
+                              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <p className="text-[9px] font-black text-blue-500 uppercase">Endereco Confirmado</p>
+                                <p className="text-[11px] text-blue-800 leading-relaxed mt-0.5">{step.address}</p>
                               </div>
                             )}
                             <a href={`https://www.google.com/maps?q=${step.geo.lat},${step.geo.lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-blue-600 font-bold hover:underline">
@@ -2339,10 +2345,10 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               </div>
               <div className="p-6 space-y-5">
                 {[
-                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo },
-                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo },
-                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo },
-                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo },
+                  { label: "Entrada", time: pontoDetalhe.clockIn, photo: pontoDetalhe.clockInPhoto, geo: pontoDetalhe.clockInGeo, address: pontoDetalhe.clockInAddress },
+                  { label: "Saida Almoco", time: pontoDetalhe.lunchOut, photo: pontoDetalhe.lunchOutPhoto, geo: pontoDetalhe.lunchOutGeo, address: pontoDetalhe.lunchOutAddress },
+                  { label: "Retorno Almoco", time: pontoDetalhe.lunchIn, photo: pontoDetalhe.lunchInPhoto, geo: pontoDetalhe.lunchInGeo, address: pontoDetalhe.lunchInAddress },
+                  { label: "Saida", time: pontoDetalhe.clockOut, photo: pontoDetalhe.clockOutPhoto, geo: pontoDetalhe.clockOutGeo, address: pontoDetalhe.clockOutAddress },
                 ].filter(s => s.time).map((step, idx) => (
                   <div key={idx} className="border border-neutral-200 rounded-xl overflow-hidden">
                     <div className="bg-neutral-50 px-4 py-2.5 flex items-center justify-between">
@@ -2388,6 +2394,12 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                                 <p className="text-[9px] font-black text-neutral-400 uppercase">Distancia da Residencia</p>
                                 <p className={`text-sm font-black ${step.geo.atHome ? "text-orange-700" : "text-neutral-700"}`}>{step.geo.distHome}m</p>
                                 {step.geo.atHome && <p className="text-[9px] text-orange-600 font-bold mt-0.5">ALERTA: Ponto batido proximo a residencia!</p>}
+                              </div>
+                            )}
+                            {step.address && (
+                              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <p className="text-[9px] font-black text-blue-500 uppercase">Endereco Confirmado</p>
+                                <p className="text-[11px] text-blue-800 leading-relaxed mt-0.5">{step.address}</p>
                               </div>
                             )}
                             <a href={`https://www.google.com/maps?q=${step.geo.lat},${step.geo.lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-blue-600 font-bold hover:underline">
