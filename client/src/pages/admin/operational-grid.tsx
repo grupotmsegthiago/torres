@@ -530,7 +530,7 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
 function getPriorityDisplay(priority: string) {
   switch (priority) {
     case "imediata":
-      return { label: "EM SERVIÇO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
+      return { label: "REAPROVEITAMENTO", icon: Zap, className: "bg-red-50 text-red-700 border-red-200" };
     case "agendada":
       return { label: "Agendamento", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
     case "reaproveitamento":
@@ -906,7 +906,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 01:</b> ${_agent1}</div>
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
               </div>
-              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "EM SERVIÇO" : "Agendamento") : getMissionLabel(v.activeOs.lastAgentUpdate?.missionStep || v.activeOs.missionStatus)}</span>${v.activeOs.lastAgentUpdate ? `<br/><span style="color: #2563eb; font-size: 11px;">"${v.activeOs.lastAgentUpdate.message}"</span>` : ""}</div>` : ""}
+              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento") : getMissionLabel(v.activeOs.lastAgentUpdate?.missionStep || v.activeOs.missionStatus)}</span>${v.activeOs.lastAgentUpdate ? `<br/><span style="color: #2563eb; font-size: 11px;">"${v.activeOs.lastAgentUpdate.message}"</span>` : ""}</div>` : ""}
               ${v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
@@ -2489,14 +2489,14 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
                     o.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" :
                     "bg-blue-50 text-blue-600 border-blue-200"
                   }`}>
-                    {o.priority === "imediata" ? "IMEDIATA" : "AGENDADA"}
+                    {o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
                   </span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
                     o.status === "em_andamento" ? "bg-neutral-900 text-white border-neutral-900" :
                     o.status === "agendada" ? "bg-blue-50 text-blue-700 border-blue-200" :
                     "bg-neutral-100 text-neutral-600 border-neutral-200"
                   }`}>
-                    {o.status === "agendada" ? (o.priority === "imediata" ? "EM SERVIÇO" : "AGENDAMENTO") : o.status?.toUpperCase()}
+                    {o.status === "agendada" ? (o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDAMENTO") : o.status?.toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -2846,7 +2846,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             )}
                             {v.activeOs.priority === "imediata" && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-black border bg-red-600 text-white border-red-700 animate-pulse">
-                                IMEDIATA
+                                REAPROVEITAMENTO
                               </span>
                             )}
                             {v.activeOs.lastAgentUpdate ? (
@@ -2901,7 +2901,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {v.scheduledOs.osNumber}
                             </Link>
                             <span className={`text-xs px-2 py-0.5 rounded font-bold border ${v.scheduledOs.priority === "imediata" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
-                              {v.scheduledOs.priority === "imediata" ? "EM SERVIÇO" : "Agendamento"}
+                              {v.scheduledOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento"}
                             </span>
                           </div>
                           {v.scheduledOs.scheduledDate && (
