@@ -706,3 +706,17 @@ export const employeeOccurrences = pgTable("employee_occurrences", {
 export const insertEmployeeOccurrenceSchema = createInsertSchema(employeeOccurrences).omit({ id: true, createdAt: true });
 export type InsertEmployeeOccurrence = z.infer<typeof insertEmployeeOccurrenceSchema>;
 export type EmployeeOccurrence = typeof employeeOccurrences.$inferSelect;
+
+export const referencePoints = pgTable("reference_points", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+  radiusMeters: integer("radius_meters").notNull().default(500),
+  color: text("color").notNull().default("#6366f1"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertReferencePointSchema = createInsertSchema(referencePoints).omit({ id: true, createdAt: true });
+export type InsertReferencePoint = z.infer<typeof insertReferencePointSchema>;
+export type ReferencePoint = typeof referencePoints.$inferSelect;

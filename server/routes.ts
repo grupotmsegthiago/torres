@@ -17,6 +17,7 @@ import {
   employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
   auditLogs, users, loginSelfies,
   companyDocuments, homologationLogs, missionUpdates,
+  referencePoints, insertReferencePointSchema,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
@@ -7141,6 +7142,54 @@ Regras:
       if (diff >= 10000) alert = `Troca de óleo VENCIDA! ${diff.toLocaleString("pt-BR")} km desde última troca.`;
       else if (diff >= 9000) alert = `Faltam ${(10000 - diff).toLocaleString("pt-BR")} km para troca de óleo.`;
       res.json({ alert, oilKm, currentKm, kmSinceOil: diff });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Reference Points CRUD ──────────────────────────────────────────
+  app.get("/api/reference-points", requireAuth, async (_req, res) => {
+    try {
+      const rows = await db.select().from(referencePoints).orderBy(referencePoints.name);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/reference-points", requireAuth, async (req, res) => {
+    try {
+      const parsed = insertReferencePointSchema.parse(req.body);
+      const [row] = await db.insert(referencePoints).values(parsed).returning();
+      res.json(row);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/reference-points/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { name, latitude, longitude, radiusMeters, color } = req.body;
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (latitude !== undefined) updates.latitude = latitude;
+      if (longitude !== undefined) updates.longitude = longitude;
+      if (radiusMeters !== undefined) updates.radiusMeters = radiusMeters;
+      if (color !== undefined) updates.color = color;
+      const [row] = await db.update(referencePoints).set(updates).where(eq(referencePoints.id, id)).returning();
+      if (!row) return res.status(404).json({ message: "Ponto não encontrado" });
+      res.json(row);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/reference-points/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await db.delete(referencePoints).where(eq(referencePoints.id, id));
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

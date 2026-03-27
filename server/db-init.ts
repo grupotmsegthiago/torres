@@ -424,6 +424,18 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS reference_points (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        radius_meters INTEGER NOT NULL DEFAULT 500,
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);

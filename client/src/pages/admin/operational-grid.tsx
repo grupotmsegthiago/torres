@@ -17,6 +17,7 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home,
+  CircleFadingPlus, Eye,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -651,11 +652,13 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const carImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const circleRef = useRef<any>(null);
   const geofenceCirclesRef = useRef<any[]>([]);
+  const refPointCirclesRef = useRef<any[]>([]);
   const centerMarkerRef = useRef<any>(null);
   const autocompleteRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [mapReady, setMapReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
+  const { data: mapRefPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
   const [radiusActive, setRadiusActive] = useState(false);
   const [radiusCenter, setRadiusCenter] = useState<{ lat: number; lng: number; label: string } | null>(null);
   const [radiusKm, setRadiusKm] = useState(20);
@@ -916,6 +919,12 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         setSelectedVehicle(v);
       });
 
+      marker.addListener("rightclick", (e: any) => {
+        const event = e.domEvent as MouseEvent;
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("vehicle-context-menu", { detail: { vehicleId: v.id, x: event.clientX, y: event.clientY } }));
+      });
+
       (marker as any)._vehicleId = v.id;
       markersRef.current.push(marker);
     });
@@ -983,6 +992,44 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       }
     }
   }, [mapReady, vehicles]);
+
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current || !window.google?.maps) return;
+    refPointCirclesRef.current.forEach((c) => c.setMap(null));
+    refPointCirclesRef.current = [];
+
+    mapRefPoints.forEach((rp) => {
+      const circle = new window.google.maps.Circle({
+        center: { lat: rp.latitude, lng: rp.longitude },
+        radius: rp.radiusMeters,
+        map: mapInstanceRef.current,
+        strokeColor: rp.color,
+        strokeOpacity: 0.7,
+        strokeWeight: 2,
+        fillColor: rp.color,
+        fillOpacity: 0.1,
+        clickable: false,
+      });
+      refPointCirclesRef.current.push(circle);
+
+      const labelMarker = new window.google.maps.Marker({
+        position: { lat: rp.latitude, lng: rp.longitude },
+        map: mapInstanceRef.current,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 5,
+          fillColor: rp.color,
+          fillOpacity: 0.9,
+          strokeColor: "#fff",
+          strokeWeight: 2,
+        },
+        label: { text: rp.name, color: rp.color, fontSize: "10px", fontWeight: "bold", className: "ref-point-label" },
+        title: rp.name,
+        clickable: false,
+      });
+      refPointCirclesRef.current.push(labelMarker);
+    });
+  }, [mapReady, mapRefPoints]);
 
   useEffect(() => {
     if (!mapReady || !searchInputRef.current || !window.google?.maps?.places) return;
@@ -2640,9 +2687,583 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
   );
 }
 
+interface RefPoint {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  color: string;
+}
+
+function getVehicleRefPoint(v: TrackedVehicle, refPoints: RefPoint[]): RefPoint | null {
+  if (v.tracker?.latitude == null || v.tracker?.longitude == null || refPoints.length === 0) return null;
+  for (const rp of refPoints) {
+    const distKm = haversineDistance(v.tracker.latitude, v.tracker.longitude, rp.latitude, rp.longitude);
+    if (distKm * 1000 <= rp.radiusMeters) return rp;
+  }
+  return null;
+}
+
+interface CtxMenuState {
+  x: number;
+  y: number;
+  vehicle: TrackedVehicle;
+}
+
+function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, gridData, onFocusVehicle, refPoints }: {
+  state: CtxMenuState;
+  onClose: () => void;
+  vehicle: TrackedVehicle;
+  vehicles: TrackedVehicle[];
+  gerenciadoras: Gerenciadora[];
+  gridData?: GridItem[];
+  onFocusVehicle?: (id: number) => void;
+  refPoints: RefPoint[];
+}) {
+  const { toast } = useToast();
+  const { addNotification, updateNotification } = useOpNotifications();
+  const [, navigate] = useLocation();
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [cmdConfirm, setCmdConfirm] = useState<string | null>(null);
+  const [mirrorOpen, setMirrorOpen] = useState(false);
+  const [missionAction, setMissionAction] = useState<"finish" | "cancel" | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [preAlertLoading, setPreAlertLoading] = useState(false);
+  const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
+  const [, forceUpdate] = useState(0);
+  const [msgTexto, setMsgTexto] = useState("Motor Ligado com carro parado .. desligue o veículo!");
+  const [refPointDialog, setRefPointDialog] = useState(false);
+  const [refName, setRefName] = useState("");
+  const [refRadius, setRefRadius] = useState("500");
+  const [refSaving, setRefSaving] = useState(false);
+  const [manageRefOpen, setManageRefOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const v = vehicle;
+  const hasOs = !!(v.activeOs || v.scheduledOs);
+  const hasLocation = v.tracker?.latitude != null && v.tracker?.longitude != null;
+  const viaturaStatus = getViaturaStatus(v);
+  const isEmServico = viaturaStatus.label === "EM SERVIÇO";
+  const lastUpdateId = v.activeOs?.lastAgentUpdate?.id ?? null;
+  const hasNewUpdate = !!(lastUpdateId && !seenUpdateIds.has(lastUpdateId));
+  const cmdLabels: Record<string, string> = { bloquear: "Bloquear", desbloquear: "Desbloquear", sirene: "Sirene/Alerta", aviso_cabine_on: "Aviso Cabine (Ligar)", aviso_cabine_off: "Aviso Cabine (Desligar)", mensagem_texto: "Mensagem de Texto" };
+
+  const commandMutation = useMutation({
+    mutationFn: async ({ vehicleId, command, notifId, mensagem }: { vehicleId: number; command: string; notifId: string; mensagem?: string }) => {
+      const res = await authFetch("/api/truckscontrol/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicleId, command, mensagem }) });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Erro ao enviar comando");
+      return { ...data, notifId };
+    },
+    onSuccess: (data) => { updateNotification(data.notifId, { status: "success", message: data.message }); setCmdOpen(false); setCmdConfirm(null); },
+    onError: (err: Error & { notifId?: string }, variables) => { updateNotification(variables.notifId, { status: "error", message: err.message }); setCmdConfirm(null); },
+  });
+
+  const missionMutation = useMutation({
+    mutationFn: async ({ action, serviceOrderId, reason }: { action: "finish" | "cancel"; serviceOrderId: number; reason?: string }) => {
+      const url = action === "finish" ? "/api/mission/finish" : "/api/mission/cancel";
+      const res = await authFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceOrderId, reason }) });
+      if (!res.ok) { const data = await res.json().catch(() => ({ message: "Erro desconhecido" })); throw new Error(data.message); }
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
+      setMissionAction(null); setCancelReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+    },
+    onError: (err: Error) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); },
+  });
+
+  const handleCommand = (command: string) => {
+    if (command === "bloquear" && !isEmServico) { toast({ title: "Bloqueio não permitido", description: "O bloqueio só pode ser enviado quando a viatura estiver EM SERVIÇO.", variant: "destructive" }); return; }
+    if (cmdConfirm === command) {
+      const notifId = addNotification({ type: "command", status: "pending", plate: v.plate, label: `Enviando comando "${cmdLabels[command] || command}" para ${v.plate}...` });
+      const mensagem = command === "mensagem_texto" ? msgTexto : undefined;
+      commandMutation.mutate({ vehicleId: v.id, command, notifId, mensagem });
+    } else { setCmdConfirm(command); }
+  };
+
+  const handlePreAlert = async () => {
+    const osId = v.activeOs?.id || v.scheduledOs?.id;
+    if (!osId) { toast({ title: "Sem OS vinculada", variant: "destructive" }); return; }
+    setPreAlertLoading(true);
+    try {
+      const res = await authFetch(`/api/service-orders/${osId}/pdf`);
+      if (!res.ok) throw new Error("Falha ao gerar PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (!win) { const a = document.createElement("a"); a.href = url; a.download = `PreAlerta_OS_${v.activeOs?.osNumber || v.scheduledOs?.osNumber}.pdf`; a.click(); }
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast({ title: "Pré-Alerta gerado" });
+    } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+    finally { setPreAlertLoading(false); }
+    onClose();
+  };
+
+  const handleSaveRefPoint = async () => {
+    if (!v.tracker?.latitude || !v.tracker?.longitude || !refName.trim()) return;
+    setRefSaving(true);
+    try {
+      const res = await authFetch("/api/reference-points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: refName.trim(), latitude: v.tracker.latitude, longitude: v.tracker.longitude, radiusMeters: parseInt(refRadius) || 500, color: "#6366f1" }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Erro ao salvar"); }
+      queryClient.invalidateQueries({ queryKey: ["/api/reference-points"] });
+      toast({ title: "Ponto de referência salvo!", description: `"${refName.trim()}" cadastrado com raio de ${refRadius}m.` });
+      setRefPointDialog(false);
+      setRefName("");
+    } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+    finally { setRefSaving(false); }
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const anyDialogOpen = cmdOpen || mirrorOpen || !!missionAction || !!photoModalUrl || refPointDialog || manageRefOpen;
+
+  const menuStyle: React.CSSProperties = {
+    position: "fixed",
+    left: Math.min(state.x, window.innerWidth - 260),
+    top: Math.min(state.y, window.innerHeight - 400),
+    zIndex: 9999,
+  };
+
+  return (
+    <div ref={menuRef}>
+      {!anyDialogOpen && (
+        <div style={menuStyle} className="w-56 bg-white rounded-xl shadow-2xl border border-neutral-200 py-1.5 animate-in fade-in-0 zoom-in-95" data-testid="vehicle-context-menu">
+          <div className="px-3 py-1.5 border-b border-neutral-100 mb-1">
+            <p className="text-xs font-black text-neutral-900 tracking-wider">{v.plate}</p>
+            <p className="text-[10px] text-neutral-400">{v.brand} {v.model}</p>
+          </div>
+
+          {hasLocation && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+              onClick={() => { if (onFocusVehicle) onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); onClose(); }}
+              data-testid={`ctx-locate-${v.id}`}>
+              <LocateFixed className="w-3.5 h-3.5 text-blue-500" /> Localizar no Mapa
+            </button>
+          )}
+
+          {hasOs && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+              onClick={handlePreAlert} disabled={preAlertLoading}
+              data-testid={`ctx-prealert-${v.id}`}>
+              {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" /> : <Eye className="w-3.5 h-3.5 text-amber-500" />} Visualizar Pré-Alerta
+            </button>
+          )}
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { setMirrorOpen(true); }}
+            data-testid={`ctx-mirror-${v.id}`}>
+            <Copy className="w-3.5 h-3.5 text-neutral-500" /> Espelhamento
+          </button>
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => setCmdOpen(true)}
+            data-testid={`ctx-command-${v.id}`}>
+            <Zap className="w-3.5 h-3.5 text-violet-500" /> Enviar Comando
+          </button>
+
+          {v.activeOs && v.activeOs.missionStatus === "finalizada" && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
+              onClick={async () => {
+                if (!confirm("Liberar retorno à base para esta viatura?")) return;
+                try {
+                  await authFetch(`/api/service-orders/${v.activeOs!.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ missionStatus: "retorno_base" }) });
+                  queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+                  toast({ title: "Retorno liberado!" });
+                } catch { toast({ title: "Erro", variant: "destructive" }); }
+                onClose();
+              }}
+              data-testid={`ctx-return-base-${v.id}`}>
+              <Home className="w-3.5 h-3.5 text-blue-500" /> Retornar à Base
+            </button>
+          )}
+
+          {v.activeOs && v.activeOs.missionStatus === "missao_paga" && !v.activeOs.earlyStartApproved && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2.5"
+              onClick={async () => {
+                try {
+                  await authFetch(`/api/service-orders/${v.activeOs!.id}/approve-early-start`, { method: "POST" });
+                  queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                  toast({ title: "Início antecipado autorizado!" });
+                } catch { toast({ title: "Erro", variant: "destructive" }); }
+                onClose();
+              }}
+              data-testid={`ctx-early-start-${v.id}`}>
+              <Clock className="w-3.5 h-3.5 text-amber-500" /> Liberar Início Antecipado
+            </button>
+          )}
+
+          {v.activeOs?.lastAgentUpdate && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+              onClick={() => {
+                setPhotoModalUrl(v.activeOs?.lastAgentUpdate?.photoUrl || "__no_photo__");
+                if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); }
+              }}
+              data-testid={`ctx-report-${v.id}`}>
+              <ClipboardCheck className="w-3.5 h-3.5 text-neutral-500" /> Copiar Relatório
+            </button>
+          )}
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`); onClose(); }}
+            data-testid={`ctx-new-os-${v.id}`}>
+            <Plus className="w-3.5 h-3.5 text-emerald-500" /> Nova OS
+          </button>
+
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => { navigate(`/admin/vehicles?id=${v.id}`); onClose(); }}
+            data-testid={`ctx-docs-${v.id}`}>
+            <FileText className="w-3.5 h-3.5 text-blue-400" /> Docs VTR
+          </button>
+
+          {v.activeOs && (
+            <>
+              <div className="border-t border-neutral-100 my-1" />
+              <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-green-700 hover:bg-green-50 flex items-center gap-2.5"
+                onClick={() => setMissionAction("finish")}
+                data-testid={`ctx-finish-${v.id}`}>
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Finalizar Missão
+              </button>
+              <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2.5"
+                onClick={() => setMissionAction("cancel")}
+                data-testid={`ctx-cancel-${v.id}`}>
+                <XCircle className="w-3.5 h-3.5 text-red-400" /> Cancelar Missão
+              </button>
+            </>
+          )}
+
+          <div className="border-t border-neutral-100 my-1" />
+          {hasLocation && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-indigo-700 hover:bg-indigo-50 flex items-center gap-2.5"
+              onClick={() => setRefPointDialog(true)}
+              data-testid={`ctx-add-ref-${v.id}`}>
+              <CircleFadingPlus className="w-3.5 h-3.5 text-indigo-500" /> Cadastrar Ponto de Referência
+            </button>
+          )}
+          <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-500 hover:bg-neutral-50 flex items-center gap-2.5"
+            onClick={() => setManageRefOpen(true)}
+            data-testid={`ctx-manage-ref-${v.id}`}>
+            <MapPin className="w-3.5 h-3.5 text-indigo-400" /> Gerenciar Referências
+          </button>
+        </div>
+      )}
+
+      <MirrorVehicleDialog vehicle={v as any} open={mirrorOpen} onOpenChange={(open) => { setMirrorOpen(open); if (!open) onClose(); }} gerenciadoras={gerenciadoras} />
+
+      <Dialog open={refPointDialog} onOpenChange={(open) => { setRefPointDialog(open); if (!open) onClose(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <CircleFadingPlus className="w-5 h-5 text-indigo-600" /> Cadastrar Ponto de Referência
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Cadastre um ponto na posição atual de {v.plate}. Quando qualquer veículo entrar neste raio, será indicado na coluna Referência.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-semibold">Nome do Ponto</Label>
+              <Input value={refName} onChange={(e) => setRefName(e.target.value)} placeholder="Ex: CD Cajamar, Posto Fiscal, Base SP..." className="mt-1" data-testid="input-ref-name" />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Raio (metros)</Label>
+              <Input type="number" value={refRadius} onChange={(e) => setRefRadius(e.target.value)} className="mt-1" data-testid="input-ref-radius" />
+            </div>
+            <div className="bg-neutral-50 rounded-lg p-3">
+              <p className="text-xs text-neutral-500"><b>Coordenadas:</b> {v.tracker?.latitude?.toFixed(6)}, {v.tracker?.longitude?.toFixed(6)}</p>
+              {v.tracker?.address && <p className="text-xs text-neutral-400 mt-1">{v.tracker.address}</p>}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={handleSaveRefPoint} disabled={refSaving || !refName.trim()} data-testid="btn-save-ref">
+              {refSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null} Salvar
+            </Button>
+            <Button variant="outline" onClick={() => { setRefPointDialog(false); onClose(); }}>Cancelar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ManageRefPointsDialog open={manageRefOpen} onClose={() => { setManageRefOpen(false); onClose(); }} refPoints={refPoints} />
+
+      <Dialog open={cmdOpen} onOpenChange={(open) => { setCmdOpen(open); if (!open) { setCmdConfirm(null); onClose(); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Comando — {v.plate}</DialogTitle>
+            <DialogDescription className="text-xs">Enviar comando remoto ao rastreador do veículo.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            {v.hasTracker ? (
+              <>
+                <button className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${!isEmServico ? "opacity-40 cursor-not-allowed" : cmdConfirm === "bloquear" ? "bg-red-50 border-red-300 ring-1 ring-red-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("bloquear")} disabled={commandMutation.isPending || !isEmServico} data-testid={`ctx-cmd-block-${v.id}`}>
+                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center"><XCircle className="w-4 h-4 text-red-500" /></div>
+                  <div className="flex-1"><p className="text-sm font-medium">Bloquear</p><p className="text-xs text-neutral-400">{!isEmServico ? "Disponível apenas EM SERVIÇO" : cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível"}</p></div>
+                  {commandMutation.isPending && cmdConfirm === "bloquear" && <Loader2 className="w-4 h-4 animate-spin text-red-500" />}
+                </button>
+                <button className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "desbloquear" ? "bg-green-50 border-green-300 ring-1 ring-green-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("desbloquear")} disabled={commandMutation.isPending} data-testid={`ctx-cmd-unblock-${v.id}`}>
+                  <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>
+                  <div className="flex-1"><p className="text-sm font-medium">Desbloquear</p><p className="text-xs text-neutral-400">{cmdConfirm === "desbloquear" ? "Clique novamente para confirmar" : "Liberar combustível"}</p></div>
+                  {commandMutation.isPending && cmdConfirm === "desbloquear" && <Loader2 className="w-4 h-4 animate-spin text-green-500" />}
+                </button>
+                <button className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "sirene" ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("sirene")} disabled={commandMutation.isPending} data-testid={`ctx-cmd-siren-${v.id}`}>
+                  <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center"><AlertTriangle className="w-4 h-4 text-amber-500" /></div>
+                  <div className="flex-1"><p className="text-sm font-medium">Sirene / Alerta</p><p className="text-xs text-neutral-400">{cmdConfirm === "sirene" ? "Clique novamente para confirmar" : "Ativar sirene do rastreador"}</p></div>
+                  {commandMutation.isPending && cmdConfirm === "sirene" && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
+                </button>
+                <div className="border-t border-neutral-100 my-1" />
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-1">Aviso de Cabine</p>
+                <button className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "aviso_cabine_on" ? "bg-violet-50 border-violet-300 ring-1 ring-violet-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("aviso_cabine_on")} disabled={commandMutation.isPending} data-testid={`ctx-cmd-cabin-on-${v.id}`}>
+                  <div className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center"><Bell className="w-4 h-4 text-violet-500" /></div>
+                  <div className="flex-1"><p className="text-sm font-medium">Ligar Aviso de Cabine</p><p className="text-xs text-neutral-400">{cmdConfirm === "aviso_cabine_on" ? "Clique novamente para confirmar" : "Ativar alerta sonoro"}</p></div>
+                  {commandMutation.isPending && cmdConfirm === "aviso_cabine_on" && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
+                </button>
+                <button className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "aviso_cabine_off" ? "bg-neutral-50 border-neutral-300 ring-1 ring-neutral-200" : "hover:bg-neutral-50"}`}
+                  onClick={() => handleCommand("aviso_cabine_off")} disabled={commandMutation.isPending} data-testid={`ctx-cmd-cabin-off-${v.id}`}>
+                  <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center"><BellOff className="w-4 h-4 text-neutral-500" /></div>
+                  <div className="flex-1"><p className="text-sm font-medium">Desligar Aviso de Cabine</p><p className="text-xs text-neutral-400">{cmdConfirm === "aviso_cabine_off" ? "Clique novamente para confirmar" : "Desativar alerta sonoro"}</p></div>
+                  {commandMutation.isPending && cmdConfirm === "aviso_cabine_off" && <Loader2 className="w-4 h-4 animate-spin text-neutral-500" />}
+                </button>
+                <div className="border-t border-neutral-100 my-1" />
+                <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-1">Mensagem de Texto</p>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <textarea className="w-full text-sm border border-neutral-200 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300" rows={2} value={msgTexto} onChange={(e) => setMsgTexto(e.target.value)} placeholder="Digite a mensagem..." data-testid={`ctx-msg-texto-${v.id}`} />
+                  <button className={`w-full flex items-center gap-3 rounded-lg border p-2.5 transition-colors text-left ${cmdConfirm === "mensagem_texto" ? "bg-blue-50 border-blue-300 ring-1 ring-blue-200" : "hover:bg-neutral-50"}`}
+                    onClick={() => handleCommand("mensagem_texto")} disabled={commandMutation.isPending || !msgTexto.trim()} data-testid={`ctx-cmd-msg-${v.id}`}>
+                    <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center"><MessageSquareText className="w-4 h-4 text-blue-500" /></div>
+                    <div className="flex-1"><p className="text-sm font-medium">Enviar Mensagem</p><p className="text-xs text-neutral-400">{cmdConfirm === "mensagem_texto" ? "Clique novamente para confirmar" : "Enviar texto para display"}</p></div>
+                    {commandMutation.isPending && cmdConfirm === "mensagem_texto" && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-neutral-400 text-center py-3">Veículo sem rastreador configurado</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {!!photoModalUrl && (
+        <Dialog open={!!photoModalUrl} onOpenChange={() => {}}>
+          <DialogContent className={`p-0 overflow-hidden border-0 [&>button]:hidden ${photoModalUrl !== "__no_photo__" ? "max-w-2xl bg-black/95" : "max-w-md bg-white"}`}
+            onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogHeader className="px-4 pt-4 pb-2 relative">
+              <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${photoModalUrl !== "__no_photo__" ? "text-white" : "text-neutral-900"}`}>
+                {photoModalUrl !== "__no_photo__" ? "📷" : "📋"} Atualização — {v.activeOs?.osNumber || ""}
+              </DialogTitle>
+              <button className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${photoModalUrl !== "__no_photo__" ? "text-white/60 hover:text-white hover:bg-white/10" : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"}`}
+                onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] })).catch(() => {}); } }}
+                data-testid={`ctx-close-photo-${v.id}`}>
+                <X className="w-4 h-4" />
+              </button>
+            </DialogHeader>
+            {photoModalUrl !== "__no_photo__" && <div className="flex items-center justify-center px-4"><img src={photoModalUrl} alt="Foto" className="max-w-full max-h-[60vh] rounded-lg object-contain" /></div>}
+            {v.activeOs?.lastAgentUpdate && (
+              <div className={`px-4 py-2 ${photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
+                <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
+                <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}</p>
+              </div>
+            )}
+            <div className="px-4 pb-4 flex flex-col items-center gap-3">
+              <div className="flex justify-center gap-3">
+                {photoModalUrl !== "__no_photo__" && (
+                  <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => { const ok = await copyImageToClipboard(photoModalUrl); toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" }); }}
+                    data-testid={`ctx-copy-photo-${v.id}`}><Camera className="w-4 h-4" /> Copiar Foto</button>
+                )}
+                <button className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${photoModalUrl !== "__no_photo__" ? "bg-white text-neutral-900 hover:bg-neutral-100" : "bg-neutral-900 text-white hover:bg-neutral-800"}`}
+                  onClick={async () => {
+                    const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                    const reportText = generateReport(v, gridItem || null);
+                    try { await navigator.clipboard.writeText(reportText); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Formulário</button>
+              </div>
+              <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
+                onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); }).catch(() => {}); } }}
+                data-testid={`ctx-finalize-alert-${v.id}`}><CheckCircle2 className="w-3.5 h-3.5" /> Finalizar Aviso</button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <Dialog open={!!missionAction} onOpenChange={(open) => { if (!open) { setMissionAction(null); setCancelReason(""); onClose(); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              {missionAction === "finish" ? <><CheckCircle2 className="w-5 h-5 text-green-600" /> Finalizar Missão</> : <><XCircle className="w-5 h-5 text-red-500" /> Cancelar Missão</>}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {missionAction === "finish" ? `Finalizar missão ${v.activeOs?.osNumber}? Veículo e kit serão liberados.` : `Cancelar missão ${v.activeOs?.osNumber}?`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="bg-neutral-50 rounded-lg p-3 space-y-1">
+              <p className="text-xs text-neutral-500">OS</p><p className="text-sm font-bold text-neutral-900">{v.activeOs?.osNumber}</p>
+              <p className="text-xs text-neutral-500 mt-1">Veículo</p><p className="text-sm font-medium text-neutral-700">{v.plate} — {v.model}</p>
+            </div>
+            {missionAction === "cancel" && (
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 mb-1 block">Motivo do cancelamento</label>
+                <textarea className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300" rows={2} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Informe o motivo..." data-testid={`ctx-cancel-reason-${v.id}`} />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button className={`flex-1 ${missionAction === "finish" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
+                onClick={() => { if (v.activeOs) { missionMutation.mutate({ action: missionAction!, serviceOrderId: v.activeOs.id, reason: missionAction === "cancel" ? cancelReason : undefined }); } }}
+                disabled={missionMutation.isPending || (missionAction === "cancel" && !cancelReason.trim())} data-testid={`ctx-confirm-mission-${v.id}`}>
+                {missionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                {missionAction === "finish" ? "Confirmar Finalização" : "Confirmar Cancelamento"}
+              </Button>
+              <Button variant="outline" onClick={() => { setMissionAction(null); setCancelReason(""); onClose(); }}>Voltar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ManageRefPointsDialog({ open, onClose, refPoints }: { open: boolean; onClose: () => void; refPoints: RefPoint[] }) {
+  const { toast } = useToast();
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRadius, setEditRadius] = useState("");
+  const [editColor, setEditColor] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleDelete = async (id: number) => {
+    setDeleting(id);
+    try {
+      const res = await authFetch(`/api/reference-points/${id}`, { method: "DELETE" });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Erro ao remover"); }
+      queryClient.invalidateQueries({ queryKey: ["/api/reference-points"] });
+      toast({ title: "Ponto removido!" });
+    } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+    finally { setDeleting(null); }
+  };
+
+  const startEdit = (rp: RefPoint) => {
+    setEditing(rp.id);
+    setEditName(rp.name);
+    setEditRadius(String(rp.radiusMeters));
+    setEditColor(rp.color);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || !editName.trim()) return;
+    setSaving(true);
+    try {
+      const res = await authFetch(`/api/reference-points/${editing}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), radiusMeters: parseInt(editRadius) || 500, color: editColor }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Erro ao atualizar"); }
+      queryClient.invalidateQueries({ queryKey: ["/api/reference-points"] });
+      toast({ title: "Ponto atualizado!" });
+      setEditing(null);
+    } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const colorOptions = ["#6366f1", "#ef4444", "#22c55e", "#f59e0b", "#3b82f6", "#ec4899", "#8b5cf6", "#14b8a6"];
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setEditing(null); onClose(); } }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm"><MapPin className="w-5 h-5 text-indigo-600" /> Pontos de Referência</DialogTitle>
+          <DialogDescription className="text-xs">Gerencie os pontos de referência cadastrados.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto py-2">
+          {refPoints.length === 0 ? (
+            <p className="text-sm text-neutral-400 text-center py-6">Nenhum ponto de referência cadastrado.</p>
+          ) : refPoints.map((rp) => (
+            <div key={rp.id} className="rounded-lg border border-neutral-200 p-3 hover:bg-neutral-50">
+              {editing === rp.id ? (
+                <div className="space-y-2">
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full text-sm border border-neutral-300 rounded px-2 py-1" placeholder="Nome" data-testid={`input-edit-ref-name-${rp.id}`} />
+                  <div className="flex items-center gap-2">
+                    <input value={editRadius} onChange={(e) => setEditRadius(e.target.value)} className="w-24 text-sm border border-neutral-300 rounded px-2 py-1" placeholder="Raio (m)" type="number" data-testid={`input-edit-ref-radius-${rp.id}`} />
+                    <span className="text-xs text-neutral-500">metros</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {colorOptions.map((c) => (
+                      <button key={c} onClick={() => setEditColor(c)} className={`w-5 h-5 rounded-full border-2 ${editColor === c ? "border-neutral-900 scale-110" : "border-transparent"}`} style={{ backgroundColor: c }} data-testid={`btn-color-${c}`} />
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleSaveEdit} disabled={saving} className="flex-1 h-7 text-xs" data-testid={`btn-save-ref-${rp.id}`}>
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Salvar"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditing(null)} className="flex-1 h-7 text-xs">Cancelar</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: rp.color }} />
+                    <div>
+                      <p className="text-sm font-bold text-neutral-900">{rp.name}</p>
+                      <p className="text-[10px] text-neutral-400">{rp.latitude.toFixed(5)}, {rp.longitude.toFixed(5)} · {rp.radiusMeters}m</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => startEdit(rp)} className="p-1.5 rounded-lg text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" data-testid={`btn-edit-ref-${rp.id}`}>
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(rp.id)} disabled={deleting === rp.id} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" data-testid={`btn-delete-ref-${rp.id}`}>
+                      {deleting === rp.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <Button variant="outline" onClick={onClose} className="w-full">Fechar</Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void }) {
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+
+  const { data: refPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { vehicleId, x, y } = (e as CustomEvent).detail;
+      const veh = vehicles.find(v => v.id === vehicleId);
+      if (veh) setCtxMenu({ x, y, vehicle: veh });
+    };
+    window.addEventListener("vehicle-context-menu", handler);
+    return () => window.removeEventListener("vehicle-context-menu", handler);
+  }, [vehicles]);
 
   const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
 
@@ -2685,7 +3306,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
-                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Ações</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Referência</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -2713,7 +3334,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 return (
                   <tr
                     key={v.id}
-                    className={`transition-colors ${
+                    className={`transition-colors cursor-context-menu ${
                       samePlaceAlert ? "bg-red-50/80 hover:bg-red-50" :
                       isOverSpeed ? "bg-red-50/80 hover:bg-red-50" :
                       isIdleAlert ? "bg-amber-50/60 hover:bg-amber-50" :
@@ -2721,6 +3342,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"
                     }`}
                     data-testid={`row-vehicle-${v.id}`}
+                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, vehicle: v }); }}
                   >
                     <td className="px-2 py-1.5 text-center">
                       <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-xs shadow-sm">
@@ -3069,8 +3691,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       })()}
                     </td>
 
-                    <td className="px-2 py-1.5 text-center">
-                      <VehicleRowActions v={v} vehicles={vehicles} gerenciadoras={gerenciadoras} gridData={gridData} />
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      {(() => {
+                        const rp = getVehicleRefPoint(v, refPoints);
+                        return rp ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded border" style={{ borderColor: rp.color + "40", backgroundColor: rp.color + "10", color: rp.color }}>
+                            <MapPin className="w-3 h-3" />
+                            {rp.name}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-300 text-xs">—</span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
@@ -3081,6 +3713,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       )}
     </Card>
     <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
+    {ctxMenu && (
+      <VehicleContextMenu
+        state={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+        vehicle={ctxMenu.vehicle}
+        vehicles={vehicles}
+        gerenciadoras={gerenciadoras}
+        gridData={gridData}
+        onFocusVehicle={onFocusVehicle}
+        refPoints={refPoints}
+      />
+    )}
     </>
   );
 }
