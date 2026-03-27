@@ -463,7 +463,7 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 🏁 *DESTINO:* ${destination?.toUpperCase() || "—"}
 
 🚛 *VEÍCULO:* ${driverPlate}
-👤 *MOTORISTA:* ${driverName}
+👤 *MOTORISTA:* ${driverName?.toUpperCase() || "—"}
 📞 *CONTATO:* ${driverPhone}
 
 🚔 *VIATURA:* ${vehiclePlate}
