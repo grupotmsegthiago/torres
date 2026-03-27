@@ -2172,6 +2172,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       return res.status(404).json({ success: false, message: "Veículo não encontrado." });
     }
 
+    if (command === "bloquear") {
+      const orders = await storage.getServiceOrders();
+      const activeOs = orders.find(
+        (o) => o.vehicleId === vehicleId && o.status === "em_andamento" && o.missionStatus && o.missionStatus !== "encerrada" && o.missionStatus !== "missao_paga"
+      );
+      if (!activeOs) {
+        return res.status(403).json({ success: false, message: "Bloqueio permitido apenas quando a viatura estiver EM SERVIÇO (com missão em andamento)." });
+      }
+    }
+
     let veiID: number | null = null;
 
     if (vehicle.truckscontrolIdentifier) {

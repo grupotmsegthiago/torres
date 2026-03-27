@@ -1238,6 +1238,8 @@ function VehicleBlockButton({ vehicle }: { vehicle: TrackedVehicle }) {
   const { toast } = useToast();
   const { addNotification, updateNotification } = useOpNotifications();
   const [confirming, setConfirming] = useState(false);
+  const vStatus = getViaturaStatus(vehicle);
+  const isEmServico = vStatus.label === "EM SERVIÇO";
 
   const blockMutation = useMutation({
     mutationFn: async () => {
@@ -1261,6 +1263,8 @@ function VehicleBlockButton({ vehicle }: { vehicle: TrackedVehicle }) {
       setConfirming(false);
     },
   });
+
+  if (!isEmServico) return null;
 
   if (!confirming) {
     return (
@@ -1868,7 +1872,14 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
     },
   });
 
+  const viaturaStatus = getViaturaStatus(v);
+  const isEmServico = viaturaStatus.label === "EM SERVIÇO";
+
   const handleCommand = (command: string) => {
+    if (command === "bloquear" && !isEmServico) {
+      toast({ title: "Bloqueio não permitido", description: "O bloqueio só pode ser enviado quando a viatura estiver EM SERVIÇO.", variant: "destructive" });
+      return;
+    }
     if (cmdConfirm === command) {
       const notifId = addNotification({
         type: "command",
@@ -1947,15 +1958,15 @@ function VehicleRowActions({ v, vehicles, gerenciadoras }: { v: TrackedVehicle; 
             {v.hasTracker ? (
               <>
                 <button
-                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${cmdConfirm === "bloquear" ? "bg-red-50 border-red-300 ring-1 ring-red-200" : "hover:bg-neutral-50"}`}
+                  className={`w-full flex items-center gap-3 rounded-lg border p-3 transition-colors text-left ${!isEmServico ? "opacity-40 cursor-not-allowed" : cmdConfirm === "bloquear" ? "bg-red-50 border-red-300 ring-1 ring-red-200" : "hover:bg-neutral-50"}`}
                   onClick={() => handleCommand("bloquear")}
-                  disabled={commandMutation.isPending}
+                  disabled={commandMutation.isPending || !isEmServico}
                   data-testid={`btn-cmd-block-${v.id}`}
                 >
                   <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center"><XCircle className="w-4 h-4 text-red-500" /></div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">Bloquear</p>
-                    <p className="text-xs text-neutral-400">{cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível remotamente"}</p>
+                    <p className="text-xs text-neutral-400">{!isEmServico ? "Disponível apenas com viatura EM SERVIÇO" : cmdConfirm === "bloquear" ? "Clique novamente para confirmar" : "Cortar combustível remotamente"}</p>
                   </div>
                   {commandMutation.isPending && cmdConfirm === "bloquear" && <Loader2 className="w-4 h-4 animate-spin text-red-500" />}
                 </button>
