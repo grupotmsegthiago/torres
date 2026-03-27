@@ -34,18 +34,18 @@ const VEHICLE_CHECKLIST_ITEMS = [
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
   missao_paga: { title: "CHECK-IN", subtitle: "Missão liberada — inicie o check-in", icon: CheckCircle2 },
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
-  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/16", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
-  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
-  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/16", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Chegada no Cliente · 5/16", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
-  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/16", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
-  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/16", icon: User, needsForm: true },
-  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/16", icon: Siren },
-  em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/16", icon: Route },
-  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/16", icon: MapPin, photos: ["Foto do Local", "Hodômetro"], needsKm: true },
-  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/16", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
-  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/16", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
+  checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/15", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
+  checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/15", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
+  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/15", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/15", icon: Route },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Chegada no Cliente · 5/15", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
+  checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/15", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
+  checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/15", icon: User, needsForm: true },
+  iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/15", icon: Siren },
+  em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/15", icon: Route },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/15", icon: MapPin, photos: ["Foto do Local", "Hodômetro"], needsKm: true },
+  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/15", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
+  checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/15", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/15", icon: CheckCircle2 },
   retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 14/15", icon: Home },
   chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 15/15", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Hodômetro"] },
@@ -1820,24 +1820,57 @@ export default function MobileMissaoPage() {
           </div>
         )}
 
-        {(currentStep === "finalizada" || currentStep === "retorno_base") && (
+        {currentStep === "finalizada" && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-mission-complete">
               <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Missão Finalizada</h3>
-              <p className="text-sm text-neutral-500 mt-2">Aguarde informações da base!</p>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Entregas Finalizadas</h3>
+              <p className="text-sm text-neutral-500 mt-2">Aguarde a liberação da central para retornar à base.</p>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
                 <Shield className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-sm font-bold text-amber-800">Em Prontidão</p>
-                <p className="text-[10px] text-amber-600">A central irá liberar o retorno à base. Aguarde.</p>
+                <p className="text-sm font-bold text-amber-800">Aguardando Liberação</p>
+                <p className="text-[10px] text-amber-600">O admin irá liberar o retorno à base. Aguarde.</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {currentStep === "retorno_base" && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                <Home className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-blue-800">Retorno à Base Liberado</p>
+                <p className="text-[10px] text-blue-600">Dirija-se à base. Ao chegar, clique no botão abaixo.</p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  await advanceMission();
+                  toast({ title: "Chegada registrada!", description: "Prossiga com o checklist da base." });
+                } catch (err: any) {
+                  toast({ title: "Erro", description: err.message, variant: "destructive" });
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              disabled={submitting}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-cheguei-base"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Home className="w-5 h-5" />}
+              Cheguei na Base
+            </button>
           </div>
         )}
 

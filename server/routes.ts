@@ -3888,6 +3888,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    if (currentStep === "finalizada") {
+      return res.status(400).json({
+        message: "Aguardando liberação do admin para retorno à base.",
+        code: "AWAITING_ADMIN_RETURN",
+      });
+    }
+
     if (currentStep === "chegada_base") {
       if (!so.baseReturnKm) {
         return res.status(400).json({ message: "Quilometragem de retorno obrigatória" });
