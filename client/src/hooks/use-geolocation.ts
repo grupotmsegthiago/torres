@@ -8,15 +8,17 @@ export function useGeolocation() {
   const { user } = useAuth();
   const [denied, setDenied] = useState(false);
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [prompted, setPrompted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
   const watchRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const initDone = useRef(false);
 
   const sendLocation = useCallback(async (pos: GeolocationPosition) => {
     setPosition(pos);
     setLoading(false);
     setDenied(false);
+    setReady(true);
     try {
       await authFetch("/api/agent/location", {
         method: "POST",
@@ -40,11 +42,24 @@ export function useGeolocation() {
         setDenied(false);
         setPosition(pos);
         setLoading(false);
+        setReady(true);
       },
       () => {},
       { enableHighAccuracy: true }
     );
   }, []);
+
+  const startInterval = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendLocation(pos),
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+    }, INTERVAL_MS);
+  }, [sendLocation]);
 
   const requestPermission = useCallback(() => {
     if (!navigator.geolocation) {
@@ -53,12 +68,12 @@ export function useGeolocation() {
       return;
     }
     setLoading(true);
-    setPrompted(true);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         sendLocation(pos);
         startWatch();
+        startInterval();
       },
       (err) => {
         setLoading(false);
@@ -68,79 +83,55 @@ export function useGeolocation() {
       },
       { enableHighAccuracy: true, timeout: 20000 }
     );
-  }, [sendLocation, startWatch]);
+  }, [sendLocation, startWatch, startInterval]);
 
   useEffect(() => {
-    if (!user || !navigator.geolocation) {
-      setLoading(false);
-      return;
-    }
+    if (!user || !navigator.geolocation || initDone.current) return;
+    initDone.current = true;
+
+    const autoFetch = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          sendLocation(pos);
+          startWatch();
+          startInterval();
+        },
+        () => { setLoading(false); },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    };
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "geolocation" as PermissionName }).then((result) => {
         if (result.state === "granted") {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              sendLocation(pos);
-              startWatch();
-            },
-            () => { setLoading(false); },
-            { enableHighAccuracy: true, timeout: 15000 }
-          );
+          setLoading(true);
+          autoFetch();
         } else if (result.state === "denied") {
           setDenied(true);
-          setLoading(false);
-        } else {
-          setLoading(false);
         }
 
         result.addEventListener("change", () => {
           if (result.state === "granted") {
             setDenied(false);
-            navigator.geolocation.getCurrentPosition(
-              (pos) => sendLocation(pos),
-              () => {},
-              { enableHighAccuracy: true, timeout: 15000 }
-            );
-            startWatch();
+            setLoading(true);
+            autoFetch();
           } else if (result.state === "denied") {
             setDenied(true);
+            setLoading(false);
           }
         });
       }).catch(() => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { sendLocation(pos); startWatch(); },
-          (err) => {
-            setLoading(false);
-            if (err.code === err.PERMISSION_DENIED) setDenied(true);
-          },
-          { enableHighAccuracy: true, timeout: 15000 }
-        );
+        // iOS Safari: Permissions API not supported for geolocation
+        // Do NOT auto-request — wait for user gesture via requestPermission()
       });
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => { sendLocation(pos); startWatch(); },
-        (err) => {
-          setLoading(false);
-          if (err.code === err.PERMISSION_DENIED) setDenied(true);
-        },
-        { enableHighAccuracy: true, timeout: 15000 }
-      );
     }
-
-    intervalRef.current = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => sendLocation(pos),
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000 }
-      );
-    }, INTERVAL_MS);
+    // No Permissions API at all (older browsers) — wait for user gesture
 
     return () => {
       if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [user, sendLocation, startWatch]);
+  }, [user, sendLocation, startWatch, startInterval]);
 
-  return { denied, position, loading, prompted, requestPermission };
+  return { denied, position, loading, ready, requestPermission };
 }

@@ -216,7 +216,11 @@ export default function MobilePontoPage() {
             <p className="text-xs mt-1 flex items-center justify-center gap-1 text-emerald-400">
               <MapPin size={10} /> Localização ativa
             </p>
-          ) : !geo.loading && !geo.position ? (
+          ) : geo.loading ? (
+            <p className="text-xs mt-1 flex items-center justify-center gap-1 text-neutral-400">
+              <Loader2 size={10} className="animate-spin" /> Obtendo localização...
+            </p>
+          ) : (
             <button
               onClick={geo.requestPermission}
               className="mt-2 px-4 py-2 bg-emerald-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-2 mx-auto"
@@ -224,10 +228,6 @@ export default function MobilePontoPage() {
             >
               <MapPin size={14} /> Permitir Localização
             </button>
-          ) : (
-            <p className="text-xs mt-1 flex items-center justify-center gap-1 text-neutral-400">
-              <Loader2 size={10} className="animate-spin" /> Obtendo localização...
-            </p>
           )}
         </div>
 
@@ -285,14 +285,15 @@ export default function MobilePontoPage() {
                 </div>
               </div>
             )}
-            {!geo.denied && !geo.position && !geo.loading && (
+            {!geo.denied && !geo.position && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3" data-testid="alert-geo-needed">
                 <MapPin className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-xs font-bold text-amber-700 uppercase">Localização Necessária</p>
                   <p className="text-[11px] text-amber-600 mt-0.5">Para registrar o ponto, precisamos acessar sua localização. Toque no botão abaixo para permitir.</p>
-                  <button onClick={geo.requestPermission} className="mt-3 w-full px-3 py-2.5 bg-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2" data-testid="button-request-geo">
-                    <MapPin size={14} /> Permitir Localização
+                  <button onClick={geo.requestPermission} disabled={geo.loading} className="mt-3 w-full px-3 py-2.5 bg-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 disabled:opacity-60" data-testid="button-request-geo">
+                    {geo.loading ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                    {geo.loading ? "Obtendo..." : "Permitir Localização"}
                   </button>
                 </div>
               </div>
