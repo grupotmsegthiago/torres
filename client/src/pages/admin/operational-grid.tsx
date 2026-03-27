@@ -16,7 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  Bell, BellOff, MessageSquareText, ClipboardCheck,
+  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -385,6 +385,28 @@ function getMissionProgress(missionStatus: string | null): number {
   const idx = steps.indexOf(missionStatus);
   if (idx < 0) return 0;
   return Math.round(((idx + 1) / steps.length) * 100);
+}
+
+async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const pngBlob = blob.type === "image/png" ? blob : await new Promise<Blob>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")!.drawImage(img, 0, 0);
+        canvas.toBlob((b) => resolve(b!), "image/png");
+      };
+      img.src = dataUrl;
+    });
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getFirstLastName(fullName: string | null | undefined): string {
@@ -2160,7 +2182,23 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               </p>
             </div>
           )}
-          <div className="px-4 pb-4 flex justify-center">
+          <div className="px-4 pb-4 flex justify-center gap-3">
+            {photoModalUrl && photoModalUrl !== "__no_photo__" && (
+              <button
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                onClick={async () => {
+                  const ok = await copyImageToClipboard(photoModalUrl);
+                  toast(ok
+                    ? { title: "Foto copiada!", description: "Cole no WhatsApp com Ctrl+V." }
+                    : { title: "Erro", description: "Não foi possível copiar a foto.", variant: "destructive" }
+                  );
+                }}
+                data-testid={`btn-copy-photo-modal-${v.id}`}
+              >
+                <Camera className="w-4 h-4" />
+                Copiar Foto
+              </button>
+            )}
             <button
               className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
                 photoModalUrl && photoModalUrl !== "__no_photo__"
@@ -3247,7 +3285,23 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
               </p>
             </div>
           )}
-          <div className="px-4 pb-4 flex justify-center">
+          <div className="px-4 pb-4 flex justify-center gap-3">
+            {forwardUpdate?.photoUrl && (
+              <button
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                onClick={async () => {
+                  const ok = await copyImageToClipboard(forwardUpdate.photoUrl);
+                  toast(ok
+                    ? { title: "Foto copiada!", description: "Cole no WhatsApp com Ctrl+V." }
+                    : { title: "Erro", description: "Não foi possível copiar a foto.", variant: "destructive" }
+                  );
+                }}
+                data-testid="btn-forward-copy-photo"
+              >
+                <Camera className="w-4 h-4" />
+                Copiar Foto
+              </button>
+            )}
             <button
               className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
                 forwardUpdate?.photoUrl
