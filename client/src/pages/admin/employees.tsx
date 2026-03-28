@@ -413,7 +413,26 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                 <select value={docForm.type} onChange={(e) => setDocForm({ ...docForm, type: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-doc-type">
                   <option value="CNH">CNH</option>
                   <option value="CNV">CNV</option>
+                  <option value="RG">RG</option>
+                  <option value="CPF">CPF</option>
+                  <option value="CTPS">CTPS</option>
+                  <option value="PIS/PASEP/NIS">PIS/PASEP/NIS</option>
                   <option value="Comprovante de Residência">Comprovante de Residência</option>
+                  <option value="Fotos 3x4">Fotos 3x4</option>
+                  <option value="Título de Eleitor">Título de Eleitor</option>
+                  <option value="Certificado de Reservista">Certificado de Reservista</option>
+                  <option value="Certidão de Pontuação CNH">Certidão de Pontuação CNH</option>
+                  <option value="Dados Bancários">Dados Bancários</option>
+                  <option value="Certificado Formação Vigilante">Certificado Formação Vigilante</option>
+                  <option value="Certificado Formação Escolta Armada">Certificado Formação Escolta Armada</option>
+                  <option value="Reciclagem Escolta Armada">Reciclagem Escolta Armada</option>
+                  <option value="ASO">ASO</option>
+                  <option value="Certidão Nascimento/Casamento">Certidão Nascimento/Casamento</option>
+                  <option value="Certidão Nascimento Filhos">Certidão Nascimento Filhos</option>
+                  <option value="Antecedente Criminal Polícia Civil">Antecedente Criminal Polícia Civil</option>
+                  <option value="Antecedente Criminal Polícia Militar">Antecedente Criminal Polícia Militar</option>
+                  <option value="Certidão de COP">Certidão de COP</option>
+                  <option value="Contrato Assinado">Contrato Assinado</option>
                   <option value="Certificado Curso">Certificado Curso</option>
                   <option value="Atestado">Atestado</option>
                   <option value="Outro">Outro</option>
@@ -1759,7 +1778,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 2MB", variant: "destructive" }); return; }
+    if (file.size > 5 * 1024 * 1024) { toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" }); return; }
     const reader = new FileReader();
     reader.onload = (ev) => setDocForm(p => ({ ...p, fileData: ev.target!.result as string, fileName: file.name }));
     reader.readAsDataURL(file);
@@ -2034,9 +2053,9 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 </div>
                 <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
                 <div className="flex gap-2 items-center">
-                  <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFile} />
+                  <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf" onChange={handleFile} />
                   <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="button-upload-doc-pasta">
-                    <Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo (máx 2MB)"}
+                    <Upload className="w-3.5 h-3.5 mr-1" /> {docForm.fileName || "Anexar arquivo (máx 5MB)"}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => { setDocForm({ type: docForm.type, documentNumber: "", expiryDate: "", issueDate: "", notes: "", fileData: "", fileName: "" }); if (fileRef.current) fileRef.current.value = ""; }} data-testid="button-clear-doc-pasta">
                     <X className="w-3.5 h-3.5 mr-1" /> Limpar
@@ -2067,7 +2086,21 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                       <td className="px-3 py-2">{fmtDate(d.issueDate)}</td>
                       <td className="px-3 py-2">{d.expiryDate ? (() => { const st = docExpiryStatus(d.expiryDate); return (<span className={`inline-flex items-center gap-1 ${st === "expired" ? "text-red-600 font-bold" : st === "warning" ? "text-amber-600 font-semibold" : ""}`}>{fmtDate(d.expiryDate)}{st === "expired" && <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-bold uppercase">Vencido</span>}{st === "warning" && <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold uppercase">Vencendo</span>}</span>); })() : "-"}</td>
                       <td className="px-3 py-2">
-                        {d.fileData ? (<a href={d.fileData} download={d.fileName || "doc"} className="text-blue-600 text-xs underline" data-testid={`link-download-doc-${d.id}`}><Eye className="w-3.5 h-3.5 inline mr-1" />{d.fileName || "Ver"}</a>) : "-"}
+                        {d.fileData ? (
+                          <button className="text-blue-600 text-xs underline flex items-center gap-1" onClick={() => {
+                            const w = window.open("", "_blank");
+                            if (w) {
+                              if (d.fileData!.startsWith("data:image")) {
+                                w.document.write(`<html><head><title>${d.fileName || d.type}</title></head><body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5"><img src="${d.fileData}" style="max-width:100%;max-height:100vh;object-fit:contain" /></body></html>`);
+                              } else {
+                                w.document.write(`<html><head><title>${d.fileName || d.type}</title></head><body style="margin:0"><iframe src="${d.fileData}" style="width:100%;height:100vh;border:none"></iframe></body></html>`);
+                              }
+                              w.document.close();
+                            }
+                          }} data-testid={`link-download-doc-${d.id}`}>
+                            <Eye className="w-3.5 h-3.5" />{d.fileName || "Ver"}
+                          </button>
+                        ) : "-"}
                       </td>
                       <td className="px-3 py-2"><Button variant="ghost" size="icon" onClick={() => deleteDoc.mutate(d.id)} data-testid={`button-delete-doc-${d.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button></td>
                     </tr>
