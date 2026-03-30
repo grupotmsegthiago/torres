@@ -7804,15 +7804,16 @@ Regras:
         byVehicle[plate].despesas += Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
       });
 
-      const byAgent: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number }> = {};
+      const byAgent: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }> = {};
       items.forEach((b: any) => {
         const name = b.vigilante_name || "SEM AGENTE";
         const id = b.vigilante_id || 0;
         const key = String(id || name);
-        if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0 };
+        if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
         byAgent[key].fat_total += Number(b.fat_total || 0);
         byAgent[key].pag_total += Number(b.pag_total || 0);
         byAgent[key].missions += 1;
+        byAgent[key].horas_trabalhadas += Number(b.horas_trabalhadas || 0);
       });
 
       const byMission = items.map((b: any) => ({
@@ -7831,6 +7832,7 @@ Regras:
           ? Math.round(((Number(b.fat_total || 0) - Number(b.pag_total || 0) - Number(b.despesas_pedagio || 0) - Number(b.despesas_combustivel || 0) - Number(b.despesas_outras || 0)) / Number(b.fat_total || 0)) * 10000) / 100
           : 0,
         km_total: Number(b.km_total || 0),
+        horas_trabalhadas: Number(b.horas_trabalhadas || 0),
         boletim: b.boletim_numero,
         status: b.status,
         client_name: b.client_name,
