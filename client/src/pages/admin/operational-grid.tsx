@@ -3881,18 +3881,63 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
                       <span className="font-bold text-neutral-800">{data.billing.km_total} km</span>
                     </>
                   )}
-                  {data.billing.hours_total != null && (
+                  {data.billing.km_excedente != null && Number(data.billing.km_excedente) > 0 && (
                     <>
-                      <span className="text-neutral-500">Horas</span>
-                      <span className="font-bold text-neutral-800">{Number(data.billing.hours_total).toFixed(1)}h</span>
+                      <span className="text-neutral-500">KM Excedente</span>
+                      <span className="font-bold text-neutral-800">{data.billing.km_excedente} km</span>
                     </>
                   )}
-                  {data.billing.fat_total != null && (
+                  {data.billing.horas_trabalhadas != null && (
                     <>
-                      <span className="text-neutral-500">Faturamento</span>
-                      <span className="font-bold text-emerald-700">{fmtBRL(Number(data.billing.fat_total))}</span>
+                      <span className="text-neutral-500">Horas Trabalhadas</span>
+                      <span className="font-bold text-neutral-800">{Number(data.billing.horas_trabalhadas).toFixed(1)}h</span>
                     </>
                   )}
+                </div>
+                <div className="mt-2 pt-2 border-t border-neutral-200">
+                  <h5 className="text-[10px] font-bold text-neutral-500 uppercase mb-1">Composição do Faturamento</h5>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    {Number(data.billing.fat_acionamento || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">Acionamento</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_acionamento))}</span>
+                      </>
+                    )}
+                    {Number(data.billing.fat_km || data.billing.valor_km_extra || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">KM Extra</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_km || data.billing.valor_km_extra || 0))}</span>
+                      </>
+                    )}
+                    {Number(data.billing.fat_hora_extra || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">Hora Extra</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_hora_extra))}</span>
+                      </>
+                    )}
+                    {Number(data.billing.fat_adicional_noturno || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">Adicional Noturno</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_adicional_noturno))}</span>
+                      </>
+                    )}
+                    {Number(data.billing.fat_estadia || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">Estadia</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_estadia))}</span>
+                      </>
+                    )}
+                    {Number(data.billing.fat_pernoite || 0) > 0 && (
+                      <>
+                        <span className="text-neutral-500">Pernoite/Diária</span>
+                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_pernoite))}</span>
+                      </>
+                    )}
+                    <>
+                      <span className="text-neutral-700 font-bold pt-1 border-t border-neutral-200">Faturamento Total</span>
+                      <span className="font-black text-emerald-700 pt-1 border-t border-neutral-200">{fmtBRL(Number(data.billing.fat_total || 0))}</span>
+                    </>
+                  </div>
                 </div>
               </div>
             )}

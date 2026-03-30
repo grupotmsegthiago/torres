@@ -195,11 +195,14 @@ export function initCronJobs() {
 
           let fat_total = 0;
           let fat_km = 0;
+          let fat_acionamento = 0;
+          let fat_hora_extra = 0;
           if (hasAcionamento) {
+            fat_acionamento = valorAcionamento;
             fat_km = km_excedente * valorKmExtra;
             const horasExcedentes = Math.max(0, horasMissao - franquiaHoras);
-            const fat_hora_extra = horasExcedentes * valorHoraExtra;
-            fat_total = valorAcionamento + fat_km + fat_hora_extra;
+            fat_hora_extra = horasExcedentes * valorHoraExtra;
+            fat_total = fat_acionamento + fat_km + fat_hora_extra;
           } else {
             const km_faturado = Math.max(km_carregado, franquiaKm);
             fat_km = km_faturado * valorKmCarregado;
@@ -239,7 +242,7 @@ export function initCronJobs() {
             horario_inicio_considerado: inicioConsiderado,
             horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
             horas_estadia: 0, teve_pernoite: false, is_noturno: isNoturno,
-            fat_km: r(fat_km), fat_total: r(fat_total),
+            fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
             valor_franquia: hasAcionamento ? r(valorAcionamento) : r(Math.min(km_carregado, franquiaKm) * valorKmCarregado),
             valor_km_extra: r(km_excedente * (hasAcionamento ? valorKmExtra : valorKmCarregado)),
             pag_vrp: r(pag_vrp), pag_total: r(pag_total),
