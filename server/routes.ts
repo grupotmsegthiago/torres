@@ -39,8 +39,31 @@ async function ensureFinancialOriginColumns() {
   try {
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" });
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" });
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER" });
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT" });
     columnsEnsuredViaSql = true;
     console.log("[Financial] origin columns ensured via exec_sql");
+
+    try {
+      const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id").is("vigilante2_id", null);
+      if (billingsToFix && billingsToFix.length > 0) {
+        let fixed = 0;
+        for (const b of billingsToFix) {
+          if (!b.service_order_id) continue;
+          const so = await storage.getServiceOrder(b.service_order_id);
+          if (so && so.assignedEmployee2Id) {
+            const emp2 = await storage.getEmployee(so.assignedEmployee2Id);
+            if (emp2) {
+              await supabaseAdmin.from("escort_billings").update({ vigilante2_id: so.assignedEmployee2Id, vigilante2_name: emp2.name }).eq("id", b.id);
+              fixed++;
+            }
+          }
+        }
+        if (fixed > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixed} billings`);
+      }
+    } catch (bfErr: any) {
+      console.log("[Financial] vigilante2 backfill skip:", bfErr?.message || "unknown");
+    }
   } catch (_e) {
     console.log("[Financial] exec_sql unavailable, verifying columns via select...");
   }
@@ -1036,6 +1059,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const client = so.clientId ? await storage.getClient(so.clientId) : null;
       const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+      const emp2 = (so as any).assignedEmployee2Id ? await storage.getEmployee((so as any).assignedEmployee2Id) : null;
       const user = req.user!;
 
       const n = (v: any) => Number(v) || 0;
@@ -1064,6 +1088,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         resultado_bruto: n(resultado.resultado.bruto), resultado_liquido: n(resultado.resultado.liquido),
         margem_percentual: n(resultado.resultado.margem_pct),
         vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
+        vigilante2_id: (so as any).assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
         origem: so.origin || null, destino: so.destination || null,
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
@@ -5197,6 +5222,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+          const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
 
           const nb = (v: any) => Number(v) || 0;
           await supabaseAdmin.from("escort_billings").insert({
@@ -5224,6 +5250,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
             margem_percentual: nb(resultado.resultado.margem_pct),
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
+            vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
@@ -7821,6 +7848,15 @@ Regras:
         byAgent[key].pag_total += Number(b.pag_total || 0);
         byAgent[key].missions += 1;
         byAgent[key].horas_trabalhadas += Number(b.horas_trabalhadas || 0);
+
+        if (b.vigilante2_id && b.vigilante2_name) {
+          const key2 = String(b.vigilante2_id);
+          if (!byAgent[key2]) byAgent[key2] = { id: b.vigilante2_id, name: b.vigilante2_name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
+          byAgent[key2].fat_total += Number(b.fat_total || 0);
+          byAgent[key2].pag_total += Number(b.pag_total || 0);
+          byAgent[key2].missions += 1;
+          byAgent[key2].horas_trabalhadas += Number(b.horas_trabalhadas || 0);
+        }
       });
 
       const byMission = items.map((b: any) => ({
@@ -7831,6 +7867,8 @@ Regras:
         placa_viatura: b.placa_viatura,
         vigilante: b.vigilante_name,
         vigilante_id: b.vigilante_id || 0,
+        vigilante2: b.vigilante2_name || null,
+        vigilante2_id: b.vigilante2_id || null,
         fat_total: Number(b.fat_total || 0),
         pag_total: Number(b.pag_total || 0),
         despesas: Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0),

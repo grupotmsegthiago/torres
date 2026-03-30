@@ -221,6 +221,7 @@ export function initCronJobs() {
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+          const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
           const r = (v: number) => Math.round(v * 100) / 100;
 
           await supabaseAdmin.from("escort_billings").insert({
@@ -243,6 +244,7 @@ export function initCronJobs() {
             resultado_bruto: r(resultado_bruto), resultado_liquido: r(resultado_liquido),
             margem_percentual: fat_total > 0 ? r((resultado_liquido / fat_total) * 100) : 0,
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
+            vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             data_missao: so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: "CRON",
