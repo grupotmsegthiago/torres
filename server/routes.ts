@@ -125,6 +125,59 @@ async function ensureFinancialOriginColumns() {
 }
 ensureFinancialOriginColumns();
 
+async function syncMissingAutoTransactions() {
+  try {
+    const { data: existingTx } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id");
+    const txSet = new Set((existingTx || []).map((t: any) => `${t.origin_type}:${t.origin_id}`));
+
+    const fuelings = await storage.getVehicleFuelings();
+    for (const f of fuelings) {
+      if (txSet.has(`fueling:${f.id}`)) continue;
+      if (!f.totalCost || Number(f.totalCost) <= 0) continue;
+      const vehicle = f.vehicleId ? await storage.getVehicle(f.vehicleId) : null;
+      const driver = f.driverId ? await storage.getEmployee(f.driverId) : null;
+      const plateStr = vehicle?.plate || "";
+      const agentStr = driver?.name ? ` - Agente: ${driver.name}` : "";
+      await supabaseAdmin.from("financial_transactions").insert({
+        description: `ABASTECIMENTO ${plateStr}${agentStr} - ${f.fuelType || "diesel"} ${f.liters}L`.toUpperCase().trim(),
+        amount: Number(f.totalCost),
+        type: "EXPENSE",
+        status: "PAID",
+        due_date: f.date || new Date().toISOString().split("T")[0],
+        origin_type: "fueling",
+        origin_id: String(f.id),
+        category_name: "Combustível",
+        entity_name: [plateStr, driver?.name, f.station].filter(Boolean).join(" | ") || null,
+        created_by: "SISTEMA",
+      });
+      console.log(`[Sync] Created missing fueling transaction for fueling #${f.id} (R$ ${f.totalCost})`);
+    }
+
+    const maintenances = await storage.getVehicleMaintenances();
+    for (const m of maintenances) {
+      if (txSet.has(`maintenance:${m.id}`)) continue;
+      if (!m.cost || Number(m.cost) <= 0) continue;
+      const vehicle = m.vehicleId ? await storage.getVehicle(m.vehicleId) : null;
+      await supabaseAdmin.from("financial_transactions").insert({
+        description: `MANUTENÇÃO ${vehicle?.plate || ""} - ${m.type} ${m.description || ""}`.toUpperCase().trim(),
+        amount: Number(m.cost),
+        type: "EXPENSE",
+        status: "PAID",
+        due_date: m.date || new Date().toISOString().split("T")[0],
+        origin_type: "maintenance",
+        origin_id: String(m.id),
+        category_name: "Manutenção Veicular",
+        entity_name: m.provider || null,
+        created_by: "SISTEMA",
+      });
+      console.log(`[Sync] Created missing maintenance transaction for maintenance #${m.id} (R$ ${m.cost})`);
+    }
+  } catch (err: any) {
+    console.error("[Sync] Error syncing auto-transactions:", err.message);
+  }
+}
+setTimeout(() => syncMissingAutoTransactions(), 5000);
+
 async function createAutoTransaction(params: {
   description: string;
   amount: number;
