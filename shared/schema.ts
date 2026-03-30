@@ -498,6 +498,22 @@ export const insertAgentLocationSchema = createInsertSchema(agentLocations).omit
 export type InsertAgentLocation = z.infer<typeof insertAgentLocationSchema>;
 export type AgentLocation = typeof agentLocations.$inferSelect;
 
+export const agentLocationHistory = pgTable("agent_location_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  employeeId: integer("employee_id"),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+  accuracy: real("accuracy"),
+  speed: real("speed"),
+  heading: real("heading"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAgentLocationHistorySchema = createInsertSchema(agentLocationHistory).omit({ id: true, createdAt: true });
+export type InsertAgentLocationHistory = z.infer<typeof insertAgentLocationHistorySchema>;
+export type AgentLocationHistory = typeof agentLocationHistory.$inferSelect;
+
 export const employeeAbsences = pgTable("employee_absences", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),

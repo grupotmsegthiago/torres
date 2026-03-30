@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authFetch } from "@/lib/queryClient";
 
-const INTERVAL_MS = 2 * 60 * 1000;
+const INTERVAL_MS = 10 * 60 * 1000;
 
 const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,

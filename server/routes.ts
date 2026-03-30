@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, desc, sql, and, gte, lte, like, or, ilike } from "drizzle-orm";
+import { eq, desc, asc, sql, and, gte, lte, like, or, ilike } from "drizzle-orm";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -19,6 +19,7 @@ import {
   companyDocuments, homologationLogs, missionUpdates,
   referencePoints, insertReferencePointSchema,
   missionPositions,
+  agentLocationHistory,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
@@ -7146,7 +7147,7 @@ Regras:
     if (latitude == null || longitude == null) {
       return res.status(400).json({ message: "Latitude e longitude são obrigatórios" });
     }
-    const loc = await storage.upsertAgentLocation({
+    const locData = {
       userId: user.id,
       employeeId: user.employeeId || null,
       latitude,
@@ -7154,13 +7155,54 @@ Regras:
       accuracy: accuracy ?? null,
       speed: speed ?? null,
       heading: heading ?? null,
-    });
+    };
+    const loc = await storage.upsertAgentLocation(locData);
+    try {
+      await db.insert(agentLocationHistory).values(locData);
+    } catch (histErr: any) {
+      console.error("[agent-location] Failed to log history:", histErr.message);
+    }
     res.json(loc);
   });
 
-  app.get("/api/agent/locations", requireAuth, async (req, res) => {
+  app.get("/api/agent/locations", requireAdminRole, async (req, res) => {
     const locations = await storage.getAgentLocations();
-    res.json(locations);
+    const employees = await storage.getEmployees();
+    const empMap = new Map(employees.map((e: any) => [e.id, e]));
+    const users = await storage.getUsers();
+    const userMap = new Map(users.map((u: any) => [u.id, u]));
+    const enriched = locations.map((loc: any) => {
+      const emp = loc.employeeId ? empMap.get(loc.employeeId) : null;
+      const usr = userMap.get(loc.userId);
+      return {
+        ...loc,
+        employeeName: emp?.name || usr?.name || null,
+        employeePhone: emp?.phone || null,
+        employeeRole: emp?.role || null,
+      };
+    });
+    res.json(enriched);
+  });
+
+  app.get("/api/agent/locations/:userId/history", requireAdminRole, async (req, res) => {
+    try {
+      const userId = Number(req.params.userId);
+      if (isNaN(userId)) return res.status(400).json({ message: "userId inválido" });
+      const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: "Formato de data inválido (YYYY-MM-DD)" });
+      const startOfDay = new Date(`${date}T00:00:00`);
+      const endOfDay = new Date(`${date}T23:59:59`);
+      const history = await db.select().from(agentLocationHistory)
+        .where(and(
+          eq(agentLocationHistory.userId, userId),
+          gte(agentLocationHistory.createdAt, startOfDay),
+          lte(agentLocationHistory.createdAt, endOfDay),
+        ))
+        .orderBy(asc(agentLocationHistory.createdAt));
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // ==================== FINANCIAL MODULE ====================
