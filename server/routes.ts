@@ -1874,17 +1874,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         });
       }
 
+      function isInvalidDate(dt: Date): boolean {
+        return isNaN(dt.getTime()) || dt.getTime() <= 0 || dt.getFullYear() <= 1970;
+      }
       function fmtDate(d: any) {
         if (!d) return "--";
-        return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+        const dt = new Date(d);
+        if (isInvalidDate(dt)) return "--";
+        return dt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
       }
       function fmtTime(d: any) {
         if (!d) return "--";
-        return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const dt = new Date(d);
+        if (isInvalidDate(dt)) return "--";
+        return dt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
       }
       function fmtTimeShort(d: any) {
         if (!d) return "--";
-        return new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+        const dt = new Date(d);
+        if (isInvalidDate(dt)) return "--";
+        return dt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
       }
 
       function gmapsUrl(lat: number | string | null, lng: number | string | null): string | null {
@@ -1927,6 +1936,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         doc.y += 24;
       }
 
+      function measureFieldCellHeight(w: number, value: string): number {
+        const textW = w - 12;
+        doc.font("Helvetica-Bold").fontSize(8);
+        const textH = doc.heightOfString(value || "--", { width: textW });
+        return Math.max(30, 16 + textH + 4);
+      }
+
       function drawFieldCell(x: number, y: number, w: number, h: number, label: string, value: string, options?: { valueColor?: string; link?: string | null }) {
         doc.save();
         doc.rect(x, y, w, h).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
@@ -1936,7 +1952,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           .text(label.toUpperCase(), x + 6, y + 3, { width: w - 12, lineBreak: false });
         const valColor = options?.link ? BLUE : (options?.valueColor || PRIMARY);
         doc.font("Helvetica-Bold").fontSize(8).fillColor(valColor)
-          .text(value || "--", x + 6, y + 16, { width: w - 12, lineBreak: false, link: options?.link || undefined });
+          .text(value || "--", x + 6, y + 16, { width: w - 12, link: options?.link || undefined });
         doc.restore();
       }
 
@@ -2012,11 +2028,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const statusLabel = os.status === "concluida" || os.status === "conclu\u00edda" ? "CONCLUIDA" : (os.status?.toUpperCase() || "--");
       const qW = W / 4;
-      drawFieldCell(LM, doc.y, qW, 30, "Status", statusLabel, { valueColor: statusLabel === "CONCLUIDA" ? GREEN : BLUE });
-      drawFieldCell(LM + qW, doc.y, qW, 30, "Prioridade", os.priority?.toUpperCase() || "--", { valueColor: os.priority === "imediata" ? "#dc2626" : PRIMARY });
-      drawFieldCell(LM + qW * 2, doc.y, qW, 30, "Tipo", (os.type || "ESCOLTA").toUpperCase());
-      drawFieldCell(LM + qW * 3, doc.y, qW, 30, "Cliente", sanitize(client?.name).substring(0, 20));
-      doc.y += 34;
+      const clientName = sanitize(client?.name);
+      const topRowH = Math.max(30, measureFieldCellHeight(qW, statusLabel), measureFieldCellHeight(qW, clientName));
+      drawFieldCell(LM, doc.y, qW, topRowH, "Status", statusLabel, { valueColor: statusLabel === "CONCLUIDA" ? GREEN : BLUE });
+      drawFieldCell(LM + qW, doc.y, qW, topRowH, "Prioridade", os.priority?.toUpperCase() || "--", { valueColor: os.priority === "imediata" ? "#dc2626" : PRIMARY });
+      drawFieldCell(LM + qW * 2, doc.y, qW, topRowH, "Tipo", (os.type || "ESCOLTA").toUpperCase());
+      drawFieldCell(LM + qW * 3, doc.y, qW, topRowH, "Cliente", clientName);
+      doc.y += topRowH + 4;
 
       const origemStepGeo = stepLogs.find((l: any) => l.step === "em_transito_origem")?.geo;
       const destinoStepGeo = stepLogs.find((l: any) => l.step === "chegada_destino")?.geo;
@@ -2028,28 +2046,54 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       sectionTitle("Dados da Missao");
       const hW = W / 2;
       const fH = 30;
-      drawFieldCell(LM, doc.y, hW, fH, "Solicitante", sanitize(os.requesterName));
-      drawFieldCell(LM + hW, doc.y, hW, fH, "Data Agendada", fmtDate(os.scheduledDate));
-      doc.y += fH;
-      drawFieldCell(LM, doc.y, hW, fH, "Origem", sanitize(origemText), { link: origemLink });
-      drawFieldCell(LM + hW, doc.y, hW, fH, "Destino", sanitize(destinoText), { link: destinoLink });
-      doc.y += fH;
-      drawFieldCell(LM, doc.y, hW, fH, "Inicio da Missao", fmtDate(os.missionStartedAt), { valueColor: BLUE });
-      drawFieldCell(LM + hW, doc.y, hW, fH, "Conclusao", fmtDate(os.completedDate), { valueColor: GREEN });
-      doc.y += fH;
+      const rowH1 = Math.max(measureFieldCellHeight(hW, sanitize(os.requesterName)), measureFieldCellHeight(hW, fmtDate(os.scheduledDate)));
+      ensureSpace(rowH1);
+      drawFieldCell(LM, doc.y, hW, rowH1, "Solicitante", sanitize(os.requesterName));
+      drawFieldCell(LM + hW, doc.y, hW, rowH1, "Data Agendada", fmtDate(os.scheduledDate));
+      doc.y += rowH1;
+      const origemVal = sanitize(origemText);
+      const destinoVal = sanitize(destinoText);
+      const rowH2 = Math.max(measureFieldCellHeight(hW, origemVal), measureFieldCellHeight(hW, destinoVal));
+      ensureSpace(rowH2);
+      drawFieldCell(LM, doc.y, hW, rowH2, "Origem", origemVal, { link: origemLink });
+      drawFieldCell(LM + hW, doc.y, hW, rowH2, "Destino", destinoVal, { link: destinoLink });
+      doc.y += rowH2;
+      const rowH3 = Math.max(measureFieldCellHeight(hW, fmtDate(os.missionStartedAt)), measureFieldCellHeight(hW, fmtDate(os.completedDate)));
+      ensureSpace(rowH3);
+      drawFieldCell(LM, doc.y, hW, rowH3, "Inicio da Missao", fmtDate(os.missionStartedAt), { valueColor: BLUE });
+      drawFieldCell(LM + hW, doc.y, hW, rowH3, "Conclusao", fmtDate(os.completedDate), { valueColor: GREEN });
+      doc.y += rowH3;
       if (os.route) {
-        drawFieldCell(LM, doc.y, W, fH, "Rota", sanitize(os.route));
-        doc.y += fH;
+        const routeVal = sanitize(os.route);
+        const routeH = measureFieldCellHeight(W, routeVal);
+        ensureSpace(routeH);
+        drawFieldCell(LM, doc.y, W, routeH, "Rota", routeVal);
+        doc.y += routeH;
       }
       if (os.description) {
-        drawFieldCell(LM, doc.y, W, fH, "Observacoes", sanitize(os.description));
-        doc.y += fH;
+        const descVal = sanitize(os.description);
+        const descH = measureFieldCellHeight(W, descVal);
+        ensureSpace(descH);
+        drawFieldCell(LM, doc.y, W, descH, "Observacoes", descVal);
+        doc.y += descH;
       }
-      doc.y += 2;
+      doc.y += 6;
 
       sectionTitle("Equipe Operacional");
       const teamW = W / 2;
-      const teamH = 52;
+      function measureTeamCardHeight(emp: any, hasEmp: boolean): number {
+        if (!hasEmp || !emp) return 52;
+        let h = 14 + 4;
+        doc.font("Helvetica-Bold").fontSize(8.5);
+        h += doc.heightOfString(sanitize(emp.fullName || emp.name).toUpperCase(), { width: teamW - 16 }) + 2;
+        if (emp.cpf) h += 12;
+        if ((emp as any).cnhNumber) h += 12;
+        return Math.max(52, h + 4);
+      }
+      const teamH1 = measureTeamCardHeight(emp1, !!emp1);
+      const teamH2 = measureTeamCardHeight(emp2, !!emp2);
+      const teamH = Math.max(teamH1, teamH2);
+      ensureSpace(teamH);
       if (emp1) {
         doc.save();
         doc.rect(LM, doc.y, teamW, teamH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
@@ -2057,8 +2101,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         doc.rect(LM, doc.y, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
         doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE PRINCIPAL", LM + 8, doc.y + 3.5, { width: teamW - 16 });
         doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp1.fullName || emp1.name).toUpperCase(), LM + 8, doc.y + 18, { width: teamW - 16 });
-        if (emp1.cpf) doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp1.cpf}`, LM + 8, doc.y + 30, { width: teamW - 16 });
-        if ((emp1 as any).cnhNumber) doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CNH: ${(emp1 as any).cnhNumber}`, LM + 8, doc.y + 40, { width: teamW - 16 });
+        let emp1Y = doc.y + 18;
+        doc.font("Helvetica-Bold").fontSize(8.5);
+        emp1Y += doc.heightOfString(sanitize(emp1.fullName || emp1.name).toUpperCase(), { width: teamW - 16 }) + 2;
+        if (emp1.cpf) { doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp1.cpf}`, LM + 8, emp1Y, { width: teamW - 16 }); emp1Y += 12; }
+        if ((emp1 as any).cnhNumber) { doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CNH: ${(emp1 as any).cnhNumber}`, LM + 8, emp1Y, { width: teamW - 16 }); }
         doc.restore();
       }
       if (emp2) {
@@ -2069,10 +2116,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         doc.rect(ex, doc.y, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
         doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE AUXILIAR", ex + 8, doc.y + 3.5, { width: teamW - 16 });
         doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp2.fullName || emp2.name).toUpperCase(), ex + 8, doc.y + 18, { width: teamW - 16 });
-        if (emp2.cpf) doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp2.cpf}`, ex + 8, doc.y + 30, { width: teamW - 16 });
+        let emp2Y = doc.y + 18;
+        doc.font("Helvetica-Bold").fontSize(8.5);
+        emp2Y += doc.heightOfString(sanitize(emp2.fullName || emp2.name).toUpperCase(), { width: teamW - 16 }) + 2;
+        if (emp2.cpf) { doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp2.cpf}`, ex + 8, emp2Y, { width: teamW - 16 }); }
         doc.restore();
       }
-      doc.y += teamH + 4;
+      doc.y += teamH + 6;
 
       if (vehicle) {
         ensureSpace(36);
@@ -2080,7 +2130,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         drawFieldCell(LM, doc.y, vColW, fH, "Viatura", `${vehicle.plate} - ${vehicle.brand || ""} ${vehicle.model || ""}`.trim());
         drawFieldCell(LM + vColW, doc.y, vColW, fH, "Chassi", vehicle.chassi || "--");
         drawFieldCell(LM + vColW * 2, doc.y, vColW, fH, "RENAVAM", vehicle.renavam || "--");
-        doc.y += fH + 2;
+        doc.y += fH + 6;
       }
 
       if (kitItems.length > 0) {
@@ -2104,7 +2154,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             ], i % 2 === 0 ? "#ffffff" : "#f8fafc");
           }
         }
-        doc.y += 2;
+        doc.y += 6;
       }
 
       if (os.escortedDriverName || os.escortedVehiclePlate) {
@@ -2114,7 +2164,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         drawFieldCell(LM, doc.y, escColW, fH, "Motorista", sanitize(os.escortedDriverName));
         drawFieldCell(LM + escColW, doc.y, escColW, fH, "Telefone", sanitize(os.escortedDriverPhone));
         drawFieldCell(LM + escColW * 2, doc.y, escColW, fH, "Placa", sanitize(os.escortedVehiclePlate));
-        doc.y += fH + 2;
+        doc.y += fH + 6;
       }
 
       const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
@@ -2249,7 +2299,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           doc.restore();
           doc.y += rH;
         }
-        doc.y += 4;
+        doc.y += 6;
       }
 
       if (updates.length > 0) {
@@ -2304,7 +2354,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             } catch {}
           }
         }
-        doc.y += 2;
+        doc.y += 6;
       }
 
       if (photos.length > 0) {
@@ -2399,7 +2449,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           if (col > 0) {
             doc.y = rowStartY + imgH + 26;
           }
-          doc.y += 4;
+          doc.y += 6;
         }
       }
 
