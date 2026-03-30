@@ -4107,8 +4107,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {(() => {
                             const gItem = gridData.find((g: GridItem) => g.osNumber === v.activeOs!.osNumber);
                             const lc = gItem?.liveCost;
-                            if (!lc) return null;
-                            const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+                            if (!lc || lc.faturamento == null || lc.pagamento == null || lc.resultado == null) return null;
+                            const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
                             return (
                               <div className="mt-0.5 flex items-center gap-1.5 flex-wrap" data-testid={`live-cost-${v.id}`}>
                                 <Tooltip>
