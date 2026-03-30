@@ -54,6 +54,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   fueling: "ABASTEC.",
   maintenance: "MANUT.",
   mission_cost: "MISSÃO",
+  service_order: "RECEITA OS",
   manual: "MANUAL",
 };
 
@@ -62,6 +63,7 @@ const ORIGIN_ROUTES: Record<string, string> = {
   fueling: "/admin/fueling",
   maintenance: "/admin/maintenance",
   mission_cost: "/admin/operational-grid",
+  service_order: "/admin/operational-grid",
 };
 
 interface FinancialCategory {

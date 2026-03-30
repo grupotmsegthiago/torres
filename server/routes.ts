@@ -35,6 +35,7 @@ async function ensureFinancialOriginColumns() {
   try {
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" });
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" });
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL" });
     columnsEnsuredViaSql = true;
     console.log("[Financial] origin columns ensured via exec_sql");
   } catch (_e) {
@@ -2936,8 +2937,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (data && Number(parsed.data.totalCost) > 0) {
       const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
       const plateStr = vehicle?.plate || "";
+      const driverEmp = parsed.data.driverId ? await storage.getEmployee(parsed.data.driverId) : null;
+      const agentStr = driverEmp?.name ? ` - Agente: ${driverEmp.name}` : "";
       await createAutoTransaction({
-        description: `ABASTECIMENTO ${plateStr} - ${parsed.data.fuelType || "diesel"} ${parsed.data.liters}L`.toUpperCase().trim(),
+        description: `ABASTECIMENTO ${plateStr}${agentStr} - ${parsed.data.fuelType || "diesel"} ${parsed.data.liters}L`.toUpperCase().trim(),
         amount: Number(parsed.data.totalCost),
         type: "EXPENSE",
         due_date: parsed.data.date || new Date().toISOString().split("T")[0],
@@ -2965,8 +2968,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (newCost > 0) {
       await removeAutoTransaction("fueling", String(data.id));
       const vehicle = data.vehicleId ? await storage.getVehicle(data.vehicleId) : null;
+      const driverEmp = data.driverId ? await storage.getEmployee(data.driverId) : null;
+      const agentStr = driverEmp?.name ? ` - Agente: ${driverEmp.name}` : "";
       await createAutoTransaction({
-        description: `ABASTECIMENTO ${vehicle?.plate || ""} - ${data.fuelType || "diesel"} ${data.liters}L`.toUpperCase().trim(),
+        description: `ABASTECIMENTO ${vehicle?.plate || ""}${agentStr} - ${data.fuelType || "diesel"} ${data.liters}L`.toUpperCase().trim(),
         amount: newCost,
         type: "EXPENSE",
         due_date: data.date || new Date().toISOString().split("T")[0],
@@ -4798,6 +4803,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       lastMissionPos.delete(serviceOrderId);
       try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
+      try {
+        await removeAutoTransaction("service_order", String(serviceOrderId));
+        console.log(`[OS-Financial] Removed auto-transaction for cancelled OS ${so.osNumber}`);
+      } catch (_e) {}
+
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -4839,6 +4849,41 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+      if (so.type === "escolta") {
+        try {
+          const { data: billing } = await supabaseAdmin.from("escort_billings")
+            .select("fat_total, client_name")
+            .eq("service_order_id", serviceOrderId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          const billingRow = billing?.[0];
+          const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+          const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const plateStr = vehicle?.plate || "";
+
+          if (fatTotal > 0) {
+            await removeAutoTransaction("service_order", String(serviceOrderId));
+            await createAutoTransaction({
+              description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
+              amount: fatTotal,
+              type: "INCOME",
+              due_date: new Date().toISOString().split("T")[0],
+              origin_type: "service_order",
+              origin_id: String(serviceOrderId),
+              category_name: "Receita de Escolta",
+              entity_name: clientName,
+              created_by: user.name,
+            });
+            await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
+            console.log(`[OS-Financial] Auto INCOME created for OS ${so.osNumber}: R$ ${fatTotal}`);
+          }
+        } catch (e: any) {
+          console.error(`[OS-Financial] Failed to create auto-transaction for OS ${so.osNumber}:`, e.message);
+        }
+      }
+
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -5078,6 +5123,38 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         }
       } catch (billingErr: any) {
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
+      }
+
+      try {
+        const { data: billing } = await supabaseAdmin.from("escort_billings")
+          .select("fat_total, client_name")
+          .eq("service_order_id", serviceOrderId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const billingRow = billing?.[0];
+        const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+        const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
+        const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+        const plateStr = vehicle?.plate || "";
+
+        if (fatTotal > 0) {
+          await removeAutoTransaction("service_order", String(serviceOrderId));
+          await createAutoTransaction({
+            description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
+            amount: fatTotal,
+            type: "INCOME",
+            due_date: new Date().toISOString().split("T")[0],
+            origin_type: "service_order",
+            origin_id: String(serviceOrderId),
+            category_name: "Receita de Escolta",
+            entity_name: clientName,
+            created_by: emp?.name || user.name,
+          });
+          await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
+          console.log(`[OS-Financial] Auto INCOME created via advance for OS ${so.osNumber}: R$ ${fatTotal}`);
+        }
+      } catch (revErr: any) {
+        console.error(`[OS-Financial] Revenue auto-tx via advance failed for OS ${so.osNumber}:`, revErr.message);
       }
     }
 
@@ -6786,6 +6863,113 @@ Regras:
         totalTransactions: txs.length,
       });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/dre-operacao/:osId", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      if (!osId) return res.status(400).json({ message: "ID inválido" });
+      const so = await storage.getServiceOrder(osId);
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      const client = so.clientId ? await storage.getClient(so.clientId) : null;
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+      const employee1 = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+      const employee2 = (so as any).assignedEmployee2Id ? await storage.getEmployee((so as any).assignedEmployee2Id) : null;
+
+      const { data: billing } = await supabaseAdmin.from("escort_billings")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const billingRow = billing?.[0] || null;
+
+      const { data: txDirect } = await supabaseAdmin.from("financial_transactions")
+        .select("*")
+        .eq("origin_id", String(osId))
+        .eq("origin_type", "service_order");
+
+      const missionCosts = await storage.getMissionCostsByOS(osId);
+      let missionCostTx: any[] = [];
+      if (missionCosts.length > 0) {
+        const costIds = missionCosts.map(c => String(c.id));
+        const { data: mcTx } = await supabaseAdmin.from("financial_transactions")
+          .select("*")
+          .eq("origin_type", "mission_cost")
+          .in("origin_id", costIds);
+        missionCostTx = mcTx || [];
+      }
+
+      const osDate = so.scheduledDate || so.createdAt;
+      const dateStr = osDate ? new Date(osDate).toISOString().split("T")[0] : null;
+
+      let fuelingTx: any[] = [];
+      if (so.vehicleId && dateStr) {
+        const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
+          .select("*")
+          .eq("origin_type", "fueling")
+          .gte("due_date", dateStr)
+          .lte("due_date", dateStr);
+        if (fuelRows) {
+          const vPlate = vehicle?.plate?.toUpperCase() || "";
+          fuelingTx = vPlate ? fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate)) : [];
+        }
+      }
+
+      let maintenanceTx: any[] = [];
+      if (so.vehicleId && dateStr) {
+        const { data: maintRows } = await supabaseAdmin.from("financial_transactions")
+          .select("*")
+          .eq("origin_type", "maintenance");
+        if (maintRows) {
+          const vPlate = vehicle?.plate?.toUpperCase() || "";
+          maintenanceTx = vPlate ? maintRows.filter((r: any) =>
+            (r.description || "").toUpperCase().includes(vPlate) &&
+            r.due_date === dateStr
+          ) : [];
+        }
+      }
+
+      const allExpenses = [
+        ...(txDirect || []).filter((t: any) => t.type === "EXPENSE"),
+        ...missionCostTx,
+        ...fuelingTx,
+        ...maintenanceTx,
+      ];
+      const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
+
+      const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
+      const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const netResult = totalRevenue - totalExpense;
+
+      res.json({
+        os: {
+          id: so.id,
+          osNumber: so.osNumber,
+          type: so.type,
+          status: so.status,
+          scheduledDate: so.scheduledDate,
+          completedDate: (so as any).completedDate,
+          clientName: client?.name || "—",
+          vehiclePlate: vehicle?.plate || "—",
+          employee1Name: employee1?.name || null,
+          employee2Name: employee2?.name || null,
+          valorEstimado: (so as any).valorEstimado || null,
+        },
+        billing: billingRow,
+        revenue,
+        expenses: uniqueExpenses,
+        totals: {
+          totalRevenue,
+          totalExpense,
+          netResult,
+        },
+      });
+    } catch (err: any) {
+      console.error("[DRE-OS] Error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

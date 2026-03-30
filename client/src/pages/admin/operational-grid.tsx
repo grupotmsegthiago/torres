@@ -3669,6 +3669,153 @@ function ManageRefPointsDialog({ open, onClose, refPoints }: { open: boolean; on
   );
 }
 
+function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumber: string; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { data, isLoading, error } = useQuery<any>({
+    queryKey: ["/api/financial/dre-operacao", osId],
+    queryFn: async () => {
+      const res = await authFetch(`/api/financial/dre-operacao/${osId}`);
+      if (!res.ok) throw new Error("Erro ao carregar DRE");
+      return res.json();
+    },
+    enabled: open && !!osId,
+  });
+
+  const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm font-black">
+            <FileText className="w-4 h-4" /> DRE Operacional — {osNumber}
+          </DialogTitle>
+          <DialogDescription className="text-xs">Demonstrativo de Resultado por Operação</DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
+          </div>
+        ) : error ? (
+          <p className="text-sm text-red-500 py-4 text-center">Erro ao carregar DRE</p>
+        ) : data ? (
+          <div className="space-y-4">
+            <div className="bg-neutral-50 rounded-lg p-3 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-neutral-500">Cliente</span>
+                <span className="font-bold text-neutral-900">{data.os.clientName}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-neutral-500">Veículo</span>
+                <span className="font-bold text-neutral-900">{data.os.vehiclePlate}</span>
+              </div>
+              {data.os.employee1Name && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-500">Agente 1</span>
+                  <span className="font-medium text-neutral-700">{data.os.employee1Name}</span>
+                </div>
+              )}
+              {data.os.employee2Name && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-500">Agente 2</span>
+                  <span className="font-medium text-neutral-700">{data.os.employee2Name}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span className="text-neutral-500">Status</span>
+                <span className="font-bold text-neutral-700">{data.os.status}</span>
+              </div>
+              {data.os.scheduledDate && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-500">Data</span>
+                  <span className="font-medium text-neutral-700">{new Date(data.os.scheduledDate).toLocaleDateString("pt-BR")}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receitas</h4>
+              {data.revenue && data.revenue.length > 0 ? (
+                <div className="space-y-1">
+                  {data.revenue.map((t: any) => (
+                    <div key={t.id} className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
+                      <span className="text-neutral-700 truncate max-w-[250px]" title={t.description}>{t.description}</span>
+                      <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(Number(t.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-400 italic">Nenhuma receita registrada</p>
+              )}
+              <div className="flex justify-between items-center mt-1.5 px-2 py-1 bg-emerald-100 rounded font-bold text-xs">
+                <span className="text-emerald-800">Total Receitas</span>
+                <span className="text-emerald-900">{fmtBRL(data.totals.totalRevenue)}</span>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas</h4>
+              {data.expenses && data.expenses.length > 0 ? (
+                <div className="space-y-1">
+                  {data.expenses.map((t: any) => (
+                    <div key={t.id} className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-neutral-700 truncate block max-w-[250px]" title={t.description}>{t.description}</span>
+                        {t.origin_type && (
+                          <span className="text-[10px] text-neutral-400 uppercase font-semibold">
+                            {t.origin_type === "fueling" ? "ABASTEC." : t.origin_type === "maintenance" ? "MANUT." : t.origin_type === "mission_cost" ? "MISSÃO" : t.origin_type}
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(Number(t.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-400 italic">Nenhuma despesa registrada</p>
+              )}
+              <div className="flex justify-between items-center mt-1.5 px-2 py-1 bg-red-100 rounded font-bold text-xs">
+                <span className="text-red-800">Total Despesas</span>
+                <span className="text-red-900">{fmtBRL(data.totals.totalExpense)}</span>
+              </div>
+            </div>
+
+            <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${data.totals.netResult >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
+              <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>Resultado Líquido</span>
+              <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(data.totals.netResult)}</span>
+            </div>
+
+            {data.billing && (
+              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1.5">Dados do Faturamento</h4>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  {data.billing.km_total != null && (
+                    <>
+                      <span className="text-neutral-500">KM Total</span>
+                      <span className="font-bold text-neutral-800">{data.billing.km_total} km</span>
+                    </>
+                  )}
+                  {data.billing.hours_total != null && (
+                    <>
+                      <span className="text-neutral-500">Horas</span>
+                      <span className="font-bold text-neutral-800">{Number(data.billing.hours_total).toFixed(1)}h</span>
+                    </>
+                  )}
+                  {data.billing.fat_total != null && (
+                    <>
+                      <span className="text-neutral-500">Faturamento</span>
+                      <span className="font-bold text-emerald-700">{fmtBRL(Number(data.billing.fat_total))}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[] }) {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(true);
@@ -3679,6 +3826,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
   const [rowForwardMsg, setRowForwardMsg] = useState("");
   const [rowSendingEmail, setRowSendingEmail] = useState(false);
   const [rowShowHistory, setRowShowHistory] = useState(false);
+  const [dreOs, setDreOs] = useState<{ id: number; osNumber: string } | null>(null);
 
   const { data: unreadUpdates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -4154,6 +4302,19 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${lc.resultado >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
                                   = {fmtBRL(lc.resultado)}
                                 </span>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber }); }}
+                                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
+                                      data-testid={`button-dre-${v.id}`}
+                                    >
+                                      <FileText className="w-3 h-3" /> DRE
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>DRE Operacional desta OS</TooltipContent>
+                                </Tooltip>
                               </div>
                             );
                           })()}
@@ -4400,6 +4561,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
         </div>
       </DialogContent>
     </Dialog>
+    {dreOs && (
+      <DreModal osId={dreOs.id} osNumber={dreOs.osNumber} open={!!dreOs} onOpenChange={(o) => { if (!o) setDreOs(null); }} />
+    )}
     </>
   );
 }
