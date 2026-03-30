@@ -90,3 +90,7 @@ SMTP_FROM = "escolta@torresseguranca.com.br"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
