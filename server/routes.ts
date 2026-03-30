@@ -885,13 +885,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const serviceOrderId = Number(req.params.osId);
       const so = await storage.getServiceOrder(serviceOrderId);
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
-      if (so.missionStatus !== "encerrada" && so.status !== "concluida") {
-        return res.status(400).json({ message: "OS nao esta encerrada/concluida" });
-      }
+
+      const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
 
       const { data: existing } = await supabaseAdmin.from("escort_billings")
         .select("id").eq("service_order_id", serviceOrderId).limit(1);
-      if (existing?.length) return res.status(400).json({ message: "Billing ja existe para esta OS" });
+      if (existing?.length && !isLive) return res.status(400).json({ message: "Billing ja existe para esta OS" });
+      if (existing?.length && isLive) {
+        await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+      }
 
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
       const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
@@ -901,7 +903,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
       const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toTimeString().slice(0, 5) : undefined;
-      const endTime = so.completedDate ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : undefined;
+      const endTime = so.completedDate ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : (isLive ? new Date().toTimeString().slice(0, 5) : undefined);
 
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
@@ -955,7 +957,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
         data_missao: so.scheduledDate || new Date().toISOString(),
-        status: "A_VERIFICAR", created_by: user.name,
+        status: isLive ? "ESTIMATIVA" : "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
 
@@ -2517,6 +2519,145 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
           doc.y += 6;
         }
+      }
+
+      // === BOLETIM DE MEDICAO (Financial Section) ===
+      try {
+        const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+        const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+        const kmInicial = kmSaidaPhoto?.kmValue || 0;
+        let kmFinal = kmFinalPhoto?.kmValue || 0;
+        if (kmFinal <= kmInicial) kmFinal = kmInicial;
+
+        const scheduledTime = os.scheduledDate ? new Date(os.scheduledDate).toTimeString().slice(0, 5) : undefined;
+        const startTime = os.missionStartedAt ? new Date(os.missionStartedAt as string).toTimeString().slice(0, 5) : undefined;
+        let endTimeCalc: string | undefined;
+        if (os.completedDate) {
+          endTimeCalc = new Date(os.completedDate as string).toTimeString().slice(0, 5);
+        } else {
+          endTimeCalc = new Date().toTimeString().slice(0, 5);
+        }
+
+        let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+        if (os.escortContractId) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", os.escortContractId).limit(1);
+          if (cc?.length) contrato = cc[0];
+        } else if (os.clientId) {
+          const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", os.clientId).eq("status", "Ativo").limit(1);
+          if (clientContracts?.length) contrato = clientContracts[0];
+        }
+
+        const resultado = calcularEscolta({
+          km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+          horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+          horario_inicio: startTime, horario_fim: endTimeCalc, horario_agendado: scheduledTime,
+          despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+        });
+
+        const isLive = os.status !== "concluida" && os.missionStatus !== "encerrada";
+        const BRL = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+
+        ensureSpace(240);
+        doc.y += 4;
+        sectionTitle(isLive ? "Boletim de Medicao (Estimativa em Tempo Real)" : "Boletim de Medicao");
+
+        if (isLive) {
+          doc.font("Helvetica-Bold").fontSize(7).fillColor("#dc2626")
+            .text("* Valores estimados com base nos dados disponiveis ate o momento. O calculo final sera feito apos encerramento da missao.", LM, doc.y, { width: W });
+          doc.y += 12;
+        }
+
+        const tblY = doc.y;
+        const col1W = W * 0.55;
+        const col2W = W * 0.45;
+
+        doc.save();
+        doc.rect(LM, tblY, W, 18).fill("#0f172a");
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff")
+          .text("FATURAMENTO (Cliente)", LM + 6, tblY + 4, { width: col1W - 12 });
+        doc.text("PAGAMENTO (VRP/Agente)", LM + col1W + 6, tblY + 4, { width: col2W - 12 });
+        doc.restore();
+        doc.y = tblY + 18;
+
+        const fatRows: [string, string][] = [
+          ["KM Total", `${resultado.km_total} km`],
+          ["KM Carregado", `${resultado.km_carregado} km`],
+          ["KM Faturado (franquia)", `${resultado.km_faturado} km`],
+          ["Valor KM Carregado", BRL(resultado.faturamento.km_carregado)],
+          ["Valor KM Vazio", BRL(resultado.faturamento.km_vazio)],
+          ["Estadia", BRL(resultado.faturamento.estadia)],
+          ["Adicional Noturno", BRL(resultado.faturamento.adicional_noturno)],
+          ["Pernoite/Diaria", BRL(resultado.faturamento.diaria)],
+        ];
+        const pagRows: [string, string][] = [
+          ["VRP Base", BRL(resultado.pagamento.vrp)],
+          ["Hora Extra / Periculosidade", BRL(resultado.pagamento.periculosidade)],
+          ["Adicional Noturno", BRL(resultado.pagamento.adicional_noturno)],
+          ["Reembolsos", BRL(resultado.pagamento.reembolsos)],
+          ["", ""],
+          ["Horas Trabalhadas", `${resultado.horas_trabalhadas.toFixed(1)}h`],
+          [resultado.is_noturno ? "Noturno: SIM" : "Noturno: NAO", ""],
+          ["", ""],
+        ];
+
+        const maxRows = Math.max(fatRows.length, pagRows.length);
+        for (let i = 0; i < maxRows; i++) {
+          const rowY = doc.y;
+          const bg = i % 2 === 0 ? "#f8fafc" : "#ffffff";
+          doc.save();
+          doc.rect(LM, rowY, W, 14).fill(bg);
+          doc.rect(LM, rowY, W, 14).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
+          doc.moveTo(LM + col1W, rowY).lineTo(LM + col1W, rowY + 14).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
+          doc.restore();
+
+          if (fatRows[i]) {
+            doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
+              .text(fatRows[i][0], LM + 6, rowY + 3, { width: col1W * 0.55, lineBreak: false });
+            doc.font("Helvetica-Bold").fontSize(7).fillColor(PRIMARY)
+              .text(fatRows[i][1], LM + col1W * 0.55, rowY + 3, { width: col1W * 0.4, align: "right", lineBreak: false });
+          }
+          if (pagRows[i]) {
+            doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
+              .text(pagRows[i][0], LM + col1W + 6, rowY + 3, { width: col2W * 0.55, lineBreak: false });
+            doc.font("Helvetica-Bold").fontSize(7).fillColor(PRIMARY)
+              .text(pagRows[i][1], LM + col1W + col2W * 0.55, rowY + 3, { width: col2W * 0.4, align: "right", lineBreak: false });
+          }
+          doc.y = rowY + 14;
+        }
+
+        const totY = doc.y;
+        doc.save();
+        doc.rect(LM, totY, col1W, 20).fill("#047857");
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff")
+          .text("TOTAL FATURAMENTO", LM + 6, totY + 4, { width: col1W * 0.55 });
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
+          .text(BRL(resultado.fat_total), LM + col1W * 0.55, totY + 4, { width: col1W * 0.4, align: "right" });
+        doc.restore();
+
+        doc.save();
+        doc.rect(LM + col1W, totY, col2W, 20).fill("#dc2626");
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#ffffff")
+          .text("TOTAL PAGAMENTO", LM + col1W + 6, totY + 4, { width: col2W * 0.55 });
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#ffffff")
+          .text(BRL(resultado.pag_total), LM + col1W + col2W * 0.55, totY + 4, { width: col2W * 0.4, align: "right" });
+        doc.restore();
+        doc.y = totY + 20;
+
+        const resY = doc.y;
+        doc.save();
+        const resColor = resultado.resultado.liquido >= 0 ? "#047857" : "#dc2626";
+        doc.rect(LM, resY, W, 22).fill("#f1f5f9");
+        doc.rect(LM, resY, W, 22).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(PRIMARY)
+          .text("RESULTADO LIQUIDO", LM + 6, resY + 5);
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(resColor)
+          .text(BRL(resultado.resultado.liquido), LM + W * 0.35, resY + 4, { width: W * 0.25, align: "right" });
+        doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
+          .text(`Margem: ${resultado.resultado.margem_pct.toFixed(1)}%`, LM + W * 0.65, resY + 6, { width: W * 0.3, align: "right" });
+        doc.restore();
+        doc.y = resY + 28;
+      } catch (calcErr: any) {
+        console.error("[relatorio-missao] Calculo financeiro error (non-fatal):", calcErr.message);
       }
 
       ensureSpace(50);
