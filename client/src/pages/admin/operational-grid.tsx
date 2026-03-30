@@ -16,7 +16,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home,
+  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
   CircleFadingPlus, Eye,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -4375,10 +4375,14 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
   );
 }
 
-function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[]; gridData: GridItem[] }) {
+function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; clients: any[] }) {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [forwardUpdate, setForwardUpdate] = useState<any>(null);
+  const [forwardEmail, setForwardEmail] = useState("");
+  const [forwardCustomMsg, setForwardCustomMsg] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const { data: updates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -4388,6 +4392,18 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
       return res.json();
     },
     refetchInterval: 15000,
+  });
+
+  const forwardOsId = forwardUpdate?.serviceOrderId;
+  const { data: forwardHistory = [] } = useQuery<any[]>({
+    queryKey: ["/api/service-orders", forwardOsId, "forwards"],
+    queryFn: async () => {
+      if (!forwardOsId) return [];
+      const res = await authFetch(`/api/service-orders/${forwardOsId}/forwards`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!forwardOsId,
   });
 
   const markReadMutation = useMutation({
@@ -4475,7 +4491,14 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
                 </a>
               )}
               <button
-                onClick={() => setForwardUpdate(u)}
+                onClick={() => {
+                  setForwardUpdate(u);
+                  const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                  const client = gridItem?.clientName ? clients.find((c: any) => c.name === gridItem.clientName) : null;
+                  setForwardEmail(client?.email || "");
+                  setForwardCustomMsg("");
+                  setShowHistory(false);
+                }}
                 className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
                 data-testid={`btn-forward-client-${u.id}`}
               >
@@ -4506,16 +4529,16 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
 
       <Dialog open={!!forwardUpdate} onOpenChange={() => {}}>
         <DialogContent
-          className={`p-0 overflow-hidden border-0 [&>button]:hidden ${forwardUpdate?.photoUrl ? "max-w-2xl bg-black/95" : "max-w-md bg-white"}`}
+          className="p-0 overflow-hidden border-0 [&>button]:hidden max-w-2xl bg-white max-h-[90vh] overflow-y-auto"
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <DialogHeader className="px-4 pt-4 pb-2 relative">
-            <DialogTitle className={`text-sm font-bold flex items-center gap-2 ${forwardUpdate?.photoUrl ? "text-white" : "text-neutral-900"}`}>
-              {forwardUpdate?.photoUrl ? "📷" : "📋"} Encaminhar — {forwardUpdate?.osNumber || ""}
+            <DialogTitle className="text-sm font-bold flex items-center gap-2 text-neutral-900">
+              <Send className="w-4 h-4" /> Encaminhar para o Cliente — {forwardUpdate?.osNumber || ""}
             </DialogTitle>
             <button
-              className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${forwardUpdate?.photoUrl ? "text-white/60 hover:text-white hover:bg-white/10" : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"}`}
+              className="absolute top-3 right-3 p-1 rounded-full transition-colors text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
               onClick={() => {
                 const uid = forwardUpdate?.id;
                 setForwardUpdate(null);
@@ -4526,71 +4549,145 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
               <X className="w-4 h-4" />
             </button>
           </DialogHeader>
-          {forwardUpdate?.photoUrl && (
-            <div className="flex items-center justify-center px-4">
-              <img
-                src={forwardUpdate.photoUrl}
-                alt="Foto da atualização do agente"
-                className="max-w-full max-h-[60vh] rounded-lg object-contain"
-                data-testid="forward-photo-modal-img"
-              />
-            </div>
-          )}
+
           {forwardUpdate && (
-            <div className={`px-4 py-2 ${forwardUpdate.photoUrl ? "text-neutral-300" : "text-neutral-600"}`}>
-              <p className="text-sm font-medium">"{forwardUpdate.message}"</p>
-              <p className="text-[10px] mt-1 opacity-60">
-                {titleCase(forwardUpdate.employeeName)} · {forwardUpdate.createdAt ? new Date(forwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
-              </p>
+            <div className="px-4">
+              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                <div className="flex items-start gap-3">
+                  {forwardUpdate.photoUrl && (
+                    <img src={forwardUpdate.photoUrl} alt="Foto" className="w-20 h-20 rounded-lg object-cover border border-neutral-200 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-neutral-800">"{forwardUpdate.message}"</p>
+                    <p className="text-[10px] text-neutral-500 mt-1">
+                      {titleCase(forwardUpdate.employeeName)} · {forwardUpdate.createdAt ? new Date(forwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""} · {forwardUpdate.missionStep ? getMissionLabel(forwardUpdate.missionStep) : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Email do Cliente</label>
+                  <input
+                    type="email"
+                    value={forwardEmail}
+                    onChange={(e) => setForwardEmail(e.target.value)}
+                    placeholder="email@cliente.com.br"
+                    className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500"
+                    data-testid="input-forward-email"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Mensagem adicional (opcional)</label>
+                  <textarea
+                    value={forwardCustomMsg}
+                    onChange={(e) => setForwardCustomMsg(e.target.value)}
+                    placeholder="Observação para o cliente..."
+                    rows={2}
+                    className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500 resize-none"
+                    data-testid="input-forward-message"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  disabled={!forwardEmail || sendingEmail}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={async () => {
+                    if (!forwardUpdate || !forwardEmail) return;
+                    setSendingEmail(true);
+                    try {
+                      const res = await authFetch(`/api/mission/updates/${forwardUpdate.id}/forward`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ recipientEmail: forwardEmail, customMessage: forwardCustomMsg }),
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({ message: "Erro ao enviar" }));
+                        throw new Error(err.message);
+                      }
+                      toast({ title: "Email enviado!", description: `Atualização encaminhada para ${forwardEmail}` });
+                      queryClient.invalidateQueries({ queryKey: ["/api/service-orders", forwardOsId, "forwards"] });
+                      setShowHistory(true);
+                    } catch (err: any) {
+                      toast({ title: "Erro ao enviar email", description: err.message, variant: "destructive" });
+                    }
+                    setSendingEmail(false);
+                  }}
+                  data-testid="btn-send-email-forward"
+                >
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  {sendingEmail ? "Enviando..." : "Enviar por Email"}
+                </button>
+
+                {forwardUpdate?.photoUrl && (
+                  <button
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      const ok = await copyImageToClipboard(forwardUpdate.photoUrl);
+                      toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" });
+                    }}
+                    data-testid="btn-forward-copy-photo"
+                  >
+                    <Camera className="w-4 h-4" /> Copiar Foto
+                  </button>
+                )}
+
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
+                  onClick={async () => {
+                    if (!forwardUpdate) return;
+                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
+                    const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
+                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    try {
+                      await navigator.clipboard.writeText(reportText);
+                      toast({ title: "Formulário copiado!" });
+                    } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-form"
+                >
+                  <Copy className="w-4 h-4" /> Copiar Formulário
+                </button>
+              </div>
+
+              {forwardHistory.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors"
+                    data-testid="btn-toggle-forward-history"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    Histórico de encaminhamentos ({forwardHistory.length})
+                    <ChevronRight className={`w-3 h-3 transition-transform ${showHistory ? "rotate-90" : ""}`} />
+                  </button>
+                  {showHistory && (
+                    <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+                      {forwardHistory.map((fwd: any) => (
+                        <div key={fwd.id} className="flex items-center gap-2 text-xs bg-neutral-50 rounded-md px-3 py-2 border border-neutral-100" data-testid={`forward-history-${fwd.id}`}>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <span className="font-semibold text-neutral-700">{fwd.recipientEmail}</span>
+                            <span className="text-neutral-400 mx-1.5">·</span>
+                            <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}${fwd.message.length > 40 ? "..." : ""}"` : "—"}</span>
+                            {fwd.photoIncluded && <span className="text-neutral-400 ml-1">📷</span>}
+                          </div>
+                          <span className="text-neutral-400 flex-shrink-0">
+                            {new Date(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
-          <div className="px-4 pb-4 flex flex-col items-center gap-3">
-            <div className="flex justify-center gap-3">
-              {forwardUpdate?.photoUrl && (
-                <button
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                  onClick={async () => {
-                    const ok = await copyImageToClipboard(forwardUpdate.photoUrl);
-                    toast(ok
-                      ? { title: "Foto copiada!", description: "Cole no WhatsApp com Ctrl+V." }
-                      : { title: "Erro", description: "Não foi possível copiar a foto.", variant: "destructive" }
-                    );
-                  }}
-                  data-testid="btn-forward-copy-photo"
-                >
-                  <Camera className="w-4 h-4" />
-                  Copiar Foto
-                </button>
-              )}
-              <button
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
-                  forwardUpdate?.photoUrl
-                    ? "bg-white text-neutral-900 hover:bg-neutral-100"
-                    : "bg-neutral-900 text-white hover:bg-neutral-800"
-                }`}
-                onClick={async () => {
-                  if (!forwardUpdate) return;
-                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
-                  const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
-                  let reportText = "";
-                  if (matchedVehicle) {
-                    reportText = generateReport(matchedVehicle, gridItem || null);
-                  } else {
-                    reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
-                  }
-                  try {
-                    await navigator.clipboard.writeText(reportText);
-                    toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
-                  } catch {
-                    toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
-                  }
-                }}
-                data-testid="btn-forward-copy-form"
-              >
-                <Copy className="w-4 h-4" />
-                Copiar Formulário
-              </button>
-            </div>
+
+          <div className="px-4 pb-4 pt-2 flex justify-end">
             <button
               className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
               onClick={() => {
@@ -4600,8 +4697,7 @@ function MissionUpdatesAlert({ vehicles, gridData }: { vehicles: TrackedVehicle[
               }}
               data-testid="btn-forward-finalize"
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Finalizar Aviso
+              <CheckCircle2 className="w-3.5 h-3.5" /> Finalizar
             </button>
           </div>
         </DialogContent>
@@ -4630,6 +4726,10 @@ export default function OperationalGridPage() {
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
     queryKey: ["/api/gerenciadoras"],
+  });
+
+  const { data: clients = [] } = useQuery<any[]>({
+    queryKey: ["/api/clients"],
   });
 
   useEffect(() => {
@@ -4763,7 +4863,7 @@ export default function OperationalGridPage() {
           </Card>
         ) : (
           <>
-            <MissionUpdatesAlert vehicles={vehicles} gridData={gridData} />
+            <MissionUpdatesAlert vehicles={vehicles} gridData={gridData} clients={clients} />
             <SpeedAlert vehicles={vehicles} />
             {proximityResult && (
               <ProximityResultsBar

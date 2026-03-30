@@ -3953,6 +3953,116 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json({ success: true });
   });
 
+  app.post("/api/mission/updates/:id/forward", requireAuth, requireAdminRole, async (req: any, res) => {
+    try {
+      const updateId = Number(req.params.id);
+      const { recipientEmail, customMessage } = req.body;
+      if (!recipientEmail) return res.status(400).json({ message: "Email do destinatário é obrigatório" });
+
+      const [update] = await db.select().from(missionUpdates).where(eq(missionUpdates.id, updateId)).limit(1);
+      if (!update) return res.status(404).json({ message: "Atualização não encontrada" });
+
+      const os = await storage.getServiceOrder(update.serviceOrderId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const client = await storage.getClient(os.clientId);
+
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+      if (!smtpHost || !smtpUser || !smtpPass) return res.status(500).json({ message: "SMTP não configurado" });
+
+      const missionLabelMap: Record<string, string> = {
+        aguardando: "Saída da Base", checkout_armamento: "Saída da Base", checkout_viatura: "Saída da Base", checkout_km_saida: "Saída da Base",
+        em_transito_origem: "Chegada na Origem", checkin_chegada_km: "Chegada na Origem", checkin_veiculo_escoltado: "Chegada na Origem", checkin_dados_motorista: "Chegada na Origem",
+        iniciar_missao: "Início de Missão", em_transito_destino: "Chegada no Destino",
+        checkout_km_final: "Término de Missão", checkout_viatura_retorno: "Término de Missão",
+        finalizada: "Missão Finalizada", retorno_base: "Retorno à Base", chegada_base: "Chegada na Base", encerrada: "Missão Encerrada",
+      };
+      const stepLabel = update.missionStep ? (missionLabelMap[update.missionStep] || update.missionStep) : "Atualização";
+      const timeStr = update.createdAt ? new Date(update.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
+      const locationLink = update.latitude && update.longitude ? `https://www.google.com/maps?q=${update.latitude},${update.longitude}` : null;
+
+      let photoHtml = "";
+      if (update.photoUrl && update.photoUrl.startsWith("data:image/")) {
+        photoHtml = `<div style="margin:15px 0;text-align:center;"><img src="${update.photoUrl}" style="max-width:100%;max-height:400px;border-radius:8px;border:1px solid #e0e0e0;" alt="Foto da operação" /></div>`;
+      }
+
+      const htmlBody = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;color:#333;line-height:1.6;max-width:600px;margin:0 auto;">
+  <div style="background:#1a1a1a;padding:20px 30px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</h1>
+    <p style="color:#999;font-size:12px;margin:4px 0 0;">CNPJ: 36.982.392/0001-89</p>
+  </div>
+  <div style="padding:30px;border:1px solid #e0e0e0;border-top:none;">
+    <h2 style="color:#1a1a1a;font-size:16px;margin:0 0 20px;">ATUALIZAÇÃO DE ESCOLTA — ${os.osNumber}</h2>
+    <p>Prezado(a) ${client?.contactPerson || client?.name || "Cliente"},</p>
+    <p>Segue atualização da operação de escolta armada:</p>
+    <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;width:40%;">OS</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${os.osNumber}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Status</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${stepLabel}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Horário</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${timeStr}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Agente</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${update.employeeName || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Mensagem</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${update.message}</td></tr>
+      ${locationLink ? `<tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Localização</td><td style="padding:8px 12px;border:1px solid #e0e0e0;"><a href="${locationLink}" style="color:#2563eb;">Ver no mapa</a></td></tr>` : ""}
+      ${customMessage ? `<tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Observação</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${customMessage}</td></tr>` : ""}
+    </table>
+    ${photoHtml}
+    <p style="margin-top:25px;">Atenciosamente,</p>
+    <p style="margin:5px 0;"><strong>Torres Vigilância Patrimonial LTDA</strong></p>
+    <p style="color:#666;font-size:13px;margin:2px 0;">Tel: (11) 96369-6699</p>
+    <p style="color:#666;font-size:13px;margin:2px 0;">escolta@torresseguranca.com.br</p>
+  </div>
+  <div style="background:#f5f5f5;padding:15px 30px;text-align:center;border:1px solid #e0e0e0;border-top:none;">
+    <p style="color:#999;font-size:11px;margin:0;">Este e-mail foi enviado automaticamente pelo sistema Torres Gestão.</p>
+  </div>
+</body></html>`;
+
+      const port = parseInt(process.env.SMTP_PORT || "587");
+      const transporter = nodemailer.createTransport({
+        host: smtpHost, port, secure: port === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
+      });
+
+      await transporter.sendMail({
+        from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+        to: recipientEmail,
+        subject: `Atualização de Escolta — ${os.osNumber} — ${stepLabel}`,
+        html: htmlBody,
+      });
+
+      const forward = await storage.createClientForward({
+        serviceOrderId: os.id,
+        missionUpdateId: updateId,
+        clientId: os.clientId,
+        recipientEmail,
+        subject: `Atualização de Escolta — ${os.osNumber} — ${stepLabel}`,
+        message: customMessage || update.message,
+        photoIncluded: !!update.photoUrl,
+        sentBy: req.user?.name || req.user?.email || "admin",
+      });
+
+      console.log(`[forward] Email enviado para ${recipientEmail} (OS ${os.osNumber}, update #${updateId})`);
+      res.json(forward);
+    } catch (err: any) {
+      console.error(`[forward] Erro: ${err.message}`);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/service-orders/:id/forwards", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
+      const forwards = await storage.getClientForwardsByOS(id);
+      res.json(forwards);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/mission/status/:serviceOrderId", requireAuth, async (req, res) => {
     const user = req.user!;
     const soId = Number(req.params.serviceOrderId);

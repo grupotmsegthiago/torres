@@ -31,6 +31,8 @@ import {
   type AgentLocation, type InsertAgentLocation,
   missionCosts,
   type MissionCost, type InsertMissionCost,
+  clientForwards,
+  type ClientForward, type InsertClientForward,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -156,6 +158,9 @@ export interface IStorage {
   getMissionCostsByOS(serviceOrderId: number): Promise<MissionCost[]>;
   createMissionCost(cost: InsertMissionCost): Promise<MissionCost>;
   deleteMissionCost(id: number): Promise<void>;
+
+  getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]>;
+  createClientForward(forward: InsertClientForward): Promise<ClientForward>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -685,6 +690,14 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMissionCost(id: number): Promise<void> {
     await db.delete(missionCosts).where(eq(missionCosts.id, id));
+  }
+  async getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]> {
+    return db.select().from(clientForwards).where(eq(clientForwards.serviceOrderId, serviceOrderId)).orderBy(desc(clientForwards.createdAt));
+  }
+
+  async createClientForward(forward: InsertClientForward): Promise<ClientForward> {
+    const [created] = await db.insert(clientForwards).values(forward).returning();
+    return created;
   }
 }
 

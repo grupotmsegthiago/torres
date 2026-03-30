@@ -737,6 +737,23 @@ export const insertMissionPositionSchema = createInsertSchema(missionPositions).
 export type InsertMissionPosition = z.infer<typeof insertMissionPositionSchema>;
 export type MissionPosition = typeof missionPositions.$inferSelect;
 
+export const clientForwards = pgTable("client_forwards", {
+  id: serial("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  missionUpdateId: integer("mission_update_id"),
+  clientId: integer("client_id").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  subject: text("subject"),
+  message: text("message"),
+  photoIncluded: boolean("photo_included").default(false),
+  sentBy: text("sent_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertClientForwardSchema = createInsertSchema(clientForwards).omit({ id: true, createdAt: true });
+export type InsertClientForward = z.infer<typeof insertClientForwardSchema>;
+export type ClientForward = typeof clientForwards.$inferSelect;
+
 export const missionCosts = pgTable("mission_costs", {
   id: serial("id").primaryKey(),
   serviceOrderId: integer("service_order_id").notNull(),
