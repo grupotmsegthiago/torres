@@ -337,7 +337,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
   const nowLocal = () => utcToLocalInput(new Date().toISOString());
 
-  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null }[]>({
+  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({
     queryKey: ["/api/escort/contracts"],
   });
 
@@ -369,7 +369,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     notes: order?.notes || "",
   });
 
-  const clientContracts = escortContracts.filter(c => c.client_id === form.clientId);
+  const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
+
+  useEffect(() => {
+    if (!order && form.clientId > 0 && !form.escortContractId) {
+      const cc = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
+      if (cc.length === 1) {
+        setForm(prev => ({ ...prev, escortContractId: cc[0].id }));
+      }
+    }
+  }, [form.clientId, escortContracts]);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
@@ -1009,6 +1018,7 @@ export default function ServiceOrdersPage() {
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
@@ -1144,7 +1154,18 @@ export default function ServiceOrdersPage() {
                 {displayOrders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
                     <td className="p-3 font-medium text-neutral-900">{o.osNumber}</td>
-                    <td className="p-3 text-neutral-600">{getClientName(o.clientId)}</td>
+                    <td className="p-3">
+                      <span className="text-neutral-600">{getClientName(o.clientId)}</span>
+                      {(() => {
+                        const cId = (o as any).escortContractId;
+                        const ct = cId ? escortContracts.find(c => c.id === cId) : null;
+                        return ct ? (
+                          <span className="block text-[10px] text-emerald-600 font-medium mt-0.5" data-testid={`text-contract-${o.id}`}>{ct.name || "Tabela Padrão"}</span>
+                        ) : (
+                          <span className="block text-[10px] text-amber-500 font-medium mt-0.5">Sem tabela</span>
+                        );
+                      })()}
+                    </td>
                     <td className="p-3 text-neutral-600">{o.type}</td>
                     <td className="p-3">
                       <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${

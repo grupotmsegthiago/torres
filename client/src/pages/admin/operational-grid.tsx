@@ -303,6 +303,7 @@ interface GridItem {
     resultado: number;
     margem_pct: number;
     contrato_nome: string | null;
+    contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
   } | null;
 }
 
@@ -4117,11 +4118,20 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <span>▲</span> {fmtBRL(lc.faturamento)}
                                     </span>
                                   </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs">
+                                  <TooltipContent side="bottom" className="text-xs max-w-xs">
                                     <p className="font-bold">Faturamento estimado</p>
                                     <p>KM: {lc.km_total} ({lc.km_inicial} → {lc.km_atual})</p>
                                     <p>Horas: {lc.horas_missao}h</p>
-                                    {lc.contrato_nome && <p className="text-neutral-400">Contrato: {lc.contrato_nome}</p>}
+                                    {lc.contrato_nome && <p className="text-emerald-400 font-semibold mt-1">Tabela: {lc.contrato_nome}</p>}
+                                    {lc.contrato_valores && (
+                                      <div className="mt-1 pt-1 border-t border-neutral-700 space-y-0.5">
+                                        {lc.contrato_valores.valor_acionamento > 0 && <p>Acionamento: R$ {lc.contrato_valores.valor_acionamento.toFixed(2)}</p>}
+                                        {lc.contrato_valores.valor_km_carregado > 0 && <p>R$/KM: {lc.contrato_valores.valor_km_carregado.toFixed(2)}</p>}
+                                        {lc.contrato_valores.franquia_horas > 0 && <p>Franquia: {lc.contrato_valores.franquia_horas}h / {lc.contrato_valores.franquia_km}km</p>}
+                                        {lc.contrato_valores.valor_hora_extra > 0 && <p>H. Extra: R$ {lc.contrato_valores.valor_hora_extra.toFixed(2)}</p>}
+                                        {lc.contrato_valores.vrp_base > 0 && <p>VRP: R$ {lc.contrato_valores.vrp_base.toFixed(2)}</p>}
+                                      </div>
+                                    )}
                                   </TooltipContent>
                                 </Tooltip>
                                 <Tooltip>

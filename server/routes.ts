@@ -3237,6 +3237,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           horas_missao: number;
           faturamento: number; pagamento: number; resultado: number; margem_pct: number;
           contrato_nome: string | null;
+          contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
 
         if (o.status === "em_andamento" && o.type === "escolta") {
@@ -3282,7 +3283,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               pagamento: resultado.pagamento.total,
               resultado: resultado.resultado.liquido,
               margem_pct: resultado.resultado.margem_pct,
-              contrato_nome: contratoNome,
+              contrato_nome: contratoNome || contrato.name || null,
+              contrato_valores: {
+                valor_acionamento: contrato.valor_acionamento || 0,
+                franquia_horas: contrato.franquia_horas || 0,
+                franquia_km: contrato.franquia_km || contrato.franquia_minima_km || 0,
+                valor_hora_extra: contrato.valor_hora_extra || 0,
+                valor_km_extra: contrato.valor_km_extra || 0,
+                valor_km_carregado: contrato.valor_km_carregado || 0,
+                vrp_base: contrato.vrp_base || 0,
+              },
             };
           } catch (e: any) {
             console.error(`[grid] liveCost error OS ${o.osNumber}:`, e.message);
