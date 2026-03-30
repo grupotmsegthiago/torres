@@ -454,6 +454,10 @@ export async function ensureDbSchema() {
         AND CAST(COALESCE(NULLIF(last_longitude, ''), '1') AS NUMERIC) = 0
     `).catch(() => {});
 
+    await db.execute(sql`
+      ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
+    `).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
