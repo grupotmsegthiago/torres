@@ -2733,7 +2733,7 @@ export default function EmployeesPage() {
                               <KeyRound className="w-4 h-4 text-blue-600" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }} data-testid={`button-edit-employee-${e.id}`}><Pencil className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(e.id)} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Tem certeza que deseja excluir ${e.name}? Esta ação não pode ser desfeita.`)) deleteMutation.mutate(e.id); }} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                           </div>
                         </td>
                       </tr>
