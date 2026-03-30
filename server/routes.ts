@@ -2799,19 +2799,25 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               : null;
             if (!pos) pos = truckscontrol.findPositionByPlate(vehiclePositions, v.plate);
             if (pos) {
-              gotLiveData = true;
-              trackerData = {
-                veiID: pos.veiID,
-                latitude: pos.latitude,
-                longitude: pos.longitude,
-                ignition: pos.ignition,
-                lastPositionTime: pos.lastPositionTime,
-                gpsSignal: pos.gpsSignal,
-                speed: pos.speed,
-                address: pos.address,
-                voltage: pos.voltage,
-                isLiveData: true,
-              };
+              const hasValidCoords = pos.latitude !== 0 || pos.longitude !== 0;
+              if (hasValidCoords) {
+                gotLiveData = true;
+                trackerData = {
+                  veiID: pos.veiID,
+                  latitude: pos.latitude,
+                  longitude: pos.longitude,
+                  ignition: pos.ignition,
+                  lastPositionTime: pos.lastPositionTime,
+                  gpsSignal: pos.gpsSignal,
+                  speed: pos.speed,
+                  address: pos.address,
+                  voltage: pos.voltage,
+                  isLiveData: true,
+                };
+              } else {
+                hasTracker = true;
+                gotLiveData = false;
+              }
             }
           }
         } else if (trackerType === "custom" && v.trackerId && v.trackerApiUrl) {
@@ -2838,7 +2844,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         let ignitionOnSince = v.ignitionOnSince || null;
         let noSignalSince = v.noSignalSince || null;
 
-        if (gotLiveData && trackerData) {
+        if (gotLiveData && trackerData && (trackerData.latitude !== 0 || trackerData.longitude !== 0)) {
           noSignalSince = null;
 
           const prevIgnition = v.lastIgnition === 1;

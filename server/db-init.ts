@@ -448,6 +448,11 @@ export async function ensureDbSchema() {
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 
+    await db.execute(sql`
+      UPDATE vehicles SET last_latitude = NULL, last_longitude = NULL
+      WHERE last_latitude = '0' AND last_longitude = '0'
+    `).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
