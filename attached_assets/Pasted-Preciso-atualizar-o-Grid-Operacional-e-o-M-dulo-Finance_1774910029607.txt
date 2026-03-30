@@ -1,0 +1,20 @@
+Preciso atualizar o Grid Operacional e o Módulo Financeiro para gerenciar custos de pessoal e alertas de jornada de trabalho.
+Configurações da CCT SP (Escolta Armada):
+1.	Base de Dados: Crie uma tabela ou constante de configuração com:
+• Salário Base: R$ 2.432,50
+• Periculosidade: 30%
+• Valor do VR: R$ 40,00/dia
+• Cesta Básica: R$ 208,45
+2.	Cálculo de Custo Real: Implemente uma função que calcule o custo total de um funcionário para a empresa.
+• A fórmula deve considerar: (Salário + Periculosidade + Horas Extras + DSR) + Encargos Sociais (80%) + Benefícios.
+• Use o valor de R$ 22,99 para a Hora Extra (60% sobre a hora com periculosidade).
+Novas Funcionalidades no Grid:
+3. Alerta de Jornada Excessiva: - No grid onde aparecem os agentes, crie uma coluna 'Horas Acumuladas/Mês'.
+• Regra Visual: Se o funcionário ultrapassar 220 horas, a célula deve ficar Amarela. Se ultrapassar 300 horas, deve ficar Vermelha Piscante com um aviso de 'Risco Trabalhista/Fadiga'.
+1.	Simulador de Custo por Agente: Adicione um botão 'Ver Detalhes de Custo' que abra um modal mostrando quanto aquele funcionário específico está custando no mês atual (baseado nas horas lançadas).
+2.	Timeline de Eventos (Integração): Garanta que, ao ver o histórico de evidências (que criamos no prompt anterior), o sistema também mostre qual era a jornada acumulada do agente no momento daquela foto/evidência.
+UI/UX: Mantenha o padrão dashboard de monitoramento, priorizando a visibilidade dos alertas vermelhos para o operador."
+Dicas para a execução no Replit:
+• Modo de Uso: Como esse prompt envolve cálculos matemáticos e lógica de banco de dados, o modo Autonomous + Power (que você já está usando) é o ideal.
+• Atenção ao Custo ($): Esse prompt é denso. O Agent pode demorar uns 2 a 3 minutos para processar tudo. Fique de olho no painel de "Agent Usage" para garantir que ele não entre em loop.
+• Otimização: Se ele perguntar sobre os encargos, confirme que 80% é uma boa estimativa de segurança para o setor de vigilância (considerando provisões de férias, 13º e multa de FGTS).

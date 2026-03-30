@@ -825,6 +825,123 @@ export async function registerRoutes(
     }
   });
 
+  const CCT_CONFIG = {
+    salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00,
+    cestaBasica: 208.45, diasUteisMes: 22, encargosSociaisPct: 80,
+    horaExtraValor: 22.99,
+  };
+
+  app.get("/api/employees/monthly-hours", requireAuth, async (req, res) => {
+    try {
+      const month = Number(req.query.month) || new Date().getMonth() + 1;
+      const year = Number(req.query.year) || new Date().getFullYear();
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const endMonth = month === 12 ? 1 : month + 1;
+      const endYear = month === 12 ? year + 1 : year;
+      const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+      const { data: billings } = await supabaseAdmin
+        .from("escort_billings")
+        .select("service_order_id, horas_trabalhadas, horas_missao")
+        .gte("data_missao", startDate)
+        .lt("data_missao", endDate);
+
+      const sos = await storage.getServiceOrders();
+      const relevantOsIds = new Set((billings || []).map((b: any) => b.service_order_id));
+      const osMap = new Map<number, any>();
+      for (const os of sos) {
+        if (relevantOsIds.has(os.id)) osMap.set(os.id, os);
+      }
+
+      const employeeHours: Record<number, { totalHours: number; missions: number }> = {};
+      for (const b of (billings || [])) {
+        const os = osMap.get(b.service_order_id);
+        if (!os) continue;
+        const hours = Number(b.horas_trabalhadas || b.horas_missao || 0);
+        for (const empId of [os.assignedEmployeeId, os.assignedEmployee2Id]) {
+          if (!empId) continue;
+          if (!employeeHours[empId]) employeeHours[empId] = { totalHours: 0, missions: 0 };
+          employeeHours[empId].totalHours += hours;
+          employeeHours[empId].missions += 1;
+        }
+      }
+
+      res.json(employeeHours);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/employees/:id/cost-detail", requireAuth, async (req, res) => {
+    try {
+      const empId = Number(req.params.id);
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const month = Number(req.query.month) || new Date().getMonth() + 1;
+      const year = Number(req.query.year) || new Date().getFullYear();
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const endMonth = month === 12 ? 1 : month + 1;
+      const endYear = month === 12 ? year + 1 : year;
+      const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+      const { data: billings } = await supabaseAdmin
+        .from("escort_billings")
+        .select("service_order_id, horas_trabalhadas, horas_missao, data_missao")
+        .gte("data_missao", startDate)
+        .lt("data_missao", endDate);
+
+      const sos = await storage.getServiceOrders();
+      let totalHours = 0;
+      let missions = 0;
+      const missionDetails: any[] = [];
+      for (const b of (billings || [])) {
+        const os = sos.find((o: any) => o.id === b.service_order_id);
+        if (!os) continue;
+        if (os.assignedEmployeeId !== empId && os.assignedEmployee2Id !== empId) continue;
+        const hours = Number(b.horas_trabalhadas || b.horas_missao || 0);
+        totalHours += hours;
+        missions++;
+        missionDetails.push({ osNumber: os.osNumber, date: b.data_missao, hours });
+      }
+
+      const salarioBase = CCT_CONFIG.salarioBase;
+      const periculosidade = salarioBase * (CCT_CONFIG.periculosidadePct / 100);
+      const salarioComPeric = salarioBase + periculosidade;
+      const horasContratuais = 220;
+      const horasExtras = Math.max(0, totalHours - horasContratuais);
+      const custoHorasExtras = horasExtras * CCT_CONFIG.horaExtraValor;
+      const dsrHorasExtras = horasExtras > 0 ? (custoHorasExtras / 6) : 0;
+      const subtotalRemuneracao = salarioComPeric + custoHorasExtras + dsrHorasExtras;
+      const encargos = subtotalRemuneracao * (CCT_CONFIG.encargosSociaisPct / 100);
+      const valeRefeicao = CCT_CONFIG.valeRefeicaoDia * CCT_CONFIG.diasUteisMes;
+      const cestaBasica = CCT_CONFIG.cestaBasica;
+      const totalBeneficios = valeRefeicao + cestaBasica;
+      const custoTotal = subtotalRemuneracao + encargos + totalBeneficios;
+
+      res.json({
+        employee: { id: emp.id, name: emp.name, role: emp.role },
+        month, year,
+        totalHours: Math.round(totalHours * 100) / 100,
+        missions,
+        missionDetails,
+        breakdown: {
+          salarioBase, periculosidade, salarioComPeric,
+          horasContratuais, horasExtras: Math.round(horasExtras * 100) / 100,
+          custoHorasExtras: Math.round(custoHorasExtras * 100) / 100,
+          dsrHorasExtras: Math.round(dsrHorasExtras * 100) / 100,
+          subtotalRemuneracao: Math.round(subtotalRemuneracao * 100) / 100,
+          encargosSociaisPct: CCT_CONFIG.encargosSociaisPct,
+          encargos: Math.round(encargos * 100) / 100,
+          valeRefeicao, cestaBasica, totalBeneficios,
+          custoTotal: Math.round(custoTotal * 100) / 100,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/cpf-lookup/:cpf", requireAuth, async (req, res) => {
     const cpf = String(req.params.cpf).replace(/\D/g, "");
     if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });

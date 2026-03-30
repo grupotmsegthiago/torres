@@ -4076,7 +4076,7 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
   );
 }
 
-function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[] }) {
+function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients, monthlyHours, onCostDetail }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[]; monthlyHours?: Record<string, { totalHours: number; missions: number }>; onCostDetail?: (empId: number) => void }) {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
@@ -4172,6 +4172,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Velocidade</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Últ. Alerta</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
+                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Horas/Mês</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Referência</th>
@@ -4480,6 +4481,45 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
                       )}
+                    </td>
+
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                      {v.activeOs ? (() => {
+                        const emp1Id = v.activeOs!.employee1?.id;
+                        const emp2Id = v.activeOs!.employee2?.id;
+                        const h1 = emp1Id && monthlyHours ? monthlyHours[String(emp1Id)] : null;
+                        const h2 = emp2Id && monthlyHours ? monthlyHours[String(emp2Id)] : null;
+
+                        const renderHoursBadge = (h: { totalHours: number; missions: number } | null, empId: number | undefined) => {
+                          if (!h || !empId) return null;
+                          const hours = Math.round(h.totalHours * 10) / 10;
+                          const isWarning = hours > 220;
+                          const isDanger = hours > 300;
+                          return (
+                            <button
+                              onClick={() => onCostDetail?.(empId)}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                                isDanger
+                                  ? "bg-red-600 text-white animate-pulse"
+                                  : isWarning
+                                  ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                  : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                              }`}
+                              title={isDanger ? "RISCO TRABALHISTA / FADIGA" : isWarning ? "Jornada acima de 220h" : `${hours}h em ${h.missions} missões`}
+                              data-testid={`hours-badge-${empId}`}
+                            >
+                              {hours}h
+                              {isDanger && <AlertTriangle className="w-2.5 h-2.5 inline ml-0.5" />}
+                            </button>
+                          );
+                        };
+                        return (
+                          <div className="flex flex-col items-center gap-0.5">
+                            {renderHoursBadge(h1, emp1Id)}
+                            {renderHoursBadge(h2, emp2Id)}
+                          </div>
+                        );
+                      })() : <span className="text-neutral-300 text-xs">—</span>}
                     </td>
 
                     <td className="px-2 py-1.5 whitespace-nowrap">
@@ -5732,6 +5772,102 @@ function AlertsTimeline() {
   );
 }
 
+function CostDetailModal({ empId, onClose }: { empId: number; onClose: () => void }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/employees", empId, "cost-detail"],
+    queryFn: async () => {
+      const res = await authFetch(`/api/employees/${empId}/cost-detail`);
+      if (!res.ok) throw new Error("Erro ao carregar");
+      return res.json();
+    },
+    enabled: !!empId,
+  });
+
+  const BRL = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-lg bg-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            <Users className="w-4 h-4" />
+            {isLoading ? "Carregando..." : `Custo Real — ${data?.employee?.name}`}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-neutral-500">
+            {data ? `${String(data.month).padStart(2, "0")}/${data.year} • ${data.missions} missões • ${data.totalHours}h trabalhadas` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+        ) : data ? (
+          <div className="space-y-3 text-xs">
+            <div className="bg-neutral-900 text-white rounded-lg px-3 py-2">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-neutral-300">Horas Acumuladas</span>
+                <span className={`text-lg font-bold ${data.totalHours > 300 ? "text-red-400 animate-pulse" : data.totalHours > 220 ? "text-amber-400" : "text-white"}`}>
+                  {data.totalHours}h
+                  {data.totalHours > 300 && " ⚠️ RISCO TRABALHISTA"}
+                  {data.totalHours > 220 && data.totalHours <= 300 && " ⚠️ JORNADA EXCESSIVA"}
+                </span>
+              </div>
+            </div>
+
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Remuneração</div>
+              <div className="divide-y divide-neutral-100">
+                <div className="flex justify-between px-3 py-1.5"><span>Salário Base</span><span className="font-semibold">{BRL(data.breakdown.salarioBase)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Periculosidade (30%)</span><span className="font-semibold">{BRL(data.breakdown.periculosidade)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Salário + Periculosidade</span><span className="font-bold">{BRL(data.breakdown.salarioComPeric)}</span></div>
+                {data.breakdown.horasExtras > 0 && (
+                  <>
+                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>Horas Extras ({data.breakdown.horasExtras}h × R$22,99)</span><span className="font-semibold text-amber-700">{BRL(data.breakdown.custoHorasExtras)}</span></div>
+                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>DSR sobre HE (1/6)</span><span className="font-semibold text-amber-700">{BRL(data.breakdown.dsrHorasExtras)}</span></div>
+                  </>
+                )}
+                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Subtotal Remuneração</span><span>{BRL(data.breakdown.subtotalRemuneracao)}</span></div>
+              </div>
+            </div>
+
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Encargos Sociais ({data.breakdown.encargosSociaisPct}%)</div>
+              <div className="flex justify-between px-3 py-1.5"><span>FGTS + INSS + Férias + 13º + Provisões</span><span className="font-semibold">{BRL(data.breakdown.encargos)}</span></div>
+            </div>
+
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Benefícios</div>
+              <div className="divide-y divide-neutral-100">
+                <div className="flex justify-between px-3 py-1.5"><span>Vale Refeição (22d × R$40,00)</span><span className="font-semibold">{BRL(data.breakdown.valeRefeicao)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Cesta Básica</span><span className="font-semibold">{BRL(data.breakdown.cestaBasica)}</span></div>
+                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Total Benefícios</span><span>{BRL(data.breakdown.totalBeneficios)}</span></div>
+              </div>
+            </div>
+
+            <div className="bg-neutral-900 text-white rounded-lg px-3 py-3 flex justify-between items-center">
+              <span className="font-bold text-sm">CUSTO TOTAL EMPRESA</span>
+              <span className="text-xl font-bold">{BRL(data.breakdown.custoTotal)}</span>
+            </div>
+
+            {data.missionDetails.length > 0 && (
+              <details className="border border-neutral-200 rounded-lg overflow-hidden">
+                <summary className="px-3 py-1.5 bg-neutral-50 font-bold text-neutral-600 uppercase tracking-wider text-[10px] cursor-pointer">Missões do Mês ({data.missionDetails.length})</summary>
+                <div className="max-h-40 overflow-y-auto divide-y divide-neutral-100">
+                  {data.missionDetails.map((m: any, i: number) => (
+                    <div key={i} className="flex justify-between px-3 py-1 text-[10px]">
+                      <span className="font-mono font-semibold">{m.osNumber}</span>
+                      <span className="text-neutral-500">{m.date}</span>
+                      <span className="font-bold">{m.hours.toFixed(1)}h</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
@@ -5757,6 +5893,13 @@ export default function OperationalGridPage() {
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
   });
+
+  const { data: monthlyHours = {} } = useQuery<Record<string, { totalHours: number; missions: number }>>({
+    queryKey: ["/api/employees/monthly-hours"],
+    refetchInterval: 120000,
+  });
+
+  const [costDetailEmpId, setCostDetailEmpId] = useState<number | null>(null);
 
   useEffect(() => {
     if (vehiclesUpdatedAt || gridUpdatedAt) {
@@ -5910,7 +6053,7 @@ export default function OperationalGridPage() {
               />
             )}
             <OperationNotificationsBar />
-            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} />
+            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} monthlyHours={monthlyHours} onCostDetail={(empId) => setCostDetailEmpId(empId)} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 2 minutos
             </div>
@@ -5923,6 +6066,9 @@ export default function OperationalGridPage() {
         onOpenChange={setMirrorDialogOpen}
         gerenciadoras={gerenciadoras}
       />
+      {costDetailEmpId && (
+        <CostDetailModal empId={costDetailEmpId} onClose={() => setCostDetailEmpId(null)} />
+      )}
     </AdminLayout>
     </OpNotifProvider>
   );
