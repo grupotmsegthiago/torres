@@ -45,24 +45,32 @@ async function ensureFinancialOriginColumns() {
     console.log("[Financial] origin columns ensured via exec_sql");
 
     try {
-      const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id").is("vigilante2_id", null);
+      const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id, placa_viatura");
       if (billingsToFix && billingsToFix.length > 0) {
-        let fixed = 0;
+        let fixedV2 = 0;
+        let fixedPlate = 0;
         for (const b of billingsToFix) {
           if (!b.service_order_id) continue;
           const so = await storage.getServiceOrder(b.service_order_id);
-          if (so && so.assignedEmployee2Id) {
+          if (!so) continue;
+          const updates: any = {};
+          if (!b.vigilante2_id && so.assignedEmployee2Id) {
             const emp2 = await storage.getEmployee(so.assignedEmployee2Id);
-            if (emp2) {
-              await supabaseAdmin.from("escort_billings").update({ vigilante2_id: so.assignedEmployee2Id, vigilante2_name: emp2.name }).eq("id", b.id);
-              fixed++;
-            }
+            if (emp2) { updates.vigilante2_id = so.assignedEmployee2Id; updates.vigilante2_name = emp2.name; fixedV2++; }
+          }
+          if (!b.placa_viatura && so.vehicleId) {
+            const veh = await storage.getVehicle(so.vehicleId);
+            if (veh?.plate) { updates.placa_viatura = veh.plate; fixedPlate++; }
+          }
+          if (Object.keys(updates).length > 0) {
+            await supabaseAdmin.from("escort_billings").update(updates).eq("id", b.id);
           }
         }
-        if (fixed > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixed} billings`);
+        if (fixedV2 > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixedV2} billings`);
+        if (fixedPlate > 0) console.log(`[Financial] Backfilled placa_viatura on ${fixedPlate} billings`);
       }
     } catch (bfErr: any) {
-      console.log("[Financial] vigilante2 backfill skip:", bfErr?.message || "unknown");
+      console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
     }
   } catch (_e) {
     console.log("[Financial] exec_sql unavailable, verifying columns via select...");

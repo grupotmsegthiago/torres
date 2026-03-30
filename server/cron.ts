@@ -224,6 +224,8 @@ export function initCronJobs() {
           const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
           const r = (v: number) => Math.round(v * 100) / 100;
 
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+
           await supabaseAdmin.from("escort_billings").insert({
             service_order_id: so.id,
             client_id: so.clientId, client_name: client?.name || "--",
@@ -246,6 +248,7 @@ export function initCronJobs() {
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
+            placa_viatura: vehicle?.plate || null,
             data_missao: so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: "CRON",
           });
