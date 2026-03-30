@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText, CheckCircle2, X, AlertTriangle, Clock, MapPin,
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
-  Car, User, Calculator, Filter,
+  Car, User, Calculator, Filter, Lock,
 } from "lucide-react";
 
 const fmt = (val: number | null | undefined) => {
@@ -129,7 +129,7 @@ export default function BoletimMedicaoPage() {
     switch (os.billing.status) {
       case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-100 text-blue-800" };
       case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-100 text-amber-800" };
-      case "APROVADA": return { label: "Aprovada", color: "bg-green-100 text-green-800" };
+      case "APROVADA": return { label: "Aprovada ✓", color: "bg-green-100 text-green-800" };
       case "REJEITADA": return { label: "Rejeitada", color: "bg-red-100 text-red-800" };
       case "CALCULADO": return { label: "Calculado", color: "bg-blue-100 text-blue-800" };
       case "FATURADO": return { label: "Faturado", color: "bg-indigo-100 text-indigo-800" };
@@ -485,6 +485,13 @@ export default function BoletimMedicaoPage() {
                             {salvarBillingMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                             Salvar Alterações
                           </button>
+                        </div>
+                      )}
+
+                      {!isPendente && ["APROVADA", "FATURADO", "PAGO"].includes(b.status) && (
+                        <div className="flex items-center gap-2 bg-green-50 border border-green-200 p-3 rounded-xl">
+                          <Lock size={14} className="text-green-700" />
+                          <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Valores travados — Boletim aprovado por {b.revisado_por || "admin"}</p>
                         </div>
                       )}
 

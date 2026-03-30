@@ -8165,6 +8165,23 @@ Regras:
 
   app.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
     try {
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status").eq("id", req.params.id).single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
+
+      const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
+      const STATUS_ONLY_FIELDS = ["status", "observacoes", "notas"];
+
+      if (LOCKED_STATUSES.includes(existing.status)) {
+        const updateBody = { ...req.body };
+        const attemptedFields = Object.keys(updateBody);
+        const blockedFields = attemptedFields.filter(f => !STATUS_ONLY_FIELDS.includes(f));
+        if (blockedFields.length > 0) {
+          return res.status(403).json({
+            message: `Boletim aprovado — valores de cálculo estão travados. Apenas status e observações podem ser alterados.`,
+          });
+        }
+      }
+
       const updateBody = { ...req.body };
       if (updateBody.status) {
         const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
@@ -8267,6 +8284,14 @@ Regras:
 
   app.patch("/api/escort/billings/:id/salvar", requireAdminRole, async (req, res) => {
     try {
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status").eq("id", req.params.id).single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
+
+      const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
+      if (LOCKED_STATUSES.includes(existing.status)) {
+        return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
+      }
+
       const { observacoes, despesas_pedagio } = req.body;
       const updateData: any = {};
       if (observacoes !== undefined) updateData.observacoes = observacoes;
