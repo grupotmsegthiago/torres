@@ -8115,8 +8115,84 @@ Regras:
 
       const allTimesheets = await storage.getTimesheets();
 
-      const items = billings || [];
+      const items = [...(billings || [])];
       const txns = transactions || [];
+
+      const billedOsIds = new Set(items.map((b: any) => b.service_order_id));
+      const allOrders = await storage.getServiceOrders();
+      const unbilledEscorts = allOrders.filter((so: any) =>
+        so.type === "escolta" &&
+        (so.status === "em_andamento" || so.status === "concluida") &&
+        so.missionStatus !== "aguardando" &&
+        !billedOsIds.has(so.id)
+      );
+
+      for (const so of unbilledEscorts) {
+        try {
+          const nb = (v: any) => Number(v) || 0;
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (so.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (so.clientId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+            if (cc?.length) contrato = cc[0];
+          }
+          const photos = await storage.getMissionPhotosByOS(so.id);
+          const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
+          const kmFinalP = photos.find((p: any) => p.step === "km_final");
+          const kmInicial = nb(kmSaidaP?.kmValue);
+          const kmFinal = nb(kmFinalP?.kmValue);
+          const startedAt = so.missionStartedAt || so.scheduledDate;
+          const now = new Date();
+          const horasMissao = startedAt ? Math.max(0, (now.getTime() - new Date(startedAt).getTime()) / 3600000) : 0;
+          const franquiaKm = nb(contrato.franquia_km || contrato.franquia_minima_km);
+          const km_carregado = Math.max(0, kmFinal - kmInicial);
+          const km_excedente = Math.max(0, km_carregado - franquiaKm);
+          const hasAcion = nb(contrato.valor_acionamento) > 0;
+          const franquiaHoras = nb(contrato.franquia_horas);
+          let fat_total = 0, fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0;
+          if (hasAcion) {
+            fat_acionamento = nb(contrato.valor_acionamento);
+            fat_km = km_excedente * nb(contrato.valor_km_extra || contrato.valor_km_carregado);
+            const horasExc = Math.max(0, horasMissao - franquiaHoras);
+            fat_hora_extra = horasExc * nb(contrato.valor_hora_extra);
+            fat_total = fat_acionamento + fat_km + fat_hora_extra;
+          } else {
+            const km_faturado = Math.max(km_carregado, franquiaKm);
+            fat_km = km_faturado * nb(contrato.valor_km_carregado);
+            fat_total = fat_km;
+          }
+          const r = (v: number) => Math.round(v * 100) / 100;
+          const client = so.clientId ? await storage.getClient(so.clientId) : null;
+          const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+          const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          items.push({
+            id: `calc-${so.id}`, service_order_id: so.id,
+            client_id: so.clientId, client_name: client?.name || "--",
+            contract_id: contrato.id || null,
+            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+            km_carregado: r(km_carregado), km_total: r(km_carregado),
+            km_faturado: r(Math.max(km_carregado, franquiaKm)), km_franquia: r(franquiaKm),
+            km_excedente: r(km_excedente),
+            horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
+            fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
+            pag_vrp: r(nb(contrato.vrp_base)), pag_total: r(nb(contrato.vrp_base)),
+            resultado_bruto: r(fat_total - nb(contrato.vrp_base)),
+            resultado_liquido: r(fat_total - nb(contrato.vrp_base)),
+            vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
+            vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
+            origem: so.origin || null, destino: so.destination || null,
+            placa_viatura: vehicle?.plate || null,
+            data_missao: so.scheduledDate || so.createdAt || new Date().toISOString(),
+            status: "A_VERIFICAR",
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+          });
+        } catch (err: any) {
+          console.error(`[dashboard] calc billing for OS ${so.osNumber}: ${err.message}`);
+        }
+      }
 
       const incomeTotal = txns.filter((t: any) => t.type === "INCOME").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
       const incomePaid = txns.filter((t: any) => t.type === "INCOME" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);

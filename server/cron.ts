@@ -134,8 +134,19 @@ export function initCronJobs() {
       const n = (v: any) => Number(v) || 0;
 
       const allOrders = await storage.getServiceOrders();
-      const liveOrders = allOrders.filter((so: any) => so.status !== "concluida" && so.missionStatus !== "encerrada" && so.missionStatus !== "aguardando" && so.type === "escolta");
+      const activeOrders = allOrders.filter((so: any) => so.status !== "concluida" && so.missionStatus !== "encerrada" && so.missionStatus !== "aguardando" && so.type === "escolta");
 
+      const { data: existingBillingIds } = await supabaseAdmin.from("escort_billings").select("service_order_id");
+      const billedSet = new Set((existingBillingIds || []).map((b: any) => b.service_order_id));
+      const missingBillingOrders = allOrders.filter((so: any) =>
+        so.type === "escolta" &&
+        (so.status === "em_andamento" || so.status === "concluida") &&
+        so.missionStatus !== "aguardando" &&
+        !billedSet.has(so.id) &&
+        !activeOrders.some((a: any) => a.id === so.id)
+      );
+
+      const liveOrders = [...activeOrders, ...missingBillingOrders];
       if (!liveOrders.length) return;
       log(`CRON Billing: ${liveOrders.length} OS em andamento para recalcular`, "cron");
 
