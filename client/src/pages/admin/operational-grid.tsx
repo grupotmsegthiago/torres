@@ -3779,9 +3779,18 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
               </div>
             </div>
 
+            {data.totals.usedEstimado && (
+              <p className="text-[10px] text-amber-600 font-semibold italic">* Receita baseada no valor estimado (sem faturamento registrado)</p>
+            )}
+
             <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${data.totals.netResult >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
               <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>Resultado Líquido</span>
-              <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(data.totals.netResult)}</span>
+              <div className="flex items-center gap-2">
+                <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(data.totals.netResult)}</span>
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${data.totals.margemPct >= 0 ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800"}`}>
+                  {data.totals.margemPct?.toFixed(1)}%
+                </span>
+              </div>
             </div>
 
             {data.billing && (

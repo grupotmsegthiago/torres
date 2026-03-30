@@ -1160,6 +1160,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
       }
     }
+    if (!parsed.data.valorEstimado && parsed.data.escortContractId) {
+      try {
+        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento").eq("id", parsed.data.escortContractId).limit(1);
+        if (cc?.[0]) {
+          const c = cc[0];
+          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * Number(c.franquia_minima_km || 50));
+          if (est > 0) (parsed.data as any).valorEstimado = est;
+        }
+      } catch (_e) {}
+    }
+
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
@@ -1271,6 +1282,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
       }
     }
+    if (parsed.data.escortContractId && parsed.data.escortContractId !== existing?.escortContractId && !parsed.data.valorEstimado) {
+      try {
+        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento").eq("id", parsed.data.escortContractId).limit(1);
+        if (cc?.[0]) {
+          const c = cc[0];
+          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * Number(c.franquia_minima_km || 50));
+          if (est > 0) (parsed.data as any).valorEstimado = est;
+        }
+      } catch (_e) {}
+    }
+
+    const wasFinished = existing && (existing.status === "concluída" || existing.status === "concluida" || existing.status === "cancelada");
+    const isReopening = wasFinished && parsed.data.status && !["concluída", "concluida", "cancelada"].includes(parsed.data.status);
+    if (isReopening) {
+      try { await removeAutoTransaction("service_order", String(req.params.id)); } catch (_e) {}
+    }
+
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
 
@@ -4859,15 +4887,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             .limit(1);
           const billingRow = billing?.[0];
           const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+          const revenueAmount = fatTotal > 0 ? fatTotal : Number((so as any).valorEstimado || 0);
           const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
           const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
           const plateStr = vehicle?.plate || "";
 
-          if (fatTotal > 0) {
+          if (revenueAmount > 0) {
             await removeAutoTransaction("service_order", String(serviceOrderId));
             await createAutoTransaction({
               description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
-              amount: fatTotal,
+              amount: revenueAmount,
               type: "INCOME",
               due_date: new Date().toISOString().split("T")[0],
               origin_type: "service_order",
@@ -4876,8 +4905,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               entity_name: clientName,
               created_by: user.name,
             });
-            await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
-            console.log(`[OS-Financial] Auto INCOME created for OS ${so.osNumber}: R$ ${fatTotal}`);
+            if (fatTotal > 0) await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
+            console.log(`[OS-Financial] Auto INCOME created for OS ${so.osNumber}: R$ ${revenueAmount} (billing: ${fatTotal}, estimado: ${(so as any).valorEstimado || 0})`);
           }
         } catch (e: any) {
           console.error(`[OS-Financial] Failed to create auto-transaction for OS ${so.osNumber}:`, e.message);
@@ -5133,15 +5162,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           .limit(1);
         const billingRow = billing?.[0];
         const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+        const revenueAmount = fatTotal > 0 ? fatTotal : Number((so as any).valorEstimado || 0);
         const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
         const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
         const plateStr = vehicle?.plate || "";
 
-        if (fatTotal > 0) {
+        if (revenueAmount > 0) {
           await removeAutoTransaction("service_order", String(serviceOrderId));
           await createAutoTransaction({
             description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
-            amount: fatTotal,
+            amount: revenueAmount,
             type: "INCOME",
             due_date: new Date().toISOString().split("T")[0],
             origin_type: "service_order",
@@ -5150,8 +5180,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             entity_name: clientName,
             created_by: emp?.name || user.name,
           });
-          await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
-          console.log(`[OS-Financial] Auto INCOME created via advance for OS ${so.osNumber}: R$ ${fatTotal}`);
+          if (fatTotal > 0) await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
+          console.log(`[OS-Financial] Auto INCOME created via advance for OS ${so.osNumber}: R$ ${revenueAmount}`);
         }
       } catch (revErr: any) {
         console.error(`[OS-Financial] Revenue auto-tx via advance failed for OS ${so.osNumber}:`, revErr.message);
@@ -6942,8 +6972,11 @@ Regras:
 
       const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
       const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
+      const effectiveRevenue = totalRevenue > 0 ? totalRevenue : estimadoFallback;
       const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const netResult = totalRevenue - totalExpense;
+      const netResult = effectiveRevenue - totalExpense;
+      const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
       res.json({
         os: {
@@ -6963,9 +6996,11 @@ Regras:
         revenue,
         expenses: uniqueExpenses,
         totals: {
-          totalRevenue,
+          totalRevenue: effectiveRevenue,
           totalExpense,
           netResult,
+          margemPct: Math.round(margemPct * 100) / 100,
+          usedEstimado: estimadoFallback > 0,
         },
       });
     } catch (err: any) {
