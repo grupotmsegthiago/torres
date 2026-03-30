@@ -68,10 +68,12 @@ async function ensureFinancialOriginColumns() {
     console.log("[Financial] exec_sql unavailable, verifying columns via select...");
   }
   try {
+    await db.execute(sql`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'`);
+    await db.execute(sql`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT`);
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL`);
     await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER`);
     await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT`);
-    console.log("[Financial] valor_estimado + vigilante2 columns ensured via direct SQL");
+    console.log("[Financial] origin_type/origin_id + valor_estimado + vigilante2 columns ensured via direct SQL");
   } catch (_e2: any) {
     console.log("[Financial] column check:", _e2?.message || "unknown");
   }
@@ -7073,16 +7075,7 @@ Regras:
         .eq("origin_id", String(osId))
         .eq("origin_type", "service_order");
 
-      const missionCosts = await storage.getMissionCostsByOS(osId);
-      let missionCostTx: any[] = [];
-      if (missionCosts.length > 0) {
-        const costIds = missionCosts.map(c => String(c.id));
-        const { data: mcTx } = await supabaseAdmin.from("financial_transactions")
-          .select("*")
-          .eq("origin_type", "mission_cost")
-          .in("origin_id", costIds);
-        missionCostTx = mcTx || [];
-      }
+      const osMissionCosts = await storage.getMissionCostsByOS(osId);
 
       const osStartDate = so.scheduledDate || so.createdAt;
       const osEndDate = (so as any).completedDate || osStartDate;
@@ -7091,30 +7084,102 @@ Regras:
 
       let fuelingTx: any[] = [];
       if (so.vehicleId && dateFrom) {
-        const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
-          .select("*")
-          .eq("origin_type", "fueling")
-          .gte("due_date", dateFrom)
-          .lte("due_date", dateTo || dateFrom);
-        if (fuelRows) {
-          const vPlate = vehicle?.plate?.toUpperCase() || "";
-          fuelingTx = vPlate ? fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate)) : [];
+        const vPlate = vehicle?.plate?.toUpperCase() || "";
+        if (vPlate) {
+          const { data: fuelByOrigin } = await supabaseAdmin.from("financial_transactions")
+            .select("*")
+            .eq("origin_type", "fueling")
+            .gte("due_date", dateFrom)
+            .lte("due_date", dateTo || dateFrom);
+          const filteredByOrigin = (fuelByOrigin || []).filter((r: any) => (r.description || "").toUpperCase().includes(vPlate));
+
+          if (filteredByOrigin.length > 0) {
+            fuelingTx = filteredByOrigin;
+          } else {
+            const { data: fuelByDesc } = await supabaseAdmin.from("financial_transactions")
+              .select("*")
+              .eq("type", "EXPENSE")
+              .gte("due_date", dateFrom)
+              .lte("due_date", dateTo || dateFrom);
+            fuelingTx = (fuelByDesc || []).filter((r: any) => {
+              const desc = (r.description || "").toUpperCase();
+              return desc.includes("ABASTECIMENTO") && desc.includes(vPlate);
+            });
+          }
         }
       }
 
+      let missionCostPedagio = 0;
+      let missionCostOutros = 0;
+      const missionCostExpenses: any[] = [];
+      for (const mc of osMissionCosts) {
+        const amt = Number((mc as any).amount || 0);
+        const cat = ((mc as any).category || "").toLowerCase();
+        if (cat.includes("pedágio") || cat.includes("pedagio")) {
+          missionCostPedagio += amt;
+        } else {
+          missionCostOutros += amt;
+        }
+        missionCostExpenses.push({
+          id: `mc-${mc.id}`,
+          description: (mc as any).description || (mc as any).category || "Custo de missão",
+          amount: amt,
+          type: "EXPENSE",
+          category_name: (mc as any).category,
+          origin_type: "mission_cost",
+        });
+      }
+
       const diarias: { agentName: string; valor: number }[] = [];
+      let totalPagFromBilling = 0;
       if (billingRow) {
+        const pagTotal = Number(billingRow.pag_total || 0);
         const vrp = Number(billingRow.pag_vrp || 0);
         const pericul = Number(billingRow.pag_periculosidade || 0);
         const adicNoturno = Number(billingRow.pag_adicional_noturno || 0);
         const reembolsos = Number(billingRow.pag_reembolsos || 0);
-        const totalPag = vrp + pericul + adicNoturno + reembolsos;
-        if (totalPag > 0) {
-          const agentCount = [employee1, employee2].filter(Boolean).length || 1;
-          const names = [employee1?.name, employee2?.name].filter(Boolean);
-          for (let i = 0; i < agentCount; i++) {
-            diarias.push({ agentName: names[i] || `Agente ${i + 1}`, valor: totalPag / agentCount });
+        totalPagFromBilling = pagTotal > 0 ? pagTotal : (vrp + pericul + adicNoturno + reembolsos);
+      }
+
+      if (totalPagFromBilling === 0 && so.type === "escolta" && so.status === "em_andamento") {
+        try {
+          const photos = await storage.getMissionPhotosByOS(osId);
+          const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+          const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
+          const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+          const kmInicial = kmSaidaPhoto?.kmValue || 0;
+          const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
+          const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+          const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+          const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (so.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (so.clientId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+            if (cc?.length) contrato = cc[0];
           }
+
+          const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
+          const resultadoCalc = calcularEscolta({
+            km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
+            horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+            horario_inicio: startTime, horario_fim: nowTime, horario_agendado: scheduledTime,
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+          });
+          totalPagFromBilling = resultadoCalc.pagamento.total;
+        } catch (_calcErr) {
+          console.error("[DRE-OS] calcularEscolta fallback error:", (_calcErr as any)?.message);
+        }
+      }
+
+      if (totalPagFromBilling > 0) {
+        const agentCount = [employee1, employee2].filter(Boolean).length || 1;
+        const names = [employee1?.name, employee2?.name].filter(Boolean);
+        for (let i = 0; i < agentCount; i++) {
+          diarias.push({ agentName: names[i] || `Agente ${i + 1}`, valor: totalPagFromBilling / agentCount });
         }
       }
       const totalDiarias = diarias.reduce((s, d) => s + d.valor, 0);
@@ -7122,19 +7187,20 @@ Regras:
       const directExpenses = (txDirect || []).filter((t: any) => t.type === "EXPENSE");
       const allExpenses = [
         ...directExpenses,
-        ...missionCostTx,
+        ...missionCostExpenses,
         ...fuelingTx,
       ];
       const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
 
       const totalFueling = fuelingTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalMissionCosts = missionCostTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const totalOtherExpenses = directExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
       const billingPedagio = Number(billingRow?.despesas_pedagio || 0);
       const billingCombustivel = Number(billingRow?.despesas_combustivel || 0);
       const billingOutras = Number(billingRow?.despesas_outras || 0);
       const billingDespesasTotal = billingPedagio + billingCombustivel + billingOutras;
+
+      console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${missionCostPedagio} outros=${missionCostOutros} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
 
       const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
       const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
@@ -7167,11 +7233,11 @@ Regras:
         components: {
           receita: effectiveRevenue,
           combustivel: totalFueling + billingCombustivel,
-          pedagio: billingPedagio + totalMissionCosts,
+          pedagio: missionCostPedagio + billingPedagio,
           diarias: totalDiarias,
-          custosMissao: totalMissionCosts,
+          custosMissao: missionCostPedagio + missionCostOutros,
           despesasBilling: billingDespesasTotal,
-          outrosCustos: totalOtherExpenses + billingOutras,
+          outrosCustos: totalOtherExpenses + missionCostOutros + billingOutras,
           revenueSource: totalRevenue > 0 ? "transaction" : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
         },
         totals: {
