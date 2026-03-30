@@ -2023,6 +2023,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                       {group.items.map((item) => {
                         const delivered = getDocStatus(item.type);
+                        const matchedDoc = delivered ? docs.find((d: any) => d.type === item.type && d.fileData) : null;
                         return (
                           <div key={item.type} className={`flex items-center gap-2 px-2.5 py-1.5 rounded text-xs ${delivered ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-neutral-100"}`} data-testid={`checklist-${item.type.toLowerCase().replace(/[\s/]+/g, "-")}`}>
                             {delivered ? (
@@ -2030,7 +2031,23 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                             ) : (
                               <div className="w-3.5 h-3.5 rounded-full border-2 border-neutral-300 flex-shrink-0" />
                             )}
-                            <span className={delivered ? "text-emerald-700 font-medium" : "text-neutral-600"}>{item.label}</span>
+                            <span className={`flex-1 ${delivered ? "text-emerald-700 font-medium" : "text-neutral-600"}`}>{item.label}</span>
+                            {matchedDoc && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const a = document.createElement("a");
+                                  a.href = matchedDoc.fileData;
+                                  a.download = matchedDoc.fileName || `${item.type}.pdf`;
+                                  a.click();
+                                }}
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors flex-shrink-0"
+                                title={`Baixar ${matchedDoc.fileName || item.label}`}
+                                data-testid={`download-checklist-${item.type.toLowerCase().replace(/[\s/]+/g, "-")}`}
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         );
                       })}
