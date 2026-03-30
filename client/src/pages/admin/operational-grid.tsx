@@ -960,29 +960,59 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _dateStr = v.tracker.lastPositionTime ? new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR") : "—";
         const _timeStr = v.tracker.lastPositionTime ? new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 
-        infoContent = `
-          <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 6px; display: flex; gap: 14px; align-items: flex-start; min-width: ${v.photoFront ? '400px' : '280px'};">
-            <div style="flex: 1; min-width: 0; line-height: 1.6;">
-              ${!_isLive && _noSigT ? `<div style="font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 6px; background: #f3f4f6; padding: 3px 6px; border-radius: 4px; border: 1px solid #d1d5db;">📡 Sem sinal há ${_noSigT}</div>` : ""}
-              ${!_isLive && !_noSigT ? `<div style="font-size: 11px; color: #f59e0b; font-weight: 600; margin-bottom: 4px;">⚠ Última posição conhecida</div>` : ""}
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Placa:</b> ${v.plate.replace(/^(.{3})(.+)$/, "$1-$2")}</div>
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Veículo:</b> ${v.brand} ${v.model}</div>
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Status:</b> <span style="color: ${_statusColor};">${_statusText}</span></div>
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Ignição:</b> ${v.tracker.ignition ? "Ligada ✅" : "Desligada ❌"}</div>
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Velocidade:</b> ${v.tracker.speed ?? 0} km/h</div>
-              ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div style="font-size: 13px; margin-bottom: 2px;"><b>Bateria:</b> ${v.tracker.voltage.toFixed(1)}V</div>` : ""}
-              <div style="font-size: 13px; margin-bottom: 2px;"><b>Data:</b> ${_dateStr} &nbsp;&nbsp; <b>Hora:</b> ${_timeStr}</div>
-              ${v.tracker.address ? `<div style="font-size: 13px; margin-bottom: 2px;"><b>Localização:</b> 📍 ${v.tracker.address}</div>` : ""}
-              <div style="border-top: 1px solid #e5e7eb; margin: 6px 0; padding-top: 6px;">
-                <div style="font-size: 13px; margin-bottom: 2px;"><b>Tempo em Movimento:</b> ${_movTime || "—"}</div>
-                <div style="font-size: 13px; margin-bottom: 2px;"><b>Espelhamento:</b> ${v.trackerType === "truckscontrol" ? "TrucksControl" : "—"}</div>
-                <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 01:</b> ${_agent1}</div>
-                <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
-              </div>
-              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento") : getMissionLabel(v.activeOs.lastAgentUpdate?.missionStep || v.activeOs.missionStatus)}</span>${v.activeOs.lastAgentUpdate ? `<br/><span style="color: #2563eb; font-size: 11px;">"${v.activeOs.lastAgentUpdate.message}"</span>` : ""}</div>` : ""}
-              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;"><button onclick="window.dispatchEvent(new CustomEvent('show-route', {detail: ${v.activeOs.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #1d4ed8; font-family: Inter, sans-serif;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">🗺️ Ver Rota</button>${v.trackerType === "truckscontrol" ? `<button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button>` : ""}</div>` : v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
+        const _plateFormatted = v.plate.replace(/^(.{3})(.+)$/, "$1-$2");
+        const _ignStatus = v.tracker.ignition ? `<span style="color:#16a34a;font-weight:700;">Ligada</span>` : `<span style="color:#dc2626;font-weight:700;">Desligada</span>`;
+        const _speedVal = v.tracker.speed ?? 0;
+        const _hasOs = !!v.activeOs;
+        const _osSection = _hasOs ? `
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;margin-top:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;font-weight:800;color:#0f172a;">${v.activeOs!.osNumber}</span>
+              <span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:2px 6px;border-radius:4px;font-weight:700;">${v.activeOs!.status === "agendada" ? (v.activeOs!.priority === "imediata" ? "Reaproveitamento" : "Agendamento") : getMissionLabel(v.activeOs!.lastAgentUpdate?.missionStep || v.activeOs!.missionStatus)}</span>
             </div>
-            ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
+            <div style="font-size:11px;color:#475569;font-weight:600;">${v.activeOs!.clientName || ""}</div>
+            ${v.activeOs!.lastAgentUpdate?.message ? `<div style="font-size:10px;color:#2563eb;margin-top:3px;font-style:italic;">"${v.activeOs!.lastAgentUpdate.message}"</div>` : ""}
+          </div>` : "";
+
+        const _agentsSection = (_agent1 !== "—" || _agent2 !== "—") ? `
+          <div style="display:flex;gap:8px;margin-top:6px;">
+            ${_agent1 !== "—" ? `<div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;padding:4px 6px;"><div style="font-size:9px;color:#15803d;font-weight:700;text-transform:uppercase;">Agente 01</div><div style="font-size:11px;font-weight:600;color:#166534;">${_agent1}</div></div>` : ""}
+            ${_agent2 !== "—" ? `<div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;padding:4px 6px;"><div style="font-size:9px;color:#15803d;font-weight:700;text-transform:uppercase;">Agente 02</div><div style="font-size:11px;font-weight:600;color:#166534;">${_agent2}</div></div>` : ""}
+          </div>` : "";
+
+        const _btns: string[] = [];
+        if (_hasOs) _btns.push(`<button onclick="window.dispatchEvent(new CustomEvent('show-route', {detail: ${v.activeOs!.id}}))" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;background:#1d4ed8;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:11px;font-weight:700;color:#fff;font-family:Inter,sans-serif;" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#1d4ed8'">🗺️ Ver Rota</button>`);
+        if (v.trackerType === "truckscontrol") _btns.push(`<button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;background:#18181b;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:11px;font-weight:700;color:#fff;font-family:Inter,sans-serif;" onmouseover="this.style.background='#27272a'" onmouseout="this.style.background='#18181b'">📡 Espelhar</button>`);
+        const _btnsHtml = _btns.length > 0 ? `<div style="display:flex;gap:6px;margin-top:8px;">${_btns.join("")}</div>` : "";
+
+        infoContent = `
+          <div style="font-family:'Inter',system-ui,-apple-system,sans-serif;width:320px;padding:0;">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#18181b;border-radius:8px 8px 0 0;">
+              ${v.photoFront ? `<img src="${v.photoFront}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;border:2px solid #3f3f46;" alt="${v.plate}" />` : `<div style="width:60px;height:45px;background:#27272a;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:20px;">🚔</div>`}
+              <div style="flex:1;">
+                <div style="font-size:16px;font-weight:900;color:#fff;letter-spacing:1px;">${_plateFormatted}</div>
+                <div style="font-size:11px;color:#a1a1aa;">${v.brand} ${v.model}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:18px;font-weight:900;color:${_speedVal > 0 ? '#4ade80' : '#71717a'};">${_speedVal}<span style="font-size:10px;color:#a1a1aa;"> km/h</span></div>
+              </div>
+            </div>
+            <div style="padding:10px 12px;">
+              ${!_isLive && _noSigT ? `<div style="font-size:10px;color:#6b7280;font-weight:600;margin-bottom:6px;background:#fef3c7;padding:4px 8px;border-radius:4px;border:1px solid #fcd34d;">📡 Sem sinal há ${_noSigT}</div>` : ""}
+              ${!_isLive && !_noSigT ? `<div style="font-size:10px;color:#f59e0b;font-weight:600;margin-bottom:6px;">⚠ Última posição conhecida</div>` : ""}
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px;">
+                <div><span style="color:#a1a1aa;">Status</span><div style="font-weight:700;color:${_statusColor};">${_statusText}</div></div>
+                <div><span style="color:#a1a1aa;">Ignição</span><div>${_ignStatus}</div></div>
+                <div><span style="color:#a1a1aa;">Data</span><div style="font-weight:600;color:#374151;">${_dateStr}</div></div>
+                <div><span style="color:#a1a1aa;">Hora</span><div style="font-weight:600;color:#374151;">${_timeStr}</div></div>
+                ${v.tracker.voltage != null && v.tracker.voltage > 0 ? `<div><span style="color:#a1a1aa;">Bateria</span><div style="font-weight:600;color:#374151;">${v.tracker.voltage.toFixed(1)}V</div></div>` : ""}
+                ${_movTime ? `<div><span style="color:#a1a1aa;">Movimento</span><div style="font-weight:600;color:#374151;">${_movTime}</div></div>` : ""}
+              </div>
+              ${v.tracker.address ? `<div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:5px;border:1px solid #e2e8f0;font-size:11px;color:#475569;line-height:1.4;">📍 ${v.tracker.address}</div>` : ""}
+              ${_agentsSection}
+              ${_osSection}
+              ${_btnsHtml}
+            </div>
           </div>
         `;
       }
