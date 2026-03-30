@@ -4992,6 +4992,227 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   );
 }
 
+function timeAgo(dateStr: string) {
+  const ts = new Date(dateStr).getTime();
+  if (isNaN(ts)) return "—";
+  const diff = Date.now() - ts;
+  if (diff < 0) return "agora";
+  const secs = Math.floor(diff / 1000);
+  if (secs < 60) return `${secs}s atrás`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}min atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}min atrás`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h atrás`;
+}
+
+function AlertsTimeline() {
+  const [open, setOpen] = useState(false);
+  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  const { data: allUpdates = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/mission/updates", "timeline"],
+    queryFn: async () => {
+      const res = await authFetch("/api/mission/updates?limit=50");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: open ? 15000 : 60000,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const interval = setInterval(() => forceUpdate(c => c + 1), 10000);
+    return () => clearInterval(interval);
+  }, [open]);
+
+  const recentCount = allUpdates.filter(u => (Date.now() - new Date(u.createdAt).getTime()) < 600000).length;
+
+  return (
+    <>
+      <Button
+        size="sm"
+        onClick={() => setOpen(true)}
+        className="relative bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-lg gap-2 font-semibold shadow-none"
+        data-testid="button-alerts-timeline"
+      >
+        <Bell className="w-4 h-4" />
+        Histórico de Alertas
+        {recentCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">
+            {recentCount}
+          </span>
+        )}
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] p-0 overflow-hidden" data-testid="dialog-alerts-timeline">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-neutral-200 bg-neutral-50">
+            <DialogTitle className="flex items-center gap-3 text-lg font-black uppercase tracking-wide">
+              <div className="w-9 h-9 rounded-lg bg-black flex items-center justify-center">
+                <Bell className="w-4.5 h-4.5 text-white" />
+              </div>
+              Histórico de Alertas
+              <span className="text-xs font-bold text-neutral-500 normal-case tracking-normal ml-auto">
+                Últimos 50 eventos
+              </span>
+            </DialogTitle>
+            <DialogDescription className="sr-only">Timeline de alertas e evidências operacionais</DialogDescription>
+          </DialogHeader>
+
+          <div className="overflow-y-auto px-4 py-3 space-y-2" style={{ maxHeight: "calc(85vh - 80px)" }}>
+            {isLoading ? (
+              <div className="py-12 text-center text-neutral-400 flex flex-col items-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span className="text-sm">Carregando histórico...</span>
+              </div>
+            ) : allUpdates.length === 0 ? (
+              <div className="py-12 text-center text-neutral-400">
+                <BellOff className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm font-semibold">Nenhum evento registrado</p>
+              </div>
+            ) : (
+              allUpdates.map((u: any, idx: number) => {
+                const ageMs = Date.now() - new Date(u.createdAt).getTime();
+                const isCritical = ageMs < 600000;
+                const isNewest = idx === 0;
+                const hasPhoto = !!u.photoUrl;
+
+                return (
+                  <div
+                    key={u.id}
+                    className={`relative rounded-xl border transition-all ${
+                      isNewest && isCritical
+                        ? "border-red-400 bg-red-50 shadow-md ring-2 ring-red-300 animate-pulse"
+                        : isNewest
+                        ? "border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200"
+                        : isCritical
+                        ? "border-amber-300 bg-amber-50/60 shadow-sm"
+                        : "border-neutral-200 bg-white"
+                    }`}
+                    data-testid={`alert-card-${u.id}`}
+                  >
+                    {isNewest && isCritical && (
+                      <div className="absolute top-2 right-3">
+                        <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-black uppercase tracking-wider animate-bounce">
+                          NOVO
+                        </span>
+                      </div>
+                    )}
+                    {isNewest && !isCritical && (
+                      <div className="absolute top-2 right-3">
+                        <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider">
+                          ÚLTIMO
+                        </span>
+                      </div>
+                    )}
+                    {!isNewest && isCritical && (
+                      <div className="absolute top-2 right-3">
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider">
+                          RECENTE
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isNewest && isCritical ? "bg-red-600" : isNewest ? "bg-blue-600" : isCritical ? "bg-amber-500" : "bg-neutral-800"
+                        }`}>
+                          {hasPhoto ? (
+                            <Camera className="w-4 h-4 text-white" />
+                          ) : (
+                            <MessageSquareText className="w-4 h-4 text-white" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-sm text-neutral-900 uppercase">{u.employeeName || "Agente"}</span>
+                            {u.osNumber && (
+                              <span className="px-1.5 py-0.5 rounded bg-neutral-100 border border-neutral-200 text-[10px] font-bold text-neutral-600">
+                                OS {u.osNumber}
+                              </span>
+                            )}
+                            {u.missionStep && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] font-bold text-blue-700 uppercase">
+                                {u.missionStep.replace(/_/g, " ")}
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-sm text-neutral-700 mt-1 leading-relaxed">{u.message}</p>
+
+                          {hasPhoto && (
+                            <div className="mt-2">
+                              <button
+                                onClick={() => setExpandedPhoto(expandedPhoto === u.photoUrl ? null : u.photoUrl)}
+                                className="group relative rounded-lg overflow-hidden border border-neutral-200 hover:border-neutral-400 transition-all"
+                                data-testid={`button-expand-photo-${u.id}`}
+                              >
+                                <img
+                                  src={u.photoUrl}
+                                  alt="Evidência"
+                                  className="w-20 h-20 object-cover"
+                                  loading="lazy"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                                  <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
+                                </div>
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className={`text-[11px] font-bold flex items-center gap-1 ${
+                              isCritical ? "text-red-600" : "text-neutral-500"
+                            }`}>
+                              <Clock className="w-3 h-3" />
+                              {timeAgo(u.createdAt)}
+                            </span>
+                            <span className="text-[10px] text-neutral-400">
+                              {new Date(u.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            {u.latitude && u.longitude && (
+                              <a
+                                href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+                                data-testid={`link-map-${u.id}`}
+                              >
+                                <MapPin className="w-3 h-3" /> Mapa
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {expandedPhoto && (
+        <Dialog open={!!expandedPhoto} onOpenChange={() => setExpandedPhoto(null)}>
+          <DialogContent className="max-w-4xl p-2 bg-black border-none" data-testid="dialog-expanded-photo">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Foto expandida</DialogTitle>
+              <DialogDescription>Evidência fotográfica da missão</DialogDescription>
+            </DialogHeader>
+            <img src={expandedPhoto} alt="Evidência expandida" className="w-full h-auto max-h-[80vh] object-contain rounded-lg" />
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
@@ -5088,6 +5309,7 @@ export default function OperationalGridPage() {
                   <span className="text-neutral-500">|</span>
                   <span>Última <span className="font-medium text-neutral-200">{lastRefreshStr}</span></span>
                 </div>
+                <AlertsTimeline />
                 <Button
                   size="sm"
                   onClick={handleRefresh}
