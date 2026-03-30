@@ -570,11 +570,14 @@ export default function FinanceiroPage() {
                         <button
                           onClick={() => {
                             const route = ORIGIN_ROUTES[t.origin_type!];
-                            if (route) navigate(route);
+                            if (route) {
+                              const params = t.origin_id ? `?highlight=${t.origin_id}` : "";
+                              navigate(route + params);
+                            }
                           }}
                           className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-violet-100 text-violet-700 border border-violet-200 whitespace-nowrap hover:bg-violet-200 cursor-pointer transition-colors"
                           data-testid={`badge-auto-${t.id}`}
-                          title={`Ver origem: ${ORIGIN_LABELS[t.origin_type] || "AUTO"}`}
+                          title={`Ver origem: ${ORIGIN_LABELS[t.origin_type] || "AUTO"}${t.origin_id ? ` #${t.origin_id}` : ""}`}
                         >
                           {ORIGIN_LABELS[t.origin_type] || "AUTO"} ↗
                         </button>
