@@ -302,6 +302,10 @@ interface GridItem {
     horas_missao: number;
     faturamento: number;
     pagamento: number;
+    custo_combustivel: number;
+    custo_pedagio: number;
+    custo_outros: number;
+    custo_total: number;
     resultado: number;
     margem_pct: number;
     contrato_nome: string | null;
@@ -4393,11 +4397,15 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <Tooltip>
                                   <TooltipTrigger>
                                     <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
-                                      <span>▼</span> {fmtBRL(lc.pagamento)}
+                                      <span>▼</span> {fmtBRL(lc.custo_total ?? lc.pagamento)}
                                     </span>
                                   </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs">
-                                    <p className="font-bold">Custo operacional (VRP + despesas)</p>
+                                  <TooltipContent side="bottom" className="text-xs max-w-xs">
+                                    <p className="font-bold">Custo Operacional Total</p>
+                                    <p>VRP/Agentes: {fmtBRL(lc.pagamento)}</p>
+                                    {lc.custo_combustivel > 0 && <p>Combustível: {fmtBRL(lc.custo_combustivel)}</p>}
+                                    {lc.custo_pedagio > 0 && <p>Pedágio: {fmtBRL(lc.custo_pedagio)}</p>}
+                                    {lc.custo_outros > 0 && <p>Outros custos: {fmtBRL(lc.custo_outros)}</p>}
                                   </TooltipContent>
                                 </Tooltip>
                                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${lc.resultado >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>

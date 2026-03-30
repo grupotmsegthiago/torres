@@ -3541,6 +3541,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           km_inicial: number; km_atual: number; km_total: number;
           horas_missao: number;
           faturamento: number; pagamento: number; resultado: number; margem_pct: number;
+          custo_combustivel: number; custo_pedagio: number; custo_outros: number; custo_total: number;
           contrato_nome: string | null;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
@@ -3579,6 +3580,40 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
             const horasCalc = startTime ? calcularHorasTrabalhadas(startTime, nowTime) : 0;
 
+            let custoCombustivel = 0;
+            let custoPedagio = 0;
+            let custoOutros = 0;
+            try {
+              const osMissionCosts = await storage.getMissionCostsByOS(o.id);
+              for (const mc of osMissionCosts) {
+                const amt = Number((mc as any).amount || 0);
+                const cat = ((mc as any).category || "").toLowerCase();
+                if (cat.includes("pedágio") || cat.includes("pedagio")) custoPedagio += amt;
+                else custoOutros += amt;
+              }
+
+              if (o.vehicleId && o.scheduledDate) {
+                const oDate = new Date(o.scheduledDate).toISOString().split("T")[0];
+                const vehicle = await storage.getVehicle(o.vehicleId);
+                const vPlate = vehicle?.plate?.toUpperCase() || "";
+                if (vPlate) {
+                  const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
+                    .select("amount, description")
+                    .eq("origin_type", "fueling")
+                    .gte("due_date", oDate)
+                    .lte("due_date", oDate);
+                  if (fuelRows) {
+                    const vehicleFuel = fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate));
+                    custoCombustivel = vehicleFuel.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                  }
+                }
+              }
+            } catch (_e) {}
+
+            const custoTotal = resultado.pagamento.total + custoCombustivel + custoPedagio + custoOutros;
+            const resultadoComCustos = resultado.faturamento.total - custoTotal;
+            const margemComCustos = resultado.faturamento.total > 0 ? (resultadoComCustos / resultado.faturamento.total) * 100 : 0;
+
             liveCost = {
               km_inicial: kmInicial,
               km_atual: kmFinalNorm,
@@ -3586,8 +3621,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               horas_missao: Math.round(horasCalc * 100) / 100,
               faturamento: resultado.faturamento.total,
               pagamento: resultado.pagamento.total,
-              resultado: resultado.resultado.liquido,
-              margem_pct: resultado.resultado.margem_pct,
+              custo_combustivel: custoCombustivel,
+              custo_pedagio: custoPedagio,
+              custo_outros: custoOutros,
+              custo_total: custoTotal,
+              resultado: resultadoComCustos,
+              margem_pct: Math.round(margemComCustos * 100) / 100,
               contrato_nome: contratoNome || contrato.name || null,
               contrato_valores: {
                 valor_acionamento: contrato.valor_acionamento || 0,
