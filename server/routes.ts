@@ -4671,7 +4671,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       };
       const stepLabel = update.missionStep ? (missionLabelMap[update.missionStep] || update.missionStep) : "Atualização";
       const timeStr = update.createdAt ? new Date(update.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
-      const locationLink = update.latitude && update.longitude ? `https://www.google.com/maps?q=${update.latitude},${update.longitude}` : null;
+      const locationLink = update.latitude && update.longitude ? `https://www.google.com/maps?q=${update.latitude},${update.longitude}&z=17&hl=pt-BR` : null;
 
       let photoHtml = "";
       if (update.photoUrl && update.photoUrl.startsWith("data:image/")) {

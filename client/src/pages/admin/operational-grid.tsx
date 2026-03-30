@@ -506,6 +506,10 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 
   const transitStatus = getTransitStatus(os.missionStatus);
 
+  const lat = v.tracker?.latitude;
+  const lng = v.tracker?.longitude;
+  const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
+
   return `*TORRES VIGILÂNCIA PATRIMONIAL*
 *OS* ${os.osNumber} | *STATUS:* ${transitStatus}
 
@@ -526,9 +530,7 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 
 📈*PROGRESSO DA MISSÃO:* ${progress}%
 📣 *OCORRÊNCIA:* ${occurrence?.toUpperCase()}
-🏙️ *LOCALIZAÇÃO:* ${locationAddr}
-
-*STATUS:* ${transitStatus}`;
+🏙️ *LOCALIZAÇÃO:* ${locationAddr}${mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:* ${mapsLink}` : ""}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
@@ -5278,14 +5280,14 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
               )}
               {u.latitude && u.longitude && (
                 <a
-                  href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}`}
+                  href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-0.5"
+                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 w-fit"
                   data-testid={`link-location-${u.id}`}
                 >
                   <MapPin className="w-3 h-3" />
-                  Ver localização
+                  📌 Ver localização fixa no Google Maps
                 </a>
               )}
               <button
@@ -5689,13 +5691,13 @@ function AlertsTimeline() {
                             </span>
                             {u.latitude && u.longitude && (
                               <a
-                                href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}`}
+                                href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
                                 data-testid={`link-map-${u.id}`}
                               >
-                                <MapPin className="w-3 h-3" /> Mapa
+                                <MapPin className="w-3 h-3" /> 📌 Mapa
                               </a>
                             )}
                           </div>
