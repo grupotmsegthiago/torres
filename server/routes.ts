@@ -7222,6 +7222,41 @@ Regras:
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
+      let enrichedBilling = billingRow;
+      if (billingRow && !billingRow.fat_acionamento && Number(billingRow.fat_total || 0) > 0) {
+        try {
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (billingRow.contract_id) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billingRow.contract_id).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (so.clientId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+            if (cc?.length) contrato = cc[0];
+          }
+
+          const nb = (v: any) => Number(v) || 0;
+          const hasAcionamento = contrato.valor_acionamento != null && nb(contrato.valor_acionamento) > 0;
+          if (hasAcionamento) {
+            const valorAcionamento = nb(contrato.valor_acionamento);
+            const valorKmExtra = nb(contrato.valor_km_extra || contrato.valor_km_carregado);
+            const valorHoraExtra = nb(contrato.valor_hora_extra);
+            const franquiaKm = nb(contrato.franquia_km || contrato.franquia_minima_km);
+            const franquiaHoras = nb(contrato.franquia_horas);
+            const kmExc = nb(billingRow.km_excedente);
+            const horasMissao = nb(billingRow.horas_trabalhadas || billingRow.horas_missao);
+            const horasExcedentes = franquiaHoras > 0 ? Math.max(0, horasMissao - franquiaHoras) : 0;
+            enrichedBilling = {
+              ...billingRow,
+              fat_acionamento: Math.round(valorAcionamento * 100) / 100,
+              fat_hora_extra: Math.round(horasExcedentes * valorHoraExtra * 100) / 100,
+              fat_km: Math.round(kmExc * valorKmExtra * 100) / 100,
+              franquia_horas: franquiaHoras,
+              franquia_km: franquiaKm,
+            };
+          }
+        } catch (_e) { /* keep original billing */ }
+      }
+
       res.json({
         os: {
           id: so.id,
@@ -7236,7 +7271,7 @@ Regras:
           employee2Name: employee2?.name || null,
           valorEstimado: (so as any).valorEstimado || null,
         },
-        billing: billingRow,
+        billing: enrichedBilling,
         revenue,
         expenses: uniqueExpenses,
         diarias,
