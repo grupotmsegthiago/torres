@@ -651,6 +651,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const refPointCirclesRef = useRef<any[]>([]);
   const routePolylinesRef = useRef<any[]>([]);
   const routeMarkersRef = useRef<any[]>([]);
+  const showRouteOnMapRef = useRef<((osId: number) => void) | null>(null);
   const centerMarkerRef = useRef<any>(null);
   const autocompleteRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -917,6 +918,13 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       marker.addListener("click", () => {
         infoWindow.open(mapInstanceRef.current, marker);
         setSelectedVehicle(v);
+        if (mapInstanceRef.current && v.tracker?.latitude && v.tracker?.longitude) {
+          mapInstanceRef.current.panTo({ lat: v.tracker.latitude, lng: v.tracker.longitude });
+          mapInstanceRef.current.setZoom(14);
+        }
+        if (v.activeOs?.id) {
+          showRouteOnMapRef.current?.(v.activeOs.id);
+        }
       });
 
       marker.addListener("rightclick", (e: any) => {
@@ -1218,6 +1226,8 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       setRouteLoading(false);
     }
   }, [clearRouteOverlays]);
+
+  showRouteOnMapRef.current = showRouteOnMap;
 
   const closeRoute = useCallback(() => {
     clearRouteOverlays();
