@@ -940,6 +940,35 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
 
+    const employeeIds = [parsed.data.assignedEmployeeId, parsed.data.assignedEmployee2Id].filter((id): id is number => id != null && id > 0);
+    const missingDocs: string[] = [];
+    const expiredDocs: string[] = [];
+    for (const empId of employeeIds) {
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(400).json({ message: `Agente com ID ${empId} não encontrado` });
+      const label = emp.name;
+      if (!emp.cnhNumber) missingDocs.push(`CNH (número) de ${label}`);
+      if (!emp.cnhExpiry) missingDocs.push(`Validade da CNH de ${label}`);
+      if (!emp.cnvNumber) missingDocs.push(`CNV (número) de ${label}`);
+      if (!emp.cnvExpiry) missingDocs.push(`Validade da CNV de ${label}`);
+      if (emp.cnhExpiry) {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        if (emp.cnhExpiry < todayStr) expiredDocs.push(`CNH de ${label}`);
+      }
+      if (emp.cnvExpiry) {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        if (emp.cnvExpiry < todayStr) expiredDocs.push(`CNV de ${label}`);
+      }
+    }
+    if (missingDocs.length > 0) {
+      return res.status(400).json({ message: `Dados obrigatórios faltando: ${missingDocs.join(", ")}` });
+    }
+    if (expiredDocs.length > 0) {
+      return res.status(400).json({ message: `Documentos vencidos: ${expiredDocs.join(", ")} — não é possível criar a OS com documentos vencidos` });
+    }
+
     const allOrders = await storage.getServiceOrders();
     let maxNum = 0;
     for (const o of allOrders) {

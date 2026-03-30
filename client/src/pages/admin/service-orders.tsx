@@ -251,6 +251,32 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const trackerLabel = sv?.trackerType === "truckscontrol" ? "TrucksControl" : sv?.trackerType === "custom" ? "OnixSat" : null;
 
   const step1Valid = form.clientId > 0;
+
+  function isDocExpiringSoon(dateStr: string | null | undefined): "expired" | "warning" | "ok" {
+    if (!dateStr) return "ok";
+    const parts = dateStr.split("-");
+    const expiryDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = (expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays < 0) return "expired";
+    if (diffDays < 30) return "warning";
+    return "ok";
+  }
+
+  function validateAgentDocs(emp: Employee | null | undefined, label: string): { missing: string[]; expired: string[] } {
+    const missing: string[] = [];
+    const expired: string[] = [];
+    if (!emp) return { missing, expired };
+    if (!emp.cnhNumber) missing.push(`CNH (número) de ${label}`);
+    if (!emp.cnhExpiry) missing.push(`Validade da CNH de ${label}`);
+    if (!emp.cnvNumber) missing.push(`CNV (número) de ${label}`);
+    if (!emp.cnvExpiry) missing.push(`Validade da CNV de ${label}`);
+    if (isDocExpiringSoon(emp.cnhExpiry) === "expired") expired.push(`CNH de ${label}`);
+    if (isDocExpiringSoon(emp.cnvExpiry) === "expired") expired.push(`CNV de ${label}`);
+    return { missing, expired };
+  }
+
   const step2Valid = true;
 
   const SectionHeader = ({ icon: Icon, title, extra }: { icon: any; title: string; extra?: any }) => (
@@ -317,12 +343,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
               <InfoCell label="Contato" className="border-r border-neutral-100">{emp.phone || "—"}</InfoCell>
               <InfoCell label="CNH" className="border-r border-neutral-100">{emp.cnhNumber || "—"}</InfoCell>
-              <InfoCell label="Val. CNH" className="border-r border-neutral-100">{(emp as any).cnhExpiry ? new Date((emp as any).cnhExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+              <InfoCell label="Val. CNH" className="border-r border-neutral-100">
+                <span className="flex items-center gap-1.5">
+                  {emp.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "—"}
+                  {isDocExpiringSoon(emp.cnhExpiry) === "expired" && <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid={`badge-cnh-expired-${label}`}>Vencida</Badge>}
+                  {isDocExpiringSoon(emp.cnhExpiry) === "warning" && <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white text-[10px] px-1.5 py-0" data-testid={`badge-cnh-warning-${label}`}>Vence em breve</Badge>}
+                </span>
+              </InfoCell>
               <InfoCell label="Matrícula">{emp.matricula}</InfoCell>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 border-b border-neutral-100">
-              <InfoCell label="CNV" className="border-r border-neutral-100">{(emp as any).cnvNumber || "—"}</InfoCell>
-              <InfoCell label="Val. CNV" className="border-r border-neutral-100">{(emp as any).cnvExpiry ? new Date((emp as any).cnvExpiry).toLocaleDateString("pt-BR") : "—"}</InfoCell>
+              <InfoCell label="CNV" className="border-r border-neutral-100">{emp.cnvNumber || "—"}</InfoCell>
+              <InfoCell label="Val. CNV" className="border-r border-neutral-100">
+                <span className="flex items-center gap-1.5">
+                  {emp.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "—"}
+                  {isDocExpiringSoon(emp.cnvExpiry) === "expired" && <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid={`badge-cnv-expired-${label}`}>Vencida</Badge>}
+                  {isDocExpiringSoon(emp.cnvExpiry) === "warning" && <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white text-[10px] px-1.5 py-0" data-testid={`badge-cnv-warning-${label}`}>Vence em breve</Badge>}
+                </span>
+              </InfoCell>
               <InfoCell label="Colete" className="border-r border-neutral-100">{(emp as any).vestNumber || "—"}</InfoCell>
               <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${new Date((emp as any).vestExpiry).toLocaleDateString("pt-BR")}` : ""}</InfoCell>
             </div>
@@ -661,6 +699,27 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   if (step === 1 && !step1Valid) {
                     toast({ title: "Selecione o cliente", variant: "destructive" });
                     return;
+                  }
+                  if (step === 2) {
+                    const agents = [
+                      { emp: emp1, label: emp1?.name || "Agente 1" },
+                      { emp: emp2, label: emp2?.name || "Agente 2" },
+                    ].filter(a => a.emp);
+                    const allMissing: string[] = [];
+                    const allExpired: string[] = [];
+                    for (const a of agents) {
+                      const { missing, expired } = validateAgentDocs(a.emp, a.label);
+                      allMissing.push(...missing);
+                      allExpired.push(...expired);
+                    }
+                    if (allMissing.length > 0) {
+                      toast({ title: "Dados obrigatórios faltando", description: allMissing.join(", "), variant: "destructive" });
+                      return;
+                    }
+                    if (allExpired.length > 0) {
+                      toast({ title: "Documentos vencidos", description: `${allExpired.join(", ")} — não é possível criar a OS com documentos vencidos`, variant: "destructive" });
+                      return;
+                    }
                   }
                   setStep(step + 1);
                 }}
