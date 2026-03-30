@@ -2305,12 +2305,21 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           finalizada: GREEN, retorno_base: BLUE, chegada_base: GREEN, encerrada: GREEN,
         };
 
-        const colWStep = Math.floor(W * 0.40);
-        const colWTime = Math.floor(W * 0.22);
-        const colWAgent = W - colWStep - colWTime;
+        const stepToPhotoStep: Record<string, string> = {
+          checkout_km_saida: "km_saida",
+          checkin_chegada_km: "km_chegada",
+          checkout_km_final: "km_final",
+          chegada_destino: "km_final",
+        };
+
+        const colWStep = Math.floor(W * 0.34);
+        const colWTime = Math.floor(W * 0.14);
+        const colWKm = Math.floor(W * 0.14);
+        const colWAgent = W - colWStep - colWTime - colWKm;
         drawTableHeader([
           { text: "ETAPA", w: colWStep },
           { text: "HORARIO", w: colWTime },
+          { text: "KM", w: colWKm },
           { text: "AGENTE", w: colWAgent },
         ]);
 
@@ -2321,23 +2330,32 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const rH = log.geo ? 30 : 20;
           ensureSpace(rH + 2);
 
+          const photoStep = stepToPhotoStep[log.step];
+          const matchedPhoto = photoStep ? photos.find(p => p.step === photoStep) : null;
+          const kmText = matchedPhoto?.kmValue ? String(matchedPhoto.kmValue) : "";
+
           const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
           doc.save();
           doc.rect(LM, doc.y, W, rH).fill(rowBg);
           doc.rect(LM, doc.y, W, rH).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
           doc.moveTo(LM + colWStep, doc.y).lineTo(LM + colWStep, doc.y + rH).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
           doc.moveTo(LM + colWStep + colWTime, doc.y).lineTo(LM + colWStep + colWTime, doc.y + rH).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
+          doc.moveTo(LM + colWStep + colWTime + colWKm, doc.y).lineTo(LM + colWStep + colWTime + colWKm, doc.y + rH).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
 
           doc.circle(LM + 14, doc.y + 8, 3).fill(dotColor);
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(PRIMARY)
             .text(stepName, LM + 24, doc.y + 5, { width: colWStep - 32, lineBreak: false });
           doc.font("Helvetica-Bold").fontSize(7.5).fillColor(dotColor)
             .text(fmtTime(log.completedAt), LM + colWStep + 8, doc.y + 5, { width: colWTime - 16, lineBreak: false });
+          if (kmText) {
+            doc.font("Helvetica-Bold").fontSize(7.5).fillColor(PRIMARY)
+              .text(kmText, LM + colWStep + colWTime + 8, doc.y + 5, { width: colWKm - 16, lineBreak: false });
+          }
 
           const agentName = sanitize(log.agentName);
           const shortAgent = agentName.length > 28 ? agentName.substring(0, 28) + "..." : agentName;
           doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT)
-            .text(shortAgent, LM + colWStep + colWTime + 8, doc.y + 6, { width: colWAgent - 16, lineBreak: false });
+            .text(shortAgent, LM + colWStep + colWTime + colWKm + 8, doc.y + 6, { width: colWAgent - 16, lineBreak: false });
 
           if (log.geo) {
             const gpsLink = gmapsUrl(log.geo.lat, log.geo.lng);
