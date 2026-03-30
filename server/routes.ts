@@ -4041,6 +4041,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       updates.stepLogs = [...existingLogs, cancelEntry];
 
       lastMissionPos.delete(serviceOrderId);
+      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
@@ -4080,6 +4081,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       updates.stepLogs = [...existingLogs, finishEntry];
 
       lastMissionPos.delete(serviceOrderId);
+      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
@@ -4186,6 +4188,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       updates.status = "concluida";
       updates.completedDate = new Date();
       lastMissionPos.delete(serviceOrderId);
+      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
 
     const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
@@ -4445,6 +4448,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           updates.status = "concluida";
           updates.completedDate = new Date();
           lastMissionPos.delete(serviceOrderId);
+          try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
         }
 
         const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
