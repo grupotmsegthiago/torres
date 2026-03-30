@@ -39,11 +39,16 @@ async function ensureFinancialOriginColumns() {
   try {
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" });
     await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" });
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL" });
     columnsEnsuredViaSql = true;
     console.log("[Financial] origin columns ensured via exec_sql");
   } catch (_e) {
     console.log("[Financial] exec_sql unavailable, verifying columns via select...");
+  }
+  try {
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL`);
+    console.log("[Financial] valor_estimado column ensured via direct SQL");
+  } catch (_e2: any) {
+    console.log("[Financial] valor_estimado column check:", _e2?.message || "unknown");
   }
 
   if (!columnsEnsuredViaSql) {
