@@ -1337,7 +1337,15 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
                   <span className="text-neutral-600 truncate max-w-[70%]">{r.description}</span>
                   <span className="font-bold text-emerald-700">{fmtBRL(r.amount)}</span>
                 </div>
-              )) : <p className="text-[10px] text-neutral-400 italic">Nenhuma receita registrada</p>}
+              )) : data.totals?.usedBilling && data.billing ? (
+                <div className="flex justify-between items-center text-xs py-1">
+                  <div>
+                    <span className="text-neutral-600">Faturamento do Billing</span>
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VIA BOLETIM DE MEDIÇÃO</span>
+                  </div>
+                  <span className="font-bold text-emerald-700">{fmtBRL(Number(data.billing.fat_total || 0))}</span>
+                </div>
+              ) : <p className="text-[10px] text-neutral-400 italic">Nenhuma receita registrada</p>}
               <div className="flex justify-between items-center mt-1 pt-1 border-t border-emerald-200 font-bold text-xs">
                 <span className="text-emerald-800">Total Receita</span>
                 <span className="text-emerald-900">{fmtBRL(data.totals?.totalRevenue || 0)}</span>
@@ -1345,34 +1353,34 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
             </div>
 
             <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-              <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas Diretas</h4>
-              {data.expenses?.length > 0 ? data.expenses.map((d: any, i: number) => (
-                <div key={i} className="flex justify-between items-center text-xs py-1">
-                  <span className="text-neutral-600 truncate max-w-[70%]">{d.description}</span>
-                  <span className="font-bold text-red-600">{fmtBRL(d.amount)}</span>
-                </div>
-              )) : <p className="text-[10px] text-neutral-400 italic">Nenhuma despesa direta</p>}
+              <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas</h4>
+              {(data.expenses?.length > 0 || data.diarias?.length > 0) ? (
+                <>
+                  {(data.expenses || []).map((d: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center text-xs py-1">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-neutral-600 truncate block max-w-[70%]">{d.description}</span>
+                        {d.origin_type && <span className="text-[10px] text-neutral-400 uppercase font-semibold">{d.origin_type === "fueling" ? "ABASTEC." : d.origin_type === "maintenance" ? "MANUT." : d.origin_type === "mission_cost" ? "MISSÃO" : d.origin_type}</span>}
+                      </div>
+                      <span className="font-bold text-red-600">{fmtBRL(d.amount)}</span>
+                    </div>
+                  ))}
+                  {(data.diarias || []).map((d: any, i: number) => (
+                    <div key={`diaria-${i}`} className="flex justify-between items-center text-xs py-1">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-neutral-600">{d.agentName}</span>
+                        <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
+                      </div>
+                      <span className="font-bold text-red-600">{fmtBRL(d.valor)}</span>
+                    </div>
+                  ))}
+                </>
+              ) : <p className="text-[10px] text-neutral-400 italic">Nenhuma despesa registrada</p>}
               <div className="flex justify-between items-center mt-1 pt-1 border-t border-red-200 font-bold text-xs">
                 <span className="text-red-800">Total Despesas</span>
                 <span className="text-red-900">{fmtBRL(data.totals?.totalExpense || 0)}</span>
               </div>
             </div>
-
-            {data.diarias && data.diarias.length > 0 && (
-              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
-                <h4 className="text-xs font-black text-orange-700 uppercase tracking-wide mb-1.5">Diárias dos Agentes</h4>
-                {data.diarias.map((d: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center text-xs py-1">
-                    <span className="text-neutral-600">{d.agentName}</span>
-                    <span className="font-bold text-orange-700">{fmtBRL(d.valor)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center mt-1 pt-1 border-t border-orange-200 font-bold text-xs">
-                  <span className="text-orange-800">Total Diárias</span>
-                  <span className="text-orange-900">{fmtBRL(data.components?.diarias || 0)}</span>
-                </div>
-              </div>
-            )}
 
             {data.components && (
               <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
@@ -1389,6 +1397,9 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
 
             {data.totals?.usedEstimado && (
               <p className="text-[10px] text-amber-600 font-semibold italic">* Receita baseada no valor estimado</p>
+            )}
+            {data.totals?.usedBilling && (
+              <p className="text-[10px] text-blue-600 font-semibold italic">* Receita baseada no faturamento do Boletim de Medição</p>
             )}
             <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${data.totals?.netResult >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
               <span className={data.totals?.netResult >= 0 ? "text-blue-900" : "text-red-900"}>Resultado</span>

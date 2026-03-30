@@ -7099,9 +7099,11 @@ Regras:
 
       const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
       const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const billingFatTotal = Number(billingRow?.fat_total || 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
-      const effectiveRevenue = totalRevenue > 0 ? totalRevenue : estimadoFallback;
-      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0) + totalDiarias + billingDespesasTotal;
+      const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
+      const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalExpense = txExpenseTotal + totalDiarias + billingDespesasTotal;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
@@ -7131,6 +7133,7 @@ Regras:
           custosMissao: totalMissionCosts,
           despesasBilling: billingDespesasTotal,
           outrosCustos: totalOtherExpenses + billingOutras,
+          revenueSource: totalRevenue > 0 ? "transaction" : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
         },
         totals: {
           totalRevenue: effectiveRevenue,
@@ -7138,6 +7141,7 @@ Regras:
           netResult,
           margemPct: Math.round(margemPct * 100) / 100,
           usedEstimado: estimadoFallback > 0,
+          usedBilling: totalRevenue === 0 && billingFatTotal > 0,
         },
       });
     } catch (err: any) {

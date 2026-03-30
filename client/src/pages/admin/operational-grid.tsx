@@ -3747,6 +3747,16 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
                     </div>
                   ))}
                 </div>
+              ) : data.totals?.usedBilling && data.billing ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Faturamento do Billing</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VIA BOLETIM DE MEDIÇÃO</span>
+                    </div>
+                    <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(Number(data.billing.fat_total || 0))}</span>
+                  </div>
+                </div>
               ) : (
                 <p className="text-xs text-neutral-400 italic">Nenhuma receita registrada</p>
               )}
@@ -3758,9 +3768,9 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
 
             <div>
               <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas</h4>
-              {data.expenses && data.expenses.length > 0 ? (
+              {(data.expenses && data.expenses.length > 0) || (data.diarias && data.diarias.length > 0) ? (
                 <div className="space-y-1">
-                  {data.expenses.map((t: any) => (
+                  {(data.expenses || []).map((t: any) => (
                     <div key={t.id} className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
                       <div className="min-w-0 flex-1">
                         <span className="text-neutral-700 truncate block max-w-[250px]" title={t.description}>{t.description}</span>
@@ -3773,6 +3783,15 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
                       <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(Number(t.amount))}</span>
                     </div>
                   ))}
+                  {(data.diarias || []).map((d: any, i: number) => (
+                    <div key={`diaria-${i}`} className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-neutral-700">{d.agentName}</span>
+                        <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
+                      </div>
+                      <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(d.valor)}</span>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-xs text-neutral-400 italic">Nenhuma despesa registrada</p>
@@ -3783,26 +3802,11 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
               </div>
             </div>
 
-            {data.diarias && data.diarias.length > 0 && (
-              <div>
-                <h4 className="text-xs font-black text-orange-700 uppercase tracking-wide mb-1.5">Diárias dos Agentes</h4>
-                <div className="space-y-1">
-                  {data.diarias.map((d: any, i: number) => (
-                    <div key={i} className="flex justify-between items-center text-xs bg-orange-50 rounded px-2 py-1.5 border border-orange-100">
-                      <span className="text-neutral-700">{d.agentName}</span>
-                      <span className="font-bold text-orange-700">{fmtBRL(d.valor)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-between items-center mt-1.5 px-2 py-1 bg-orange-100 rounded font-bold text-xs">
-                  <span className="text-orange-800">Total Diárias</span>
-                  <span className="text-orange-900">{fmtBRL(data.components?.diarias || 0)}</span>
-                </div>
-              </div>
-            )}
-
             {data.totals.usedEstimado && (
               <p className="text-[10px] text-amber-600 font-semibold italic">* Receita baseada no valor estimado (sem faturamento registrado)</p>
+            )}
+            {data.totals.usedBilling && (
+              <p className="text-[10px] text-blue-600 font-semibold italic">* Receita baseada no faturamento do Boletim de Medição</p>
             )}
 
             {data.components && (
