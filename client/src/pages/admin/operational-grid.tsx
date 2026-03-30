@@ -1077,7 +1077,18 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       clearRouteOverlays();
       const bounds = new window.google.maps.LatLngBounds();
 
-      if (data.plannedRoute && window.google.maps.geometry?.encoding) {
+      if (data.remainingRoute && data.remainingRoute.length > 1) {
+        const remainingLine = new window.google.maps.Polyline({
+          path: data.remainingRoute,
+          strokeColor: "#000000",
+          strokeOpacity: 0.5,
+          strokeWeight: 4,
+          map: mapInstanceRef.current,
+          zIndex: 1,
+        });
+        routePolylinesRef.current.push(remainingLine);
+        data.remainingRoute.forEach((p: any) => bounds.extend(p));
+      } else if (data.plannedRoute && window.google.maps.geometry?.encoding) {
         const path = window.google.maps.geometry.encoding.decodePath(data.plannedRoute);
         const plannedLine = new window.google.maps.Polyline({
           path,
@@ -1091,24 +1102,42 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         path.forEach((p: any) => bounds.extend(p));
       }
 
-      if (data.positions && data.positions.length > 0) {
-        const traveledPath = data.positions.map((p: any) => ({ lat: p.latitude, lng: p.longitude }));
-        const traveledLine = new window.google.maps.Polyline({
-          path: traveledPath,
-          strokeColor: "#2563eb",
-          strokeOpacity: 0.9,
-          strokeWeight: 5,
-          map: mapInstanceRef.current,
-          zIndex: 2,
-        });
-        routePolylinesRef.current.push(traveledLine);
-        traveledPath.forEach((p: any) => bounds.extend(p));
+      if (data.segments && data.segments.length > 0) {
+        let currentSegment: { lat: number; lng: number }[] = [];
+        let currentOnRoute = data.segments[0].onRoute;
 
-        const firstPos = traveledPath[0];
-        const lastPos = traveledPath[traveledPath.length - 1];
+        const flushSegment = () => {
+          if (currentSegment.length < 2) return;
+          const line = new window.google.maps.Polyline({
+            path: currentSegment,
+            strokeColor: currentOnRoute ? "#2563eb" : "#dc2626",
+            strokeOpacity: 0.9,
+            strokeWeight: 5,
+            map: mapInstanceRef.current,
+            zIndex: currentOnRoute ? 2 : 3,
+          });
+          routePolylinesRef.current.push(line);
+        };
+
+        for (const seg of data.segments) {
+          const pt = { lat: seg.lat, lng: seg.lng };
+          bounds.extend(pt);
+          if (seg.onRoute !== currentOnRoute) {
+            currentSegment.push(pt);
+            flushSegment();
+            currentSegment = [pt];
+            currentOnRoute = seg.onRoute;
+          } else {
+            currentSegment.push(pt);
+          }
+        }
+        flushSegment();
+
+        const firstPos = data.segments[0];
+        const lastPos = data.segments[data.segments.length - 1];
 
         const startMarker = new window.google.maps.Marker({
-          position: firstPos,
+          position: { lat: firstPos.lat, lng: firstPos.lng },
           map: mapInstanceRef.current,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
@@ -1124,7 +1153,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         routeMarkersRef.current.push(startMarker);
 
         const endMarker = new window.google.maps.Marker({
-          position: lastPos,
+          position: { lat: lastPos.lat, lng: lastPos.lng },
           map: mapInstanceRef.current,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
@@ -1337,8 +1366,9 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
           <Navigation className="w-4 h-4 text-blue-600" />
           <span className="text-xs font-semibold text-blue-800">Rota da OS ativa no mapa</span>
           <div className="flex items-center gap-3 ml-2 text-[10px] font-medium text-neutral-500">
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-black inline-block rounded" /> Planejada</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-blue-600 inline-block rounded" /> Percorrida</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-blue-600 inline-block rounded" /> Na rota</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-red-600 inline-block rounded" /> Fora da rota</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-black inline-block rounded" /> Restante</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Início</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Última pos.</span>
           </div>

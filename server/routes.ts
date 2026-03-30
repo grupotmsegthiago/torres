@@ -28,6 +28,7 @@ import OpenAI from "openai";
 
 const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
 const MISSION_POS_MIN_DISTANCE = 50;
+const OFF_ROUTE_THRESHOLD_M = 200;
 
 function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -35,6 +36,60 @@ function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number): 
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function decodePolyline(encoded: string): { lat: number; lng: number }[] {
+  const points: { lat: number; lng: number }[] = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let shift = 0, result = 0, byte: number;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return points;
+}
+
+function distPointToSegment(pt: { lat: number; lng: number }, a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const toRad = (d: number) => d * Math.PI / 180;
+  const px = toRad(pt.lng) * Math.cos(toRad(pt.lat));
+  const py = toRad(pt.lat);
+  const ax = toRad(a.lng) * Math.cos(toRad(a.lat));
+  const ay = toRad(a.lat);
+  const bx = toRad(b.lng) * Math.cos(toRad(b.lat));
+  const by = toRad(b.lat);
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = 0;
+  if (lenSq > 0) {
+    t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  }
+  const cx = ax + t * dx, cy = ay + t * dy;
+  const dLat = py - cy, dLng = px - cx;
+  return Math.sqrt(dLat * dLat + dLng * dLng) * 6371000;
+}
+
+function distToPolyline(pt: { lat: number; lng: number }, polyline: { lat: number; lng: number }[]): number {
+  if (polyline.length === 0) return Infinity;
+  if (polyline.length === 1) return haversineDist(pt.lat, pt.lng, polyline[0].lat, polyline[0].lng);
+  let minDist = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = distPointToSegment(pt, polyline[i], polyline[i + 1]);
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
+}
+
+function findClosestIndex(pt: { lat: number; lng: number }, polyline: { lat: number; lng: number }[]): number {
+  let minDist = Infinity, idx = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = distPointToSegment(pt, polyline[i], polyline[i + 1]);
+    if (d < minDist) { minDist = d; idx = i + 1; }
+  }
+  return idx;
 }
 
 const MISSION_STEPS = [
@@ -1623,7 +1678,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               if (data.routes && data.routes.length > 0) {
                 plannedRoute = data.routes[0].overview_polyline?.points || null;
                 if (plannedRoute) {
-                  await storage.updateServiceOrder(id, { route: plannedRoute } as any).catch(() => {});
+                  await storage.updateServiceOrder(id, { route: plannedRoute }).catch(() => {});
                 }
               }
             }
@@ -1631,11 +1686,42 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         }
       }
 
+      let segments: { lat: number; lng: number; onRoute: boolean }[] = [];
+      let remainingRoute: { lat: number; lng: number }[] = [];
+
+      if (positions.length > 0) {
+        const decodedRoute = plannedRoute ? decodePolyline(plannedRoute) : [];
+        let lastOnRouteIdx = -1;
+
+        segments = positions.map((p) => {
+          const pt = { lat: p.latitude, lng: p.longitude };
+          if (decodedRoute.length === 0) return { ...pt, onRoute: true };
+          const dist = distToPolyline(pt, decodedRoute);
+          const onRoute = dist < OFF_ROUTE_THRESHOLD_M;
+          if (onRoute) {
+            const idx = findClosestIndex(pt, decodedRoute);
+            if (idx > lastOnRouteIdx) lastOnRouteIdx = idx;
+          }
+          return { ...pt, onRoute };
+        });
+
+        if (decodedRoute.length > 0) {
+          const startIdx = lastOnRouteIdx >= 0 ? lastOnRouteIdx + 1 : 0;
+          if (startIdx < decodedRoute.length) {
+            remainingRoute = decodedRoute.slice(startIdx);
+          }
+        }
+      } else if (plannedRoute) {
+        remainingRoute = decodePolyline(plannedRoute);
+      }
+
       res.json({
         plannedRoute,
         positions,
-        origin: os.originLat && os.originLng ? { lat: os.originLat, lng: os.originLng } : null,
-        destination: os.destinationLat && os.destinationLng ? { lat: os.destinationLat, lng: os.destinationLng } : null,
+        segments,
+        remainingRoute,
+        origin: os.originLat != null && os.originLng != null ? { lat: os.originLat, lng: os.originLng } : null,
+        destination: os.destinationLat != null && os.destinationLng != null ? { lat: os.destinationLat, lng: os.destinationLng } : null,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -3954,6 +4040,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       };
       updates.stepLogs = [...existingLogs, cancelEntry];
 
+      lastMissionPos.delete(serviceOrderId);
+
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -3990,6 +4078,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         reason: "Missão finalizada pelo administrador",
       };
       updates.stepLogs = [...existingLogs, finishEntry];
+
+      lastMissionPos.delete(serviceOrderId);
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
       res.json(updated);
@@ -4095,6 +4185,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (nextStep === "encerrada") {
       updates.status = "concluida";
       updates.completedDate = new Date();
+      lastMissionPos.delete(serviceOrderId);
     }
 
     const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
@@ -4353,6 +4444,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         if (nextStep === "encerrada") {
           updates.status = "concluida";
           updates.completedDate = new Date();
+          lastMissionPos.delete(serviceOrderId);
         }
 
         const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
