@@ -23,6 +23,7 @@ import {
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
+import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
@@ -562,6 +563,26 @@ export async function registerRoutes(
     const data = await storage.getClient(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
     res.json(data);
+  });
+
+  app.get("/api/clients/:id/contrato-pdf", requireAuth, async (req, res) => {
+    try {
+      const client = await storage.getClient(Number(req.params.id));
+      if (!client) return res.status(404).json({ message: "Cliente não encontrado" });
+
+      generateContractPDF(res, {
+        clientName: client.name,
+        clientCnpj: client.cnpj || "_______________",
+        clientAddress: client.address || "_______________",
+        clientCity: client.city || "_______________",
+        clientState: client.state || "__",
+        clientZip: client.zip || "________",
+        clientContact: client.contactPerson || "_______________",
+      });
+    } catch (err: any) {
+      console.error("[Contract PDF] Error:", err);
+      if (!res.headersSent) res.status(500).json({ message: "Erro ao gerar contrato" });
+    }
   });
 
   app.post("/api/clients", requireAuth, async (req, res) => {

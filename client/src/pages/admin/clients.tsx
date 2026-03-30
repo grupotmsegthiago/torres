@@ -15,7 +15,7 @@ import {
   FileText, DollarSign, BarChart3, ChevronLeft, Save,
   Moon, Route, Navigation, ChevronRight, Shield, Edit,
   Car, Wallet, ClipboardList, Clock, Eye, User, Camera, Truck,
-  Upload, Send, Check, Paperclip, History, Settings2,
+  Upload, Send, Check, Paperclip, History, Settings2, Download,
 } from "lucide-react";
 import type { Client } from "@shared/schema";
 import { generatePresentation } from "@/lib/presentation";
@@ -941,10 +941,34 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <button onClick={onBack} className="p-2 rounded-lg hover:bg-neutral-100 transition-colors" data-testid="button-back-to-clients"><ChevronLeft size={20} className="text-neutral-600" /></button>
-        <div>
+        <div className="flex-1">
           <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight" data-testid="text-client-pasta-name">{client.name}</h2>
           <p className="text-xs text-neutral-500">{client.cnpj || "CNPJ não cadastrado"} — Pasta do Cliente</p>
         </div>
+        <button
+          onClick={async () => {
+            try {
+              const r = await authFetch(`/api/clients/${client.id}/contrato-pdf`);
+              if (!r.ok) throw new Error("Erro ao gerar PDF");
+              const blob = await r.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `Contrato_Escolta_${client.name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}.pdf`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast({ title: "Contrato gerado com sucesso" });
+            } catch (err: any) {
+              toast({ title: "Erro", description: err.message, variant: "destructive" });
+            }
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-xs font-bold uppercase hover:bg-neutral-800 transition-colors"
+          data-testid="button-generate-contract-pdf"
+        >
+          <Download size={14} />
+          <span className="hidden md:inline">Gerar Contrato PDF</span>
+          <span className="md:hidden">PDF</span>
+        </button>
       </div>
 
       {!hasActiveContract && (
