@@ -352,28 +352,68 @@ export function generateContractPDF(res: Response, data: ContractData) {
   // =====================================================
   doc.moveDown(1.5);
 
-  checkPage(200);
+  checkPage(280);
 
   doc.font(FONT_NORMAL).fontSize(SIZE_BODY).text(`São Paulo, ${dateStr}.`, { align: "center" });
 
-  doc.moveDown(2.5);
-
-  doc.text("_____________________________", { align: "center" });
-  doc.moveDown(0.2);
-  doc.font(FONT_BOLD).text(data.clientName.toUpperCase(), { align: "center" });
-
   doc.moveDown(2);
 
-  doc.font(FONT_NORMAL).text("_____________________________", { align: "center" });
-  doc.moveDown(0.2);
-  doc.font(FONT_BOLD).text(COMPANY.name, { align: "center" });
+  const colW = (W - 40) / 2;
+  const leftCol = LM;
+  const rightCol = LM + colW + 40;
+  let sigY = doc.y;
 
-  doc.moveDown(2.5);
+  doc.save();
+  doc.rect(leftCol, sigY, colW, 3).fill("#111111");
+  doc.rect(rightCol, sigY, colW, 3).fill("#111111");
+  doc.restore();
 
+  sigY += 20;
+
+  doc.font(FONT_BOLD).fontSize(10).fillColor("#000000");
+  doc.text("CONTRATADA", leftCol, sigY, { width: colW, align: "center" });
+  doc.text("CONTRATANTE", rightCol, sigY, { width: colW, align: "center" });
+
+  sigY += 16;
   doc.font(FONT_NORMAL).fontSize(SIZE_SMALL);
-  doc.text("TESTEMUNHA 01: _______________________________, CPF _______________", LM);
-  doc.moveDown(1);
-  doc.text("TESTEMUNHA 02: _______________________________, CPF _______________", LM);
+  doc.text(COMPANY.name, leftCol, sigY, { width: colW, align: "center" });
+  doc.text(data.clientName.toUpperCase(), rightCol, sigY, { width: colW, align: "center" });
+
+  sigY += 14;
+  doc.font(FONT_NORMAL).fontSize(8).fillColor("#666666");
+  doc.text(`CNPJ: ${COMPANY.cnpj}`, leftCol, sigY, { width: colW, align: "center" });
+  doc.text(`CNPJ: ${data.clientCnpj}`, rightCol, sigY, { width: colW, align: "center" });
+
+  doc.fillColor("#000000");
+
+  sigY += 30;
+  doc.y = sigY;
+
+  doc.save();
+  doc.rect(leftCol, sigY, W, 22).fill("#111111");
+  doc.restore();
+  doc.font(FONT_BOLD).fontSize(9).fillColor("#FFFFFF");
+  doc.text("TESTEMUNHAS", leftCol + 8, sigY + 5, { width: W - 16 });
+  doc.fillColor("#000000");
+
+  sigY += 32;
+
+  doc.font(FONT_BOLD).fontSize(SIZE_SMALL);
+  doc.text("Testemunha 1:", leftCol, sigY);
+  sigY += 20;
+  doc.font(FONT_NORMAL).fontSize(SIZE_SMALL);
+  doc.text("RG: _________________________", leftCol, sigY, { continued: false });
+  doc.text("CPF: _________________________", leftCol + colW + 40, sigY);
+  sigY += 24;
+
+  doc.font(FONT_BOLD).fontSize(SIZE_SMALL);
+  doc.text("Testemunha 2:", leftCol, sigY);
+  sigY += 20;
+  doc.font(FONT_NORMAL).fontSize(SIZE_SMALL);
+  doc.text("RG: _________________________", leftCol, sigY, { continued: false });
+  doc.text("CPF: _________________________", leftCol + colW + 40, sigY);
+
+  doc.y = sigY + 20;
 
   // =====================================================
   // RODAPÉ EM TODAS AS PÁGINAS

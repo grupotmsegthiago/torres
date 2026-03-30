@@ -945,30 +945,42 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
           <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight" data-testid="text-client-pasta-name">{client.name}</h2>
           <p className="text-xs text-neutral-500">{client.cnpj || "CNPJ não cadastrado"} — Pasta do Cliente</p>
         </div>
-        <button
-          onClick={async () => {
-            try {
-              const r = await authFetch(`/api/clients/${client.id}/contrato-pdf`);
-              if (!r.ok) throw new Error("Erro ao gerar PDF");
-              const blob = await r.blob();
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `Contrato_Escolta_${client.name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}.pdf`;
-              a.click();
-              URL.revokeObjectURL(url);
-              toast({ title: "Contrato gerado com sucesso" });
-            } catch (err: any) {
-              toast({ title: "Erro", description: err.message, variant: "destructive" });
-            }
-          }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-xs font-bold uppercase hover:bg-neutral-800 transition-colors"
-          data-testid="button-generate-contract-pdf"
-        >
-          <Download size={14} />
-          <span className="hidden md:inline">Gerar Contrato PDF</span>
-          <span className="md:hidden">PDF</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            id="contract-date"
+            className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs text-neutral-700 bg-white"
+            defaultValue={new Date().toISOString().split("T")[0]}
+            data-testid="input-contract-date"
+          />
+          <button
+            onClick={async () => {
+              try {
+                const dateInput = document.getElementById("contract-date") as HTMLInputElement;
+                const dateVal = dateInput?.value || "";
+                const url = `/api/clients/${client.id}/contrato-pdf${dateVal ? `?date=${dateVal}` : ""}`;
+                const r = await authFetch(url);
+                if (!r.ok) throw new Error("Erro ao gerar PDF");
+                const blob = await r.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `Contrato_Escolta_${client.name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}.pdf`;
+                a.click();
+                URL.revokeObjectURL(blobUrl);
+                toast({ title: "Contrato gerado com sucesso" });
+              } catch (err: any) {
+                toast({ title: "Erro", description: err.message, variant: "destructive" });
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-xs font-bold uppercase hover:bg-neutral-800 transition-colors"
+            data-testid="button-generate-contract-pdf"
+          >
+            <Download size={14} />
+            <span className="hidden md:inline">Gerar Contrato PDF</span>
+            <span className="md:hidden">PDF</span>
+          </button>
+        </div>
       </div>
 
       {!hasActiveContract && (

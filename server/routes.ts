@@ -570,6 +570,15 @@ export async function registerRoutes(
       const client = await storage.getClient(Number(req.params.id));
       if (!client) return res.status(404).json({ message: "Cliente não encontrado" });
 
+      const dateParam = req.query.date as string | undefined;
+      let contractDate: string | undefined;
+      if (dateParam) {
+        const d = new Date(dateParam + "T12:00:00");
+        if (!isNaN(d.getTime())) {
+          contractDate = d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+        }
+      }
+
       generateContractPDF(res, {
         clientName: client.name,
         clientCnpj: client.cnpj || "_______________",
@@ -578,6 +587,7 @@ export async function registerRoutes(
         clientState: client.state || "__",
         clientZip: client.zip || "________",
         clientContact: client.contactPerson || "_______________",
+        contractDate,
       });
     } catch (err: any) {
       console.error("[Contract PDF] Error:", err);
