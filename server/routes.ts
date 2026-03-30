@@ -2831,6 +2831,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateVehicleMaintenance(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Manutenção não encontrada" });
+
+    const newCost = Number(data.cost || 0);
+    if (newCost > 0) {
+      await removeAutoTransaction("maintenance", String(data.id));
+      const vehicle = data.vehicleId ? await storage.getVehicle(data.vehicleId) : null;
+      await createAutoTransaction({
+        description: `MANUTENÇÃO ${vehicle?.plate || ""} - ${data.type} ${data.description || ""}`.toUpperCase().trim(),
+        amount: newCost,
+        type: "EXPENSE",
+        due_date: data.date || new Date().toISOString().split("T")[0],
+        origin_type: "maintenance",
+        origin_id: String(data.id),
+        category_name: "Manutenção Veicular",
+        entity_name: data.provider || null,
+        created_by: "SISTEMA",
+      });
+    } else {
+      await removeAutoTransaction("maintenance", String(data.id));
+    }
+
     res.json(data);
   });
 
@@ -2904,6 +2924,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (data.vehicleId) {
       await syncVehicleKmFromFuelings(data.vehicleId);
     }
+
+    const newCost = Number(data.totalCost || 0);
+    if (newCost > 0) {
+      await removeAutoTransaction("fueling", String(data.id));
+      const vehicle = data.vehicleId ? await storage.getVehicle(data.vehicleId) : null;
+      await createAutoTransaction({
+        description: `ABASTECIMENTO ${vehicle?.plate || ""} - ${data.fuelType || "diesel"} ${data.liters}L`.toUpperCase().trim(),
+        amount: newCost,
+        type: "EXPENSE",
+        due_date: data.date || new Date().toISOString().split("T")[0],
+        origin_type: "fueling",
+        origin_id: String(data.id),
+        category_name: "Combustível",
+        entity_name: data.station || null,
+        created_by: "SISTEMA",
+      });
+    } else {
+      await removeAutoTransaction("fueling", String(data.id));
+    }
+
     res.json(data);
   });
 
@@ -7149,6 +7189,10 @@ Regras:
         });
       }
 
+      if (acao === "REJEITADA") {
+        await removeAutoTransaction("escort_billing", req.params.id);
+      }
+
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -7231,19 +7275,35 @@ Regras:
       const items = billings || [];
       const txns = transactions || [];
 
+      const incomeTotal = txns.filter((t: any) => t.type === "INCOME").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const incomePaid = txns.filter((t: any) => t.type === "INCOME" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const expenseTotal = txns.filter((t: any) => t.type === "EXPENSE").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const expensePaid = txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const escortIncome = txns.filter((t: any) => t.origin_type === "escort_billing").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const fuelingExpense = txns.filter((t: any) => t.origin_type === "fueling").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const maintenanceExpense = txns.filter((t: any) => t.origin_type === "maintenance").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const missionCostExpense = txns.filter((t: any) => t.origin_type === "mission_cost").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+
+      const revenueByDay: Record<string, number> = {};
+      txns.filter((t: any) => t.type === "INCOME").forEach((t: any) => {
+        const d = (t.due_date)?.split("T")[0];
+        if (!d) return;
+        revenueByDay[d] = (revenueByDay[d] || 0) + Number(t.amount || 0);
+      });
+
+      const expensesByDay: Record<string, number> = {};
+      txns.filter((t: any) => t.type === "EXPENSE").forEach((t: any) => {
+        const d = (t.due_date)?.split("T")[0];
+        if (!d) return;
+        expensesByDay[d] = (expensesByDay[d] || 0) + Number(t.amount || 0);
+      });
+
       const missionsByDay: Record<string, any[]> = {};
       items.forEach((b: any) => {
         const d = b.data_missao ? new Date(b.data_missao).toISOString().split("T")[0] : b.created_at?.split("T")[0];
         if (!d) return;
         if (!missionsByDay[d]) missionsByDay[d] = [];
         missionsByDay[d].push(b);
-      });
-
-      const expensesByDay: Record<string, number> = {};
-      txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").forEach((t: any) => {
-        const d = (t.payment_date || t.due_date)?.split("T")[0];
-        if (!d) return;
-        expensesByDay[d] = (expensesByDay[d] || 0) + Number(t.amount || 0);
       });
 
       const byVehicle: Record<string, { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }> = {};
@@ -7294,6 +7354,7 @@ Regras:
       res.json({
         billings: items,
         missionsByDay,
+        revenueByDay,
         expensesByDay,
         byVehicle: Object.values(byVehicle),
         byAgent: Object.values(byAgent),
@@ -7301,11 +7362,18 @@ Regras:
         vehicles: vehicles || [],
         employees: employees || [],
         totals: {
-          faturamento: items.reduce((a: number, b: any) => a + Number(b.fat_total || 0), 0),
-          custos_operacionais: items.reduce((a: number, b: any) => a + Number(b.pag_total || 0), 0),
-          despesas_missao: items.reduce((a: number, b: any) => a + Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0), 0),
-          despesas_gerais: txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0),
-          receitas_gerais: txns.filter((t: any) => t.type === "INCOME" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0),
+          faturamento: incomeTotal,
+          faturamento_realizado: incomePaid,
+          custos_operacionais: expenseTotal,
+          custos_realizados: expensePaid,
+          saldo_previsto: incomeTotal - expenseTotal,
+          saldo_realizado: incomePaid - expensePaid,
+          escort_income: escortIncome,
+          fueling_expense: fuelingExpense,
+          maintenance_expense: maintenanceExpense,
+          mission_cost_expense: missionCostExpense,
+          despesas_gerais: expensePaid,
+          receitas_gerais: incomePaid,
           total_missoes: items.length,
           total_km: items.reduce((a: number, b: any) => a + Number(b.km_total || 0), 0),
         },
