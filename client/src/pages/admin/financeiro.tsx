@@ -340,6 +340,8 @@ export default function FinanceiroPage() {
     queryKey: ["/api/financial/accounts"],
   });
 
+  const { data: resumo } = useQuery<any>({ queryKey: ["/api/financial/resumo"] });
+
   const { data: escortContracts = [] } = useQuery<any[]>({ queryKey: ["/api/escort/contracts"] });
   const { data: escortBillings = [] } = useQuery<any[]>({ queryKey: ["/api/escort/billings"] });
   const { data: escortRoutes = [] } = useQuery<any[]>({ queryKey: ["/api/escort/routes"] });
@@ -571,12 +573,18 @@ export default function FinanceiroPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => toggleMutation.mutate(t.id)} data-testid={`button-toggle-${t.id}`}
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
-                        t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
-                      }`}>
-                      {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
-                    </button>
+                    {t.origin_type && t.origin_type !== "manual" ? (
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
+                        t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}>{t.status === "PAID" ? "Pago" : "Pendente"}</span>
+                    ) : (
+                      <button onClick={() => toggleMutation.mutate(t.id)} data-testid={`button-toggle-${t.id}`}
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
+                          t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}>
+                        {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
+                      </button>
+                    )}
                   </td>
                   <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === "INCOME" ? "text-green-600" : "text-red-600"}`}>
                     {formatCurrency(Number(t.amount))}
@@ -715,8 +723,8 @@ export default function FinanceiroPage() {
     const paidIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PAID");
     const overdueExpenses = transactions.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
     const overdueIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
-    const saldoRealizado = paidIncomes.reduce((a, t) => a + Number(t.amount), 0) - paidExpenses.reduce((a, t) => a + Number(t.amount), 0);
-    const autoCount = transactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
+    const saldoRealizado = resumo?.saldo_realizado ?? (paidIncomes.reduce((a, t) => a + Number(t.amount), 0) - paidExpenses.reduce((a, t) => a + Number(t.amount), 0));
+    const autoCount = resumo?.lancamentos_auto ?? transactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
     return (
       <div className="space-y-4" data-testid="panel-relatorio">
         <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">

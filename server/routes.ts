@@ -6699,6 +6699,9 @@ Regras:
       const user = req.user!;
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (existing.origin_type && existing.origin_type !== "manual") {
+        return res.status(403).json({ message: "Lançamentos automáticos não podem ser alterados manualmente" });
+      }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         status: newStatus,
@@ -7067,6 +7070,15 @@ Regras:
       const { data, error } = await supabaseAdmin.from("escort_billings").update(req.body).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/escort/billings/:id", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      await removeAutoTransaction("escort_billing", req.params.id);
+      const { error } = await supabaseAdmin.from("escort_billings").delete().eq("id", req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
