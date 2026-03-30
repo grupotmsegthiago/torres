@@ -1341,6 +1341,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    const wasCanceled = existing && !["cancelada"].includes(existing.status || "") && data.status === "cancelada";
+    if (wasCanceled) {
+      try { await removeAutoTransaction("service_order", String(data.id)); } catch (_e) {}
+    }
+
     const wasNotFinished = existing && !["concluída", "concluida"].includes(existing.status || "");
     const isNowFinished = ["concluída", "concluida"].includes(data.status || "");
     if (wasNotFinished && isNowFinished && data.type === "escolta") {
@@ -4814,6 +4819,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             .delete()
             .eq("service_order_id", serviceOrderId);
         } catch (_e) {}
+
+        try {
+          await removeAutoTransaction("service_order", String(serviceOrderId));
+          console.log(`[OS-Financial] Removed auto-transaction for rollback OS ${so.osNumber}`);
+        } catch (_e) {}
       }
 
       const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
@@ -5191,37 +5201,39 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
       }
 
-      try {
-        const { data: billing } = await supabaseAdmin.from("escort_billings")
-          .select("fat_total, client_name")
-          .eq("service_order_id", serviceOrderId)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        const billingRow = billing?.[0];
-        const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
-        const revenueAmount = fatTotal > 0 ? fatTotal : Number((so as any).valorEstimado || 0);
-        const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
-        const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
-        const plateStr = vehicle?.plate || "";
+      if (so.type === "escolta") {
+        try {
+          const { data: billing } = await supabaseAdmin.from("escort_billings")
+            .select("fat_total, client_name")
+            .eq("service_order_id", serviceOrderId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          const billingRow = billing?.[0];
+          const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+          const revenueAmount = fatTotal > 0 ? fatTotal : Number((so as any).valorEstimado || 0);
+          const clientName = billingRow?.client_name || (so.clientId ? (await storage.getClient(so.clientId))?.name : null) || "—";
+          const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const plateStr = vehicle?.plate || "";
 
-        if (revenueAmount > 0) {
-          await removeAutoTransaction("service_order", String(serviceOrderId));
-          await createAutoTransaction({
-            description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
-            amount: revenueAmount,
-            type: "INCOME",
-            due_date: new Date().toISOString().split("T")[0],
-            origin_type: "service_order",
-            origin_id: String(serviceOrderId),
-            category_name: "Receita de Escolta",
-            entity_name: clientName,
-            created_by: emp?.name || user.name,
-          });
-          if (fatTotal > 0) await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
-          console.log(`[OS-Financial] Auto INCOME created via advance for OS ${so.osNumber}: R$ ${revenueAmount}`);
+          if (revenueAmount > 0) {
+            await removeAutoTransaction("service_order", String(serviceOrderId));
+            await createAutoTransaction({
+              description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
+              amount: revenueAmount,
+              type: "INCOME",
+              due_date: new Date().toISOString().split("T")[0],
+              origin_type: "service_order",
+              origin_id: String(serviceOrderId),
+              category_name: "Receita de Escolta",
+              entity_name: clientName,
+              created_by: emp?.name || user.name,
+            });
+            if (fatTotal > 0) await storage.updateServiceOrder(serviceOrderId, { valorEstimado: fatTotal } as any);
+            console.log(`[OS-Financial] Auto INCOME created via advance for OS ${so.osNumber}: R$ ${revenueAmount}`);
+          }
+        } catch (revErr: any) {
+          console.error(`[OS-Financial] Revenue auto-tx via advance failed for OS ${so.osNumber}:`, revErr.message);
         }
-      } catch (revErr: any) {
-        console.error(`[OS-Financial] Revenue auto-tx via advance failed for OS ${so.osNumber}:`, revErr.message);
       }
     }
 
@@ -6969,49 +6981,58 @@ Regras:
         missionCostTx = mcTx || [];
       }
 
-      const osDate = so.scheduledDate || so.createdAt;
-      const dateStr = osDate ? new Date(osDate).toISOString().split("T")[0] : null;
+      const osStartDate = so.scheduledDate || so.createdAt;
+      const osEndDate = (so as any).completedDate || osStartDate;
+      const dateFrom = osStartDate ? new Date(osStartDate).toISOString().split("T")[0] : null;
+      const dateTo = osEndDate ? new Date(osEndDate).toISOString().split("T")[0] : dateFrom;
 
       let fuelingTx: any[] = [];
-      if (so.vehicleId && dateStr) {
+      if (so.vehicleId && dateFrom) {
         const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
           .select("*")
           .eq("origin_type", "fueling")
-          .gte("due_date", dateStr)
-          .lte("due_date", dateStr);
+          .gte("due_date", dateFrom)
+          .lte("due_date", dateTo || dateFrom);
         if (fuelRows) {
           const vPlate = vehicle?.plate?.toUpperCase() || "";
           fuelingTx = vPlate ? fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate)) : [];
         }
       }
 
-      let maintenanceTx: any[] = [];
-      if (so.vehicleId && dateStr) {
-        const { data: maintRows } = await supabaseAdmin.from("financial_transactions")
-          .select("*")
-          .eq("origin_type", "maintenance");
-        if (maintRows) {
-          const vPlate = vehicle?.plate?.toUpperCase() || "";
-          maintenanceTx = vPlate ? maintRows.filter((r: any) =>
-            (r.description || "").toUpperCase().includes(vPlate) &&
-            r.due_date === dateStr
-          ) : [];
+      const diarias: { agentName: string; valor: number }[] = [];
+      if (billingRow) {
+        const vrp = Number(billingRow.pag_vrp || 0);
+        const pericul = Number(billingRow.pag_periculosidade || 0);
+        const adicNoturno = Number(billingRow.pag_adicional_noturno || 0);
+        const reembolsos = Number(billingRow.pag_reembolsos || 0);
+        const totalPag = vrp + pericul + adicNoturno + reembolsos;
+        if (totalPag > 0) {
+          const agentCount = [employee1, employee2].filter(Boolean).length || 1;
+          const names = [employee1?.name, employee2?.name].filter(Boolean);
+          for (let i = 0; i < agentCount; i++) {
+            diarias.push({ agentName: names[i] || `Agente ${i + 1}`, valor: totalPag / agentCount });
+          }
         }
       }
+      const totalDiarias = diarias.reduce((s, d) => s + d.valor, 0);
 
+      const directExpenses = (txDirect || []).filter((t: any) => t.type === "EXPENSE");
       const allExpenses = [
-        ...(txDirect || []).filter((t: any) => t.type === "EXPENSE"),
+        ...directExpenses,
         ...missionCostTx,
         ...fuelingTx,
-        ...maintenanceTx,
       ];
       const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
+
+      const totalFueling = fuelingTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalMissionCosts = missionCostTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalOtherExpenses = directExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
       const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
       const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : estimadoFallback;
-      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0) + totalDiarias;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
@@ -7032,6 +7053,14 @@ Regras:
         billing: billingRow,
         revenue,
         expenses: uniqueExpenses,
+        diarias,
+        components: {
+          receita: effectiveRevenue,
+          combustivel: totalFueling,
+          diarias: totalDiarias,
+          custosMissao: totalMissionCosts,
+          outrosCustos: totalOtherExpenses,
+        },
         totals: {
           totalRevenue: effectiveRevenue,
           totalExpense,

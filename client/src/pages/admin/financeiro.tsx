@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
 import { useState, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
@@ -15,8 +15,9 @@ import {
   Loader2, CheckCircle2, X, AlertCircle, ClipboardCheck,
   BarChart3, Lock, Clock, Filter, Save, Tag, Layers,
   Building2, Wallet, ChevronRight, Calculator, Truck, MapPin,
-  Shield, AlertTriangle, Eye,
+  Shield, AlertTriangle, Eye, FileText,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED";
@@ -338,6 +339,7 @@ export default function FinanceiroPage() {
   const [calcResult, setCalcResult] = useState<any>(null);
   const [boCalc, setBoCalc] = useState({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
   const [viewBoletim, setViewBoletim] = useState<any>(null);
+  const [dreOsId, setDreOsId] = useState<string | null>(null);
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
     queryKey: ["/api/financial/transactions"],
@@ -571,6 +573,10 @@ export default function FinanceiroPage() {
                       {t.origin_type && t.origin_type !== "manual" && (
                         <button
                           onClick={() => {
+                            if (t.origin_type === "service_order" && t.origin_id) {
+                              setDreOsId(t.origin_id);
+                              return;
+                            }
                             const route = ORIGIN_ROUTES[t.origin_type!];
                             if (route) {
                               const params = t.origin_id ? `?highlight=${t.origin_id}` : "";
@@ -581,7 +587,7 @@ export default function FinanceiroPage() {
                           data-testid={`badge-auto-${t.id}`}
                           title={`Ver origem: ${ORIGIN_LABELS[t.origin_type] || "AUTO"}${t.origin_id ? ` #${t.origin_id}` : ""}`}
                         >
-                          {ORIGIN_LABELS[t.origin_type] || "AUTO"} ↗
+                          {ORIGIN_LABELS[t.origin_type] || "AUTO"} {t.origin_type === "service_order" ? "📊" : "↗"}
                         </button>
                       )}
                     </div>
@@ -1286,7 +1292,116 @@ export default function FinanceiroPage() {
             accounts={accounts}
           />
         )}
+
+        <FinanceiroDreModal osId={dreOsId} onClose={() => setDreOsId(null)} />
       </div>
     </AdminLayout>
+  );
+}
+
+function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: () => void }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/financial/dre-operacao", osId],
+    queryFn: async () => {
+      const res = await authFetch(`/api/financial/dre-operacao/${osId}`);
+      if (!res.ok) throw new Error("Erro ao carregar DRE");
+      return res.json();
+    },
+    enabled: !!osId,
+  });
+  const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  return (
+    <Dialog open={!!osId} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm font-black">
+            <FileText className="w-4 h-4" /> DRE Operacional{data?.os?.osNumber ? ` — ${data.os.osNumber}` : ""}
+          </DialogTitle>
+          <DialogDescription className="text-xs">Demonstrativo de Resultado por Operação</DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
+        ) : data ? (
+          <div className="space-y-3">
+            <div className="bg-neutral-50 rounded-lg p-3 space-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-neutral-500">Cliente</span><span className="font-bold">{data.os?.clientName}</span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Veículo</span><span className="font-bold">{data.os?.vehiclePlate}</span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Status</span><span className="font-bold">{data.os?.status}</span></div>
+            </div>
+
+            <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+              <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receitas</h4>
+              {data.receitas?.length > 0 ? data.receitas.map((r: any, i: number) => (
+                <div key={i} className="flex justify-between items-center text-xs py-1">
+                  <span className="text-neutral-600 truncate max-w-[70%]">{r.description}</span>
+                  <span className="font-bold text-emerald-700">{fmtBRL(r.amount)}</span>
+                </div>
+              )) : <p className="text-[10px] text-neutral-400 italic">Nenhuma receita registrada</p>}
+              <div className="flex justify-between items-center mt-1 pt-1 border-t border-emerald-200 font-bold text-xs">
+                <span className="text-emerald-800">Total Receita</span>
+                <span className="text-emerald-900">{fmtBRL(data.totals?.totalRevenue || 0)}</span>
+              </div>
+            </div>
+
+            <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+              <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas Diretas</h4>
+              {data.despesas?.length > 0 ? data.despesas.map((d: any, i: number) => (
+                <div key={i} className="flex justify-between items-center text-xs py-1">
+                  <span className="text-neutral-600 truncate max-w-[70%]">{d.description}</span>
+                  <span className="font-bold text-red-600">{fmtBRL(d.amount)}</span>
+                </div>
+              )) : <p className="text-[10px] text-neutral-400 italic">Nenhuma despesa direta</p>}
+              <div className="flex justify-between items-center mt-1 pt-1 border-t border-red-200 font-bold text-xs">
+                <span className="text-red-800">Total Despesas</span>
+                <span className="text-red-900">{fmtBRL(data.totals?.totalExpense || 0)}</span>
+              </div>
+            </div>
+
+            {data.diarias && data.diarias.length > 0 && (
+              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                <h4 className="text-xs font-black text-orange-700 uppercase tracking-wide mb-1.5">Diárias dos Agentes</h4>
+                {data.diarias.map((d: any, i: number) => (
+                  <div key={i} className="flex justify-between items-center text-xs py-1">
+                    <span className="text-neutral-600">{d.agentName}</span>
+                    <span className="font-bold text-orange-700">{fmtBRL(d.valor)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center mt-1 pt-1 border-t border-orange-200 font-bold text-xs">
+                  <span className="text-orange-800">Total Diárias</span>
+                  <span className="text-orange-900">{fmtBRL(data.components?.diarias || 0)}</span>
+                </div>
+              </div>
+            )}
+
+            {data.components && (
+              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
+                <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita</span><span className="font-bold text-emerald-700">{fmtBRL(data.components.receita)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Combustível</span><span className="font-bold text-red-600">{fmtBRL(data.components.combustivel)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias</span><span className="font-bold text-red-600">{fmtBRL(data.components.diarias)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Custos Missão</span><span className="font-bold text-red-600">{fmtBRL(data.components.custosMissao)}</span></div>
+                {data.components.outrosCustos > 0 && (
+                  <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(data.components.outrosCustos)}</span></div>
+                )}
+              </div>
+            )}
+
+            {data.totals?.usedEstimado && (
+              <p className="text-[10px] text-amber-600 font-semibold italic">* Receita baseada no valor estimado</p>
+            )}
+            <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${data.totals?.netResult >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
+              <span className={data.totals?.netResult >= 0 ? "text-blue-900" : "text-red-900"}>Resultado</span>
+              <div className="flex items-center gap-2">
+                <span className={data.totals?.netResult >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(data.totals?.netResult || 0)}</span>
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${(data.totals?.margemPct || 0) >= 0 ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800"}`}>
+                  {(data.totals?.margemPct || 0).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : <p className="text-sm text-red-500 py-4 text-center">Erro ao carregar DRE</p>}
+      </DialogContent>
+    </Dialog>
   );
 }
