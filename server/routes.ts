@@ -7279,16 +7279,21 @@ Regras:
     horario_inicio?: string; horario_fim?: string;
     horario_agendado?: string;
     despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
-    contrato: {
-      valor_km_carregado: number; valor_km_vazio: number; franquia_minima_km: number;
-      valor_hora_estadia: number; valor_diaria: number; vrp_base: number;
-      adicional_noturno_vrp_pct: number; adicional_noturno_km_pct: number;
-      adicional_periculosidade_pct: number; periculosidade_horas_limite: number;
-    };
+    contrato: any;
   }) {
     const { km_inicial, km_final, km_vazio, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
 
     if (km_final < km_inicial) throw new Error("KM final não pode ser menor que KM inicial");
+
+    const n = (v: any) => Number(v) || 0;
+    const hasAcionamento = n(contrato.valor_acionamento) > 0;
+    const franquiaKm = n(contrato.franquia_km) || n(contrato.franquia_minima_km);
+    const franquiaHoras = n(contrato.franquia_horas);
+    const valorKmCarregado = n(contrato.valor_km_carregado);
+    const valorKmVazio = n(contrato.valor_km_vazio);
+    const valorKmExtra = n(contrato.valor_km_extra) || valorKmCarregado;
+    const valorHoraExtra = n(contrato.valor_hora_extra) || n(contrato.valor_hora_estadia);
+    const valorAcionamento = n(contrato.valor_acionamento);
 
     const { inicio_considerado, usou_agendado } = calcularInicioCobranca(horario_agendado, horario_inicio);
     const horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
@@ -7297,7 +7302,7 @@ Regras:
     const km_total = km_final - km_inicial;
     const km_carregado = Math.max(0, km_total - km_vazio);
 
-    const km_franquia = contrato.franquia_minima_km;
+    const km_franquia = franquiaKm;
     const km_excedente = Math.max(0, km_carregado - km_franquia);
     const km_faturado_carregado = Math.max(km_carregado, km_franquia);
     const require_photo = km_total > 500;
@@ -7313,30 +7318,50 @@ Regras:
 
     const despesas_total = despesas_pedagio + despesas_combustivel + despesas_outras;
 
-    const fat_km_carregado = km_faturado_carregado * contrato.valor_km_carregado;
-    const fat_km_vazio = km_vazio * contrato.valor_km_vazio;
-    const fat_km = fat_km_carregado + fat_km_vazio;
-    const valor_franquia = Math.min(km_carregado, km_franquia) * contrato.valor_km_carregado;
-    const valor_km_extra = km_excedente * contrato.valor_km_carregado;
+    let fat_km_carregado: number;
+    let fat_km_vazio: number;
+    let fat_km: number;
+    let valor_franquia: number;
+    let valor_km_extra_calc: number;
+    let fat_acionamento = 0;
+    let fat_hora_extra = 0;
 
-    const fat_estadia = horas_estadia * contrato.valor_hora_estadia;
-    const fat_pernoite = teve_pernoite ? contrato.valor_diaria : 0;
+    if (hasAcionamento) {
+      fat_acionamento = valorAcionamento;
+      fat_km_carregado = km_excedente * valorKmExtra;
+      fat_km_vazio = km_vazio * valorKmVazio;
+      fat_km = fat_km_carregado + fat_km_vazio;
+      valor_franquia = valorAcionamento;
+      valor_km_extra_calc = fat_km_carregado;
+      const horasExcedentes = Math.max(0, horas_missao - franquiaHoras);
+      fat_hora_extra = horasExcedentes * valorHoraExtra;
+    } else {
+      fat_km_carregado = km_faturado_carregado * valorKmCarregado;
+      fat_km_vazio = km_vazio * valorKmVazio;
+      fat_km = fat_km_carregado + fat_km_vazio;
+      valor_franquia = Math.min(km_carregado, km_franquia) * valorKmCarregado;
+      valor_km_extra_calc = km_excedente * valorKmCarregado;
+    }
+
+    const fat_estadia = horas_estadia * n(contrato.valor_hora_estadia);
+    const fat_pernoite = teve_pernoite ? n(contrato.valor_diaria) : 0;
     let fat_adicional_noturno = 0;
     if (isNoturno) {
-      fat_adicional_noturno = fat_km * (contrato.adicional_noturno_km_pct / 100);
+      fat_adicional_noturno = (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
     }
-    const fat_total = fat_km + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total;
+    const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total;
 
-    let pag_vrp = contrato.vrp_base;
+    let pag_vrp = n(contrato.vrp_base);
     let pag_periculosidade = 0;
-    if (horas_missao > contrato.periculosidade_horas_limite) {
-      const horas_extras = horas_missao - contrato.periculosidade_horas_limite;
-      const valor_hora_base = contrato.vrp_base / contrato.periculosidade_horas_limite;
-      pag_periculosidade = horas_extras * valor_hora_base * (contrato.adicional_periculosidade_pct / 100);
+    const periculosidadeHorasLimite = n(contrato.periculosidade_horas_limite);
+    if (periculosidadeHorasLimite > 0 && horas_missao > periculosidadeHorasLimite) {
+      const horas_extras = horas_missao - periculosidadeHorasLimite;
+      const valor_hora_base = pag_vrp / periculosidadeHorasLimite;
+      pag_periculosidade = horas_extras * valor_hora_base * (n(contrato.adicional_periculosidade_pct) / 100);
     }
     let pag_adicional_noturno = 0;
     if (isNoturno) {
-      pag_adicional_noturno = pag_vrp * (contrato.adicional_noturno_vrp_pct / 100);
+      pag_adicional_noturno = pag_vrp * (n(contrato.adicional_noturno_vrp_pct) / 100);
     }
     const pag_reembolsos = despesas_total;
     const pag_total = pag_vrp + pag_periculosidade + pag_adicional_noturno + pag_reembolsos;
@@ -7349,10 +7374,14 @@ Regras:
 
     return {
       km_carregado, km_vazio, km_total, km_faturado: km_faturado_carregado, require_photo, is_noturno: isNoturno,
-      km_franquia, km_excedente: r(km_excedente), valor_franquia: r(valor_franquia), valor_km_extra: r(valor_km_extra),
+      km_franquia, km_excedente: r(km_excedente), valor_franquia: r(valor_franquia), valor_km_extra: r(valor_km_extra_calc),
       horario_inicio_considerado: inicio_considerado, usou_agendado, horas_trabalhadas: r(horas_missao),
+      modelo_acionamento: hasAcionamento,
+      fat_acionamento: r(fat_acionamento), fat_hora_extra: r(fat_hora_extra),
+      franquia_horas: franquiaHoras, franquia_km: franquiaKm,
       faturamento: {
-        km_carregado: r(fat_km_carregado), km_vazio: r(fat_km_vazio),
+        acionamento: r(fat_acionamento), km_carregado: r(fat_km_carregado), km_vazio: r(fat_km_vazio),
+        hora_extra: r(fat_hora_extra),
         estadia: r(fat_estadia), diaria: fat_pernoite, adicional_noturno: r(fat_adicional_noturno),
         total: r(fat_total),
       },
