@@ -1,8 +1,8 @@
 import { storage } from "./storage";
-import { processIdleAlert, processIgnitionOff, getActiveIdleAlerts } from "./truckscontrol";
+import { processIdleAlert, processIgnitionOff, getActiveIdleAlerts, processSpeedAlert } from "./truckscontrol";
 import type { InsertTelemetryEvent } from "@shared/schema";
 
-const SPEED_LIMIT = 110;
+const SPEED_LIMIT = 120;
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
 const speedAlertCooldown = new Map<string, number>();
@@ -58,6 +58,12 @@ function checkSpeedViolation(v: VehicleTelemetryData, now: number): void {
   }).catch(err => {
     console.error(`[telemetry] Erro ao registrar velocidade:`, err.message);
   });
+
+  if (v.truckscontrolId) {
+    processSpeedAlert(v.truckscontrolId, v.plate, v.speed).catch(err => {
+      console.error(`[telemetry] Erro ao enviar alerta velocidade para ${v.plate}:`, err.message);
+    });
+  }
 }
 
 function checkIdleViolation(v: VehicleTelemetryData, now: number): void {

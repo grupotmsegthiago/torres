@@ -805,6 +805,35 @@ function escapeXml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+const activeSpeedAlerts = new Map<number, { alertedAt: number; cabineTimer?: ReturnType<typeof setTimeout> }>();
+
+export async function processSpeedAlert(veiID: number, plate: string, speed: number): Promise<void> {
+  if (activeSpeedAlerts.has(veiID)) return;
+
+  activeSpeedAlerts.set(veiID, { alertedAt: Date.now() });
+
+  console.log(`[speed-alert] Veiculo ${plate} (veiID=${veiID}) — ${speed} km/h. Enviando aviso de cabine + mensagem.`);
+
+  const cabineResult = await sendCommand(veiID, "aviso_cabine_on");
+  console.log(`[speed-alert] Aviso cabine ON para ${plate}: ${cabineResult.message}`);
+
+  const msgResult = await sendCommand(veiID, "mensagem_texto", `VELOCIDADE ACIMA DO PERMITIDO! ${speed} km/h - REDUZA IMEDIATAMENTE!`);
+  console.log(`[speed-alert] Mensagem enviada para ${plate}: ${msgResult.message}`);
+
+  const cabineTimer = setTimeout(async () => {
+    const alertInfo = activeSpeedAlerts.get(veiID);
+    if (alertInfo) {
+      console.log(`[speed-alert] Timeout 2min — desligando aviso de cabine para ${plate} (veiID=${veiID})`);
+      const offResult = await sendCommand(veiID, "aviso_cabine_off");
+      console.log(`[speed-alert] Aviso cabine OFF (timeout) para ${plate}: ${offResult.message}`);
+      activeSpeedAlerts.delete(veiID);
+    }
+  }, 2 * 60 * 1000);
+
+  const existing = activeSpeedAlerts.get(veiID);
+  if (existing) existing.cabineTimer = cabineTimer;
+}
+
 export async function processIdleAlert(veiID: number, plate: string): Promise<void> {
   if (activeIdleAlerts.has(veiID)) return;
 
