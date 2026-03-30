@@ -69,9 +69,11 @@ async function ensureFinancialOriginColumns() {
   }
   try {
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL`);
-    console.log("[Financial] valor_estimado column ensured via direct SQL");
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT`);
+    console.log("[Financial] valor_estimado + vigilante2 columns ensured via direct SQL");
   } catch (_e2: any) {
-    console.log("[Financial] valor_estimado column check:", _e2?.message || "unknown");
+    console.log("[Financial] column check:", _e2?.message || "unknown");
   }
 
   if (!columnsEnsuredViaSql) {

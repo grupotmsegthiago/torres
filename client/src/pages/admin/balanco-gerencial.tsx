@@ -143,6 +143,7 @@ export default function BalancoGerencialPage() {
       missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[],
       expenses: { fueling: 0, mission_cost: 0, maintenance: 0, other: 0, total: 0 },
       expensesByVehicle: {} as Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }>,
+      periodExpenses: [] as ExpenseTransaction[],
     };
 
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -242,6 +243,7 @@ export default function BalancoGerencialPage() {
       missionDetails: missions.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
       expenses: expenseSums,
       expensesByVehicle,
+      periodExpenses,
     };
   }, [data, range]);
 
@@ -396,7 +398,7 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} />}
+        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} />}
         {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} totals={totals} />}
         {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} monthsInPeriod={monthsInPeriod} period={period} />}
         {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} />}
@@ -406,12 +408,14 @@ export default function BalancoGerencialPage() {
   );
 }
 
-function BalancoTab({ missions, vehicles, agents, totals, range, period }: {
+function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
   };
+  expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
+  periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
 }) {
   const dailyData = useMemo(() => {
@@ -421,11 +425,17 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period }: {
       if (!d) return;
       if (!map[d]) map[d] = { date: d, fat: 0, custo: 0, missions: 0 };
       map[d].fat += m.fat_total;
-      map[d].custo += m.pag_total + m.despesas;
+      map[d].custo += m.pag_total;
       map[d].missions += 1;
     });
+    (periodExpenses || []).forEach(t => {
+      const d = t.date?.split("T")[0];
+      if (!d) return;
+      if (!map[d]) map[d] = { date: d, fat: 0, custo: 0, missions: 0 };
+      map[d].custo += t.amount;
+    });
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
-  }, [missions]);
+  }, [missions, periodExpenses]);
 
   const maxVal = useMemo(() => Math.max(...dailyData.map(d => Math.max(d.fat, d.custo)), 1), [dailyData]);
 
