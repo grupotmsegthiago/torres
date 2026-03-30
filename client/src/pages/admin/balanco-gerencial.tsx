@@ -135,6 +135,10 @@ export default function BalancoGerencialPage() {
     refetchInterval: 30 * 60 * 1000,
   });
 
+  const { data: allVehicles } = useQuery<any[]>({
+    queryKey: ["/api/vehicles"],
+  });
+
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
   const monthsInPeriod = useMemo(() => getMonthsInRange(range), [range]);
 
@@ -399,7 +403,7 @@ export default function BalancoGerencialPage() {
         </div>
 
         {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} />}
-        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} totals={totals} />}
+        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
         {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} monthsInPeriod={monthsInPeriod} period={period} />}
         {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} />}
         {activeTab === "MISSOES" && <MissoesTab missions={filtered.missionDetails} />}
@@ -545,12 +549,42 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
   );
 }
 
-function MetasTab({ vehicles, agents, monthsInPeriod, period, totals }: {
+function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicles }: {
   vehicles: any[]; agents: any[]; monthsInPeriod: number; period: Period;
   totals: { fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number };
+  allVehicles: any[];
 }) {
   const metaPeriodoViatura = META_MENSAL_VIATURA * monthsInPeriod;
-  const totalViaturas = vehicles.length;
+  const totalViaturas = Math.max(allVehicles.length, vehicles.length);
+
+  const mergedVehicles = useMemo(() => {
+    const periodMap: Record<string, any> = {};
+    vehicles.forEach(v => { periodMap[v.plate] = v; });
+
+    const result: any[] = [];
+    const seen = new Set<string>();
+
+    allVehicles.forEach(v => {
+      const plate = v.plate;
+      seen.add(plate);
+      const periodData = periodMap[plate];
+      result.push({
+        plate,
+        model: v.model || periodData?.model || "",
+        fat_total: periodData?.fat_total || 0,
+        pag_total: periodData?.pag_total || 0,
+        missions: periodData?.missions || 0,
+        despesas: periodData?.despesas || 0,
+      });
+    });
+
+    vehicles.forEach(v => {
+      if (!seen.has(v.plate)) result.push(v);
+    });
+
+    return result.sort((a, b) => b.fat_total - a.fat_total);
+  }, [vehicles, allVehicles]);
+
   const metaGlobal = metaPeriodoViatura * totalViaturas;
   const metaGlobalPct = metaGlobal > 0 ? (totals.fat / metaGlobal) * 100 : 0;
 
@@ -609,9 +643,9 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals }: {
           <Car size={16} /> Meta por Viatura
         </h4>
         <div className="space-y-4">
-          {vehicles.length === 0 ? (
+          {mergedVehicles.length === 0 ? (
             <p className="text-sm text-neutral-400 font-bold text-center py-8">Sem dados de viaturas no período</p>
-          ) : vehicles.map(v => {
+          ) : mergedVehicles.map(v => {
             const metaPct = (v.fat_total / metaPeriodoViatura) * 100;
             const atingiu = v.fat_total >= metaPeriodoViatura;
             return (
