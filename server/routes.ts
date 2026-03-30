@@ -55,15 +55,22 @@ async function ensureFinancialOriginColumns() {
       query: `
         CREATE OR REPLACE VIEW v_resumo_financeiro AS
         SELECT
+          TO_CHAR(due_date, 'YYYY-MM') AS periodo,
           COALESCE(origin_type, 'manual') AS origin_type,
-          type,
-          status,
-          COUNT(*) AS count,
-          COALESCE(SUM(amount), 0) AS total,
-          COALESCE(SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END), 0) AS total_paid,
-          COALESCE(SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END), 0) AS total_pending
+          COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0) AS total_receitas,
+          COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0) AS total_despesas,
+          COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0) AS saldo,
+          COALESCE(SUM(CASE WHEN type = 'INCOME' AND status = 'PAID' THEN amount ELSE 0 END), 0) AS receitas_pagas,
+          COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'PAID' THEN amount ELSE 0 END), 0) AS despesas_pagas,
+          COALESCE(SUM(CASE WHEN type = 'INCOME' AND status = 'PAID' THEN amount ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'PAID' THEN amount ELSE 0 END), 0) AS saldo_realizado,
+          COUNT(*) AS total_lancamentos,
+          COUNT(*) FILTER (WHERE type = 'INCOME') AS count_receitas,
+          COUNT(*) FILTER (WHERE type = 'EXPENSE') AS count_despesas
         FROM financial_transactions
-        GROUP BY COALESCE(origin_type, 'manual'), type, status
+        GROUP BY TO_CHAR(due_date, 'YYYY-MM'), COALESCE(origin_type, 'manual')
+        ORDER BY periodo DESC, origin_type
       `
     });
     console.log("[Financial] v_resumo_financeiro view created/updated OK");
@@ -6789,43 +6796,61 @@ Regras:
 
       let viewData: any[] | null = null;
       try {
-        const { data: vd, error: vErr } = await supabaseAdmin.from("v_resumo_financeiro").select("*");
+        let vQuery = supabaseAdmin.from("v_resumo_financeiro").select("*");
+        if (from) vQuery = vQuery.gte("periodo", (from as string).substring(0, 7));
+        if (to) vQuery = vQuery.lte("periodo", (to as string).substring(0, 7));
+        const { data: vd, error: vErr } = await vQuery;
         if (!vErr && vd) viewData = vd;
       } catch (_) {}
 
-      if (viewData && !from && !to) {
+      if (viewData) {
         const result: any = {
           receita_total: 0, receita_realizada: 0, receita_pendente: 0,
           despesa_total: 0, despesa_realizada: 0, despesa_pendente: 0,
           saldo_previsto: 0, saldo_realizado: 0,
           total_lancamentos: 0, lancamentos_auto: 0, lancamentos_manual: 0,
           por_origem: {} as Record<string, { count: number; total: number }>,
+          por_periodo: [] as any[],
           fonte: "v_resumo_financeiro",
         };
+        const periodMap: Record<string, any> = {};
         for (const row of viewData) {
-          const cnt = Number(row.count || 0);
-          const total = Number(row.total || 0);
-          const totalPaid = Number(row.total_paid || 0);
-          const totalPending = Number(row.total_pending || 0);
+          const receitas = Number(row.total_receitas || 0);
+          const despesas = Number(row.total_despesas || 0);
+          const receitasPagas = Number(row.receitas_pagas || 0);
+          const despesasPagas = Number(row.despesas_pagas || 0);
+          const cnt = Number(row.total_lancamentos || 0);
+
+          result.receita_total += receitas;
+          result.despesa_total += despesas;
+          result.receita_realizada += receitasPagas;
+          result.despesa_realizada += despesasPagas;
+          result.receita_pendente += receitas - receitasPagas;
+          result.despesa_pendente += despesas - despesasPagas;
           result.total_lancamentos += cnt;
-          if (row.type === "INCOME") {
-            result.receita_total += total;
-            result.receita_realizada += totalPaid;
-            result.receita_pendente += totalPending;
-          } else if (row.type === "EXPENSE") {
-            result.despesa_total += total;
-            result.despesa_realizada += totalPaid;
-            result.despesa_pendente += totalPending;
-          }
+
           if (row.origin_type !== "manual") {
             if (!result.por_origem[row.origin_type]) result.por_origem[row.origin_type] = { count: 0, total: 0 };
             result.por_origem[row.origin_type].count += cnt;
-            result.por_origem[row.origin_type].total += total;
+            result.por_origem[row.origin_type].total += receitas + despesas;
             result.lancamentos_auto += cnt;
           } else {
             result.lancamentos_manual += cnt;
           }
+
+          if (!periodMap[row.periodo]) {
+            periodMap[row.periodo] = { periodo: row.periodo, total_receitas: 0, total_despesas: 0, saldo: 0, receitas_pagas: 0, despesas_pagas: 0, saldo_realizado: 0 };
+          }
+          periodMap[row.periodo].total_receitas += receitas;
+          periodMap[row.periodo].total_despesas += despesas;
+          periodMap[row.periodo].receitas_pagas += receitasPagas;
+          periodMap[row.periodo].despesas_pagas += despesasPagas;
         }
+        for (const p of Object.values(periodMap)) {
+          p.saldo = p.total_receitas - p.total_despesas;
+          p.saldo_realizado = p.receitas_pagas - p.despesas_pagas;
+        }
+        result.por_periodo = Object.values(periodMap).sort((a: any, b: any) => b.periodo.localeCompare(a.periodo));
         result.saldo_previsto = result.receita_total - result.despesa_total;
         result.saldo_realizado = result.receita_realizada - result.despesa_realizada;
         return res.json(result);
