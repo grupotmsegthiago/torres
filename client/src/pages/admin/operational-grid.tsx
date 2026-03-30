@@ -728,6 +728,8 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const centerMarkerRef = useRef<any>(null);
   const autocompleteRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const initialBoundsDoneRef = useRef(false);
+  const userInteractedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
   const [activeRouteOsId, setActiveRouteOsId] = useState<number | null>(null);
@@ -1019,6 +1021,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
       const infoWindow = new window.google.maps.InfoWindow({ content: infoContent, maxWidth: 340, disableAutoPan: false });
       marker.addListener("click", () => {
+        userInteractedRef.current = true;
         markersRef.current.forEach((m: any) => m._infoWindow?.close());
         setSelectedVehicle(v);
         if (mapInstanceRef.current && v.tracker?.latitude && v.tracker?.longitude) {
@@ -1103,10 +1106,13 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       });
     });
 
-    if (hasPositions && !radiusActive && !focusVehicleId) {
-      mapInstanceRef.current.fitBounds(bounds);
-      if (markersRef.current.length === 1) {
-        mapInstanceRef.current.setZoom(14);
+    if (hasPositions && !radiusActive && !focusVehicleId && !userInteractedRef.current) {
+      if (!initialBoundsDoneRef.current) {
+        mapInstanceRef.current.fitBounds(bounds);
+        if (markersRef.current.length === 1) {
+          mapInstanceRef.current.setZoom(14);
+        }
+        initialBoundsDoneRef.current = true;
       }
     }
   }, [mapReady, vehicles]);
@@ -1420,6 +1426,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     const doFocus = (id: number) => {
       const marker = markersRef.current.find((m: any) => m._vehicleId === id);
       if (marker && marker.getPosition()) {
+        userInteractedRef.current = true;
         markersRef.current.forEach((m: any) => m._infoWindow?.close());
         const pos = marker.getPosition();
         mapInstanceRef.current.setCenter(pos);
