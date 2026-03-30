@@ -787,6 +787,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
         center: { lat: -20.5, lng: -47.5 },
         zoom: 7,
+        minZoom: 4,
         mapTypeControl: true,
         mapTypeControlOptions: {
           style: window.google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
@@ -808,8 +809,11 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     const bounds = new window.google.maps.LatLngBounds();
     let hasPositions = false;
 
+    const isValidCoord = (lat: number, lng: number) => lat !== 0 && lng !== 0 && lat >= -35 && lat <= 6 && lng >= -75 && lng <= -30;
+
     vehicles.forEach((v) => {
       if (v.tracker?.latitude == null || v.tracker?.longitude == null) return;
+      if (!isValidCoord(v.tracker.latitude, v.tracker.longitude)) return;
 
       hasPositions = true;
       const position = { lat: v.tracker.latitude, lng: v.tracker.longitude };
@@ -1192,6 +1196,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
   const showRouteOnMap = useCallback(async (osId: number) => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
+    userInteractedRef.current = true;
     setRouteLoading(true);
     try {
       const resp = await authFetch(`/api/service-orders/${osId}/route`);
