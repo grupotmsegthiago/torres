@@ -311,8 +311,15 @@ export async function registerRoutes(
   });
 
   app.delete("/api/clients/:id", requireAuth, async (req, res) => {
-    await storage.deleteClient(Number(req.params.id));
-    res.json({ message: "Cliente removido" });
+    const clientId = Number(req.params.id);
+    try {
+      await supabaseAdmin.from("client_vehicles").delete().eq("client_id", clientId);
+      await storage.deleteClient(clientId);
+      res.json({ message: "Cliente removido" });
+    } catch (err: any) {
+      console.error("Erro ao remover cliente:", err.message);
+      res.status(500).json({ message: "Erro ao remover. Existem OS ou contratos vinculados a este cliente." });
+    }
   });
 
   app.get("/api/clients/:id/vehicles", requireAuth, async (req, res) => {
@@ -444,8 +451,24 @@ export async function registerRoutes(
 
   app.delete("/api/employees/:id", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
-    await storage.deleteEmployee(Number(req.params.id));
-    res.json({ message: "Funcionário removido" });
+    const empId = Number(req.params.id);
+    try {
+      await supabaseAdmin.from("employee_documents").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("employee_salaries").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("employee_absences").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("employee_fines").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("employee_disciplinary").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("timesheets").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("payslips").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("weapon_movements").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("vehicle_assignments").delete().eq("employee_id", empId);
+      await supabaseAdmin.from("mission_updates").delete().eq("employee_id", empId);
+      await storage.deleteEmployee(empId);
+      res.json({ message: "Funcionário removido" });
+    } catch (err: any) {
+      console.error("Erro ao remover funcionário:", err.message);
+      res.status(500).json({ message: "Erro ao remover funcionário. Verifique se existem OS vinculadas." });
+    }
   });
 
   app.get("/api/employees/:id/salaries", requireAuth, async (req, res) => {
@@ -694,8 +717,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.delete("/api/vehicles/:id", requireAuth, async (req, res) => {
-    await storage.deleteVehicle(Number(req.params.id));
-    res.json({ message: "Veículo removido" });
+    const vehId = Number(req.params.id);
+    try {
+      await supabaseAdmin.from("vehicle_assignments").delete().eq("vehicle_id", vehId);
+      await storage.deleteVehicle(vehId);
+      res.json({ message: "Veículo removido" });
+    } catch (err: any) {
+      console.error("Erro ao remover veículo:", err.message);
+      res.status(500).json({ message: "Erro ao remover. Existem OS vinculadas a este veículo." });
+    }
   });
 
   app.get("/api/service-orders", requireAuth, async (_req, res) => {
@@ -1021,15 +1051,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.delete("/api/service-orders/:id", requireAuth, async (req, res) => {
-    const existing = await storage.getServiceOrder(Number(req.params.id));
-    if (existing?.kitId) {
-      await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
+    const osId = Number(req.params.id);
+    try {
+      const existing = await storage.getServiceOrder(osId);
+      if (existing?.kitId) {
+        await storage.updateWeaponKit(existing.kitId, { status: "disponível" });
+      }
+      if (existing?.vehicleId) {
+        await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
+      }
+      await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", osId);
+      await supabaseAdmin.from("mission_updates").delete().eq("service_order_id", osId);
+      await supabaseAdmin.from("mission_photos").delete().eq("service_order_id", osId);
+      await supabaseAdmin.from("weapon_movements").delete().eq("service_order_id", osId);
+      await supabaseAdmin.from("vehicle_assignments").delete().eq("service_order_id", osId);
+      await storage.deleteServiceOrder(osId);
+      res.json({ message: "OS removida" });
+    } catch (err: any) {
+      console.error("Erro ao remover OS:", err.message);
+      res.status(500).json({ message: "Erro ao remover OS: " + (err.message || "erro interno") });
     }
-    if (existing?.vehicleId) {
-      await storage.updateVehicle(existing.vehicleId, { status: "disponível" });
-    }
-    await storage.deleteServiceOrder(Number(req.params.id));
-    res.json({ message: "OS removida" });
   });
 
   app.post("/api/service-orders/:id/approve-early-start", requireAuth, async (req, res) => {
