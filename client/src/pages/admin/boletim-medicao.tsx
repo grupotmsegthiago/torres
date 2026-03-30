@@ -260,15 +260,15 @@ export default function BoletimMedicaoPage() {
                                   </td>
                                   <td className="px-4 py-3 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                      {(!b || isLiveOs(os)) && (
+                                      {(!b || isLiveOs(os) || b?.status === "REJEITADA") && (
                                         <button
                                           onClick={() => calcularMutation.mutate(os.id)}
                                           disabled={calcularMutation.isPending}
                                           className="p-1.5 rounded-lg hover:bg-blue-100 transition-colors"
-                                          title={b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
+                                          title={b?.status === "REJEITADA" ? "Recalcular (Rejeitada)" : b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
                                           data-testid={`button-calc-os-${os.id}`}
                                         >
-                                          <Calculator size={16} className={isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
+                                          <Calculator size={16} className={b?.status === "REJEITADA" ? "text-red-500" : isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
                                         </button>
                                       )}
                                       <button
@@ -469,6 +469,20 @@ export default function BoletimMedicaoPage() {
                       <AlertTriangle size={24} className="mx-auto text-amber-500 mb-2" />
                       <p className="text-xs font-black text-amber-700 uppercase">OS sem cálculo de faturamento</p>
                       <p className="text-[10px] text-amber-600 mt-1">Esta OS foi concluída mas não possui dados de KM válidos para gerar o boletim automaticamente.</p>
+                    </div>
+                  )}
+
+                  {b?.status === "REJEITADA" && (
+                    <div className="pt-2">
+                      <button
+                        onClick={() => { calcularMutation.mutate(os.id); setSelectedOs(null); }}
+                        disabled={calcularMutation.isPending}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                        data-testid="button-recalcular-rejeitada"
+                      >
+                        {calcularMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
+                        Recalcular Billing
+                      </button>
                     </div>
                   )}
 

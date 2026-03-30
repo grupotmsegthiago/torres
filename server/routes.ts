@@ -994,9 +994,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
 
       const { data: existing } = await supabaseAdmin.from("escort_billings")
-        .select("id").eq("service_order_id", serviceOrderId).limit(1);
-      if (existing?.length && !isLive) return res.status(400).json({ message: "Billing ja existe para esta OS" });
-      if (existing?.length && isLive) {
+        .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
+      const existingBilling = existing?.[0];
+      const isRejected = existingBilling?.status === "REJEITADA";
+      if (existingBilling && !isLive && !isRejected) return res.status(400).json({ message: "Billing ja existe para esta OS" });
+      if (existingBilling) {
         await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
       }
 
@@ -1008,7 +1010,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
       const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toTimeString().slice(0, 5) : undefined;
-      const endTime = so.completedDate ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : (isLive ? new Date().toTimeString().slice(0, 5) : undefined);
+      const completedDateValid = so.completedDate && new Date(so.completedDate as string).getFullYear() > 2000;
+      const endTime = completedDateValid ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : (isLive ? new Date().toTimeString().slice(0, 5) : undefined);
 
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
@@ -1021,12 +1024,14 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
 
       const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
+      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, startTime=${startTime}, endTime=${endTime}, scheduledTime=${scheduledTime}`);
       const resultado = calcularEscolta({
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
         horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
         horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
         despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
       });
+      console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
 
       const client = so.clientId ? await storage.getClient(so.clientId) : null;
       const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
