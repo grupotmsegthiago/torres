@@ -293,6 +293,17 @@ interface GridItem {
     speed?: number;
     address?: string;
   } | null;
+  liveCost?: {
+    km_inicial: number;
+    km_atual: number;
+    km_total: number;
+    horas_missao: number;
+    faturamento: number;
+    pagamento: number;
+    resultado: number;
+    margem_pct: number;
+    contrato_nome: string | null;
+  } | null;
 }
 
 interface Gerenciadora {
@@ -4093,6 +4104,42 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
                           </p>
+                          {(() => {
+                            const gItem = gridData.find((g: GridItem) => g.osNumber === v.activeOs!.osNumber);
+                            const lc = gItem?.liveCost;
+                            if (!lc) return null;
+                            const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+                            return (
+                              <div className="mt-0.5 flex items-center gap-1.5 flex-wrap" data-testid={`live-cost-${v.id}`}>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 cursor-help">
+                                      <span>▲</span> {fmtBRL(lc.faturamento)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="text-xs">
+                                    <p className="font-bold">Faturamento estimado</p>
+                                    <p>KM: {lc.km_total} ({lc.km_inicial} → {lc.km_atual})</p>
+                                    <p>Horas: {lc.horas_missao}h</p>
+                                    {lc.contrato_nome && <p className="text-neutral-400">Contrato: {lc.contrato_nome}</p>}
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
+                                      <span>▼</span> {fmtBRL(lc.pagamento)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" className="text-xs">
+                                    <p className="font-bold">Custo operacional (VRP + despesas)</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${lc.resultado >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
+                                  = {fmtBRL(lc.resultado)}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           {v.activeOs.scheduledDate && (
                             <p className="text-xs text-neutral-400 font-medium">
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}

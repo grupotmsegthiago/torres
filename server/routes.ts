@@ -3088,6 +3088,63 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           .orderBy(desc(missionUpdates.createdAt))
           .limit(1);
 
+        let liveCost: {
+          km_inicial: number; km_atual: number; km_total: number;
+          horas_missao: number;
+          faturamento: number; pagamento: number; resultado: number; margem_pct: number;
+          contrato_nome: string | null;
+        } | null = null;
+
+        if (o.status === "em_andamento" && o.type === "escolta") {
+          try {
+            const photos = await storage.getMissionPhotosByOS(o.id);
+            const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+            const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
+            const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
+            const kmInicial = kmSaidaPhoto?.kmValue || 0;
+            const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
+
+            const scheduledTime = o.scheduledDate ? new Date(o.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+            const startTime = o.missionStartedAt ? new Date(o.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+            const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+
+            let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+            let contratoNome: string | null = null;
+
+            if (o.escortContractId) {
+              const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", o.escortContractId).limit(1);
+              if (cc?.length) { contrato = cc[0]; contratoNome = cc[0].contract_name || cc[0].client_name || null; }
+            } else if (o.clientId) {
+              const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", o.clientId).eq("status", "Ativo").limit(1);
+              if (clientContracts?.length) { contrato = clientContracts[0]; contratoNome = clientContracts[0].contract_name || clientContracts[0].client_name || null; }
+            }
+
+            const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
+            const resultado = calcularEscolta({
+              km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
+              horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+              horario_inicio: startTime, horario_fim: nowTime, horario_agendado: scheduledTime,
+              despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+            });
+
+            const horasCalc = startTime ? calcularHorasTrabalhadas(startTime, nowTime) : 0;
+
+            liveCost = {
+              km_inicial: kmInicial,
+              km_atual: kmFinalNorm,
+              km_total: resultado.km_total,
+              horas_missao: Math.round(horasCalc * 100) / 100,
+              faturamento: resultado.faturamento.total,
+              pagamento: resultado.pagamento.total,
+              resultado: resultado.resultado.liquido,
+              margem_pct: resultado.resultado.margem_pct,
+              contrato_nome: contratoNome,
+            };
+          } catch (e: any) {
+            console.error(`[grid] liveCost error OS ${o.osNumber}:`, e.message);
+          }
+        }
+
         return {
           id: o.id,
           osNumber: o.osNumber,
@@ -3128,6 +3185,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             hasTracker: vHasTracker,
           } : null,
           tracker: trackerData,
+          liveCost,
         };
       })
     );
