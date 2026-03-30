@@ -1697,7 +1697,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const pt = { lat: p.latitude, lng: p.longitude };
           if (decodedRoute.length === 0) return { ...pt, onRoute: true };
           const dist = distToPolyline(pt, decodedRoute);
-          const onRoute = dist < OFF_ROUTE_THRESHOLD_M;
+          const onRoute = dist <= OFF_ROUTE_THRESHOLD_M;
           if (onRoute) {
             const idx = findClosestIndex(pt, decodedRoute);
             if (idx > lastOnRouteIdx) lastOnRouteIdx = idx;
