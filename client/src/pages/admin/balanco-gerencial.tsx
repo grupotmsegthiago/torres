@@ -123,6 +123,7 @@ export default function BalancoGerencialPage() {
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ["/api/financial/dashboard"],
+    refetchInterval: 30 * 60 * 1000,
   });
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
