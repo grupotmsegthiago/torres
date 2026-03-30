@@ -7063,11 +7063,16 @@ Regras:
       const totalMissionCosts = missionCostTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const totalOtherExpenses = directExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
+      const billingPedagio = Number(billingRow?.despesas_pedagio || 0);
+      const billingCombustivel = Number(billingRow?.despesas_combustivel || 0);
+      const billingOutras = Number(billingRow?.despesas_outras || 0);
+      const billingDespesasTotal = billingPedagio + billingCombustivel + billingOutras;
+
       const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
       const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : estimadoFallback;
-      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0) + totalDiarias;
+      const totalExpense = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0) + totalDiarias + billingDespesasTotal;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
@@ -7091,10 +7096,12 @@ Regras:
         diarias,
         components: {
           receita: effectiveRevenue,
-          combustivel: totalFueling,
+          combustivel: totalFueling + billingCombustivel,
+          pedagio: billingPedagio + totalMissionCosts,
           diarias: totalDiarias,
           custosMissao: totalMissionCosts,
-          outrosCustos: totalOtherExpenses,
+          despesasBilling: billingDespesasTotal,
+          outrosCustos: totalOtherExpenses + billingOutras,
         },
         totals: {
           totalRevenue: effectiveRevenue,

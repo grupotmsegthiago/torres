@@ -3810,8 +3810,8 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
                 <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita</span><span className="font-bold text-emerald-700">{fmtBRL(data.components.receita)}</span></div>
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Combustível</span><span className="font-bold text-red-600">{fmtBRL(data.components.combustivel)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Pedágio</span><span className="font-bold text-red-600">{fmtBRL(data.components.pedagio || 0)}</span></div>
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias</span><span className="font-bold text-red-600">{fmtBRL(data.components.diarias)}</span></div>
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Custos Missão</span><span className="font-bold text-red-600">{fmtBRL(data.components.custosMissao)}</span></div>
                 {data.components.outrosCustos > 0 && (
                   <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(data.components.outrosCustos)}</span></div>
                 )}
