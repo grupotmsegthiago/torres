@@ -1341,6 +1341,43 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    const wasNotFinished = existing && !["concluída", "concluida"].includes(existing.status || "");
+    const isNowFinished = ["concluída", "concluida"].includes(data.status || "");
+    if (wasNotFinished && isNowFinished && data.type === "escolta") {
+      try {
+        const { data: billing } = await supabaseAdmin.from("escort_billings")
+          .select("fat_total, client_name")
+          .eq("service_order_id", data.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const billingRow = billing?.[0];
+        const fatTotal = billingRow ? Number(billingRow.fat_total || 0) : 0;
+        const revenueAmount = fatTotal > 0 ? fatTotal : Number((data as any).valorEstimado || 0);
+        const clientName = billingRow?.client_name || (data.clientId ? (await storage.getClient(data.clientId))?.name : null) || "—";
+        const vehicle = data.vehicleId ? await storage.getVehicle(data.vehicleId) : null;
+        const plateStr = vehicle?.plate || "";
+
+        if (revenueAmount > 0) {
+          await removeAutoTransaction("service_order", String(data.id));
+          await createAutoTransaction({
+            description: `RECEITA OS ${data.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
+            amount: revenueAmount,
+            type: "INCOME",
+            due_date: new Date().toISOString().split("T")[0],
+            origin_type: "service_order",
+            origin_id: String(data.id),
+            category_name: "Receita de Escolta",
+            entity_name: clientName,
+            created_by: req.user?.name || "SISTEMA",
+          });
+          if (fatTotal > 0) await storage.updateServiceOrder(data.id, { valorEstimado: fatTotal } as any);
+          console.log(`[OS-Financial] Auto INCOME via PATCH for OS ${data.osNumber}: R$ ${revenueAmount}`);
+        }
+      } catch (revErr: any) {
+        console.error(`[OS-Financial] Revenue auto-tx via PATCH failed:`, revErr.message);
+      }
+    }
+
     res.json(data);
   });
 
@@ -2975,7 +3012,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         origin_type: "fueling",
         origin_id: String(data.id),
         category_name: "Combustível",
-        entity_name: parsed.data.station || null,
+        entity_name: [plateStr, driverEmp?.name, parsed.data.station].filter(Boolean).join(" | ") || null,
         created_by: "SISTEMA",
       });
     }
@@ -3006,7 +3043,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         origin_type: "fueling",
         origin_id: String(data.id),
         category_name: "Combustível",
-        entity_name: data.station || null,
+        entity_name: [vehicle?.plate, driverEmp?.name, data.station].filter(Boolean).join(" | ") || null,
         created_by: "SISTEMA",
       });
     } else {
