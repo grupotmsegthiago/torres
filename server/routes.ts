@@ -1008,10 +1008,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const kmInicial = kmSaidaPhoto?.kmValue || 0;
       const kmFinal = kmFinalPhoto?.kmValue || 0;
 
-      const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
-      const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toTimeString().slice(0, 5) : undefined;
+      const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+      const scheduledTime = so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : undefined;
+      const startTime = so.missionStartedAt ? toBRT(new Date(so.missionStartedAt as string)) : undefined;
       const completedDateValid = so.completedDate && new Date(so.completedDate as string).getFullYear() > 2000;
-      const endTime = completedDateValid ? new Date(so.completedDate as string).toTimeString().slice(0, 5) : (isLive ? new Date().toTimeString().slice(0, 5) : undefined);
+      const endTime = completedDateValid ? toBRT(new Date(so.completedDate as string)) : (isLive ? toBRT(new Date()) : undefined);
 
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
