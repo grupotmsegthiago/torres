@@ -114,6 +114,7 @@ export default function UsersPage() {
   const [formRole, setFormRole] = useState("funcionario");
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "diretoria";
+  const isDiretoria = currentUser?.role === "diretoria";
 
   const { data: users = [], isLoading } = useQuery<SafeUser[]>({
     queryKey: ["/api/users"],
@@ -317,7 +318,7 @@ export default function UsersPage() {
                     >
                       <Pencil className="w-4 h-4" />
                     </Button>
-                    {!isCurrentUser && (
+                    {!isCurrentUser && isDiretoria && (
                       <Button
                         variant="ghost"
                         size="icon"

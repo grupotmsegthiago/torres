@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2 } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
@@ -140,6 +141,8 @@ const COST_CATEGORIES = [
 
 function MissionCostsSection({ orderId }: { orderId: number }) {
   const { toast } = useToast();
+  const { user: mcUser } = useAuth();
+  const mcIsDiretoria = mcUser?.role === "diretoria";
   const [showForm, setShowForm] = useState(false);
   const [category, setCategory] = useState(COST_CATEGORIES[0]);
   const [description, setDescription] = useState("");
@@ -299,14 +302,14 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                   R$ {parseFloat(cost.amount || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2 py-2.5">
-                  <button
+                  {mcIsDiretoria && <button
                     type="button"
-                    onClick={() => deleteMutation.mutate(cost.id)}
+                    onClick={() => { if (window.confirm("Excluir este custo?")) deleteMutation.mutate(cost.id); }}
                     className="text-red-400 hover:text-red-600 transition-colors"
                     data-testid={`button-delete-cost-${cost.id}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </button>}
                 </td>
               </tr>
             ))}
@@ -1019,10 +1022,13 @@ export default function ServiceOrdersPage() {
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] }); toast({ title: "OS removida" }); },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const startMissionMutation = useMutation({
@@ -1311,7 +1317,7 @@ export default function ServiceOrdersPage() {
                           }
                         }} title="Baixar PDF" data-testid={`button-pdf-order-${o.id}`}><Download className="w-4 h-4 text-neutral-500" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(o.id)} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                        {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente OS ${o.osNumber}?`)) deleteMutation.mutate(o.id); }} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                       </div>
                     </td>
                   </tr>

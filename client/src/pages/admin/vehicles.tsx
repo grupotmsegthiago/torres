@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, X, Pencil, Trash2, Gauge, Search, Loader2, Link2, Unlink, History, Camera, ImageIcon, FileText, Download, Eye } from "lucide-react";
 import type { Vehicle, VehicleFueling, VehicleAssignment, Employee } from "@shared/schema";
@@ -536,6 +537,8 @@ export default function VehiclesPage() {
   const [editItem, setEditItem] = useState<Vehicle | undefined>();
   const [assignVehicle, setAssignVehicle] = useState<Vehicle | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: fuelings = [] } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
 
@@ -646,7 +649,7 @@ export default function VehiclesPage() {
                           <Link2 className="w-4 h-4 text-blue-600" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(v); setShowForm(true); }} data-testid={`button-edit-vehicle-${v.id}`}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(v.id)} data-testid={`button-delete-vehicle-${v.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                        {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente ${v.plate}?`)) deleteMutation.mutate(v.id); }} data-testid={`button-delete-vehicle-${v.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                       </div>
                     </td>
                   </tr>

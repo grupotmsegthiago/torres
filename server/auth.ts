@@ -54,6 +54,14 @@ export const requireAdminRole: RequestHandler = (req, res, next) => {
   return res.status(403).json({ message: "Acesso restrito a administradores" });
 };
 
+export const requireDiretoria: RequestHandler = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Não autorizado" });
+  }
+  if (req.user.role === "diretoria") return next();
+  return res.status(403).json({ message: "Apenas a Diretoria pode excluir registros" });
+};
+
 export function setupAuth(app: Express) {
   app.use(authenticateToken);
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   ArrowDownCircle, ArrowUpCircle, Plus, Search, Edit, Trash2,
   RefreshCw, Calendar, DollarSign, Download, Printer,
@@ -301,6 +302,8 @@ function QuickCategoryModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
 
 export default function FinanceiroPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -434,6 +437,7 @@ export default function FinanceiroPage() {
   }, [periodFilteredTransactions]);
 
   const handleDelete = (id: string) => {
+    if (!isDiretoria) return;
     if (!confirm("Excluir este lançamento?")) return;
     deleteMutation.mutate(id);
   };
@@ -563,7 +567,7 @@ export default function FinanceiroPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
                       <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`button-edit-${t.id}`}><Edit size={14} /></button>
-                      <button onClick={() => handleDelete(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`button-delete-${t.id}`}><Trash2 size={14} /></button>
+                      {isDiretoria && <button onClick={() => handleDelete(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`button-delete-${t.id}`}><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>

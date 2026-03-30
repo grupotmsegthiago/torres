@@ -2575,6 +2575,13 @@ export default function EmployeesPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employees/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); toast({ title: "Funcionário removido" }); },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const inactivateMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("PATCH", `/api/employees/${id}`, { status: "inativo" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); toast({ title: "Funcionário inativado" }); },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   return (
@@ -2733,7 +2740,11 @@ export default function EmployeesPage() {
                               <KeyRound className="w-4 h-4 text-blue-600" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => { setEditItem(e); setShowForm(true); }} data-testid={`button-edit-employee-${e.id}`}><Pencil className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Tem certeza que deseja excluir ${e.name}? Esta ação não pode ser desfeita.`)) deleteMutation.mutate(e.id); }} data-testid={`button-delete-employee-${e.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                            {isDiretoria ? (
+                              <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Tem certeza que deseja EXCLUIR PERMANENTEMENTE ${e.name}? Esta ação não pode ser desfeita.`)) deleteMutation.mutate(e.id); }} data-testid={`button-delete-employee-${e.id}`} title="Excluir permanentemente"><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                            ) : e.status !== "inativo" ? (
+                              <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Inativar o funcionário ${e.name}?`)) inactivateMutation.mutate(e.id); }} data-testid={`button-inactivate-employee-${e.id}`} title="Inativar"><Ban className="w-4 h-4 text-amber-500" /></Button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

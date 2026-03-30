@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2 } from "lucide-react";
 import type { VehicleMaintenance, Vehicle } from "@shared/schema";
 
@@ -136,6 +137,8 @@ export default function MaintenancePage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<VehicleMaintenance | undefined>();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const { data: maintenances = [], isLoading } = useQuery<VehicleMaintenance[]>({ queryKey: ["/api/maintenance"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
 
@@ -196,7 +199,7 @@ export default function MaintenancePage() {
                     </td>
                     <td className="p-3 text-right">
                       <Button variant="ghost" size="icon" onClick={() => { setEditItem(m); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(m.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                      {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm("Excluir esta manutenção?")) deleteMutation.mutate(m.id); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                     </td>
                   </tr>
                 ))}

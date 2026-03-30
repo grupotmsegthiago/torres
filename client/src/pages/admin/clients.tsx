@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Plus, X, Pencil, Trash2, Search, Loader2, FileDown,
   ShieldCheck, AlertTriangle, CheckCircle2, Building2, Users,
@@ -837,6 +838,8 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
 
 function ClientPastaView({ client, onBack }: { client: Client; onBack: () => void }) {
   const { toast } = useToast();
+  const { user: pastaUser } = useAuth();
+  const pastaIsDiretoria = pastaUser?.role === "diretoria";
   const [activeTab, setActiveTab] = useState<ClientTab>("CONTRATO");
   const [showContractModal, setShowContractModal] = useState(false);
   const [editingSC, setEditingSC] = useState<ServiceContract | null>(null);
@@ -1030,7 +1033,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                       <td className="px-4 py-3 text-xs font-mono text-neutral-500">{v.driverPhone || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <button onClick={() => { setEditingVehicle(v); setVForm({ plate: v.plate, model: v.model || "", brand: v.brand || "", color: v.color || "", driverName: v.driverName || "", driverPhone: v.driverPhone || "", notes: v.notes || "" }); setShowVehicleForm(true); }} className="p-1.5 rounded hover:bg-neutral-100 mr-1" data-testid={`button-edit-vehicle-${v.id}`}><Pencil size={14} className="text-neutral-500" /></button>
-                        <button onClick={() => { if (confirm("Remover veículo?")) deleteVehicleMutation.mutate(v.id); }} className="p-1.5 rounded hover:bg-red-50" data-testid={`button-delete-vehicle-${v.id}`}><Trash2 size={14} className="text-red-400" /></button>
+                        {pastaIsDiretoria && <button onClick={() => { if (confirm("Remover veículo?")) deleteVehicleMutation.mutate(v.id); }} className="p-1.5 rounded hover:bg-red-50" data-testid={`button-delete-vehicle-${v.id}`}><Trash2 size={14} className="text-red-400" /></button>}
                       </td>
                     </tr>
                   ))}
@@ -1161,7 +1164,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                   <div className="flex gap-1">
                     <button onClick={async () => { try { const r = await authFetch(`/api/service-contracts/${sc.id}/pdf`); if (!r.ok) throw new Error("Erro ao gerar PDF"); const blob = await r.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `CONTRATO_${sc.contract_number || sc.id.slice(0, 8)}.pdf`; a.click(); URL.revokeObjectURL(url); } catch (e: any) { toast({ title: "Erro", description: e.message, variant: "destructive" }); } }} className="p-1.5 rounded hover:bg-neutral-100" title="Baixar PDF" data-testid={`button-pdf-contract-${sc.id}`}><FileDown size={14} className="text-neutral-500" /></button>
                     <button onClick={() => { setEditingSC(sc); setShowContractModal(true); }} className="p-1.5 rounded hover:bg-neutral-100"><Edit size={14} className="text-neutral-500" /></button>
-                    <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>
+                    {pastaIsDiretoria && <button onClick={() => { if (confirm("Excluir contrato?")) deleteSCMutation.mutate(sc.id); }} className="p-1.5 rounded hover:bg-red-50"><Trash2 size={14} className="text-red-400" /></button>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1552,7 +1555,7 @@ function HomologacaoTab({ client }: { client: Client }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      {uploaded && (
+                      {uploaded && pastaIsDiretoria && (
                         <button onClick={() => handleDeleteDoc(dt.key)} className="p-1.5 rounded hover:bg-red-50 text-neutral-300 hover:text-red-500 transition-colors" data-testid={`button-delete-doc-${dt.key}`}>
                           <Trash2 size={13} />
                         </button>
@@ -1973,6 +1976,8 @@ export default function ClientsPage() {
   const [analysisClient, setAnalysisClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
 
   const [generatingPdf, setGeneratingPdf] = useState<number | null>(null);
 
@@ -2072,9 +2077,11 @@ export default function ClientsPage() {
                       <Button variant="ghost" size="icon" onClick={() => { setEditClient(c); setShowForm(true); }} data-testid={`button-edit-client-${c.id}`}>
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(c.id)} data-testid={`button-delete-client-${c.id}`}>
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </Button>
+                      {isDiretoria && (
+                        <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente ${c.name}?`)) deleteMutation.mutate(c.id); }} data-testid={`button-delete-client-${c.id}`}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}

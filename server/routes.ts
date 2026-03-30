@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq, desc, sql, and, gte, lte, like, or, ilike } from "drizzle-orm";
-import { requireAuth, requireAdminRole } from "./auth";
+import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
@@ -377,7 +377,7 @@ export async function registerRoutes(
     res.json(data);
   });
 
-  app.delete("/api/clients/:id", requireAuth, async (req, res) => {
+  app.delete("/api/clients/:id", requireAuth, requireDiretoria, async (req, res) => {
     const clientId = Number(req.params.id);
     try {
       await supabaseAdmin.from("client_vehicles").delete().eq("client_id", clientId);
@@ -415,7 +415,7 @@ export async function registerRoutes(
     res.json(data);
   });
 
-  app.delete("/api/client-vehicles/:id", requireAuth, async (req, res) => {
+  app.delete("/api/client-vehicles/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteClientVehicle(Number(req.params.id));
     res.json({ message: "Veículo removido" });
   });
@@ -516,8 +516,7 @@ export async function registerRoutes(
     res.json(data);
   });
 
-  app.delete("/api/employees/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+  app.delete("/api/employees/:id", requireAuth, requireDiretoria, async (req, res) => {
     const empId = Number(req.params.id);
     try {
       await supabaseAdmin.from("employee_documents").delete().eq("employee_id", empId);
@@ -560,8 +559,7 @@ export async function registerRoutes(
     res.status(201).json(salary);
   });
 
-  app.delete("/api/employee-salaries/:id", requireAuth, async (req, res) => {
-    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+  app.delete("/api/employee-salaries/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeSalary(Number(req.params.id));
     res.json({ message: "Registro salarial removido" });
   });
@@ -783,7 +781,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/vehicles/:id", requireAuth, async (req, res) => {
+  app.delete("/api/vehicles/:id", requireAuth, requireDiretoria, async (req, res) => {
     const vehId = Number(req.params.id);
     try {
       await supabaseAdmin.from("vehicle_assignments").delete().eq("vehicle_id", vehId);
@@ -1223,7 +1221,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/service-orders/:id", requireAuth, async (req, res) => {
+  app.delete("/api/service-orders/:id", requireAuth, requireDiretoria, async (req, res) => {
     const osId = Number(req.params.id);
     try {
       const existing = await storage.getServiceOrder(osId);
@@ -2713,7 +2711,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/trips/:id", requireAuth, async (req, res) => {
+  app.delete("/api/trips/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteTrip(Number(req.params.id));
     res.json({ message: "Viagem removida" });
   });
@@ -2744,7 +2742,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/maintenance/:id", requireAuth, async (req, res) => {
+  app.delete("/api/maintenance/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteVehicleMaintenance(Number(req.params.id));
     res.json({ message: "Manutenção removida" });
   });
@@ -2798,7 +2796,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/fueling/:id", requireAuth, async (req, res) => {
+  app.delete("/api/fueling/:id", requireAuth, requireDiretoria, async (req, res) => {
     const existing = await storage.getVehicleFueling(Number(req.params.id));
     await storage.deleteVehicleFueling(Number(req.params.id));
     if (existing?.vehicleId) {
@@ -2833,7 +2831,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
-  app.delete("/api/timesheets/:id", requireAuth, async (req, res) => {
+  app.delete("/api/timesheets/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteTimesheet(Number(req.params.id));
     res.json({ message: "Ponto removido" });
   });
@@ -3795,7 +3793,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(updated);
   });
 
-  app.delete("/api/gerenciadoras/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.delete("/api/gerenciadoras/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteGerenciadora(Number(req.params.id));
     res.json({ success: true });
   });
@@ -5321,7 +5319,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.status(201).json(row);
   });
 
-  app.delete("/api/absences/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/absences/:id", requireAuth, requireDiretoria, async (req, res) => {
     await db.delete(employeeAbsences).where(eq(employeeAbsences.id, Number(req.params.id)));
     res.json({ ok: true });
   });
@@ -5341,7 +5339,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.status(201).json(row);
   });
 
-  app.delete("/api/fines/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/fines/:id", requireAuth, requireDiretoria, async (req, res) => {
     await db.delete(employeeFines).where(eq(employeeFines.id, Number(req.params.id)));
     res.json({ ok: true });
   });
@@ -5376,7 +5374,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.status(201).json(row);
   });
 
-  app.delete("/api/disciplinary/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/disciplinary/:id", requireAuth, requireDiretoria, async (req, res) => {
     await db.delete(employeeDisciplinary).where(eq(employeeDisciplinary.id, Number(req.params.id)));
     res.json({ ok: true });
   });
@@ -5571,7 +5569,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.status(201).json(row);
   });
 
-  app.delete("/api/payslips/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/payslips/:id", requireAuth, requireDiretoria, async (req, res) => {
     await db.delete(employeePayslips).where(eq(employeePayslips.id, Number(req.params.id)));
     res.json({ ok: true });
   });
@@ -5745,7 +5743,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(toSafeUser(user));
   });
 
-  app.delete("/api/users/:id", requireAuth, requireAdminRole, async (req, res) => {
+  app.delete("/api/users/:id", requireAuth, requireDiretoria, async (req, res) => {
     const id = Number(req.params.id);
     if (id === req.user!.id) {
       return res.status(400).json({ message: "Você não pode excluir seu próprio usuário" });
@@ -5875,7 +5873,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(doc);
   });
 
-  app.delete("/api/employee-documents/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/employee-documents/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeDocument(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -5907,7 +5905,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(w);
   });
 
-  app.delete("/api/weapons/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/weapons/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteWeapon(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -6065,7 +6063,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
-  app.delete("/api/weapon-kits/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/weapon-kits/:id", requireAuth, requireDiretoria, async (req, res) => {
     const kit = await storage.getWeaponKit(parseInt(req.params.id));
     if (!kit) return res.status(404).json({ message: "Kit não encontrado" });
     if (kit.status === "em_uso") return res.status(400).json({ message: "Não é possível excluir um kit em uso" });
@@ -6404,7 +6402,7 @@ Regras:
     }
   });
 
-  app.delete("/api/financial/categories/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/financial/categories/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("financial_categories").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -6448,7 +6446,7 @@ Regras:
     }
   });
 
-  app.delete("/api/financial/accounts/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/financial/accounts/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("financial_accounts").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -6556,7 +6554,7 @@ Regras:
     }
   });
 
-  app.delete("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/financial/transactions/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -6619,7 +6617,7 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/service-contracts/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/service-contracts/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("service_contracts").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -6770,7 +6768,7 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/escort/contracts/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/escort/contracts/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("escort_contracts").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -7006,7 +7004,7 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/escort/routes/:id", requireAdminRole, async (req, res) => {
+  app.delete("/api/escort/routes/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const { error } = await supabaseAdmin.from("escort_routes").delete().eq("id", req.params.id);
       if (error) throw error;
@@ -7579,7 +7577,7 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/company-documents/:docType", requireAuth, async (req, res) => {
+  app.delete("/api/company-documents/:docType", requireAuth, requireDiretoria, async (req, res) => {
     try {
       await db.delete(companyDocuments).where(eq(companyDocuments.docType, req.params.docType));
       res.json({ success: true });
@@ -8048,7 +8046,7 @@ Regras:
     }
   });
 
-  app.delete("/api/reference-points/:id", requireAuth, async (req, res) => {
+  app.delete("/api/reference-points/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const id = Number(req.params.id);
       await db.delete(referencePoints).where(eq(referencePoints.id, id));

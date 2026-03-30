@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2, Link2, Unlink, FileText, History, Search, Upload, AlertTriangle, ScanLine, Loader2, FileUp, CheckCircle2, XCircle, Sparkles, ChevronDown, ChevronUp, Camera, ImageIcon, Eye, Package, Check, Download, Mail } from "lucide-react";
 import type { Weapon, WeaponAssignment, Employee, WeaponKit, WeaponKitItem } from "@shared/schema";
 
@@ -703,7 +704,7 @@ function WeaponGroupTable({
   employees: Employee[];
   weaponKitMap: Map<number, string>;
   onEdit: (w: Weapon) => void;
-  onDelete: (id: number) => void;
+  onDelete?: (id: number) => void;
   onAssign: (w: Weapon) => void;
   onViewPhoto: (w: Weapon) => void;
 }) {
@@ -803,7 +804,7 @@ function WeaponGroupTable({
                       </Button>
                     )}
                     <Button variant="ghost" size="icon" onClick={() => onEdit(w)} data-testid={`button-edit-weapon-${w.id}`}><Pencil className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => onDelete(w.id)} data-testid={`button-delete-weapon-${w.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                    {onDelete && <Button variant="ghost" size="icon" onClick={() => onDelete(w.id)} data-testid={`button-delete-weapon-${w.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                   </div>
                 </td>
               </tr>
@@ -1148,9 +1149,9 @@ function KitsTab({ weapons }: { weapons: Weapon[] }) {
                     <Button variant="ghost" size="icon" onClick={() => { setEditKit(kit); setShowKitForm(true); }} data-testid={`button-edit-kit-${kit.id}`}>
                       <Pencil className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => { if (confirm("Excluir este kit?")) deleteMutation.mutate(kit.id); }} data-testid={`button-delete-kit-${kit.id}`}>
+                    {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (confirm("Excluir este kit?")) deleteMutation.mutate(kit.id); }} data-testid={`button-delete-kit-${kit.id}`}>
                       <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
+                    </Button>}
                   </div>
                 </div>
                 <div className="flex items-center gap-4 mt-3">
@@ -1218,6 +1219,8 @@ export default function WeaponsPage() {
   const [photoViewer, setPhotoViewer] = useState<Weapon | null>(null);
   const [activeTab, setActiveTab] = useState<"armas" | "kits">("armas");
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const { data: weapons = [], isLoading } = useQuery<Weapon[]>({ queryKey: ["/api/weapons"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allKits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -1356,7 +1359,7 @@ export default function WeaponsPage() {
                 employees={employees}
                 weaponKitMap={weaponKitMap}
                 onEdit={(w) => { setEditItem(w); setShowForm(true); }}
-                onDelete={(id) => deleteMutation.mutate(id)}
+                onDelete={isDiretoria ? (id) => { if (window.confirm("Excluir esta arma?")) deleteMutation.mutate(id); } : undefined}
                 onAssign={(w) => setAssignWeapon(w)}
                 onViewPhoto={(w) => setPhotoViewer(w)}
               />

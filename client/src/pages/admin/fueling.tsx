@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Plus, X, Pencil, Trash2, Fuel, TrendingDown, TrendingUp,
   DollarSign, Gauge, BarChart3, AlertTriangle, Filter, ChevronDown, ChevronUp,
@@ -497,6 +498,8 @@ export default function FuelingPage() {
   const [expandedVehicle, setExpandedVehicle] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"dashboard" | "history">("dashboard");
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
 
   const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -684,7 +687,7 @@ export default function FuelingPage() {
                                     <td className="px-4 py-2.5 text-right">
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setDetailItem(orig); }} data-testid={`button-detail-dash-${h.id}`}><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setEditItem(orig); setShowForm(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
-                                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(h.id); }}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                                      {isDiretoria && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); if (window.confirm("Excluir este abastecimento?")) deleteMutation.mutate(h.id); }}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>}
                                     </td>
                                   </tr>
                                 );
@@ -740,7 +743,7 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" onClick={() => setDetailItem(f)} data-testid={`button-detail-${f.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => { setEditItem(f); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(f.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                          {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm("Excluir este abastecimento?")) deleteMutation.mutate(f.id); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                         </td>
                       </tr>
                     );

@@ -24,6 +24,7 @@ import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -1758,6 +1759,8 @@ function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
 
 function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle[]; gerenciadoras: Gerenciadora[] }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const { addNotification, updateNotification } = useOpNotifications();
   const [open, setOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -2025,7 +2028,7 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                     </div>
                     <div className="flex items-center gap-1 ml-2 shrink-0">
                       <Button variant="ghost" size="sm" onClick={() => startEdit(g)} data-testid={`btn-edit-gerenciadora-${g.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Remover ${g.name}?`)) deleteMutation.mutate(g.id); }} data-testid={`btn-delete-gerenciadora-${g.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                      {isDiretoria && <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Remover ${g.name}?`)) deleteMutation.mutate(g.id); }} data-testid={`btn-delete-gerenciadora-${g.id}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>}
                       {g.apiUrl && (
                         <Button size="sm" onClick={() => {
                           const vCount = vehicles.filter(vv => vv.deviceType !== "spy").length;
