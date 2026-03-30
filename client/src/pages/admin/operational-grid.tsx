@@ -361,6 +361,8 @@ function getMissionLabel(status: string | null) {
     case "iniciar_missao":
       return "Início de Missão";
     case "em_transito_destino":
+      return "Em Trânsito ao Destino";
+    case "chegada_destino":
       return "Chegada no Destino";
     case "checkout_km_final":
     case "checkout_viatura_retorno":
@@ -582,7 +584,9 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     case "iniciar_missao":
       return { label: "Início de Missão", icon: Play, className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
     case "em_transito_destino":
-      return { label: "Chegada no Destino", icon: Flag, className: "bg-violet-50 text-violet-700 border-violet-200" };
+      return { label: "Em Trânsito ao Destino", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
+    case "chegada_destino":
+      return { label: "Chegada no Destino", icon: Flag, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "checkout_km_final":
     case "checkout_viatura_retorno":
       return { label: "Término de Missão", icon: CircleCheckBig, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
