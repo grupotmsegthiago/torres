@@ -4271,6 +4271,40 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       } catch {}
     }
 
+    const PHOTO_STEP_LABELS: Record<string, string> = {
+      km_saida: "KM Saída", km_chegada: "KM Chegada", km_final: "KM Final",
+      base_hodometro: "Hodômetro Base", viatura_frente: "Viatura Frente",
+      viatura_lateral: "Viatura Lateral", viatura_traseira: "Viatura Traseira",
+      viatura_painel: "Viatura Painel", carga_frente: "Carga Frente",
+      carga_lateral: "Carga Lateral", carga_traseira: "Carga Traseira",
+      carga_lacre: "Carga Lacre", motorista_cnh: "CNH Motorista",
+      motorista_foto: "Foto Motorista", doc_crlv: "CRLV", doc_nota: "Nota Fiscal",
+      destino_entrega: "Entrega Destino", destino_carga: "Carga Destino",
+      base_viatura_retorno: "Viatura Retorno",
+    };
+    const emp = await storage.getEmployee(user.employeeId);
+    const stepLabel = PHOTO_STEP_LABELS[step] || step;
+    const alertMsg = kmValue
+      ? `📷 Foto: ${stepLabel} — KM ${Number(kmValue).toLocaleString("pt-BR")}`
+      : `📷 Foto: ${stepLabel}`;
+    try {
+      await db.insert(missionUpdates).values({
+        serviceOrderId,
+        osNumber: so.osNumber || null,
+        employeeId: user.employeeId,
+        employeeName: emp?.name || user.name || "—",
+        message: alertMsg,
+        missionStep: so.missionStatus || null,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        photoUrl: photoData,
+        readByAdmin: 0,
+      });
+      console.log(`[mission-photo] Alert created for OS #${so.osNumber} step=${step}`);
+    } catch (alertErr: any) {
+      console.error(`[mission-photo] Alert insert error (non-fatal): ${alertErr.message}`);
+    }
+
     const { photoData: _, ...safePhoto } = photo;
     res.status(201).json(safePhoto);
   });
@@ -4585,6 +4619,34 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     updates.stepLogs = [...existingLogs, stepLogEntry];
 
     const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+    const STEP_ALERT_LABELS: Record<string, string> = {
+      aguardando: "Aguardando", checkout_km_saida: "Checkout KM Saída",
+      em_transito_origem: "Em Trânsito Origem", checkin_chegada_km: "Chegada Cliente",
+      checkin_dados_motorista: "Dados Motorista", iniciar_missao: "Início Missão",
+      em_transito_destino: "Em Trânsito Destino", chegada_destino: "Chegada Destino",
+      checkout_km_final: "KM Final", finalizada: "Finalizada",
+      chegada_base: "Chegada Base", encerrada: "Encerrada",
+    };
+    try {
+      const stepFromLabel = STEP_ALERT_LABELS[currentStep] || currentStep;
+      const stepToLabel = STEP_ALERT_LABELS[nextStep] || nextStep;
+      await db.insert(missionUpdates).values({
+        serviceOrderId,
+        osNumber: so.osNumber || null,
+        employeeId: user.employeeId,
+        employeeName: emp?.fullName || emp?.name || user.name || "—",
+        message: `🔄 Etapa avançada: ${stepFromLabel} → ${stepToLabel}`,
+        missionStep: nextStep,
+        latitude: geo?.lat?.toString() || null,
+        longitude: geo?.lng?.toString() || null,
+        photoUrl: null,
+        readByAdmin: 0,
+      });
+      console.log(`[mission-advance] Alert created: ${currentStep} → ${nextStep} OS #${so.osNumber}`);
+    } catch (alertErr: any) {
+      console.error(`[mission-advance] Alert insert error (non-fatal): ${alertErr.message}`);
+    }
 
     if (nextStep === "encerrada" && so.kitId) {
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
