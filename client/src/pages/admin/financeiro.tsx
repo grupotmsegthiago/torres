@@ -1332,7 +1332,7 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
 
             <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
               <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receitas</h4>
-              {data.receitas?.length > 0 ? data.receitas.map((r: any, i: number) => (
+              {data.revenue?.length > 0 ? data.revenue.map((r: any, i: number) => (
                 <div key={i} className="flex justify-between items-center text-xs py-1">
                   <span className="text-neutral-600 truncate max-w-[70%]">{r.description}</span>
                   <span className="font-bold text-emerald-700">{fmtBRL(r.amount)}</span>
@@ -1346,7 +1346,7 @@ function FinanceiroDreModal({ osId, onClose }: { osId: string | null; onClose: (
 
             <div className="bg-red-50 rounded-lg p-3 border border-red-200">
               <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas Diretas</h4>
-              {data.despesas?.length > 0 ? data.despesas.map((d: any, i: number) => (
+              {data.expenses?.length > 0 ? data.expenses.map((d: any, i: number) => (
                 <div key={i} className="flex justify-between items-center text-xs py-1">
                   <span className="text-neutral-600 truncate max-w-[70%]">{d.description}</span>
                   <span className="font-bold text-red-600">{fmtBRL(d.amount)}</span>
