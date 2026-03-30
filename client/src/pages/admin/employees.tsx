@@ -20,6 +20,9 @@ const FORMAS_PAGAMENTO = ["PIX", "Transferência Bancária", "Dinheiro", "Cheque
 const ESTADO_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
 const ESCOLARIDADE = ["Fundamental", "Médio", "Superior", "Pós-graduação", "Mestrado", "Doutorado"];
 
+const DOCS_WITH_EXPIRY = new Set(["CNH", "CNV", "ASO", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "Certidão de Pontuação CNH"]);
+const docRequiresExpiry = (type: string) => DOCS_WITH_EXPIRY.has(type);
+
 function formatCpf(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 3) return digits;
@@ -447,7 +450,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                 <Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue" />
               </div>
               <div>
-                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade *</label>
+                <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade{docRequiresExpiry(docForm.type) ? " *" : ""}</label>
                 <Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry" />
               </div>
               <div>
@@ -1891,6 +1894,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const DOC_TYPES = ["RG", "CPF", "CTPS", "PIS/PASEP/NIS", "Comprovante de Residência", "Fotos 3x4", "Título de Eleitor", "Certificado de Reservista", "CNH", "CNV", "Certidão de Pontuação CNH", "Dados Bancários", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "ASO", "Certidão Nascimento/Casamento", "Certidão Nascimento Filhos", "Carteira Vacinação/Comprovante Escolar", "Antecedente Criminal Polícia Civil", "Antecedente Criminal Polícia Militar", "Certidão de COP", "Contrato Assinado", "Termo de Aceite", "Termo de Responsabilidade", "Outro"];
 
+
   const REQUIRED_DOCS = [
     { group: "Identificação e Documentos Pessoais", items: [
       { type: "RG", label: "RG" },
@@ -2049,7 +2053,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                 <Input value={docForm.documentNumber} onChange={(e) => setDocForm({ ...docForm, documentNumber: e.target.value })} placeholder="Nº do documento" data-testid="input-doc-number-pasta" />
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Emissão</label><Input type="date" value={docForm.issueDate} onChange={(e) => setDocForm({ ...docForm, issueDate: e.target.value })} data-testid="input-doc-issue-pasta" /></div>
-                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
+                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Validade{docRequiresExpiry(docForm.type) ? " *" : ""}</label><Input type="date" value={docForm.expiryDate} onChange={(e) => setDocForm({ ...docForm, expiryDate: e.target.value })} data-testid="input-doc-expiry-pasta" /></div>
                 </div>
                 <Input value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Observações" data-testid="input-doc-notes-pasta" />
                 <div className="flex gap-2 items-center">
