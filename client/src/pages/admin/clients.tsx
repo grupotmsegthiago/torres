@@ -973,12 +973,11 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                 toast({ title: "Erro", description: err.message, variant: "destructive" });
               }
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-xs font-bold uppercase hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded hover:bg-neutral-100"
+            title="Gerar Contrato PDF"
             data-testid="button-generate-contract-pdf"
           >
-            <Download size={14} />
-            <span className="hidden md:inline">Gerar Contrato PDF</span>
-            <span className="md:hidden">PDF</span>
+            <FileDown size={14} className="text-neutral-500" />
           </button>
         </div>
       </div>
