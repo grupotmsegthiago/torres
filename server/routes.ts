@@ -7160,12 +7160,90 @@ Regras:
       const employee1 = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
       const employee2 = (so as any).assignedEmployee2Id ? await storage.getEmployee((so as any).assignedEmployee2Id) : null;
 
-      const { data: billing } = await supabaseAdmin.from("escort_billings")
+      let { data: billing } = await supabaseAdmin.from("escort_billings")
         .select("*")
         .eq("service_order_id", osId)
         .order("created_at", { ascending: false })
         .limit(1);
-      const billingRow = billing?.[0] || null;
+      if (!billing?.length) {
+        const { data: b2 } = await supabaseAdmin.from("escort_billings")
+          .select("*")
+          .eq("service_order_id", String(osId))
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (b2?.length) billing = b2;
+      }
+      let billingRow = billing?.[0] || null;
+
+      if (!billingRow && so.type === "escolta" && (so.status === "em_andamento" || so.status === "concluida")) {
+        try {
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (so.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (so.clientId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+            if (cc?.length) contrato = cc[0];
+          }
+          const missionPhotos = await storage.getMissionPhotosByOS(osId);
+          const kmSaidaP = missionPhotos.find((p: any) => p.step === "km_saida");
+          const kmFinalP = missionPhotos.find((p: any) => p.step === "km_final");
+          const kmInicial = Number(kmSaidaP?.kmValue || 0);
+          const kmFinal = Number(kmFinalP?.kmValue || 0);
+          const startedAt = so.missionStartedAt || so.scheduledDate;
+          const now = new Date();
+          const horasMissao = startedAt ? Math.max(0, (now.getTime() - new Date(startedAt).getTime()) / 3600000) : 0;
+          const nb = (v: any) => Number(v) || 0;
+          const franquiaKm = nb(contrato.franquia_km || contrato.franquia_minima_km);
+          const km_carregado = Math.max(0, kmFinal - kmInicial);
+          const km_excedente = Math.max(0, km_carregado - franquiaKm);
+          const hasAcion = nb(contrato.valor_acionamento) > 0;
+          const franquiaHoras = nb(contrato.franquia_horas);
+          const horasExc = franquiaHoras > 0 ? Math.max(0, horasMissao - franquiaHoras) : 0;
+          let fat_total = 0;
+          let fat_acionamento = 0;
+          let fat_km = 0;
+          let fat_hora_extra = 0;
+          if (hasAcion) {
+            fat_acionamento = nb(contrato.valor_acionamento);
+            fat_km = km_excedente * nb(contrato.valor_km_extra || contrato.valor_km_carregado);
+            fat_hora_extra = horasExc * nb(contrato.valor_hora_extra);
+            fat_total = fat_acionamento + fat_km + fat_hora_extra;
+          } else {
+            const resultado = calcularEscolta({
+              km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+              horas_missao: horasMissao, horas_estadia: 0,
+              teve_pernoite: false, horario_inicio: startedAt ? new Date(startedAt).toTimeString().slice(0,5) : "08:00",
+              horario_fim: now.toTimeString().slice(0,5), horario_agendado: null,
+              despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+            });
+            fat_total = resultado.fat_total;
+          }
+          const r = (v: number) => Math.round(v * 100) / 100;
+          billingRow = {
+            id: "calc-realtime",
+            service_order_id: osId,
+            client_id: so.clientId,
+            client_name: client?.name || "—",
+            contract_id: contrato.id || null,
+            km_inicial: kmInicial, km_final: kmFinal,
+            km_carregado: r(km_carregado), km_excedente: r(km_excedente),
+            horas_trabalhadas: r(horasMissao), horas_missao: r(horasMissao),
+            fat_acionamento: r(fat_acionamento), fat_km: r(fat_km),
+            fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
+            pag_vrp: r(nb(contrato.vrp_base)), pag_periculosidade: 0,
+            pag_adicional_noturno: 0, pag_reembolsos: 0,
+            pag_total: r(nb(contrato.vrp_base)),
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+            placa_viatura: vehicle?.plate || null,
+            vigilante1_id: so.assignedEmployeeId,
+            vigilante2_id: (so as any).assignedEmployee2Id,
+          } as any;
+          console.log(`[DRE-OS ${osId}] billing calculated in realtime: fat_total=${fat_total}`);
+        } catch (calcErr: any) {
+          console.error(`[DRE-OS ${osId}] realtime billing calc error:`, calcErr.message);
+        }
+      }
 
       const { data: txDirect } = await supabaseAdmin.from("financial_transactions")
         .select("*")

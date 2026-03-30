@@ -141,9 +141,6 @@ export function initCronJobs() {
 
       for (const so of liveOrders) {
         try {
-          const { data: existingArr } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", so.id).limit(1);
-          if (!existingArr?.length) continue;
-
           await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", so.id);
 
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
