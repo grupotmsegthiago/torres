@@ -42,9 +42,19 @@ interface FinancialTransaction {
   installment_group: string | null;
   installment_number: number | null;
   installment_total: number | null;
+  origin_type: string | null;
+  origin_id: string | null;
   created_at: string;
   created_by: string | null;
 }
+
+const ORIGIN_LABELS: Record<string, string> = {
+  escort_billing: "ESCOLTA",
+  fueling: "ABASTEC.",
+  maintenance: "MANUT.",
+  mission_cost: "MISSÃO",
+  manual: "MANUAL",
+};
 
 interface FinancialCategory {
   id: string;
@@ -543,7 +553,14 @@ export default function FinanceiroPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-bold text-neutral-800 text-sm uppercase">{t.description}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
+                      {t.origin_type && t.origin_type !== "manual" && (
+                        <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-violet-100 text-violet-700 border border-violet-200 whitespace-nowrap" data-testid={`badge-auto-${t.id}`}>
+                          {ORIGIN_LABELS[t.origin_type] || "AUTO"}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs font-bold text-neutral-600 uppercase">{t.entity_name || "Geral"}</span>
@@ -565,10 +582,14 @@ export default function FinanceiroPage() {
                     {formatCurrency(Number(t.amount))}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`button-edit-${t.id}`}><Edit size={14} /></button>
-                      {isDiretoria && <button onClick={() => handleDelete(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`button-delete-${t.id}`}><Trash2 size={14} /></button>}
-                    </div>
+                    {t.origin_type && t.origin_type !== "manual" ? (
+                      <span className="text-[9px] font-bold text-neutral-400 uppercase italic" data-testid={`text-auto-locked-${t.id}`}>Automático</span>
+                    ) : (
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`button-edit-${t.id}`}><Edit size={14} /></button>
+                        {isDiretoria && <button onClick={() => handleDelete(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`button-delete-${t.id}`}><Trash2 size={14} /></button>}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
@@ -694,11 +715,13 @@ export default function FinanceiroPage() {
     const paidIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PAID");
     const overdueExpenses = transactions.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
     const overdueIncomes = transactions.filter(t => t.type === "INCOME" && t.status === "PENDING" && t.due_date.split("T")[0] < todayStr);
+    const saldoRealizado = paidIncomes.reduce((a, t) => a + Number(t.amount), 0) - paidExpenses.reduce((a, t) => a + Number(t.amount), 0);
+    const autoCount = transactions.filter(t => t.origin_type && t.origin_type !== "manual").length;
     return (
       <div className="space-y-4" data-testid="panel-relatorio">
         <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
           <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} /> Relatório de Controle Financeiro</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
               <p className="text-[9px] font-black text-green-700 uppercase mb-1">Despesas Pagas</p>
               <p className="text-xl font-black text-green-700 font-mono">{formatCurrency(paidExpenses.reduce((a, t) => a + Number(t.amount), 0))}</p>
@@ -718,6 +741,11 @@ export default function FinanceiroPage() {
               <p className="text-[9px] font-black text-red-700 uppercase mb-1">Recebíveis Vencidos</p>
               <p className="text-xl font-black text-red-700 font-mono">{formatCurrency(overdueIncomes.reduce((a, t) => a + Number(t.amount), 0))}</p>
               <p className="text-[9px] text-red-600 font-bold">{overdueIncomes.length} título(s)</p>
+            </div>
+            <div className={`p-4 rounded-xl border text-center ${saldoRealizado >= 0 ? "bg-blue-50 border-blue-200" : "bg-orange-50 border-orange-200"}`} data-testid="card-saldo-realizado">
+              <p className="text-[9px] font-black uppercase mb-1" style={{ color: saldoRealizado >= 0 ? "#1d4ed8" : "#c2410c" }}>Saldo Realizado</p>
+              <p className="text-xl font-black font-mono" style={{ color: saldoRealizado >= 0 ? "#1d4ed8" : "#c2410c" }}>{formatCurrency(saldoRealizado)}</p>
+              <p className="text-[9px] font-bold" style={{ color: saldoRealizado >= 0 ? "#2563eb" : "#ea580c" }}>{autoCount} automático(s)</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

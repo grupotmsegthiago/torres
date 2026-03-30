@@ -30,6 +30,64 @@ const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
 const MISSION_POS_MIN_DISTANCE = 50;
 const OFF_ROUTE_THRESHOLD_M = 200;
 
+async function ensureFinancialOriginColumns() {
+  try {
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" }).then(() => {});
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" }).then(() => {});
+  } catch (_e) {
+    try {
+      await supabaseAdmin.from("financial_transactions").select("origin_type").limit(1);
+    } catch (_e2) {
+      console.log("[Financial] origin columns may need manual creation");
+    }
+  }
+}
+ensureFinancialOriginColumns();
+
+async function createAutoTransaction(params: {
+  description: string;
+  amount: number;
+  type: "INCOME" | "EXPENSE";
+  due_date: string;
+  origin_type: string;
+  origin_id: string;
+  category_name?: string;
+  entity_name?: string;
+  created_by?: string;
+}) {
+  try {
+    const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
+      description: params.description,
+      amount: params.amount,
+      type: params.type,
+      status: "PENDING",
+      due_date: params.due_date,
+      origin_type: params.origin_type,
+      origin_id: params.origin_id,
+      category_name: params.category_name || null,
+      entity_name: params.entity_name || null,
+      created_by: params.created_by || "SISTEMA",
+    }).select().single();
+    if (error) console.error("[AutoTransaction] create error:", error.message);
+    return data;
+  } catch (e: any) {
+    console.error("[AutoTransaction] create exception:", e.message);
+    return null;
+  }
+}
+
+async function removeAutoTransaction(origin_type: string, origin_id: string) {
+  try {
+    const { error } = await supabaseAdmin.from("financial_transactions")
+      .delete()
+      .eq("origin_type", origin_type)
+      .eq("origin_id", origin_id);
+    if (error) console.error("[AutoTransaction] remove error:", error.message);
+  } catch (e: any) {
+    console.error("[AutoTransaction] remove exception:", e.message);
+  }
+}
+
 function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1751,6 +1809,22 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const numAmount = parseFloat(amount);
       if (isNaN(numAmount) || numAmount <= 0) return res.status(400).json({ message: "Valor deve ser positivo" });
       const cost = await storage.createMissionCost({ serviceOrderId, category, description: description || null, amount: numAmount.toFixed(2) });
+
+      if (cost) {
+        const osNum = os.osNumber || `OS-${serviceOrderId}`;
+        await createAutoTransaction({
+          description: `CUSTO MISSÃO ${osNum} - ${category} ${description || ""}`.toUpperCase().trim(),
+          amount: numAmount,
+          type: "EXPENSE",
+          due_date: new Date().toISOString().split("T")[0],
+          origin_type: "mission_cost",
+          origin_id: String(cost.id),
+          category_name: "Custos de Missão",
+          entity_name: null,
+          created_by: "SISTEMA",
+        });
+      }
+
       res.json(cost);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -1766,6 +1840,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const exists = costs.find(c => c.id === costId);
       if (!exists) return res.status(404).json({ message: "Custo não encontrado nesta OS" });
       await storage.deleteMissionCost(costId);
+      await removeAutoTransaction("mission_cost", String(costId));
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2731,6 +2806,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const parsed = insertVehicleMaintenanceSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createVehicleMaintenance(parsed.data);
+
+    if (data && Number(parsed.data.cost) > 0) {
+      const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
+      const plateStr = vehicle?.plate || "";
+      await createAutoTransaction({
+        description: `MANUTENÇÃO ${plateStr} - ${parsed.data.type} ${parsed.data.description || ""}`.toUpperCase().trim(),
+        amount: Number(parsed.data.cost),
+        type: "EXPENSE",
+        due_date: parsed.data.date || new Date().toISOString().split("T")[0],
+        origin_type: "maintenance",
+        origin_id: String(data.id),
+        category_name: "Manutenção Veicular",
+        entity_name: parsed.data.provider || null,
+        created_by: "SISTEMA",
+      });
+    }
+
     res.status(201).json(data);
   });
 
@@ -2743,7 +2835,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.delete("/api/maintenance/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await storage.deleteVehicleMaintenance(Number(req.params.id));
+    const maintId = Number(req.params.id);
+    await storage.deleteVehicleMaintenance(maintId);
+    await removeAutoTransaction("maintenance", String(maintId));
     res.json({ message: "Manutenção removida" });
   });
 
@@ -2782,6 +2876,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (parsed.data.vehicleId) {
       await syncVehicleKmFromFuelings(parsed.data.vehicleId);
     }
+
+    if (data && Number(parsed.data.totalCost) > 0) {
+      const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
+      const plateStr = vehicle?.plate || "";
+      await createAutoTransaction({
+        description: `ABASTECIMENTO ${plateStr} - ${parsed.data.fuelType || "diesel"} ${parsed.data.liters}L`.toUpperCase().trim(),
+        amount: Number(parsed.data.totalCost),
+        type: "EXPENSE",
+        due_date: parsed.data.date || new Date().toISOString().split("T")[0],
+        origin_type: "fueling",
+        origin_id: String(data.id),
+        category_name: "Combustível",
+        entity_name: parsed.data.station || null,
+        created_by: "SISTEMA",
+      });
+    }
+
     res.status(201).json(data);
   });
 
@@ -2797,11 +2908,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.delete("/api/fueling/:id", requireAuth, requireDiretoria, async (req, res) => {
-    const existing = await storage.getVehicleFueling(Number(req.params.id));
-    await storage.deleteVehicleFueling(Number(req.params.id));
+    const fuelingId = Number(req.params.id);
+    const existing = await storage.getVehicleFueling(fuelingId);
+    await storage.deleteVehicleFueling(fuelingId);
     if (existing?.vehicleId) {
       await syncVehicleKmFromFuelings(existing.vehicleId);
     }
+    await removeAutoTransaction("fueling", String(fuelingId));
     res.json({ message: "Abastecimento removido" });
   });
 
@@ -6522,6 +6635,11 @@ Regras:
   app.put("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("origin_type").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (existing.origin_type && existing.origin_type !== "manual") {
+        return res.status(403).json({ message: "Lançamentos automáticos não podem ser editados manualmente" });
+      }
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao } = req.body;
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         description, amount, type, status, due_date, payment_date,
@@ -6556,6 +6674,11 @@ Regras:
 
   app.delete("/api/financial/transactions/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("origin_type").eq("id", req.params.id).single();
+      if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
+      if (existing.origin_type && existing.origin_type !== "manual") {
+        return res.status(403).json({ message: "Lançamentos automáticos não podem ser excluídos manualmente. Exclua o registro de origem." });
+      }
       const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("id", req.params.id);
       if (error) throw error;
       res.json({ success: true });
@@ -6582,6 +6705,53 @@ Regras:
         pendingIncomes: incomes.filter((t: any) => t.status === "PENDING").reduce((a: number, t: any) => a + Number(t.amount), 0),
         overdueIncomes: incomes.filter((t: any) => t.status === "PENDING" && t.due_date < today).length,
         totalTransactions: txs.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/resumo", requireAuth, async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      let query = supabaseAdmin.from("financial_transactions").select("*");
+      if (from) query = query.gte("due_date", from as string);
+      if (to) query = query.lte("due_date", to as string);
+      const { data: all, error } = await query;
+      if (error) throw error;
+      const txs = all || [];
+      const today = new Date().toISOString().split("T")[0];
+
+      const incomes = txs.filter((t: any) => t.type === "INCOME");
+      const expenses = txs.filter((t: any) => t.type === "EXPENSE");
+      const paidIncomes = incomes.filter((t: any) => t.status === "PAID");
+      const paidExpenses = expenses.filter((t: any) => t.status === "PAID");
+
+      const autoTxs = txs.filter((t: any) => t.origin_type && t.origin_type !== "manual");
+      const manualTxs = txs.filter((t: any) => !t.origin_type || t.origin_type === "manual");
+
+      const byOrigin: Record<string, { count: number; total: number }> = {};
+      for (const t of autoTxs) {
+        const key = t.origin_type || "unknown";
+        if (!byOrigin[key]) byOrigin[key] = { count: 0, total: 0 };
+        byOrigin[key].count++;
+        byOrigin[key].total += Number(t.amount);
+      }
+
+      res.json({
+        receita_total: incomes.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        receita_realizada: paidIncomes.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        receita_pendente: incomes.filter((t: any) => t.status === "PENDING").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        despesa_total: expenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        despesa_realizada: paidExpenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        despesa_pendente: expenses.filter((t: any) => t.status === "PENDING").reduce((a: number, t: any) => a + Number(t.amount), 0),
+        saldo_previsto: incomes.reduce((a: number, t: any) => a + Number(t.amount), 0) - expenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        saldo_realizado: paidIncomes.reduce((a: number, t: any) => a + Number(t.amount), 0) - paidExpenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
+        vencidos: txs.filter((t: any) => t.status === "PENDING" && t.due_date?.split("T")[0] < today).length,
+        total_lancamentos: txs.length,
+        lancamentos_auto: autoTxs.length,
+        lancamentos_manual: manualTxs.length,
+        por_origem: byOrigin,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6964,6 +7134,21 @@ Regras:
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
+
+      if (acao === "APROVADA" && data && Number(data.fat_total) > 0) {
+        await createAutoTransaction({
+          description: `ESCOLTA ${data.boletim_numero || ""} - ${data.client_name || "Cliente"} (${data.origem || ""} → ${data.destino || ""})`.trim(),
+          amount: Number(data.fat_total),
+          type: "INCOME",
+          due_date: (data.data_missao || data.created_at || new Date().toISOString()).split("T")[0],
+          origin_type: "escort_billing",
+          origin_id: data.id,
+          category_name: "Faturamento Escolta",
+          entity_name: data.client_name || null,
+          created_by: user.name,
+        });
+      }
+
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
