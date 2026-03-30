@@ -2757,6 +2757,80 @@ interface CtxMenuState {
   vehicle: TrackedVehicle;
 }
 
+function PdfViewerOverlay({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  const [pages, setPages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, disableWorker: true }).promise;
+        const rendered: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext("2d")!;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          rendered.push(canvas.toDataURL("image/png"));
+        }
+        if (!cancelled) setPages(rendered);
+      } catch (e) {
+        console.error("PDF render error:", e);
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose} data-testid="ctx-pdf-overlay">
+      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-bold text-neutral-900">{title}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => { const a = document.createElement("a"); a.href = url; a.download = `${title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`; a.click(); }} data-testid="ctx-btn-download-pdf">
+              <Send className="w-3.5 h-3.5 mr-1.5" /> Baixar
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { window.open(url, "_blank"); }} data-testid="ctx-btn-open-pdf">
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Abrir
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose} data-testid="ctx-btn-close-pdf">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-4 bg-neutral-100">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          ) : pages.length === 0 ? (
+            <div className="flex items-center justify-center h-64 text-neutral-400 text-sm">Não foi possível renderizar o PDF</div>
+          ) : (
+            <div className="space-y-4">
+              {pages.map((src, i) => (
+                <img key={i} src={src} alt={`Página ${i + 1}`} className="w-full rounded shadow-md" />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, gridData, onFocusVehicle, refPoints }: {
   state: CtxMenuState;
   onClose: () => void;
@@ -2842,8 +2916,9 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
     try {
       const res = await authFetch(`/api/service-orders/${osId}/pdf`);
       if (!res.ok) throw new Error("Falha ao gerar PDF");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const rawBlob = await res.blob();
+      const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdfBlob);
       setCtxPdfUrl(url);
       setCtxPdfTitle(`Pré-Alerta — OS ${v.activeOs?.osNumber || v.scheduledOs?.osNumber}`);
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
@@ -3217,27 +3292,9 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!ctxPdfUrl} onOpenChange={(open) => { if (!open) { if (ctxPdfUrl) URL.revokeObjectURL(ctxPdfUrl); setCtxPdfUrl(null); onClose(); } }}>
-        <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden" data-testid="ctx-pdf-overlay-dialog">
-          <DialogHeader className="px-4 pt-3 pb-2 border-b border-neutral-200 bg-white">
-            <DialogTitle className="text-sm font-bold flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" /> {ctxPdfTitle}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-neutral-400">Clique em "Baixar" para salvar o arquivo.</DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 h-[calc(85vh-80px)]">
-            {ctxPdfUrl && <iframe src={ctxPdfUrl} className="w-full h-full border-0" title={ctxPdfTitle} />}
-          </div>
-          <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-neutral-200 bg-white">
-            <Button size="sm" variant="outline" onClick={() => { if (ctxPdfUrl) { const a = document.createElement("a"); a.href = ctxPdfUrl; a.download = `${ctxPdfTitle.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`; a.click(); } }} data-testid="ctx-btn-download-pdf">
-              <Send className="w-3.5 h-3.5 mr-1.5" /> Baixar PDF
-            </Button>
-            <Button size="sm" onClick={() => { if (ctxPdfUrl) URL.revokeObjectURL(ctxPdfUrl); setCtxPdfUrl(null); onClose(); }} data-testid="ctx-btn-close-pdf">
-              Fechar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {ctxPdfUrl && (
+        <PdfViewerOverlay url={ctxPdfUrl} title={ctxPdfTitle} onClose={() => { if (ctxPdfUrl) URL.revokeObjectURL(ctxPdfUrl); setCtxPdfUrl(null); onClose(); }} />
+      )}
     </div>
   );
 }

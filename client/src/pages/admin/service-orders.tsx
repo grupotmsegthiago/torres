@@ -967,8 +967,9 @@ export default function ServiceOrdersPage() {
                           try {
                             const res = await authFetch(`/api/service-orders/${o.id}/pdf`);
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
-                            const blob = await res.blob();
-                            const url = URL.createObjectURL(blob);
+                            const rawBlob = await res.blob();
+                            const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
+                            const url = URL.createObjectURL(pdfBlob);
                             setPdfViewerUrl(url);
                             setPdfViewerTitle(`OS ${o.osNumber}`);
                           } catch {
@@ -980,8 +981,9 @@ export default function ServiceOrdersPage() {
                             try {
                               const res = await authFetch(`/api/service-orders/${o.id}/relatorio-missao`);
                               if (!res.ok) throw new Error("Falha ao gerar relatório");
-                              const blob = await res.blob();
-                              const url = URL.createObjectURL(blob);
+                              const rawBlob = await res.blob();
+                              const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
+                              const url = URL.createObjectURL(pdfBlob);
                               setPdfViewerUrl(url);
                               setPdfViewerTitle(`Relatório Missão ${o.osNumber}`);
                             } catch {
