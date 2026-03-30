@@ -388,6 +388,37 @@ function getMissionLabel(status: string | null) {
   }
 }
 
+function getTransitStatus(missionStatus: string | null): string {
+  switch (missionStatus) {
+    case "aguardando":
+    case "checkout_armamento":
+    case "checkout_viatura":
+    case "checkout_km_saida":
+      return "EM PREPARAÇÃO";
+    case "em_transito_origem":
+    case "checkin_chegada_km":
+    case "checkin_veiculo_escoltado":
+    case "checkin_dados_motorista":
+      return "EM TRÂNSITO À ORIGEM";
+    case "iniciar_missao":
+    case "em_transito_destino":
+      return "EM TRÂNSITO";
+    case "chegada_destino":
+    case "checkout_km_final":
+    case "checkout_viatura_retorno":
+      return "NO DESTINO";
+    case "finalizada":
+      return "FINALIZADA";
+    case "retorno_base":
+    case "chegada_base":
+      return "EM RETORNO";
+    case "encerrada":
+      return "ENCERRADA";
+    default:
+      return "EM OPERAÇÃO";
+  }
+}
+
 function getHoursUntilMission(scheduledDate: string | null | undefined): number | null {
   if (!scheduledDate) return null;
   const now = new Date();
@@ -473,8 +504,10 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
   const occurrence = os.lastAgentUpdate?.message || "Sem ocorrência";
   const locationAddr = v.tracker?.address || "—";
 
+  const transitStatus = getTransitStatus(os.missionStatus);
+
   return `*TORRES VIGILÂNCIA PATRIMONIAL*
-*OS* ${os.osNumber} | *STATUS:* ${statusLabel}
+*OS* ${os.osNumber} | *STATUS:* ${transitStatus}
 
 🗓 *DATA:* ${date}    *HORA:* ${time}
 🛡 *OPERAÇÃO:* ${statusLabel}
@@ -493,7 +526,9 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 
 📈*PROGRESSO DA MISSÃO:* ${progress}%
 📣 *OCORRÊNCIA:* ${occurrence?.toUpperCase()}
-🏙️ *LOCALIZAÇÃO:* ${locationAddr}`;
+🏙️ *LOCALIZAÇÃO:* ${locationAddr}
+
+*STATUS:* ${transitStatus}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
