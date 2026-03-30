@@ -537,6 +537,19 @@ function getPriorityDisplay(priority: string) {
   }
 }
 
+function formatElapsedTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0) return "";
+  const totalMin = Math.floor(diff / 60000);
+  if (totalMin < 1) return "agora";
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
 function getStatusDisplay(missionStatus: string, osStatus: string) {
   if (osStatus === "aberta" || (osStatus === "agendada" && !missionStatus)) {
     return { label: "Aguardando Despacho", icon: Clock, className: "bg-slate-50 text-slate-600 border-slate-200" };
@@ -3983,9 +3996,16 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </span>
                             )}
                             {v.activeOs.lastAgentUpdate ? (
-                              <span className="text-xs px-2 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
-                                {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
-                              </span>
+                              <>
+                                <span className="text-xs px-2 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                                  {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
+                                </span>
+                                {formatElapsedTime(v.activeOs.lastAgentUpdate.createdAt) && (
+                                  <span className="text-[10px] text-neutral-400 font-semibold" data-testid={`elapsed-${v.id}`}>
+                                    {formatElapsedTime(v.activeOs.lastAgentUpdate.createdAt)}
+                                  </span>
+                                )}
+                              </>
                             ) : (
                               <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
                                 getStatusDisplay(v.activeOs.missionStatus, v.activeOs.status).className
