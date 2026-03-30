@@ -18,12 +18,24 @@ import {
   auditLogs, users, loginSelfies,
   companyDocuments, homologationLogs, missionUpdates,
   referencePoints, insertReferencePointSchema,
+  missionPositions,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
 import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
+
+const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
+const MISSION_POS_MIN_DISTANCE = 50;
+
+function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const MISSION_STEPS = [
   "aguardando",
@@ -1574,6 +1586,62 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  app.get("/api/service-orders/:id/positions", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
+      const positions = await db.select().from(missionPositions)
+        .where(eq(missionPositions.serviceOrderId, id))
+        .orderBy(missionPositions.createdAt);
+      res.json(positions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/service-orders/:id/route", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
+      const os = await storage.getServiceOrder(id);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const positions = await db.select().from(missionPositions)
+        .where(eq(missionPositions.serviceOrderId, id))
+        .orderBy(missionPositions.createdAt);
+
+      let plannedRoute: string | null = os.route || null;
+
+      if (!plannedRoute && os.originLat != null && os.originLng != null && os.destinationLat != null && os.destinationLng != null) {
+        const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (apiKey) {
+          try {
+            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${os.originLat},${os.originLng}&destination=${os.destinationLat},${os.destinationLng}&key=${apiKey}`;
+            const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.routes && data.routes.length > 0) {
+                plannedRoute = data.routes[0].overview_polyline?.points || null;
+                if (plannedRoute) {
+                  await storage.updateServiceOrder(id, { route: plannedRoute } as any).catch(() => {});
+                }
+              }
+            }
+          } catch (_e) {}
+        }
+      }
+
+      res.json({
+        plannedRoute,
+        positions,
+        origin: os.originLat && os.originLng ? { lat: os.originLat, lng: os.originLng } : null,
+        destination: os.destinationLat && os.destinationLng ? { lat: os.destinationLat, lng: os.destinationLng } : null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/service-orders/:id/relatorio-missao", requireAuth, async (req, res) => {
     try {
       const PDFDocument = (await import("pdfkit")).default;
@@ -2906,6 +2974,24 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const tcVeiID = parseInt(v.truckscontrolIdentifier);
             if (!isNaN(tcVeiID)) {
               truckscontrol.recordPosition(tcVeiID, trackerData.latitude, trackerData.longitude, trackerData.speed ?? 0, trackerData.ignition === true);
+            }
+          }
+
+          const linkedMissionOrder = activeOrders.find((o) => o.vehicleId === v.id && o.missionStatus && o.status === "em_andamento");
+          if (linkedMissionOrder && trackerData.latitude != null && trackerData.longitude != null) {
+            const osId = linkedMissionOrder.id;
+            const prev = lastMissionPos.get(osId);
+            const dist = prev ? haversineDist(prev.lat, prev.lng, trackerData.latitude, trackerData.longitude) : Infinity;
+            if (dist >= MISSION_POS_MIN_DISTANCE) {
+              lastMissionPos.set(osId, { lat: trackerData.latitude, lng: trackerData.longitude });
+              db.insert(missionPositions).values({
+                serviceOrderId: osId,
+                vehicleId: v.id,
+                latitude: trackerData.latitude,
+                longitude: trackerData.longitude,
+                speed: trackerData.speed ?? 0,
+                ignition: trackerData.ignition ? 1 : 0,
+              }).catch((e) => console.error("[mission-pos] Insert error:", e.message));
             }
           }
 

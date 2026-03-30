@@ -649,11 +649,15 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   const circleRef = useRef<any>(null);
   const geofenceCirclesRef = useRef<any[]>([]);
   const refPointCirclesRef = useRef<any[]>([]);
+  const routePolylinesRef = useRef<any[]>([]);
+  const routeMarkersRef = useRef<any[]>([]);
   const centerMarkerRef = useRef<any>(null);
   const autocompleteRef = useRef<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [mapReady, setMapReady] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<TrackedVehicle | null>(null);
+  const [activeRouteOsId, setActiveRouteOsId] = useState<number | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
   const { data: mapRefPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
   const [radiusActive, setRadiusActive] = useState(false);
   const [radiusCenter, setRadiusCenter] = useState<{ lat: number; lng: number; label: string } | null>(null);
@@ -690,7 +694,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 
     window.initGridMap = () => setMapReady(true);
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=initGridMap`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async&callback=initGridMap`;
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
@@ -902,7 +906,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
                 <div style="font-size: 13px; margin-bottom: 2px;"><b>Agente 02:</b> ${_agent2}</div>
               </div>
               ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 6px; font-size: 12px;"><b>OS:</b> ${v.activeOs.osNumber} · <b>${v.activeOs.clientName}</b><br/><span style="color: #666;">${v.activeOs.status === "agendada" ? (v.activeOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento") : getMissionLabel(v.activeOs.lastAgentUpdate?.missionStep || v.activeOs.missionStatus)}</span>${v.activeOs.lastAgentUpdate ? `<br/><span style="color: #2563eb; font-size: 11px;">"${v.activeOs.lastAgentUpdate.message}"</span>` : ""}</div>` : ""}
-              ${v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
+              ${v.activeOs ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;"><button onclick="window.dispatchEvent(new CustomEvent('show-route', {detail: ${v.activeOs.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #1d4ed8; font-family: Inter, sans-serif;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">🗺️ Ver Rota</button>${v.trackerType === "truckscontrol" ? `<button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button>` : ""}</div>` : v.trackerType === "truckscontrol" ? `<div style="border-top: 1px solid #e5e7eb; margin-top: 6px; padding-top: 6px;"><button onclick="window.dispatchEvent(new CustomEvent('mirror-vehicle', {detail: ${v.id}}))" style="display: inline-flex; align-items: center; gap: 6px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 600; color: #333; font-family: Inter, sans-serif;" onmouseover="this.style.background='#eee'" onmouseout="this.style.background='#f5f5f5'">📡 Espelhar</button></div>` : ""}
             </div>
             ${v.photoFront ? `<div style="flex-shrink: 0; width: 150px;"><img src="${v.photoFront}" style="width: 150px; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" alt="${v.plate}" /></div>` : ""}
           </div>
@@ -1055,6 +1059,151 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     autocompleteRef.current = ac;
   }, [mapReady]);
 
+  const clearRouteOverlays = useCallback(() => {
+    routePolylinesRef.current.forEach((p) => p.setMap(null));
+    routePolylinesRef.current = [];
+    routeMarkersRef.current.forEach((m) => m.setMap(null));
+    routeMarkersRef.current = [];
+  }, []);
+
+  const showRouteOnMap = useCallback(async (osId: number) => {
+    if (!mapInstanceRef.current || !window.google?.maps) return;
+    setRouteLoading(true);
+    try {
+      const resp = await authFetch(`/api/service-orders/${osId}/route`);
+      if (!resp.ok) throw new Error("Falha ao buscar rota");
+      const data = await resp.json();
+
+      clearRouteOverlays();
+      const bounds = new window.google.maps.LatLngBounds();
+
+      if (data.plannedRoute && window.google.maps.geometry?.encoding) {
+        const path = window.google.maps.geometry.encoding.decodePath(data.plannedRoute);
+        const plannedLine = new window.google.maps.Polyline({
+          path,
+          strokeColor: "#000000",
+          strokeOpacity: 0.5,
+          strokeWeight: 4,
+          map: mapInstanceRef.current,
+          zIndex: 1,
+        });
+        routePolylinesRef.current.push(plannedLine);
+        path.forEach((p: any) => bounds.extend(p));
+      }
+
+      if (data.positions && data.positions.length > 0) {
+        const traveledPath = data.positions.map((p: any) => ({ lat: p.latitude, lng: p.longitude }));
+        const traveledLine = new window.google.maps.Polyline({
+          path: traveledPath,
+          strokeColor: "#2563eb",
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+          map: mapInstanceRef.current,
+          zIndex: 2,
+        });
+        routePolylinesRef.current.push(traveledLine);
+        traveledPath.forEach((p: any) => bounds.extend(p));
+
+        const firstPos = traveledPath[0];
+        const lastPos = traveledPath[traveledPath.length - 1];
+
+        const startMarker = new window.google.maps.Marker({
+          position: firstPos,
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#22c55e",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: "Início da rota percorrida",
+          zIndex: 10,
+        });
+        routeMarkersRef.current.push(startMarker);
+
+        const endMarker = new window.google.maps.Marker({
+          position: lastPos,
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#ef4444",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: "Última posição registrada",
+          zIndex: 10,
+        });
+        routeMarkersRef.current.push(endMarker);
+      }
+
+      if (data.origin) {
+        bounds.extend(data.origin);
+        const originMarker = new window.google.maps.Marker({
+          position: data.origin,
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            scale: 6,
+            fillColor: "#2563eb",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: "Origem",
+          zIndex: 5,
+        });
+        routeMarkersRef.current.push(originMarker);
+      }
+
+      if (data.destination) {
+        bounds.extend(data.destination);
+        const destMarker = new window.google.maps.Marker({
+          position: data.destination,
+          map: mapInstanceRef.current,
+          icon: {
+            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            scale: 6,
+            fillColor: "#dc2626",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: "Destino",
+          zIndex: 5,
+        });
+        routeMarkersRef.current.push(destMarker);
+      }
+
+      if (!bounds.isEmpty()) {
+        mapInstanceRef.current.fitBounds(bounds, 60);
+      }
+
+      setActiveRouteOsId(osId);
+    } catch (err) {
+      console.error("Route load error:", err);
+    } finally {
+      setRouteLoading(false);
+    }
+  }, [clearRouteOverlays]);
+
+  const closeRoute = useCallback(() => {
+    clearRouteOverlays();
+    setActiveRouteOsId(null);
+  }, [clearRouteOverlays]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const osId = (e as CustomEvent).detail;
+      if (osId) showRouteOnMap(osId);
+    };
+    window.addEventListener("show-route", handler);
+    return () => window.removeEventListener("show-route", handler);
+  }, [showRouteOnMap]);
+
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google?.maps) return;
 
@@ -1182,6 +1331,35 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
           </span>
         </div>
       </div>
+
+      {activeRouteOsId && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-blue-200 px-4 py-2.5 flex items-center gap-3">
+          <Navigation className="w-4 h-4 text-blue-600" />
+          <span className="text-xs font-semibold text-blue-800">Rota da OS ativa no mapa</span>
+          <div className="flex items-center gap-3 ml-2 text-[10px] font-medium text-neutral-500">
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-black inline-block rounded" /> Planejada</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-blue-600 inline-block rounded" /> Percorrida</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Início</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Última pos.</span>
+          </div>
+          <button
+            onClick={closeRoute}
+            className="ml-2 p-1 rounded-full hover:bg-red-50 text-red-500"
+            data-testid="btn-close-route"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {routeLoading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
+          <div className="bg-white rounded-xl shadow-lg px-6 py-3 flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+            <span className="text-sm font-medium text-neutral-700">Carregando rota...</span>
+          </div>
+        </div>
+      )}
 
       <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-10" data-testid="map-radius-controls">
         <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-neutral-200/80 overflow-hidden" style={{ width: "300px" }}>
@@ -3016,6 +3194,21 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
 
           <div className="border-t border-neutral-100 my-1" />
           <p className="px-3 py-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">Missão</p>
+
+          {hasOs && (
+            <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
+              onClick={() => {
+                const osId = v.activeOs?.id || v.scheduledOs?.id;
+                if (osId) {
+                  window.dispatchEvent(new CustomEvent("show-route", { detail: osId }));
+                  document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+                onClose();
+              }}
+              data-testid={`ctx-route-${v.id}`}>
+              <Navigation className="w-3.5 h-3.5 text-blue-500" /> Ver Rota
+            </button>
+          )}
 
           <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-2.5"
             onClick={async () => {

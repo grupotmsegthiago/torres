@@ -721,3 +721,18 @@ export const referencePoints = pgTable("reference_points", {
 export const insertReferencePointSchema = createInsertSchema(referencePoints).omit({ id: true, createdAt: true });
 export type InsertReferencePoint = z.infer<typeof insertReferencePointSchema>;
 export type ReferencePoint = typeof referencePoints.$inferSelect;
+
+export const missionPositions = pgTable("mission_positions", {
+  id: serial("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  vehicleId: integer("vehicle_id"),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+  speed: real("speed"),
+  ignition: integer("ignition"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMissionPositionSchema = createInsertSchema(missionPositions).omit({ id: true, createdAt: true });
+export type InsertMissionPosition = z.infer<typeof insertMissionPositionSchema>;
+export type MissionPosition = typeof missionPositions.$inferSelect;

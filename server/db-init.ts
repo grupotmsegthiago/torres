@@ -458,6 +458,21 @@ export async function ensureDbSchema() {
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
     `).catch(() => {});
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mission_positions (
+        id SERIAL PRIMARY KEY,
+        service_order_id INTEGER NOT NULL,
+        vehicle_id INTEGER,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        speed REAL,
+        ignition INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_so ON mission_positions(service_order_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
+
     console.log("[db-init] Schema verified OK");
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
