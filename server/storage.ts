@@ -29,6 +29,8 @@ import {
   type TelemetryEvent, type InsertTelemetryEvent,
   agentLocations,
   type AgentLocation, type InsertAgentLocation,
+  missionCosts,
+  type MissionCost, type InsertMissionCost,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -150,6 +152,10 @@ export interface IStorage {
 
   upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation>;
   getAgentLocations(): Promise<AgentLocation[]>;
+
+  getMissionCostsByOS(serviceOrderId: number): Promise<MissionCost[]>;
+  createMissionCost(cost: InsertMissionCost): Promise<MissionCost>;
+  deleteMissionCost(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -666,6 +672,19 @@ export class DatabaseStorage implements IStorage {
 
   async getAgentLocations(): Promise<AgentLocation[]> {
     return db.select().from(agentLocations).orderBy(desc(agentLocations.updatedAt));
+  }
+
+  async getMissionCostsByOS(serviceOrderId: number): Promise<MissionCost[]> {
+    return db.select().from(missionCosts).where(eq(missionCosts.serviceOrderId, serviceOrderId)).orderBy(desc(missionCosts.createdAt));
+  }
+
+  async createMissionCost(cost: InsertMissionCost): Promise<MissionCost> {
+    const [created] = await db.insert(missionCosts).values(cost).returning();
+    return created;
+  }
+
+  async deleteMissionCost(id: number): Promise<void> {
+    await db.delete(missionCosts).where(eq(missionCosts.id, id));
   }
 }
 

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2 } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
-import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon } from "@shared/schema";
+import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -105,6 +105,204 @@ function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
     }
   }
   return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
+}
+
+const COST_CATEGORIES = [
+  "Pedágio",
+  "Combustível",
+  "Alimentação",
+  "Hospedagem",
+  "Estacionamento",
+  "Manutenção Emergencial",
+  "Outro",
+];
+
+function MissionCostsSection({ orderId }: { orderId: number }) {
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [category, setCategory] = useState(COST_CATEGORIES[0]);
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const { data: costs = [], isLoading } = useQuery<MissionCost[]>({
+    queryKey: ["/api/service-orders", orderId, "costs"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (data: { category: string; description: string; amount: string }) => {
+      return apiRequest("POST", `/api/service-orders/${orderId}/costs`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders", orderId, "costs"] });
+      setCategory(COST_CATEGORIES[0]);
+      setDescription("");
+      setAmount("");
+      setShowForm(false);
+      toast({ title: "Custo adicionado" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao adicionar custo", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (costId: number) => {
+      return apiRequest("DELETE", `/api/service-orders/${orderId}/costs/${costId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders", orderId, "costs"] });
+      toast({ title: "Custo removido" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao remover custo", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const total = costs.reduce((sum, c) => sum + parseFloat(c.amount || "0"), 0);
+
+  const handleSubmit = () => {
+    const val = parseFloat(amount.replace(",", "."));
+    if (!val || val <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
+    addMutation.mutate({ category, description, amount: val.toFixed(2) });
+  };
+
+  return (
+    <div className="border border-neutral-200 rounded-lg overflow-hidden mb-3 mt-3" data-testid="section-mission-costs">
+      <div className="flex items-center justify-between bg-neutral-900 text-white px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          <span className="text-xs uppercase tracking-wider font-bold">Custos Operacionais</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-emerald-400">
+            R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-1 text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded-md font-semibold transition-colors"
+            data-testid="button-add-cost"
+          >
+            <Plus className="w-3 h-3" /> Adicionar
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="p-3 bg-blue-50/50 border-b border-neutral-200">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold mb-1 block">Categoria</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full text-sm border border-neutral-300 rounded-md px-2.5 py-1.5 bg-white"
+                data-testid="select-cost-category"
+              >
+                {COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold mb-1 block">Descrição</label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Opcional"
+                className="text-sm"
+                data-testid="input-cost-description"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold mb-1 block">Valor (R$)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0,00"
+                className="text-sm"
+                data-testid="input-cost-amount"
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={addMutation.isPending}
+                onClick={handleSubmit}
+                className="bg-neutral-900 hover:bg-neutral-800 text-xs"
+                data-testid="button-save-cost"
+              >
+                {addMutation.isPending ? "..." : "Salvar"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowForm(false)}
+                className="text-xs"
+                data-testid="button-cancel-cost"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="p-4 text-center text-xs text-neutral-400">Carregando...</div>
+      ) : costs.length === 0 ? (
+        <div className="p-4 text-center text-xs text-neutral-400">Nenhum custo registrado</div>
+      ) : (
+        <table className="w-full text-xs" data-testid="table-mission-costs">
+          <thead>
+            <tr className="bg-neutral-50 border-b border-neutral-100">
+              <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Categoria</th>
+              <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Descrição</th>
+              <th className="text-right px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Valor</th>
+              <th className="w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {costs.map(cost => (
+              <tr key={cost.id} data-testid={`row-cost-${cost.id}`}>
+                <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{cost.category}</td>
+                <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
+                <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-neutral-900 text-sm">
+                  R$ {parseFloat(cost.amount || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-2 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => deleteMutation.mutate(cost.id)}
+                    className="text-red-400 hover:text-red-600 transition-colors"
+                    data-testid={`button-delete-cost-${cost.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-neutral-50 border-t border-neutral-200">
+              <td colSpan={2} className="px-3.5 py-2.5 text-sm font-bold text-neutral-700 uppercase">Total</td>
+              <td className="px-3.5 py-2.5 text-right font-mono font-bold text-neutral-900 text-sm">
+                R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
 }
 
 function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled }: {
@@ -679,6 +877,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </table>
               </div>
             )}
+
+            {order && <MissionCostsSection orderId={order.id} />}
           </div>
         )}
 

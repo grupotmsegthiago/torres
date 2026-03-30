@@ -736,3 +736,16 @@ export const missionPositions = pgTable("mission_positions", {
 export const insertMissionPositionSchema = createInsertSchema(missionPositions).omit({ id: true, createdAt: true });
 export type InsertMissionPosition = z.infer<typeof insertMissionPositionSchema>;
 export type MissionPosition = typeof missionPositions.$inferSelect;
+
+export const missionCosts = pgTable("mission_costs", {
+  id: serial("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  category: text("category").notNull(),
+  description: text("description"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMissionCostSchema = createInsertSchema(missionCosts).omit({ id: true, createdAt: true });
+export type InsertMissionCost = z.infer<typeof insertMissionCostSchema>;
+export type MissionCost = typeof missionCosts.$inferSelect;

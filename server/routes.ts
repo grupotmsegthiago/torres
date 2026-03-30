@@ -1726,6 +1726,49 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  app.get("/api/service-orders/:id/costs", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
+      const costs = await storage.getMissionCostsByOS(id);
+      res.json(costs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/service-orders/:id/costs", requireAuth, async (req, res) => {
+    try {
+      const serviceOrderId = Number(req.params.id);
+      if (!Number.isInteger(serviceOrderId) || serviceOrderId <= 0) return res.status(400).json({ message: "ID inválido" });
+      const os = await storage.getServiceOrder(serviceOrderId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+      const { category, description, amount } = req.body;
+      if (!category || typeof category !== "string") return res.status(400).json({ message: "Categoria é obrigatória" });
+      const numAmount = parseFloat(amount);
+      if (isNaN(numAmount) || numAmount <= 0) return res.status(400).json({ message: "Valor deve ser positivo" });
+      const cost = await storage.createMissionCost({ serviceOrderId, category, description: description || null, amount: numAmount.toFixed(2) });
+      res.json(cost);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/service-orders/:id/costs/:costId", requireAuth, async (req, res) => {
+    try {
+      const serviceOrderId = Number(req.params.id);
+      const costId = Number(req.params.costId);
+      if (!Number.isInteger(costId) || costId <= 0) return res.status(400).json({ message: "ID inválido" });
+      const costs = await storage.getMissionCostsByOS(serviceOrderId);
+      const exists = costs.find(c => c.id === costId);
+      if (!exists) return res.status(404).json({ message: "Custo não encontrado nesta OS" });
+      await storage.deleteMissionCost(costId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/service-orders/:id/route", requireAuth, async (req, res) => {
     try {
       const id = Number(req.params.id);
