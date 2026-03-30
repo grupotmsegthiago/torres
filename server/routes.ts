@@ -825,7 +825,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.get("/api/boletim-medicao/os-concluidas", requireAuth, async (_req, res) => {
     try {
       const allOrders = await storage.getServiceOrders();
-      const concluidas = allOrders.filter(o => o.status === "concluida" || o.missionStatus === "encerrada");
+      const concluidas = allOrders.filter(o =>
+        o.status === "concluida" || o.missionStatus === "encerrada" ||
+        o.status === "em_andamento" || o.status === "agendada"
+      );
 
       const enriched = await Promise.all(concluidas.map(async (os) => {
         const [client, vehicle, emp1, emp2, kit] = await Promise.all([

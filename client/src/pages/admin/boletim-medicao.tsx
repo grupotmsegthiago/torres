@@ -19,7 +19,7 @@ const fmt = (val: number | null | undefined) => {
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
 const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
 
-type StatusFilter = "ALL" | "PENDENTE" | "APROVADA" | "REJEITADA";
+type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA";
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
@@ -93,19 +93,22 @@ export default function BoletimMedicaoPage() {
 
   const filteredGroups = Object.entries(clientGroups).map(([cid, group]) => {
     let orders = group.orders;
-    if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
+    if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+    else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
     if (orders.length === 0) return null;
     return { clientId: Number(cid), clientName: group.clientName, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; orders: any[] }[];
 
+  const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada").length;
   const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
 
   const getBillingStatus = (os: any) => {
     if (!os.billing) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600" };
     switch (os.billing.status) {
+      case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-100 text-blue-800" };
       case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-100 text-amber-800" };
       case "APROVADA": return { label: "Aprovada", color: "bg-green-100 text-green-800" };
       case "REJEITADA": return { label: "Rejeitada", color: "bg-red-100 text-red-800" };
@@ -115,13 +118,15 @@ export default function BoletimMedicaoPage() {
     }
   };
 
+  const isLiveOs = (os: any) => (os.status === "em_andamento" || os.status === "agendada") && os.missionStatus !== "encerrada";
+
   return (
     <AdminLayout>
       <div className="space-y-6" data-testid="page-boletim-medicao">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
-            <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-1">OS com operacao encerrada — aprovacao de faturamento</p>
+            <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-1">OS em andamento e encerradas — verificacao e aprovacao de faturamento</p>
           </div>
           <div className="flex items-center gap-3">
             {pendingCount > 0 && (
@@ -136,7 +141,7 @@ export default function BoletimMedicaoPage() {
         </div>
 
         <div className="flex gap-2" data-testid="filter-status">
-          {([["ALL", "Todas"], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"]] as [StatusFilter, string][]).map(([val, label]) => (
+          {([["ALL", "Todas"], ["EM_ANDAMENTO", `Em Andamento (${liveCount})`], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"]] as [StatusFilter, string][]).map(([val, label]) => (
             <button
               key={val}
               onClick={() => setStatusFilter(val)}
@@ -155,8 +160,8 @@ export default function BoletimMedicaoPage() {
         ) : filteredGroups.length === 0 ? (
           <Card className="p-12 text-center">
             <FileText size={48} className="mx-auto text-neutral-200 mb-4" />
-            <p className="text-sm font-black text-neutral-400 uppercase">Nenhuma OS concluída encontrada</p>
-            <p className="text-xs text-neutral-300 mt-1">As OS finalizadas pelos agentes aparecerão aqui para validação</p>
+            <p className="text-sm font-black text-neutral-400 uppercase">Nenhuma OS encontrada</p>
+            <p className="text-xs text-neutral-300 mt-1">As OS em andamento e finalizadas aparecerão aqui para verificação</p>
           </Card>
         ) : (
           <div className="space-y-4">
@@ -214,12 +219,16 @@ export default function BoletimMedicaoPage() {
                               return (
                                 <tr key={os.id} className="border-b border-neutral-50 hover:bg-neutral-50 transition-colors" data-testid={`row-os-${os.id}`}>
                                   <td className="px-4 py-3">
-                                    <span className="font-mono font-black text-neutral-800">{os.osNumber}</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono font-black text-neutral-800">{os.osNumber}</span>
+                                      {isLiveOs(os) && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Em andamento" />}
+                                    </div>
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
+                                    {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className="font-bold text-neutral-600">{fmtDate(os.scheduledDate || os.createdAt)}</span>
-                                    {os.missionStartedAt && <p className="text-[9px] text-neutral-400">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : "—"}</p>}
+                                    {os.missionStartedAt && <p className="text-[9px] text-neutral-400">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : <span className="text-green-600 font-bold">em andamento</span>}</p>}
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="max-w-[150px]">
@@ -251,15 +260,15 @@ export default function BoletimMedicaoPage() {
                                   </td>
                                   <td className="px-4 py-3 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                      {!b && (
+                                      {(!b || isLiveOs(os)) && (
                                         <button
                                           onClick={() => calcularMutation.mutate(os.id)}
                                           disabled={calcularMutation.isPending}
                                           className="p-1.5 rounded-lg hover:bg-blue-100 transition-colors"
-                                          title="Calcular Billing"
+                                          title={b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
                                           data-testid={`button-calc-os-${os.id}`}
                                         >
-                                          <Calculator size={16} className="text-blue-500" />
+                                          <Calculator size={16} className={isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
                                         </button>
                                       )}
                                       <button
