@@ -2021,18 +2021,76 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       let plannedRoute: string | null = os.route || null;
 
-      if (!plannedRoute && os.originLat != null && os.originLng != null && os.destinationLat != null && os.destinationLng != null) {
+      const stepLogs: any[] = Array.isArray(os.stepLogs) ? os.stepLogs : [];
+      const departGeo = stepLogs.find((l: any) => l.step === "checkout_km_saida" && l.geo)?.geo;
+      let startLat: number | null = null;
+      let startLng: number | null = null;
+      if (departGeo?.latitude && departGeo?.longitude) {
+        startLat = departGeo.latitude;
+        startLng = departGeo.longitude;
+      } else if (os.assignedEmployeeId) {
+        const emp = await storage.getEmployee(os.assignedEmployeeId);
+        if (emp?.addressLat && emp?.addressLng) {
+          startLat = emp.addressLat;
+          startLng = emp.addressLng;
+        }
+      }
+
+      const hasOrigin = os.originLat != null && os.originLng != null;
+      const hasDest = os.destinationLat != null && os.destinationLng != null;
+      const hasStart = startLat != null && startLng != null;
+
+      if (plannedRoute && hasStart && hasOrigin && hasDest) {
+        const decoded = decodePolyline(plannedRoute);
+        if (decoded.length > 0) {
+          const firstPt = decoded[0];
+          const distToStart = haversineDistance(firstPt.lat, firstPt.lng, startLat!, startLng!);
+          if (distToStart > 5) {
+            plannedRoute = null;
+            await storage.updateServiceOrder(id, { route: null } as any).catch(() => {});
+          }
+        }
+      }
+
+      if (!plannedRoute && (hasOrigin || hasDest)) {
         const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
         if (apiKey) {
           try {
-            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${os.originLat},${os.originLng}&destination=${os.destinationLat},${os.destinationLng}&key=${apiKey}`;
-            const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.routes && data.routes.length > 0) {
-                plannedRoute = data.routes[0].overview_polyline?.points || null;
-                if (plannedRoute) {
-                  await storage.updateServiceOrder(id, { route: plannedRoute }).catch(() => {});
+            let dirOrigin = "";
+            let dirDest = "";
+            let waypointsParam = "";
+
+            if (hasStart && hasOrigin && hasDest) {
+              dirOrigin = `${startLat},${startLng}`;
+              dirDest = `${os.destinationLat},${os.destinationLng}`;
+              waypointsParam = `&waypoints=${os.originLat},${os.originLng}`;
+            } else if (hasOrigin && hasDest) {
+              dirOrigin = `${os.originLat},${os.originLng}`;
+              dirDest = `${os.destinationLat},${os.destinationLng}`;
+            } else if (hasStart && hasOrigin) {
+              dirOrigin = `${startLat},${startLng}`;
+              dirDest = `${os.originLat},${os.originLng}`;
+            } else if (hasStart && hasDest) {
+              dirOrigin = `${startLat},${startLng}`;
+              dirDest = `${os.destinationLat},${os.destinationLng}`;
+            } else if (hasOrigin) {
+              dirOrigin = `${os.originLat},${os.originLng}`;
+              dirDest = `${os.originLat},${os.originLng}`;
+            } else {
+              dirOrigin = `${os.destinationLat},${os.destinationLng}`;
+              dirDest = `${os.destinationLat},${os.destinationLng}`;
+            }
+
+            if (dirOrigin && dirDest) {
+              const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${dirOrigin}&destination=${dirDest}${waypointsParam}&key=${apiKey}`;
+              const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+              if (resp.ok) {
+                const data = await resp.json();
+                if (data.routes && data.routes.length > 0) {
+                  plannedRoute = data.routes[0].overview_polyline?.points || null;
+                  if (plannedRoute) {
+                    await storage.updateServiceOrder(id, { route: plannedRoute }).catch(() => {});
+                  }
                 }
               }
             }
@@ -2074,8 +2132,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         positions,
         segments,
         remainingRoute,
-        origin: os.originLat != null && os.originLng != null ? { lat: os.originLat, lng: os.originLng } : null,
-        destination: os.destinationLat != null && os.destinationLng != null ? { lat: os.destinationLat, lng: os.destinationLng } : null,
+        start: hasStart ? { lat: startLat, lng: startLng, label: "Saída Base" } : null,
+        origin: hasOrigin ? { lat: os.originLat, lng: os.originLng, label: os.origin || "Origem" } : null,
+        destination: hasDest ? { lat: os.destinationLat, lng: os.destinationLng, label: os.destination || "Destino" } : null,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

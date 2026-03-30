@@ -1293,40 +1293,89 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         routeMarkersRef.current.push(endMarker);
       }
 
+      if (data.start) {
+        bounds.extend(data.start);
+        const createLabeledMarker = (pos: any, label: string, bgColor: string, textColor: string) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 120;
+          canvas.height = 36;
+          const ctx = canvas.getContext("2d")!;
+          ctx.fillStyle = bgColor;
+          ctx.beginPath();
+          ctx.roundRect(2, 2, 116, 28, 6);
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = textColor;
+          ctx.font = "bold 11px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(label, 60, 20);
+          return new window.google.maps.Marker({
+            position: pos,
+            map: mapInstanceRef.current,
+            icon: { url: canvas.toDataURL(), scaledSize: new window.google.maps.Size(100, 30), anchor: new window.google.maps.Point(50, 15) },
+            title: label,
+            zIndex: 6,
+          });
+        };
+
+        const startM = createLabeledMarker(data.start, data.start.label || "A - Saída", "#1e40af", "#fff");
+        routeMarkersRef.current.push(startM);
+      }
+
       if (data.origin) {
         bounds.extend(data.origin);
+        const canvas = document.createElement("canvas");
+        canvas.width = 120;
+        canvas.height = 36;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = "#059669";
+        ctx.beginPath();
+        ctx.roundRect(2, 2, 116, 28, 6);
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 11px Inter, sans-serif";
+        ctx.textAlign = "center";
+        const originLabel = data.origin.label ? `B - ${data.origin.label}`.substring(0, 18) : "B - Origem";
+        ctx.fillText(originLabel, 60, 20);
         const originMarker = new window.google.maps.Marker({
           position: data.origin,
           map: mapInstanceRef.current,
-          icon: {
-            path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-            scale: 6,
-            fillColor: "#2563eb",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-          title: "Origem",
-          zIndex: 5,
+          icon: { url: canvas.toDataURL(), scaledSize: new window.google.maps.Size(100, 30), anchor: new window.google.maps.Point(50, 15) },
+          title: data.origin.label || "Origem",
+          zIndex: 6,
         });
         routeMarkersRef.current.push(originMarker);
       }
 
       if (data.destination) {
         bounds.extend(data.destination);
+        const canvas = document.createElement("canvas");
+        canvas.width = 120;
+        canvas.height = 36;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = "#dc2626";
+        ctx.beginPath();
+        ctx.roundRect(2, 2, 116, 28, 6);
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 11px Inter, sans-serif";
+        ctx.textAlign = "center";
+        const destLabel = data.destination.label ? `C - ${data.destination.label}`.substring(0, 18) : "C - Destino";
+        ctx.fillText(destLabel, 60, 20);
         const destMarker = new window.google.maps.Marker({
           position: data.destination,
           map: mapInstanceRef.current,
-          icon: {
-            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-            scale: 6,
-            fillColor: "#dc2626",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-          title: "Destino",
-          zIndex: 5,
+          icon: { url: canvas.toDataURL(), scaledSize: new window.google.maps.Size(100, 30), anchor: new window.google.maps.Point(50, 15) },
+          title: data.destination.label || "Destino",
+          zIndex: 6,
         });
         routeMarkersRef.current.push(destMarker);
       }
