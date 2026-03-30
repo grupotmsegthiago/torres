@@ -2671,52 +2671,80 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const updStepLabels: Record<string, string> = {
           em_transito_origem: "Em Transito p/ Origem", em_transito_destino: "Em Transito p/ Destino",
           checkin_chegada_km: "Chegada na Origem", iniciar_missao: "Inicio de Missao",
+          checkout_km_saida: "KM Saida", checkout_viatura: "Conf. Viatura",
+          checkin_veiculo_escoltado: "Veic. Escoltado", checkin_dados_motorista: "Dados Motorista",
+          chegada_destino: "Chegada Destino", checkout_km_final: "KM Final",
+          checkout_viatura_retorno: "Conf. Retorno", encerrada: "Encerrada",
         };
         for (const upd of updates) {
           const msgText = sanitize(upd.message);
-          const charsPerLine = Math.floor((W - 24) / 4.5);
-          const msgLines = Math.max(1, Math.ceil(msgText.length / charsPerLine));
-          const msgBlockH = msgLines * 11;
-          const cardH = 20 + msgBlockH + (upd.latitude ? 14 : 0) + 6;
-          ensureSpace(cardH + 8);
-
-          doc.save();
-          doc.rect(LM, doc.y, W, cardH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
-          doc.rect(LM, doc.y, 4, cardH).fill(BLUE);
-
-          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(BLUE)
-            .text(fmtTime(upd.createdAt), LM + 12, doc.y + 6, { width: 80, lineBreak: false });
-          doc.font("Helvetica-Bold").fontSize(7.5).fillColor(PRIMARY)
-            .text(sanitize(upd.employeeName) || "Agente", LM + 96, doc.y + 6, { width: W * 0.35, lineBreak: false });
-          if (upd.missionStep) {
-            doc.font("Helvetica").fontSize(6.5).fillColor(GRAY_TEXT)
-              .text(updStepLabels[upd.missionStep] || upd.missionStep, LM + W - 160, doc.y + 7, { width: 150, align: "right", lineBreak: false });
-          }
-
-          doc.font("Helvetica").fontSize(7.5).fillColor(PRIMARY)
-            .text(msgText, LM + 12, doc.y + 20, { width: W - 24 });
-
-          if (upd.latitude && upd.longitude) {
-            const gpsY = doc.y + cardH - 16;
-            const updGpsLink = gmapsUrl(upd.latitude, upd.longitude);
-            doc.font("Helvetica").fontSize(5.5).fillColor("#6366f1")
-              .text(`GPS: ${Number(upd.latitude).toFixed(5)}, ${Number(upd.longitude).toFixed(5)}`, LM + 12, gpsY, { width: W - 24, lineBreak: false, link: updGpsLink || undefined });
-          }
-          doc.restore();
-          doc.y += cardH + 6;
-
+          let imgBuf: Buffer | null = null;
           if (upd.photoUrl) {
             try {
-              const isBase64 = upd.photoUrl.startsWith("data:");
-              if (isBase64) {
-                const base64Data = upd.photoUrl.split(",")[1];
-                const imgBuf = Buffer.from(base64Data, "base64");
-                ensureSpace(110);
-                doc.image(imgBuf, LM + 12, doc.y, { width: 130 });
-                doc.y += 100;
+              const isB64 = upd.photoUrl.startsWith("data:");
+              if (isB64) {
+                const b64 = upd.photoUrl.split(",")[1];
+                imgBuf = Buffer.from(b64, "base64");
               }
             } catch {}
           }
+
+          const hasPhoto = !!imgBuf;
+          const photoW = hasPhoto ? 130 : 0;
+          const photoH = hasPhoto ? 100 : 0;
+          const infoX = LM + (hasPhoto ? photoW + 12 : 12);
+          const infoW = W - (hasPhoto ? photoW + 20 : 20);
+          const charsPerLine = Math.floor(infoW / 4.2);
+          const msgLines = Math.max(1, Math.ceil(msgText.length / charsPerLine));
+          const msgBlockH = msgLines * 10;
+          const infoContentH = 22 + 14 + msgBlockH + (upd.latitude ? 14 : 0) + (upd.missionStep ? 12 : 0);
+          const cardH = Math.max(hasPhoto ? photoH + 10 : 0, infoContentH) + 4;
+          ensureSpace(cardH + 8);
+
+          const cardY = doc.y;
+          doc.save();
+          doc.rect(LM, cardY, W, cardH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+          doc.rect(LM, cardY, 4, cardH).fill(BLUE);
+
+          if (hasPhoto && imgBuf) {
+            doc.save();
+            try {
+              doc.rect(LM + 8, cardY + 5, photoW, photoH).clip();
+              doc.image(imgBuf, LM + 8, cardY + 5, { width: photoW, height: photoH });
+            } catch {} finally { doc.restore(); }
+            doc.rect(LM + 8, cardY + 5, photoW, photoH).lineWidth(0.3).strokeColor(GRAY_BORDER).stroke();
+          }
+
+          let curY = cardY + 6;
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(BLUE)
+            .text(fmtTime(upd.createdAt), infoX, curY, { width: 70, lineBreak: false });
+          doc.font("Helvetica-Bold").fontSize(8).fillColor(PRIMARY)
+            .text(sanitize(upd.employeeName) || "Agente", infoX + 72, curY, { width: infoW - 72, lineBreak: false });
+          curY += 14;
+
+          if (upd.missionStep) {
+            const stepBadge = updStepLabels[upd.missionStep] || upd.missionStep;
+            const badgeW = Math.min(stepBadge.length * 5.5 + 12, infoW);
+            doc.save();
+            doc.rect(infoX, curY, badgeW, 12).fill("#e0e7ff");
+            doc.font("Helvetica-Bold").fontSize(6).fillColor("#4338ca")
+              .text(stepBadge, infoX + 4, curY + 3, { width: badgeW - 8, lineBreak: false });
+            doc.restore();
+            curY += 14;
+          }
+
+          doc.font("Helvetica").fontSize(7.5).fillColor(PRIMARY)
+            .text(msgText, infoX, curY, { width: infoW });
+          curY += msgBlockH + 4;
+
+          if (upd.latitude && upd.longitude) {
+            const updGpsLink = gmapsUrl(upd.latitude, upd.longitude);
+            doc.font("Helvetica").fontSize(5.5).fillColor("#6366f1")
+              .text(`GPS: ${Number(upd.latitude).toFixed(5)}, ${Number(upd.longitude).toFixed(5)}`, infoX, curY, { width: infoW, lineBreak: false, link: updGpsLink || undefined });
+          }
+
+          doc.restore();
+          doc.y = cardY + cardH + 6;
         }
         doc.y += 6;
       }
