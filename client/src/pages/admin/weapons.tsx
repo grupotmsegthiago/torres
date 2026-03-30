@@ -1070,6 +1070,8 @@ function naturalSort(a: string, b: string): number {
 
 function KitsTab({ weapons }: { weapons: Weapon[] }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const [showKitForm, setShowKitForm] = useState(false);
   const [editKit, setEditKit] = useState<EnrichedKit | undefined>();
   const [expandedKit, setExpandedKit] = useState<number | null>(null);
