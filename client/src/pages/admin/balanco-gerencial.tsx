@@ -95,17 +95,26 @@ interface ExpenseTransaction {
   status: string;
 }
 
+interface TimesheetEntry {
+  employeeId: number;
+  date: string;
+  hoursWorked: number;
+}
+
 interface DashboardData {
   byVehicle: { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }[];
   byAgent: { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }[];
   byMission: {
     id: string; data: string; origem: string; destino: string;
-    placa_viatura: string; vigilante: string; vigilante_id: number; fat_total: number;
+    placa_viatura: string; vigilante: string; vigilante_id: number;
+    vigilante2?: string | null; vigilante2_id?: number | null;
+    fat_total: number;
     pag_total: number; despesas: number; lucro: number; margem: number;
     km_total: number; horas_trabalhadas: number; boletim: string; status: string; client_name: string;
   }[];
   billings: any[];
   expenseTransactions: ExpenseTransaction[];
+  timesheetsByAgent: TimesheetEntry[];
   missionsByDay: Record<string, any[]>;
   expensesByDay: Record<string, number>;
   totals: {
@@ -196,6 +205,14 @@ export default function BalancoGerencialPage() {
       vehicleMap[plate].missions += 1;
     });
 
+    const timesheetHoursInPeriod: Record<number, number> = {};
+    (data.timesheetsByAgent || []).forEach(ts => {
+      if (!ts.date || !ts.employeeId) return;
+      if (ts.date >= startStr && ts.date <= endStr) {
+        timesheetHoursInPeriod[ts.employeeId] = (timesheetHoursInPeriod[ts.employeeId] || 0) + (ts.hoursWorked || 0);
+      }
+    });
+
     const agentMap: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }> = {};
     missions.forEach(m => {
       const name = m.vigilante || "SEM AGENTE";
@@ -204,7 +221,18 @@ export default function BalancoGerencialPage() {
       agentMap[agentKey].fat_total += m.fat_total;
       agentMap[agentKey].pag_total += m.pag_total;
       agentMap[agentKey].missions += 1;
-      agentMap[agentKey].horas_trabalhadas += m.horas_trabalhadas || 0;
+
+      if (m.vigilante2_id && m.vigilante2) {
+        const key2 = String(m.vigilante2_id);
+        if (!agentMap[key2]) agentMap[key2] = { id: m.vigilante2_id, name: m.vigilante2, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
+        agentMap[key2].fat_total += m.fat_total;
+        agentMap[key2].pag_total += m.pag_total;
+        agentMap[key2].missions += 1;
+      }
+    });
+
+    Object.values(agentMap).forEach(agent => {
+      agent.horas_trabalhadas = timesheetHoursInPeriod[agent.id] || 0;
     });
 
     return {
@@ -226,7 +254,7 @@ export default function BalancoGerencialPage() {
     const lucro = fat - pag - desp;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
-    const horas = filtered.missions.reduce((a, m) => a + (m.horas_trabalhadas || 0), 0);
+    const horas = filtered.agents.reduce((a, ag) => a + (ag.horas_trabalhadas || 0), 0);
     return {
       fat, pag, desp, lucro, margem, km, horas, total: filtered.missions.length,
       desp_combustivel: despFin.fueling,

@@ -7791,6 +7791,8 @@ Regras:
       const { data: vehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model");
       const { data: employees } = await supabaseAdmin.from("employees").select("id, name");
 
+      const allTimesheets = await storage.getTimesheets();
+
       const items = billings || [];
       const txns = transactions || [];
 
@@ -7838,6 +7840,24 @@ Regras:
         byVehicle[plate].despesas += Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
       });
 
+      const timesheetHoursByEmployee: Record<number, number> = {};
+      allTimesheets.forEach((ts: any) => {
+        const empId = ts.employeeId;
+        if (!empId) return;
+        let hours = 0;
+        if (ts.hoursWorked != null && Number(ts.hoursWorked) > 0) {
+          hours = Number(ts.hoursWorked);
+        } else if (ts.checkIn && ts.checkOut) {
+          const parseTime = (t: string) => { const [h, m] = t.split(":").map(Number); return h + (m || 0) / 60; };
+          let worked = parseTime(ts.checkOut) - parseTime(ts.checkIn);
+          if (ts.checkOutLunch && ts.checkInLunch) {
+            worked -= (parseTime(ts.checkInLunch) - parseTime(ts.checkOutLunch));
+          }
+          if (worked > 0) hours = worked;
+        }
+        timesheetHoursByEmployee[empId] = (timesheetHoursByEmployee[empId] || 0) + hours;
+      });
+
       const byAgent: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }> = {};
       items.forEach((b: any) => {
         const name = b.vigilante_name || "SEM AGENTE";
@@ -7847,7 +7867,6 @@ Regras:
         byAgent[key].fat_total += Number(b.fat_total || 0);
         byAgent[key].pag_total += Number(b.pag_total || 0);
         byAgent[key].missions += 1;
-        byAgent[key].horas_trabalhadas += Number(b.horas_trabalhadas || 0);
 
         if (b.vigilante2_id && b.vigilante2_name) {
           const key2 = String(b.vigilante2_id);
@@ -7855,8 +7874,11 @@ Regras:
           byAgent[key2].fat_total += Number(b.fat_total || 0);
           byAgent[key2].pag_total += Number(b.pag_total || 0);
           byAgent[key2].missions += 1;
-          byAgent[key2].horas_trabalhadas += Number(b.horas_trabalhadas || 0);
         }
+      });
+
+      Object.values(byAgent).forEach((agent) => {
+        agent.horas_trabalhadas = timesheetHoursByEmployee[agent.id] || 0;
       });
 
       const byMission = items.map((b: any) => ({
@@ -7896,12 +7918,28 @@ Regras:
           status: t.status,
         }));
 
+      const timesheetsByAgent = allTimesheets.map((ts: any) => ({
+        employeeId: ts.employeeId,
+        date: ts.date,
+        hoursWorked: (() => {
+          if (ts.hoursWorked != null && Number(ts.hoursWorked) > 0) return Number(ts.hoursWorked);
+          if (ts.checkIn && ts.checkOut) {
+            const parseT = (t: string) => { const [h, m] = t.split(":").map(Number); return h + (m || 0) / 60; };
+            let w = parseT(ts.checkOut) - parseT(ts.checkIn);
+            if (ts.checkOutLunch && ts.checkInLunch) w -= (parseT(ts.checkInLunch) - parseT(ts.checkOutLunch));
+            return w > 0 ? Math.round(w * 100) / 100 : 0;
+          }
+          return 0;
+        })(),
+      }));
+
       res.json({
         billings: items,
         missionsByDay,
         revenueByDay,
         expensesByDay,
         expenseTransactions,
+        timesheetsByAgent,
         byVehicle: Object.values(byVehicle),
         byAgent: Object.values(byAgent),
         byMission,
