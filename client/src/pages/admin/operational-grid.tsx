@@ -1017,18 +1017,25 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         `;
       }
 
-      const infoWindow = new window.google.maps.InfoWindow({ content: infoContent });
+      const infoWindow = new window.google.maps.InfoWindow({ content: infoContent, maxWidth: 340, disableAutoPan: false });
       marker.addListener("click", () => {
-        infoWindow.open(mapInstanceRef.current, marker);
+        markersRef.current.forEach((m: any) => m._infoWindow?.close());
         setSelectedVehicle(v);
         if (mapInstanceRef.current && v.tracker?.latitude && v.tracker?.longitude) {
+          const currentZoom = mapInstanceRef.current.getZoom() || 7;
+          if (currentZoom < 10) {
+            mapInstanceRef.current.setZoom(12);
+          }
           mapInstanceRef.current.panTo({ lat: v.tracker.latitude, lng: v.tracker.longitude });
-          mapInstanceRef.current.setZoom(14);
         }
+        setTimeout(() => {
+          infoWindow.open(mapInstanceRef.current, marker);
+        }, 100);
         if (v.activeOs?.id) {
           showRouteOnMapRef.current?.(v.activeOs.id);
         }
       });
+      (marker as any)._infoWindow = infoWindow;
 
       marker.addListener("rightclick", (e: any) => {
         const event = e.domEvent as MouseEvent;
@@ -1412,10 +1419,17 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
     }
     const doFocus = (id: number) => {
       const marker = markersRef.current.find((m: any) => m._vehicleId === id);
-      if (marker) {
-        mapInstanceRef.current.panTo(marker.getPosition());
-        mapInstanceRef.current.setZoom(16);
-        window.google.maps.event.trigger(marker, "click");
+      if (marker && marker.getPosition()) {
+        markersRef.current.forEach((m: any) => m._infoWindow?.close());
+        const pos = marker.getPosition();
+        mapInstanceRef.current.setCenter(pos);
+        mapInstanceRef.current.setZoom(14);
+        setTimeout(() => {
+          (marker as any)._infoWindow?.open(mapInstanceRef.current, marker);
+          const veh = vehicles.find(vv => vv.id === id);
+          if (veh) setSelectedVehicle(veh);
+          if (veh?.activeOs?.id) showRouteOnMapRef.current?.(veh.activeOs.id);
+        }, 200);
       }
     };
     doFocus(focusVehicleId);
