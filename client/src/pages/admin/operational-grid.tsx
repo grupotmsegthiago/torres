@@ -4572,6 +4572,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           </div>
                           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
                             {v.activeOs.clientName}
+                            {v.activeOs.scheduledDate && (
+                              <span className="ml-1 text-[10px] text-neutral-400">
+                                · {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} {new Date(v.activeOs.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            )}
                           </p>
                           {(() => {
                             const gItem = gridData.find((g: GridItem) => g.osNumber === v.activeOs!.osNumber);
