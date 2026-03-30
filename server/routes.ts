@@ -7253,7 +7253,7 @@ Regras:
       const osMissionCosts = await storage.getMissionCostsByOS(osId);
 
       const osStartDate = so.scheduledDate || so.createdAt;
-      const osEndDate = (so as any).completedDate || osStartDate;
+      const osEndDate = so.status === "concluida" ? ((so as any).completedDate || osStartDate) : new Date().toISOString();
       const dateFrom = osStartDate ? new Date(osStartDate).toISOString().split("T")[0] : null;
       const dateTo = osEndDate ? new Date(osEndDate).toISOString().split("T")[0] : dateFrom;
 
@@ -7281,6 +7281,16 @@ Regras:
               return desc.includes("ABASTECIMENTO") && desc.includes(vPlate);
             });
           }
+        }
+
+        if (fuelingTx.length === 0 && vPlate) {
+          const { data: allFuelTx } = await supabaseAdmin.from("financial_transactions")
+            .select("*")
+            .eq("origin_type", "fueling");
+          fuelingTx = (allFuelTx || []).filter((r: any) => {
+            const desc = (r.description || "").toUpperCase();
+            return desc.includes(vPlate);
+          });
         }
       }
 
