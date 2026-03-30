@@ -81,7 +81,18 @@ async function ensureFinancialOriginColumns() {
     await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL`);
     await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER`);
     await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT`);
-    console.log("[Financial] origin_type/origin_id + valor_estimado + vigilante2 columns ensured via direct SQL");
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_acionamento NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_hora_extra NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_carregado NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_vazio NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_franquia NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_km_extra NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_excedente NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_franquia NUMERIC DEFAULT 0`);
+    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_faturado NUMERIC DEFAULT 0`);
+    try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
+    console.log("[Financial] origin_type/origin_id + valor_estimado + vigilante2 + billing breakdown columns ensured via direct SQL");
   } catch (_e2: any) {
     console.log("[Financial] column check:", _e2?.message || "unknown");
   }
