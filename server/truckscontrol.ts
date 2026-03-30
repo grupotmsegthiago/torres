@@ -97,8 +97,9 @@ const positionHistory: Map<number, PositionHistoryEntry[]> = new Map();
 const POSITION_HISTORY_MAX = 10;
 const SAME_PLACE_RADIUS_METERS = 50;
 const IDLE_SAME_PLACE_THRESHOLD = 5;
+const MAX_PLAUSIBLE_SPEED_MS = 55.6;
 
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -106,12 +107,31 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function recordPosition(veiID: number, lat: number, lon: number, speed: number, ignition: boolean) {
-  if (lat === 0 && lon === 0) return;
+function isOutlierPosition(history: PositionHistoryEntry[], lat: number, lon: number): boolean {
+  if (history.length < 2) return false;
+  const now = Date.now();
+  const recent = history.slice(-2);
+  for (const prev of recent) {
+    const dist = haversineDistance(prev.lat, prev.lon, lat, lon);
+    const elapsed = (now - prev.timestamp) / 1000;
+    if (elapsed < 1) continue;
+    const impliedSpeed = dist / elapsed;
+    if (impliedSpeed > MAX_PLAUSIBLE_SPEED_MS) return true;
+  }
+  return false;
+}
+
+export function recordPosition(veiID: number, lat: number, lon: number, speed: number, ignition: boolean): boolean {
+  if (lat === 0 && lon === 0) return false;
   const history = positionHistory.get(veiID) || [];
+  if (isOutlierPosition(history, lat, lon)) {
+    console.log(`[truckscontrol] Outlier descartado veiID=${veiID}: lat=${lat} lon=${lon} (velocidade impossível)`);
+    return false;
+  }
   history.push({ lat, lon, speed, ignition, timestamp: Date.now() });
   if (history.length > POSITION_HISTORY_MAX) history.splice(0, history.length - POSITION_HISTORY_MAX);
   positionHistory.set(veiID, history);
+  return true;
 }
 
 export function getIdleSamePlaceInfo(veiID: number): { count: number; isAlert: boolean } | null {

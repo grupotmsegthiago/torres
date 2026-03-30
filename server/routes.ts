@@ -27,8 +27,12 @@ import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
 const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
+const lastRecordedPos: Map<number, { lat: number; lng: number; time: number; osId?: number }> = new Map();
 const MISSION_POS_MIN_DISTANCE = 50;
 const OFF_ROUTE_THRESHOLD_M = 200;
+const SMART_INTERVAL_DEFAULT_MS = 10 * 60 * 1000;
+const SMART_INTERVAL_FAST_MS = 1 * 60 * 1000;
+const SMART_INTERVAL_DISPLACEMENT_M = 500;
 
 async function ensureFinancialOriginColumns() {
   let columnsEnsuredViaSql = false;
@@ -920,7 +924,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
         o.status === "concluida" || o.missionStatus === "encerrada" ||
-        o.status === "em_andamento" || o.status === "agendada"
+        o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)
       );
 
       const enriched = await Promise.all(concluidas.map(async (os) => {
@@ -1023,37 +1027,38 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
       const user = req.user!;
 
+      const n = (v: any) => Number(v) || 0;
       const { data, error } = await supabaseAdmin.from("escort_billings").insert({
         service_order_id: serviceOrderId,
         client_id: so.clientId, client_name: client?.name || "--",
         contract_id: contrato.id || null,
-        km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
-        km_carregado: resultado.km_carregado, km_total: resultado.km_total,
-        km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
-        km_excedente: resultado.km_excedente,
+        km_inicial: n(kmInicial), km_final: n(kmFinalNorm), km_vazio: 0,
+        km_carregado: n(resultado.km_carregado), km_total: n(resultado.km_total),
+        km_faturado: n(resultado.km_faturado), km_franquia: n(resultado.km_franquia),
+        km_excedente: n(resultado.km_excedente),
         horario_agendado: scheduledTime || null,
         horario_inicio: startTime || null, horario_fim: endTime || null,
         horario_inicio_considerado: resultado.horario_inicio_considerado,
-        horas_missao: resultado.horas_trabalhadas, horas_trabalhadas: resultado.horas_trabalhadas,
+        horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
         horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
-        fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
-        fat_km_vazio: resultado.faturamento.km_vazio,
-        fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
-        fat_diaria: resultado.fat_pernoite, fat_adicional_noturno: resultado.fat_adicional_noturno,
-        fat_total: resultado.fat_total,
-        valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
-        pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
-        pag_adicional_noturno: resultado.pag_adicional_noturno,
-        pag_reembolsos: resultado.pag_reembolsos, pag_total: resultado.pag_total,
-        resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
-        margem_percentual: resultado.resultado.margem_pct,
+        fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
+        fat_km_vazio: n(resultado.faturamento.km_vazio),
+        fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
+        fat_diaria: n(resultado.fat_pernoite), fat_adicional_noturno: n(resultado.fat_adicional_noturno),
+        fat_total: n(resultado.fat_total),
+        valor_franquia: n(resultado.valor_franquia), valor_km_extra: n(resultado.valor_km_extra),
+        pag_vrp: n(resultado.pag_vrp), pag_periculosidade: n(resultado.pag_periculosidade),
+        pag_adicional_noturno: n(resultado.pag_adicional_noturno),
+        pag_reembolsos: n(resultado.pag_reembolsos), pag_total: n(resultado.pag_total),
+        resultado_bruto: n(resultado.resultado.bruto), resultado_liquido: n(resultado.resultado.liquido),
+        margem_percentual: n(resultado.resultado.margem_pct),
         vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
         origem: so.origin || null, destino: so.destination || null,
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
         data_missao: so.scheduledDate || new Date().toISOString(),
-        status: isLive ? "ESTIMATIVA" : "A_VERIFICAR", created_by: user.name,
+        status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
 
@@ -3622,6 +3627,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const tcPositions = await truckscontrol.getCachedPositions();
     const plates = allVehicles.map(v => v.plate);
     const lastAlertMap = await storage.getLastAlertByPlates(plates);
+    const agentLocs = await storage.getAgentLocations();
 
     const tracked = await Promise.all(
       allVehicles.map(async (v) => {
@@ -3727,28 +3733,41 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           trackerData.stoppedSince = stoppedSince;
           trackerData.ignitionOnSince = ignitionOnSince;
 
+          let positionValid = true;
           if (v.truckscontrolIdentifier) {
             const tcVeiID = parseInt(v.truckscontrolIdentifier);
             if (!isNaN(tcVeiID)) {
-              truckscontrol.recordPosition(tcVeiID, trackerData.latitude, trackerData.longitude, trackerData.speed ?? 0, trackerData.ignition === true);
+              positionValid = truckscontrol.recordPosition(tcVeiID, trackerData.latitude, trackerData.longitude, trackerData.speed ?? 0, trackerData.ignition === true);
             }
           }
 
-          const linkedMissionOrder = activeOrders.find((o) => o.vehicleId === v.id && o.missionStatus && o.status === "em_andamento");
-          if (linkedMissionOrder && trackerData.latitude != null && trackerData.longitude != null) {
-            const osId = linkedMissionOrder.id;
-            const prev = lastMissionPos.get(osId);
-            const dist = prev ? haversineDist(prev.lat, prev.lng, trackerData.latitude, trackerData.longitude) : Infinity;
-            if (dist >= MISSION_POS_MIN_DISTANCE) {
-              lastMissionPos.set(osId, { lat: trackerData.latitude, lng: trackerData.longitude });
-              db.insert(missionPositions).values({
-                serviceOrderId: osId,
-                vehicleId: v.id,
-                latitude: trackerData.latitude,
-                longitude: trackerData.longitude,
-                speed: trackerData.speed ?? 0,
-                ignition: trackerData.ignition ? 1 : 0,
-              }).catch((e) => console.error("[mission-pos] Insert error:", e.message));
+          if (positionValid) {
+            const linkedMissionOrder = activeOrders.find((o) => o.vehicleId === v.id && o.missionStatus && o.status === "em_andamento");
+            if (linkedMissionOrder && trackerData.latitude != null && trackerData.longitude != null) {
+              const osId = linkedMissionOrder.id;
+              const prevMission = lastMissionPos.get(osId);
+              const distMission = prevMission ? haversineDist(prevMission.lat, prevMission.lng, trackerData.latitude, trackerData.longitude) : Infinity;
+              if (distMission >= MISSION_POS_MIN_DISTANCE) {
+                const prevRec = lastRecordedPos.get(v.id);
+                const now = Date.now();
+                const isNewMission = !prevRec || prevRec.osId !== osId;
+                const displacement = prevRec && !isNewMission ? haversineDist(prevRec.lat, prevRec.lng, trackerData.latitude, trackerData.longitude) : Infinity;
+                const elapsed = prevRec && !isNewMission ? now - prevRec.time : Infinity;
+                const interval = displacement >= SMART_INTERVAL_DISPLACEMENT_M ? SMART_INTERVAL_FAST_MS : SMART_INTERVAL_DEFAULT_MS;
+
+                if (isNewMission || elapsed >= interval) {
+                  lastRecordedPos.set(v.id, { lat: trackerData.latitude, lng: trackerData.longitude, time: now, osId });
+                  lastMissionPos.set(osId, { lat: trackerData.latitude, lng: trackerData.longitude });
+                  db.insert(missionPositions).values({
+                    serviceOrderId: osId,
+                    vehicleId: v.id,
+                    latitude: trackerData.latitude,
+                    longitude: trackerData.longitude,
+                    speed: trackerData.speed ?? 0,
+                    ignition: trackerData.ignition ? 1 : 0,
+                  }).catch((e) => console.error("[mission-pos] Insert error:", e.message));
+                }
+              }
             }
           }
 
@@ -3821,6 +3840,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const client = await storage.getClient(linkedOrder.clientId);
                 const emp1 = linkedOrder.assignedEmployeeId ? await storage.getEmployee(linkedOrder.assignedEmployeeId) : null;
                 const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
+                const agentLoc1 = linkedOrder.assignedEmployeeId ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployeeId) : null;
+                const agentLoc2 = linkedOrder.assignedEmployee2Id ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployee2Id) : null;
                 const lastUpd = await db.select()
                   .from(missionUpdates)
                   .where(and(eq(missionUpdates.serviceOrderId, linkedOrder.id), eq(missionUpdates.readByAdmin, 0)))
@@ -3846,6 +3867,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   priority: linkedOrder.priority || "agendada",
                   employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null, addressLat: emp1.addressLat || null, addressLng: emp1.addressLng || null } : null,
                   employee2: emp2 ? { id: emp2.id, name: emp2.name, phone: emp2.phone || null, addressLat: emp2.addressLat || null, addressLng: emp2.addressLng || null } : null,
+                  agentLocation: agentLoc1 ? { latitude: agentLoc1.latitude, longitude: agentLoc1.longitude, accuracy: agentLoc1.accuracy, updatedAt: agentLoc1.updatedAt } : null,
+                  agentLocation2: agentLoc2 ? { latitude: agentLoc2.latitude, longitude: agentLoc2.longitude, accuracy: agentLoc2.accuracy, updatedAt: agentLoc2.updatedAt } : null,
                   origin: linkedOrder.origin || null,
                   destination: linkedOrder.destination || null,
                   originLat: linkedOrder.originLat || null,
@@ -5164,30 +5187,31 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
 
+          const nb = (v: any) => Number(v) || 0;
           await supabaseAdmin.from("escort_billings").insert({
             service_order_id: serviceOrderId,
             client_id: so.clientId, client_name: client?.name || "—",
             contract_id: contrato.id || null,
-            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
-            km_carregado: resultado.km_carregado, km_total: resultado.km_total,
-            km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
-            km_excedente: resultado.km_excedente,
+            km_inicial: nb(kmInicial), km_final: nb(kmFinal), km_vazio: 0,
+            km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
+            km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
+            km_excedente: nb(resultado.km_excedente),
             horario_agendado: scheduledTime || null,
             horario_inicio: startTime || null, horario_fim: endTime || null,
             horario_inicio_considerado: resultado.horario_inicio_considerado,
-            horas_missao: resultado.horas_trabalhadas, horas_trabalhadas: resultado.horas_trabalhadas,
+            horas_missao: nb(resultado.horas_trabalhadas), horas_trabalhadas: nb(resultado.horas_trabalhadas),
             horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
-            fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
-            fat_km_vazio: resultado.faturamento.km_vazio,
-            fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
-            fat_diaria: resultado.fat_pernoite, fat_adicional_noturno: resultado.fat_adicional_noturno,
-            fat_total: resultado.fat_total,
-            valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
-            pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
-            pag_adicional_noturno: resultado.pag_adicional_noturno,
-            pag_reembolsos: resultado.pag_reembolsos, pag_total: resultado.pag_total,
-            resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
-            margem_percentual: resultado.resultado.margem_pct,
+            fat_km: nb(resultado.fat_km), fat_km_carregado: nb(resultado.faturamento.km_carregado),
+            fat_km_vazio: nb(resultado.faturamento.km_vazio),
+            fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
+            fat_diaria: nb(resultado.fat_pernoite), fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
+            fat_total: nb(resultado.fat_total),
+            valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
+            pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
+            pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
+            pag_reembolsos: nb(resultado.pag_reembolsos), pag_total: nb(resultado.pag_total),
+            resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
+            margem_percentual: nb(resultado.resultado.margem_pct),
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
@@ -7426,8 +7450,11 @@ Regras:
       const now = new Date();
       const boletimNumero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
 
+      const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
+      const safeStatus = VALID_BILLING_STATUSES.includes(body.status) ? body.status : "A_VERIFICAR";
       const { data, error } = await supabaseAdmin.from("escort_billings").insert({
         ...body, client_id: clientId, client_name: clientName,
+        status: safeStatus,
         created_by: user.name, boletim_numero: boletimNumero, boletim_gerado: true,
       }).select().single();
       if (error) throw error;
@@ -7452,7 +7479,14 @@ Regras:
 
   app.put("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("escort_billings").update(req.body).eq("id", req.params.id).select().single();
+      const updateBody = { ...req.body };
+      if (updateBody.status) {
+        const VALID_BILLING_STATUSES = ["A_VERIFICAR", "FATURADO", "PAGO", "CANCELADO", "APROVADA", "REJEITADA"];
+        if (!VALID_BILLING_STATUSES.includes(updateBody.status)) {
+          return res.status(400).json({ message: `Status inválido: ${updateBody.status}. Valores aceitos: ${VALID_BILLING_STATUSES.join(", ")}` });
+        }
+      }
+      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -7501,34 +7535,35 @@ Regras:
         despesas_outras: Number(body.despesas_outras || 0), contrato,
       });
 
+      const nb = (v: any) => Number(v) || 0;
       const { data, error } = await supabaseAdmin.from("escort_billings").insert({
         client_id: clientId, client_name: clientName,
         contract_id: body.contract_id, route_id: body.route_id,
         service_order_id: body.service_order_id,
-        km_inicial: kmIni, km_final: kmFin, km_vazio: Number(body.km_vazio || 0),
-        km_carregado: resultado.km_carregado, km_total: resultado.km_total,
-        km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
-        km_excedente: resultado.km_excedente,
+        km_inicial: nb(kmIni), km_final: nb(kmFin), km_vazio: nb(body.km_vazio),
+        km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
+        km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
+        km_excedente: nb(resultado.km_excedente),
         horario_agendado: body.horario_agendado || null,
         horario_inicio: body.horario_inicio || null, horario_fim: body.horario_fim || null,
         horario_inicio_considerado: resultado.horario_inicio_considerado,
-        horas_missao: resultado.horas_trabalhadas, horas_estadia: Number(body.horas_estadia || 0),
-        horas_trabalhadas: resultado.horas_trabalhadas,
+        horas_missao: nb(resultado.horas_trabalhadas), horas_estadia: nb(body.horas_estadia),
+        horas_trabalhadas: nb(resultado.horas_trabalhadas),
         teve_pernoite: !!body.teve_pernoite, is_noturno: resultado.is_noturno,
-        despesas_pedagio: Number(body.despesas_pedagio || 0), despesas_combustivel: Number(body.despesas_combustivel || 0),
-        despesas_outras: Number(body.despesas_outras || 0),
-        desp_total: resultado.despesas.total,
-        fat_km: resultado.fat_km, fat_km_carregado: resultado.faturamento.km_carregado,
-        fat_km_vazio: resultado.faturamento.km_vazio,
-        fat_estadia: resultado.fat_estadia, fat_pernoite: resultado.fat_pernoite,
-        fat_diaria: resultado.fat_pernoite,
-        fat_adicional_noturno: resultado.fat_adicional_noturno, fat_total: resultado.fat_total,
-        valor_franquia: resultado.valor_franquia, valor_km_extra: resultado.valor_km_extra,
-        pag_vrp: resultado.pag_vrp, pag_periculosidade: resultado.pag_periculosidade,
-        pag_adicional_noturno: resultado.pag_adicional_noturno, pag_reembolsos: resultado.pag_reembolsos,
-        pag_total: resultado.pag_total,
-        resultado_bruto: resultado.resultado.bruto, resultado_liquido: resultado.resultado.liquido,
-        margem_percentual: resultado.resultado.margem_pct,
+        despesas_pedagio: nb(body.despesas_pedagio), despesas_combustivel: nb(body.despesas_combustivel),
+        despesas_outras: nb(body.despesas_outras),
+        desp_total: nb(resultado.despesas.total),
+        fat_km: nb(resultado.fat_km), fat_km_carregado: nb(resultado.faturamento.km_carregado),
+        fat_km_vazio: nb(resultado.faturamento.km_vazio),
+        fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
+        fat_diaria: nb(resultado.fat_pernoite),
+        fat_adicional_noturno: nb(resultado.fat_adicional_noturno), fat_total: nb(resultado.fat_total),
+        valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
+        pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
+        pag_adicional_noturno: nb(resultado.pag_adicional_noturno), pag_reembolsos: nb(resultado.pag_reembolsos),
+        pag_total: nb(resultado.pag_total),
+        resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
+        margem_percentual: nb(resultado.resultado.margem_pct),
         vigilante_id: body.vigilante_id || user.id, vigilante_name: body.vigilante_name || user.name,
         origem: body.origem, destino: body.destino,
         placa_viatura: body.placa_viatura, placa_escoltado: body.placa_escoltado,

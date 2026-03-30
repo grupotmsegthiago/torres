@@ -93,7 +93,7 @@ export default function BoletimMedicaoPage() {
 
   const filteredGroups = Object.entries(clientGroups).map(([cid, group]) => {
     let orders = group.orders;
-    if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+    if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
@@ -101,7 +101,7 @@ export default function BoletimMedicaoPage() {
     return { clientId: Number(cid), clientName: group.clientName, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; orders: any[] }[];
 
-  const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada").length;
+  const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
   const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
 
@@ -118,7 +118,7 @@ export default function BoletimMedicaoPage() {
     }
   };
 
-  const isLiveOs = (os: any) => (os.status === "em_andamento" || os.status === "agendada") && os.missionStatus !== "encerrada";
+  const isLiveOs = (os: any) => (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
 
   return (
     <AdminLayout>

@@ -25,6 +25,7 @@ import { authFetch, queryClient } from "@/lib/queryClient";
 import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useNotificationSound } from "@/hooks/use-notification-sound";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -335,14 +336,17 @@ function formatPhone(phone: string): string {
 }
 
 function getLastPositionInfo(lastPositionTime?: string) {
-  if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1 };
-  const diffMin = Math.floor((Date.now() - new Date(lastPositionTime).getTime()) / 60000);
+  if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
+  const parsed = new Date(lastPositionTime).getTime();
+  if (isNaN(parsed)) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
+  const diffMin = Math.floor((Date.now() - parsed) / 60000);
+  if (diffMin < 0) return { text: "agora", color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin: 0, noSignal: false };
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
   const timeStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
-  if (diffMin > 30) return { text: timeStr, color: "text-neutral-500", dotColor: "bg-neutral-400", diffMin };
-  if (diffMin > 5) return { text: timeStr, color: "text-neutral-600", dotColor: "bg-neutral-500", diffMin };
-  return { text: timeStr, color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin };
+  if (diffMin >= 15) return { text: timeStr, color: "text-red-600", dotColor: "bg-red-500", diffMin, noSignal: true };
+  if (diffMin > 5) return { text: timeStr, color: "text-neutral-600", dotColor: "bg-neutral-500", diffMin, noSignal: false };
+  return { text: timeStr, color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin, noSignal: false };
 }
 
 function getMissionLabel(status: string | null) {
@@ -1023,7 +1027,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       });
     });
 
-    if (hasPositions && !radiusActive) {
+    if (hasPositions && !radiusActive && !focusVehicleId) {
       mapInstanceRef.current.fitBounds(bounds);
       if (markersRef.current.length === 1) {
         mapInstanceRef.current.setZoom(14);
@@ -1341,7 +1345,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
       const marker = markersRef.current.find((m: any) => m._vehicleId === id);
       if (marker) {
         mapInstanceRef.current.panTo(marker.getPosition());
-        mapInstanceRef.current.setZoom(15);
+        mapInstanceRef.current.setZoom(16);
         window.google.maps.event.trigger(marker, "click");
       }
     };
@@ -3878,6 +3882,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
     refetchInterval: 15000,
   });
 
+  useNotificationSound(unreadUpdates);
+
   const rowForwardOsId = rowForwardUpdate?.serviceOrderId;
   const { data: rowForwardHistory = [] } = useQuery<any[]>({
     queryKey: ["/api/service-orders", rowForwardOsId, "forwards"],
@@ -4095,10 +4101,31 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           className={`flex items-start gap-1.5 group text-left w-full max-w-full overflow-hidden ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
                           data-testid={`link-map-${v.id}`}
                         >
-                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${hasLocation ? "text-neutral-500 group-hover:text-neutral-700" : "text-neutral-300"}`} />
-                          <span className={`text-xs font-medium leading-tight block truncate ${hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
-                            {v.tracker.address}
-                          </span>
+                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${posInfo.noSignal ? "text-red-500" : hasLocation ? "text-neutral-500 group-hover:text-neutral-700" : "text-neutral-300"}`} />
+                          <div className="min-w-0">
+                            <span className={`text-xs font-medium leading-tight block truncate ${posInfo.noSignal ? "text-red-600" : hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
+                              {v.tracker.address}
+                            </span>
+                            {posInfo.noSignal && (
+                              <span className="text-[10px] text-red-500 flex items-center gap-0.5 mt-0.5" data-testid={`no-signal-vehicle-${v.id}`}>
+                                <WifiOff className="w-3 h-3" /> Sem sinal
+                              </span>
+                            )}
+                            {v.activeOs?.agentLocation && (
+                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} title={`GPS Agente: ${v.activeOs.agentLocation.latitude?.toFixed(5)}, ${v.activeOs.agentLocation.longitude?.toFixed(5)} — Clique para abrir no Google Maps`} data-testid={`agent-location-${v.id}`}>
+                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                                Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
+                                {(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? " (Sem sinal)" : ""; })()}
+                              </a>
+                            )}
+                            {v.activeOs?.agentLocation2 && (
+                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} title={`GPS Agente 2: ${v.activeOs.agentLocation2.latitude?.toFixed(5)}, ${v.activeOs.agentLocation2.longitude?.toFixed(5)} — Clique para abrir no Google Maps`} data-testid={`agent-location2-${v.id}`}>
+                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                                Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
+                                {(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? " (Sem sinal)" : ""; })()}
+                              </a>
+                            )}
+                          </div>
                         </button>
                       ) : hasLocation ? (
                         <button
@@ -4107,11 +4134,41 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           className="inline-flex items-center gap-1 text-neutral-500 hover:text-neutral-700 text-xs font-medium cursor-pointer"
                           data-testid={`link-map-${v.id}`}
                         >
-                          <MapPin className="w-3.5 h-3.5" />
-                          Ver no mapa
+                          <div>
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5" />
+                              Ver no mapa
+                            </div>
+                            {v.activeOs?.agentLocation && (
+                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} data-testid={`agent-location-${v.id}`}>
+                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                                Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
+                              </a>
+                            )}
+                            {v.activeOs?.agentLocation2 && (
+                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} data-testid={`agent-location2-${v.id}`}>
+                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                                Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
+                              </a>
+                            )}
+                          </div>
                         </button>
                       ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
+                        <div>
+                          <span className="text-neutral-300 text-xs">—</span>
+                          {v.activeOs?.agentLocation && (
+                            <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} data-testid={`agent-location-${v.id}`}>
+                              <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                              Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
+                            </a>
+                          )}
+                          {v.activeOs?.agentLocation2 && (
+                            <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} data-testid={`agent-location2-${v.id}`}>
+                              <Users className="w-2.5 h-2.5 inline mr-0.5" />
+                              Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
+                            </a>
+                          )}
+                        </div>
                       )}
                     </td>
 
@@ -4120,7 +4177,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <Tooltip>
                           <TooltipTrigger>
                             <div className={`inline-flex items-center gap-1.5 ${posInfo.color}`}>
-                              <Clock className="w-3 h-3 flex-shrink-0" />
+                              {posInfo.noSignal ? <WifiOff className="w-3 h-3 flex-shrink-0" /> : <Clock className="w-3 h-3 flex-shrink-0" />}
                               <span className="text-xs font-semibold tabular-nums">
                                 {new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                                 {" - "}
@@ -4128,7 +4185,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </span>
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent>Última posição há {posInfo.text}</TooltipContent>
+                          <TooltipContent>{posInfo.noSignal ? `⚠ Sem sinal há ${posInfo.text}` : `Última posição há ${posInfo.text}`}</TooltipContent>
                         </Tooltip>
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
@@ -4665,7 +4722,7 @@ function TrucksControlStatus() {
   );
 }
 
-const REFRESH_INTERVAL_MS = 2 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 function useCountdown(intervalMs: number, lastFetchTime: number) {
   const [remaining, setRemaining] = useState(intervalMs / 1000);
@@ -4884,6 +4941,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     refetchInterval: 15000,
   });
 
+  const { enabled: soundEnabled, toggle: toggleSound } = useNotificationSound(updates);
+
   const forwardOsId = forwardUpdate?.serviceOrderId;
   const { data: forwardHistory = [] } = useQuery<any[]>({
     queryKey: ["/api/service-orders", forwardOsId, "forwards"],
@@ -4910,7 +4969,24 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     },
   });
 
-  if (updates.length === 0) return null;
+  if (updates.length === 0) return (
+    <div className="flex justify-end" data-testid="sound-toggle-idle">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            className={`h-7 w-7 p-0 border-neutral-200 hover:bg-neutral-100 ${soundEnabled ? "text-neutral-600" : "text-neutral-400"}`}
+            onClick={toggleSound}
+            data-testid="button-toggle-sound-idle"
+          >
+            {soundEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{soundEnabled ? "Desativar alerta sonoro" : "Ativar alerta sonoro"}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
 
   const displayUpdates = expanded ? updates : updates.slice(0, 3);
 
@@ -4929,6 +5005,20 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className={`h-7 w-7 p-0 border-amber-300 hover:bg-amber-100 ${soundEnabled ? "text-amber-700" : "text-amber-400"}`}
+                onClick={toggleSound}
+                data-testid="button-toggle-sound"
+              >
+                {soundEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{soundEnabled ? "Desativar alerta sonoro" : "Ativar alerta sonoro"}</TooltipContent>
+          </Tooltip>
           <Button
             size="sm"
             variant="outline"
