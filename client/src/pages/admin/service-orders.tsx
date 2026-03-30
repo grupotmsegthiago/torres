@@ -1109,6 +1109,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída Base</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Cliente</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Início Missão</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Destino</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim Missão</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Saída</th>
@@ -1175,14 +1176,16 @@ export default function ServiceOrdersPage() {
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
                       const mk = (o as any).missionKm as { saida_base: number | null; chegada_origem: number | null; chegada_destino: number | null; fim_missao: number | null } | null;
-                      const tSaida = getStepTime(logs, ["checkout_km_saida"]);
-                      const tChegCliente = getStepTime(logs, ["em_transito_origem"]);
-                      const tChegDestino = getStepTime(logs, ["em_transito_destino"]);
-                      const tFim = getStepTime(logs, ["encerrada", "finalizada"]);
+                      const tSaida = getStepTime(logs, ["checkout_km_saida", "aguardando"]);
+                      const tChegCliente = getStepTime(logs, ["checkin_chegada_km", "em_transito_origem"]);
+                      const tInicioMissao = getStepTime(logs, ["iniciar_missao"]);
+                      const tChegDestino = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
+                      const tFim = getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
                       return (
                         <>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegcliente-${o.id}`}>{formatTime(tChegCliente)}</td>
+                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-iniciomissao-${o.id}`}>{formatTime(tInicioMissao)}</td>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegdestino-${o.id}`}>{formatTime(tChegDestino)}</td>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-fim-${o.id}`}>{formatTime(tFim)}</td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-saida-${o.id}`}>{mk?.saida_base != null ? mk.saida_base.toLocaleString("pt-BR") : "—"}</td>
