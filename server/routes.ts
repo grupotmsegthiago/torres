@@ -31,15 +31,44 @@ const MISSION_POS_MIN_DISTANCE = 50;
 const OFF_ROUTE_THRESHOLD_M = 200;
 
 async function ensureFinancialOriginColumns() {
+  let columnsEnsuredViaSql = false;
   try {
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" }).then(() => {});
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" }).then(() => {});
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" });
+    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" });
+    columnsEnsuredViaSql = true;
+    console.log("[Financial] origin columns ensured via exec_sql");
   } catch (_e) {
-    try {
-      await supabaseAdmin.from("financial_transactions").select("origin_type").limit(1);
-    } catch (_e2) {
-      console.log("[Financial] origin columns may need manual creation");
+    console.log("[Financial] exec_sql unavailable, verifying columns via select...");
+  }
+
+  if (!columnsEnsuredViaSql) {
+    const { error } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id").limit(1);
+    if (error && (error.message.includes("origin_type") || error.message.includes("origin_id") || error.code === "42703")) {
+      console.error("[Financial] CRITICAL: origin_type/origin_id columns missing from financial_transactions. Auto-transactions will NOT work. Please add columns manually in Supabase: ALTER TABLE financial_transactions ADD COLUMN origin_type TEXT DEFAULT 'manual'; ALTER TABLE financial_transactions ADD COLUMN origin_id TEXT;");
+    } else {
+      console.log("[Financial] origin_type/origin_id columns verified OK");
     }
+  }
+
+  try {
+    await supabaseAdmin.rpc("exec_sql", {
+      query: `
+        CREATE OR REPLACE VIEW v_resumo_financeiro AS
+        SELECT
+          COALESCE(origin_type, 'manual') AS origin_type,
+          type,
+          status,
+          COUNT(*) AS count,
+          COALESCE(SUM(amount), 0) AS total,
+          COALESCE(SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END), 0) AS total_paid,
+          COALESCE(SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END), 0) AS total_pending
+        FROM financial_transactions
+        GROUP BY COALESCE(origin_type, 'manual'), type, status
+      `
+    });
+    console.log("[Financial] v_resumo_financeiro view created/updated OK");
+  } catch (_e) {
+    console.log("[Financial] v_resumo_financeiro view creation skipped (exec_sql unavailable)");
   }
 }
 ensureFinancialOriginColumns();
@@ -6757,6 +6786,51 @@ Regras:
   app.get("/api/financial/resumo", requireAuth, async (req, res) => {
     try {
       const { from, to } = req.query;
+
+      let viewData: any[] | null = null;
+      try {
+        const { data: vd, error: vErr } = await supabaseAdmin.from("v_resumo_financeiro").select("*");
+        if (!vErr && vd) viewData = vd;
+      } catch (_) {}
+
+      if (viewData && !from && !to) {
+        const result: any = {
+          receita_total: 0, receita_realizada: 0, receita_pendente: 0,
+          despesa_total: 0, despesa_realizada: 0, despesa_pendente: 0,
+          saldo_previsto: 0, saldo_realizado: 0,
+          total_lancamentos: 0, lancamentos_auto: 0, lancamentos_manual: 0,
+          por_origem: {} as Record<string, { count: number; total: number }>,
+          fonte: "v_resumo_financeiro",
+        };
+        for (const row of viewData) {
+          const cnt = Number(row.count || 0);
+          const total = Number(row.total || 0);
+          const totalPaid = Number(row.total_paid || 0);
+          const totalPending = Number(row.total_pending || 0);
+          result.total_lancamentos += cnt;
+          if (row.type === "INCOME") {
+            result.receita_total += total;
+            result.receita_realizada += totalPaid;
+            result.receita_pendente += totalPending;
+          } else if (row.type === "EXPENSE") {
+            result.despesa_total += total;
+            result.despesa_realizada += totalPaid;
+            result.despesa_pendente += totalPending;
+          }
+          if (row.origin_type !== "manual") {
+            if (!result.por_origem[row.origin_type]) result.por_origem[row.origin_type] = { count: 0, total: 0 };
+            result.por_origem[row.origin_type].count += cnt;
+            result.por_origem[row.origin_type].total += total;
+            result.lancamentos_auto += cnt;
+          } else {
+            result.lancamentos_manual += cnt;
+          }
+        }
+        result.saldo_previsto = result.receita_total - result.despesa_total;
+        result.saldo_realizado = result.receita_realizada - result.despesa_realizada;
+        return res.json(result);
+      }
+
       let query = supabaseAdmin.from("financial_transactions").select("*");
       if (from) query = query.gte("due_date", from as string);
       if (to) query = query.lte("due_date", to as string);
@@ -6795,6 +6869,7 @@ Regras:
         lancamentos_auto: autoTxs.length,
         lancamentos_manual: manualTxs.length,
         por_origem: byOrigin,
+        fonte: "financial_transactions",
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

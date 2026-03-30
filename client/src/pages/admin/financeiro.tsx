@@ -1,7 +1,8 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,13 @@ const ORIGIN_LABELS: Record<string, string> = {
   maintenance: "MANUT.",
   mission_cost: "MISSÃO",
   manual: "MANUAL",
+};
+
+const ORIGIN_ROUTES: Record<string, string> = {
+  escort_billing: "/admin/balanco-gerencial",
+  fueling: "/admin/fueling",
+  maintenance: "/admin/maintenance",
+  mission_cost: "/admin/operational-grid",
 };
 
 interface FinancialCategory {
@@ -313,6 +321,7 @@ function QuickCategoryModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
 export default function FinanceiroPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const isDiretoria = user?.role === "diretoria";
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
   const [searchTerm, setSearchTerm] = useState("");
@@ -558,9 +567,17 @@ export default function FinanceiroPage() {
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
                       {t.origin_type && t.origin_type !== "manual" && (
-                        <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-violet-100 text-violet-700 border border-violet-200 whitespace-nowrap" data-testid={`badge-auto-${t.id}`}>
-                          {ORIGIN_LABELS[t.origin_type] || "AUTO"}
-                        </span>
+                        <button
+                          onClick={() => {
+                            const route = ORIGIN_ROUTES[t.origin_type!];
+                            if (route) navigate(route);
+                          }}
+                          className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-violet-100 text-violet-700 border border-violet-200 whitespace-nowrap hover:bg-violet-200 cursor-pointer transition-colors"
+                          data-testid={`badge-auto-${t.id}`}
+                          title={`Ver origem: ${ORIGIN_LABELS[t.origin_type] || "AUTO"}`}
+                        >
+                          {ORIGIN_LABELS[t.origin_type] || "AUTO"} ↗
+                        </button>
                       )}
                     </div>
                   </td>
