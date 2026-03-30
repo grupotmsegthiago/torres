@@ -18,6 +18,12 @@ const fmt = (val: number | null | undefined) => {
 
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
 const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtHoras = (val: number | null | undefined) => {
+  if (!val) return "0h00";
+  const h = Math.floor(val);
+  const m = Math.round((val - h) * 60);
+  return `${h}h${m.toString().padStart(2, "0")}`;
+};
 
 type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA";
 
@@ -27,6 +33,7 @@ export default function BoletimMedicaoPage() {
   const [selectedOs, setSelectedOs] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [pedagioValue, setPedagioValue] = useState("");
+  const [observacoesValue, setObservacoesValue] = useState("");
 
   const { data: osConcluidas = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/boletim-medicao/os-concluidas"],
@@ -82,6 +89,18 @@ export default function BoletimMedicaoPage() {
       toast({ title: "Cálculo realizado", description: "Billing gerado com sucesso." });
     },
     onError: (err: Error) => toast({ title: "Erro ao calcular", description: err.message, variant: "destructive" }),
+  });
+
+  const salvarBillingMutation = useMutation({
+    mutationFn: async ({ billingId, observacoes, pedagio }: { billingId: string; observacoes: string; pedagio: number }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      toast({ title: "Salvo", description: "Observações e pedágio salvos com sucesso." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
 
   const clientGroups: Record<number, { clientName: string; orders: any[] }> = {};
@@ -249,8 +268,7 @@ export default function BoletimMedicaoPage() {
                                     <span className="text-neutral-400 ml-0.5">km</span>
                                   </td>
                                   <td className="px-4 py-3 text-right">
-                                    <span className="font-mono font-bold text-neutral-800">{b ? Number(b.horas_trabalhadas || b.horas_missao || 0) : "—"}</span>
-                                    <span className="text-neutral-400 ml-0.5">h</span>
+                                    <span className="font-mono font-bold text-neutral-800">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3 text-right">
                                     <span className="font-mono font-black text-green-700">{b ? fmt(Number(b.fat_total)) : "—"}</span>
@@ -272,7 +290,7 @@ export default function BoletimMedicaoPage() {
                                         </button>
                                       )}
                                       <button
-                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); }}
+                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); setObservacoesValue(b?.observacoes || ""); }}
                                         className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
                                         data-testid={`button-view-os-${os.id}`}
                                       >
@@ -414,7 +432,7 @@ export default function BoletimMedicaoPage() {
                         </div>
                         <div className="bg-neutral-50 p-3 rounded-xl text-center">
                           <p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p>
-                          <p className="text-lg font-black font-mono text-neutral-800">{Number(b.horas_trabalhadas || b.horas_missao || 0)}h</p>
+                          <p className="text-lg font-black font-mono text-neutral-800">{fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0))}</p>
                         </div>
                       </div>
 
@@ -434,17 +452,46 @@ export default function BoletimMedicaoPage() {
                       </div>
 
                       {isPendente && (
+                        <div className="space-y-3">
+                          <div className="bg-neutral-50 p-3 rounded-xl">
+                            <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold"
+                              value={pedagioValue}
+                              onChange={e => setPedagioValue(e.target.value)}
+                              placeholder="0,00"
+                              data-testid="input-pedagio"
+                            />
+                          </div>
+                          <div className="bg-neutral-50 p-3 rounded-xl">
+                            <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Observações</label>
+                            <textarea
+                              className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold resize-none"
+                              rows={3}
+                              value={observacoesValue}
+                              onChange={e => setObservacoesValue(e.target.value)}
+                              placeholder="Observações sobre esta OS..."
+                              data-testid="input-observacoes"
+                            />
+                          </div>
+                          <button
+                            onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0 })}
+                            disabled={salvarBillingMutation.isPending}
+                            className="w-full bg-neutral-800 hover:bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                            data-testid="button-salvar-billing"
+                          >
+                            {salvarBillingMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                            Salvar Alterações
+                          </button>
+                        </div>
+                      )}
+
+                      {!isPendente && b.observacoes && (
                         <div className="bg-neutral-50 p-3 rounded-xl">
-                          <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold"
-                            value={pedagioValue}
-                            onChange={e => setPedagioValue(e.target.value)}
-                            placeholder="0,00"
-                            data-testid="input-pedagio"
-                          />
+                          <p className="text-[9px] font-black text-neutral-400 uppercase">Observações</p>
+                          <p className="text-xs font-bold text-neutral-700 whitespace-pre-wrap">{b.observacoes}</p>
                         </div>
                       )}
 

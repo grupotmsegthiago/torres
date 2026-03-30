@@ -7618,6 +7618,19 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.patch("/api/escort/billings/:id/salvar", requireAdminRole, async (req, res) => {
+    try {
+      const { observacoes, despesas_pedagio } = req.body;
+      const updateData: any = {};
+      if (observacoes !== undefined) updateData.observacoes = observacoes;
+      if (despesas_pedagio !== undefined) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/escort/billings/:id/revisar", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
