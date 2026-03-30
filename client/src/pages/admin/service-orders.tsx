@@ -17,6 +17,27 @@ type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null
 
 type StepLogEntry = { step: string; completedAt: string; agentName?: string; agentId?: number; geo?: { lat: number; lng: number } | null; nextStep?: string };
 
+function utcToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const sp = d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  return sp.replace(" ", "T").slice(0, 16);
+}
+
+function localInputToUtc(localValue: string): string | null {
+  if (!localValue) return null;
+  const parts = localValue.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!parts) return new Date(localValue).toISOString();
+  const [, y, mo, da, h, mi] = parts;
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", timeZoneName: "shortOffset" });
+  const refDate = new Date(`${y}-${mo}-${da}T12:00:00Z`);
+  const offsetMatch = formatter.format(refDate).match(/GMT([+-]\d+)/);
+  const offsetHours = offsetMatch ? parseInt(offsetMatch[1]) : -3;
+  const sign = offsetHours >= 0 ? "+" : "-";
+  const absH = String(Math.abs(offsetHours)).padStart(2, "0");
+  return new Date(`${y}-${mo}-${da}T${h}:${mi}:00${sign}${absH}:00`).toISOString();
+}
+
 function getStepTime(stepLogs: StepLogEntry[] | null | undefined, stepNames: string[]): string | null {
   if (!stepLogs || !Array.isArray(stepLogs)) return null;
   for (const name of stepNames) {
@@ -314,7 +335,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const nowLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const nowLocal = () => utcToLocalInput(new Date().toISOString());
 
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null }[]>({
     queryKey: ["/api/escort/contracts"],
@@ -328,8 +349,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     description: order?.description || "",
     status: order?.status || "agendada",
     priority: order?.priority || "agendada",
-    scheduledDate: order?.scheduledDate ? new Date(order.scheduledDate).toISOString().slice(0, 16) : "",
-    completedDate: order?.completedDate ? new Date(order.completedDate).toISOString().slice(0, 16) : "",
+    scheduledDate: utcToLocalInput(order?.scheduledDate),
+    completedDate: utcToLocalInput(order?.completedDate),
     assignedEmployeeId: order?.assignedEmployeeId || null,
     assignedEmployee2Id: order?.assignedEmployee2Id || null,
     vehicleId: order?.vehicleId || prefilledVehicleId || null,
@@ -413,8 +434,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
         kitId: data.kitId ? Number(data.kitId) : null,
         escortContractId: data.escortContractId || null,
-        scheduledDate: data.scheduledDate ? new Date(data.scheduledDate).toISOString() : null,
-        completedDate: data.completedDate ? new Date(data.completedDate).toISOString() : null,
+        scheduledDate: localInputToUtc(data.scheduledDate),
+        completedDate: localInputToUtc(data.completedDate),
       };
       if (order) {
         await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
