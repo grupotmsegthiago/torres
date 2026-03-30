@@ -1069,6 +1069,78 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (data.vehicleId) {
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
+
+    (async () => {
+      try {
+        const client = await storage.getClient(data.clientId);
+        if (!client?.email) return;
+        const smtpHost = process.env.SMTP_HOST;
+        const smtpUser = process.env.SMTP_USER;
+        const smtpPass = process.env.SMTP_PASS;
+        if (!smtpHost || !smtpUser || !smtpPass) return;
+
+        const [emp1, emp2, vehicle] = await Promise.all([
+          data.assignedEmployeeId ? storage.getEmployee(data.assignedEmployeeId) : null,
+          data.assignedEmployee2Id ? storage.getEmployee(data.assignedEmployee2Id) : null,
+          data.vehicleId ? storage.getVehicle(data.vehicleId) : null,
+        ]);
+
+        const scheduledStr = data.scheduledDate
+          ? new Date(data.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+          : "A definir";
+        const agentsStr = [emp1?.fullName || emp1?.name, emp2?.fullName || emp2?.name].filter(Boolean).join(" / ") || "A definir";
+        const vehicleStr = vehicle ? `${vehicle.model || ""} - ${vehicle.plate}`.trim() : "A definir";
+
+        const htmlBody = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;color:#333;line-height:1.6;max-width:600px;margin:0 auto;">
+  <div style="background:#1a1a1a;padding:20px 30px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</h1>
+    <p style="color:#999;font-size:12px;margin:4px 0 0;">CNPJ: 36.982.392/0001-89</p>
+  </div>
+  <div style="padding:30px;border:1px solid #e0e0e0;border-top:none;">
+    <h2 style="color:#1a1a1a;font-size:16px;margin:0 0 20px;">PRÉ-ALERTA DE ESCOLTA ARMADA</h2>
+    <p>Prezado(a) ${client.contactPerson || client.name},</p>
+    <p>Informamos que foi criada uma nova Ordem de Serviço de escolta armada para a sua empresa. Seguem os detalhes:</p>
+    <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;width:40%;">OS Número</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${data.osNumber}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Data/Hora Prevista</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${scheduledStr}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Origem</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${data.origin || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Destino</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${data.destination || "—"}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Agentes</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${agentsStr}</td></tr>
+      <tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Viatura</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${vehicleStr}</td></tr>
+      ${data.description ? `<tr><td style="padding:8px 12px;border:1px solid #e0e0e0;background:#f8f8f8;font-weight:bold;">Observações</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${data.description}</td></tr>` : ""}
+    </table>
+    <p>A equipe de escolta entrará em contato no horário previsto para início da operação.</p>
+    <p style="margin-top:25px;">Atenciosamente,</p>
+    <p style="margin:5px 0;"><strong>Torres Vigilância Patrimonial LTDA</strong></p>
+    <p style="color:#666;font-size:13px;margin:2px 0;">Tel: (11) 96369-6699</p>
+    <p style="color:#666;font-size:13px;margin:2px 0;">escolta@torresseguranca.com.br</p>
+  </div>
+  <div style="background:#f5f5f5;padding:15px 30px;text-align:center;border:1px solid #e0e0e0;border-top:none;">
+    <p style="color:#999;font-size:11px;margin:0;">Este e-mail foi enviado automaticamente pelo sistema Torres Gestão.</p>
+  </div>
+</body></html>`;
+
+        const port = parseInt(process.env.SMTP_PORT || "587");
+        const transporter = nodemailer.createTransport({
+          host: smtpHost, port, secure: port === 465,
+          auth: { user: smtpUser, pass: smtpPass },
+          tls: { rejectUnauthorized: false },
+        });
+
+        await transporter.sendMail({
+          from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+          to: client.email,
+          subject: `Pré-Alerta de Escolta Armada — ${data.osNumber}`,
+          html: htmlBody,
+        });
+        console.log(`[pre-alert] Email enviado para ${client.email} (OS ${data.osNumber})`);
+      } catch (err: any) {
+        console.error(`[pre-alert] Erro ao enviar email: ${err.message}`);
+      }
+    })();
+
     res.status(201).json(data);
   });
 
@@ -3802,7 +3874,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const so = await storage.getServiceOrder(soId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
-    if (user.role !== "admin" && user.employeeId) {
+    const isAdminRole = user.role === "admin" || user.role === "diretoria";
+    if (!isAdminRole) {
+      if (!user.employeeId) return res.status(403).json({ message: "Acesso negado" });
       const isAssigned = so.assignedEmployeeId === user.employeeId || so.assignedEmployee2Id === user.employeeId;
       if (!isAssigned) return res.status(403).json({ message: "Acesso negado" });
     }
@@ -3817,7 +3891,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const photo = await storage.getMissionPhoto(Number(req.params.id));
     if (!photo) return res.status(404).json({ message: "Foto não encontrada" });
 
-    if (user.role !== "admin" && user.employeeId) {
+    const isAdminRole = user.role === "admin" || user.role === "diretoria";
+    if (!isAdminRole) {
+      if (!user.employeeId) return res.status(403).json({ message: "Acesso negado" });
       const so = await storage.getServiceOrder(photo.serviceOrderId);
       if (so) {
         const isAssigned = so.assignedEmployeeId === user.employeeId || so.assignedEmployee2Id === user.employeeId;
@@ -3838,10 +3914,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const { serviceOrderId, step, photoData, kmValue, latitude, longitude } = req.body;
     if (!serviceOrderId || !step || !photoData) {
+      console.log(`[mission-photo] Rejected: missing fields. serviceOrderId=${serviceOrderId}, step=${step}, hasPhotoData=${!!photoData}`);
       return res.status(400).json({ message: "Campos obrigatórios: serviceOrderId, step, photoData" });
     }
 
     if (!ALL_VALID_PHOTO_STEPS.has(step)) {
+      console.log(`[mission-photo] Rejected: invalid step '${step}'. Valid steps: ${[...ALL_VALID_PHOTO_STEPS].join(", ")}`);
       return res.status(400).json({ message: "Etapa de foto inválida" });
     }
 
@@ -3849,6 +3927,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
     if (so.status !== "em_andamento" && so.status !== "agendada") {
+      console.log(`[mission-photo] Rejected: OS #${so.osNumber} status='${so.status}' (esperado em_andamento ou agendada)`);
       return res.status(400).json({ message: "OS não está em andamento" });
     }
 
@@ -3858,7 +3937,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const currentStepPhotos = STEP_REQUIRED_PHOTOS[so.missionStatus as string];
     if (!currentStepPhotos || !currentStepPhotos.includes(step)) {
-      return res.status(400).json({ message: "Foto não pertence à etapa atual da missão" });
+      console.log(`[mission-photo] Rejected: foto step '${step}' não pertence a missionStatus='${so.missionStatus}'. Expected: ${currentStepPhotos?.join(", ") || "none"}`);
+      return res.status(400).json({ message: `Foto não pertence à etapa atual da missão (etapa: ${so.missionStatus}, foto: ${step})` });
     }
 
     const isAssigned =
@@ -3871,16 +3951,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       return res.status(400).json({ message: "Valor de KM obrigatório para esta etapa" });
     }
 
-    const photo = await storage.createMissionPhoto({
-      serviceOrderId,
-      employeeId: user.employeeId,
-      step,
-      photoData,
-      kmValue: kmValue ? Number(kmValue) : null,
-      latitude: latitude || null,
-      longitude: longitude || null,
-      notes: null,
-    });
+    let photo;
+    try {
+      photo = await storage.createMissionPhoto({
+        serviceOrderId,
+        employeeId: user.employeeId,
+        step,
+        photoData,
+        kmValue: kmValue ? Number(kmValue) : null,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        notes: null,
+      });
+      console.log(`[mission-photo] OK: step='${step}' OS #${so.osNumber} by employee #${user.employeeId}, photo id=${photo.id}`);
+    } catch (dbErr: any) {
+      console.error(`[mission-photo] DB insert error: ${dbErr.message}`);
+      return res.status(500).json({ message: "Erro ao salvar foto no banco de dados" });
+    }
 
     if (kmValue && Number(kmValue) > 0 && so.vehicleId && ["km_saida", "km_chegada", "km_final", "base_hodometro"].includes(step)) {
       try {
