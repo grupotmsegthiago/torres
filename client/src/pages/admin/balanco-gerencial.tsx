@@ -84,6 +84,17 @@ function navigatePeriod(period: Period, refDate: Date, direction: number): Date 
   return d;
 }
 
+interface ExpenseTransaction {
+  id: string;
+  date: string;
+  amount: number;
+  origin_type: string;
+  description: string;
+  entity_name: string;
+  category_name: string;
+  status: string;
+}
+
 interface DashboardData {
   byVehicle: { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }[];
   byAgent: { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }[];
@@ -94,6 +105,7 @@ interface DashboardData {
     km_total: number; horas_trabalhadas: number; boletim: string; status: string; client_name: string;
   }[];
   billings: any[];
+  expenseTransactions: ExpenseTransaction[];
   missionsByDay: Record<string, any[]>;
   expensesByDay: Record<string, number>;
   totals: {
@@ -117,7 +129,11 @@ export default function BalancoGerencialPage() {
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
 
   const filtered = useMemo(() => {
-    if (!data) return { missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[] };
+    if (!data) return {
+      missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[],
+      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, other: 0, total: 0 },
+      expensesByVehicle: {} as Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }>,
+    };
 
     const pad = (n: number) => String(n).padStart(2, "0");
     const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
@@ -130,17 +146,53 @@ export default function BalancoGerencialPage() {
       return d >= startStr && d <= endStr;
     });
 
-    const vehicleMap: Record<string, typeof data.byVehicle[0]> = {};
+    const periodExpenses = (data.expenseTransactions || []).filter(t => {
+      if (!t.date) return false;
+      return t.date >= startStr && t.date <= endStr;
+    });
+
+    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, other: 0, total: 0 };
+    const expensesByVehicle: Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }> = {};
+
+    periodExpenses.forEach(t => {
+      const amt = t.amount;
+      if (t.origin_type === "fueling") expenseSums.fueling += amt;
+      else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
+      else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
+      else expenseSums.other += amt;
+      expenseSums.total += amt;
+
+      if (t.origin_type === "fueling" || t.origin_type === "mission_cost" || t.origin_type === "maintenance") {
+        const plateMatch = t.entity_name?.match(/^([A-Z0-9]{7})/);
+        const descPlate = t.description?.match(/(?:ABASTECIMENTO|MANUTENÇÃO|PEDÁGIO)\s+([A-Z0-9]{7})/i);
+        const plate = plateMatch?.[1] || descPlate?.[1] || null;
+        if (plate) {
+          if (!expensesByVehicle[plate]) expensesByVehicle[plate] = { fueling: 0, mission_cost: 0, maintenance: 0, total: 0 };
+          if (t.origin_type === "fueling") expensesByVehicle[plate].fueling += amt;
+          else if (t.origin_type === "mission_cost") expensesByVehicle[plate].mission_cost += amt;
+          else if (t.origin_type === "maintenance") expensesByVehicle[plate].maintenance += amt;
+          expensesByVehicle[plate].total += amt;
+        }
+      }
+    });
+
+    const vehicleMap: Record<string, typeof data.byVehicle[0] & { desp_combustivel: number; desp_pedagio: number; desp_manutencao: number }> = {};
     missions.forEach(m => {
       const plate = m.placa_viatura || "SEM PLACA";
       if (!vehicleMap[plate]) {
         const orig = data.byVehicle.find(v => v.plate === plate);
-        vehicleMap[plate] = { plate, model: orig?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
+        const vExpenses = expensesByVehicle[plate];
+        vehicleMap[plate] = {
+          plate, model: orig?.model || "", fat_total: 0, pag_total: 0, missions: 0,
+          despesas: vExpenses?.total || 0,
+          desp_combustivel: vExpenses?.fueling || 0,
+          desp_pedagio: vExpenses?.mission_cost || 0,
+          desp_manutencao: vExpenses?.maintenance || 0,
+        };
       }
       vehicleMap[plate].fat_total += m.fat_total;
       vehicleMap[plate].pag_total += m.pag_total;
       vehicleMap[plate].missions += 1;
-      vehicleMap[plate].despesas += m.despesas;
     });
 
     const agentMap: Record<string, { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }> = {};
@@ -159,18 +211,28 @@ export default function BalancoGerencialPage() {
       vehicles: Object.values(vehicleMap).sort((a, b) => b.fat_total - a.fat_total),
       agents: Object.values(agentMap).sort((a, b) => b.fat_total - a.fat_total),
       missionDetails: missions.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()),
+      expenses: expenseSums,
+      expensesByVehicle,
     };
   }, [data, range]);
 
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
-    const desp = filtered.missions.reduce((a, m) => a + m.despesas, 0);
+    const despBilling = filtered.missions.reduce((a, m) => a + m.despesas, 0);
+    const despFin = filtered.expenses;
+    const desp = despFin.total;
     const lucro = fat - pag - desp;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
     const horas = filtered.missions.reduce((a, m) => a + (m.horas_trabalhadas || 0), 0);
-    return { fat, pag, desp, lucro, margem, km, horas, total: filtered.missions.length };
+    return {
+      fat, pag, desp, lucro, margem, km, horas, total: filtered.missions.length,
+      desp_combustivel: despFin.fueling,
+      desp_pedagio: despFin.mission_cost,
+      desp_manutencao: despFin.maintenance,
+      desp_outras: despFin.other,
+    };
   }, [filtered]);
 
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
@@ -254,7 +316,14 @@ export default function BalancoGerencialPage() {
               <span className="text-xs font-black text-neutral-400 uppercase">Custos Operacionais</span>
             </div>
             <p className="text-2xl font-black text-red-700 font-mono">{fmt(totals.pag + totals.desp)}</p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">VRP + Despesas</p>
+            <div className="text-xs text-neutral-500 font-bold mt-1 space-y-0.5">
+              {totals.pag > 0 && <p>VRP: {fmt(totals.pag)}</p>}
+              {totals.desp_combustivel > 0 && <p>Combustível: {fmt(totals.desp_combustivel)}</p>}
+              {totals.desp_pedagio > 0 && <p>Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
+              {totals.desp_manutencao > 0 && <p>Manutenção: {fmt(totals.desp_manutencao)}</p>}
+              {totals.desp_outras > 0 && <p>Outras: {fmt(totals.desp_outras)}</p>}
+              {totals.pag === 0 && totals.desp === 0 && <p>Sem despesas no período</p>}
+            </div>
           </Card>
           <Card className="p-4 border-neutral-200" data-testid="card-lucro">
             <div className="flex items-center gap-2 mb-2">
@@ -310,7 +379,10 @@ export default function BalancoGerencialPage() {
 
 function BalancoTab({ missions, vehicles, agents, totals, range, period }: {
   missions: any[]; vehicles: any[]; agents: any[];
-  totals: { fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number };
+  totals: {
+    fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
+    desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
+  };
   range: { start: Date; end: Date; label: string }; period: Period;
 }) {
   const dailyData = useMemo(() => {
@@ -640,6 +712,19 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
                       <p className={`text-sm font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
                     </div>
                   </div>
+                  {(v.desp_combustivel > 0 || v.desp_pedagio > 0 || v.desp_manutencao > 0) && (
+                    <div className="mt-3 pt-3 border-t border-neutral-100 flex flex-wrap gap-3">
+                      {v.desp_combustivel > 0 && (
+                        <span className="text-xs font-bold text-neutral-500">Combustível: <span className="text-red-600 font-mono">{fmt(v.desp_combustivel)}</span></span>
+                      )}
+                      {v.desp_pedagio > 0 && (
+                        <span className="text-xs font-bold text-neutral-500">Pedágio: <span className="text-red-600 font-mono">{fmt(v.desp_pedagio)}</span></span>
+                      )}
+                      {v.desp_manutencao > 0 && (
+                        <span className="text-xs font-bold text-neutral-500">Manutenção: <span className="text-red-600 font-mono">{fmt(v.desp_manutencao)}</span></span>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

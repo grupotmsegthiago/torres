@@ -7838,11 +7838,25 @@ Regras:
         client_name: b.client_name,
       }));
 
+      const expenseTransactions = txns
+        .filter((t: any) => t.type === "EXPENSE")
+        .map((t: any) => ({
+          id: t.id,
+          date: t.due_date?.split("T")[0] || t.created_at?.split("T")[0],
+          amount: Number(t.amount || 0),
+          origin_type: t.origin_type || "other",
+          description: t.description || "",
+          entity_name: t.entity_name || "",
+          category_name: t.category_name || "",
+          status: t.status,
+        }));
+
       res.json({
         billings: items,
         missionsByDay,
         revenueByDay,
         expensesByDay,
+        expenseTransactions,
         byVehicle: Object.values(byVehicle),
         byAgent: Object.values(byAgent),
         byMission,
