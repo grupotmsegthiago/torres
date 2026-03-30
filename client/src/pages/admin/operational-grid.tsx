@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -2879,11 +2879,26 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, anyDialogOpen]);
 
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    requestAnimationFrame(() => {
+      const el = menuRef.current?.querySelector("[data-testid='vehicle-context-menu']") as HTMLElement | null;
+      const menuH = el?.offsetHeight || 500;
+      const menuW = 224;
+      const left = Math.min(state.x, window.innerWidth - menuW - 8);
+      const top = state.y + menuH > window.innerHeight - 8 ? Math.max(8, window.innerHeight - menuH - 8) : state.y;
+      setMenuPos({ left, top });
+    });
+  }, [state.x, state.y]);
+
   const menuStyle: React.CSSProperties = {
     position: "fixed",
-    left: Math.min(state.x, window.innerWidth - 260),
-    top: Math.min(state.y, window.innerHeight - 400),
+    left: menuPos?.left ?? state.x,
+    top: menuPos?.top ?? state.y,
     zIndex: 9999,
+    maxHeight: "calc(100vh - 16px)",
+    overflowY: "auto",
+    visibility: menuPos ? "visible" : "hidden",
   };
 
   return (
