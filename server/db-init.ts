@@ -450,7 +450,8 @@ export async function ensureDbSchema() {
 
     await db.execute(sql`
       UPDATE vehicles SET last_latitude = NULL, last_longitude = NULL
-      WHERE last_latitude = '0' AND last_longitude = '0'
+      WHERE CAST(COALESCE(NULLIF(last_latitude, ''), '1') AS NUMERIC) = 0
+        AND CAST(COALESCE(NULLIF(last_longitude, ''), '1') AS NUMERIC) = 0
     `).catch(() => {});
 
     console.log("[db-init] Schema verified OK");

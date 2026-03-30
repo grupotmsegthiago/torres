@@ -2828,9 +2828,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               const resp = await fetch(v.trackerApiUrl, { signal: AbortSignal.timeout(5000) });
               if (resp.ok) {
                 trackerData = await resp.json();
-                if (trackerData) {
+                if (trackerData && (trackerData.latitude !== 0 || trackerData.longitude !== 0)) {
                   gotLiveData = true;
                   trackerData.isLiveData = true;
+                } else {
+                  trackerData = null;
                 }
               }
             }
