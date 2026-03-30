@@ -801,6 +801,30 @@ export async function registerRoutes(
     res.json({ message: "Registro salarial removido" });
   });
 
+  app.post("/api/employees/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 208.45, diasUteisMes: 22 };
+      const allEmployees = await storage.getEmployees();
+      const vigilantes = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
+      const effectiveDate = req.body.effectiveDate || new Date().toISOString().slice(0, 10);
+      const reason = `Kit CCT SP 2025/2026 (Base R$${CCT.salarioBase.toFixed(2)} + Periculosidade ${CCT.periculosidadePct}% R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} + VR R$${CCT.valeRefeicaoDia}/dia + Cesta R$${CCT.cestaBasica})`;
+      let count = 0;
+      for (const emp of vigilantes) {
+        await storage.createEmployeeSalary({
+          employeeId: emp.id,
+          baseSalary: String(CCT.salarioBase),
+          effectiveDate,
+          reason,
+          notes: `Pgto 5º dia útil | Periculosidade: R$${(CCT.salarioBase * CCT.periculosidadePct / 100).toFixed(2)} | VR: R$${(CCT.valeRefeicaoDia * CCT.diasUteisMes).toFixed(2)}/mês | Cesta: R$${CCT.cestaBasica}`,
+        });
+        count++;
+      }
+      res.json({ message: `Kit CCT aplicado para ${count} vigilante(s)`, count });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/cpf-lookup/:cpf", requireAuth, async (req, res) => {
     const cpf = String(req.params.cpf).replace(/\D/g, "");
     if (cpf.length !== 11) return res.status(400).json({ message: "CPF inválido" });

@@ -18,6 +18,19 @@ const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
 const CATEGORIAS = ["Mensalista", "Free Lance", "Temporário", "Terceirizado"];
 const FORMAS_PAGAMENTO = ["PIX", "Transferência Bancária", "Dinheiro", "Cheque"];
 const ESTADO_CIVIL = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
+
+const CCT_SP_2025 = {
+  label: "CCT SP 2025/2026",
+  salarioBase: 2432.50,
+  periculosidadePct: 30,
+  get periculosidade() { return this.salarioBase * (this.periculosidadePct / 100); },
+  valeRefeicaoDia: 43.00,
+  cestaBasica: 208.45,
+  diasUteisMes: 22,
+  get valeRefeicaoMes() { return this.valeRefeicaoDia * this.diasUteisMes; },
+  get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.cestaBasica; },
+  pagamentoDiaUtil: 5,
+};
 const ESCOLARIDADE = ["Fundamental", "Médio", "Superior", "Pós-graduação", "Mestrado", "Doutorado"];
 
 const DOCS_WITH_EXPIRY = new Set(["CNH", "CNV", "ASO", "Certificado Formação Vigilante", "Certificado Formação Escolta Armada", "Reciclagem Escolta Armada", "Certidão de Pontuação CNH"]);
@@ -2528,7 +2541,54 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
         )}
 
         {tab === "salarios" && (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="border border-neutral-200 rounded-lg overflow-hidden">
+              <div className="bg-neutral-900 px-4 py-2.5 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-white" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">{CCT_SP_2025.label} — Kit Vigilante</h3>
+              </div>
+              <div className="p-3 bg-neutral-50/50 space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
+                    <span className="text-neutral-600">Salário Base</span>
+                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.salarioBase.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
+                    <span className="text-neutral-600">Periculosidade ({CCT_SP_2025.periculosidadePct}%)</span>
+                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.periculosidade.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
+                    <span className="text-neutral-600">Vale Refeição ({CCT_SP_2025.diasUteisMes}d × R${CCT_SP_2025.valeRefeicaoDia.toFixed(2)})</span>
+                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.valeRefeicaoMes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
+                    <span className="text-neutral-600">Cesta Básica</span>
+                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.cestaBasica.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center bg-neutral-900 text-white rounded px-3 py-2 text-sm">
+                  <span className="font-semibold">Total Remuneração</span>
+                  <span className="font-bold text-lg">R$ {CCT_SP_2025.totalBruto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                </div>
+                <p className="text-[10px] text-neutral-400 italic">Pagamento todo 5º dia útil do mês</p>
+
+                {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026 (Base R$${CCT_SP_2025.salarioBase.toFixed(2)} + Periculosidade ${CCT_SP_2025.periculosidadePct}% R$${CCT_SP_2025.periculosidade.toFixed(2)} + VR R$${CCT_SP_2025.valeRefeicaoDia}/dia + Cesta R$${CCT_SP_2025.cestaBasica})` });
+                      setShowSalForm(true);
+                    }}
+                    data-testid="button-apply-cct-kit"
+                  >
+                    <DollarSign className="w-3.5 h-3.5 mr-1" /> Aplicar Kit CCT para {employee.name.split(" ")[0]}
+                  </Button>
+                )}
+              </div>
+            </div>
+
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-bold text-neutral-700">Histórico Salarial</h3>
               <Button size="sm" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
@@ -2539,7 +2599,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Salário Base (R$) *</label><Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="Ex: 2500.00" data-testid="input-salary-value-pasta" /></div>
                   <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data Vigência *</label><Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} data-testid="input-salary-date-pasta" /></div>
                 </div>
-                <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste)" data-testid="input-salary-reason-pasta" />
+                <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste CCT)" data-testid="input-salary-reason-pasta" />
                 <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} data-testid="button-save-salary-pasta">
                   {addSalary.isPending ? "Salvando..." : "Adicionar"}
                 </Button>
@@ -2551,10 +2611,10 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
               <div className="space-y-2">
                 {salaries.map((s: any) => (
                   <div key={s.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-salary-pasta-${s.id}`}>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <span className="text-sm font-semibold text-neutral-900">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                       <span className="text-xs text-neutral-500 ml-2">{s.effectiveDate}</span>
-                      {s.reason && <span className="text-xs text-neutral-400 ml-2">({s.reason})</span>}
+                      {s.reason && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{s.reason}</p>}
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => deleteSalary.mutate(s.id)} data-testid={`button-delete-salary-pasta-${s.id}`}>
                       <Trash2 className="w-3 h-3 text-red-500" />
@@ -2567,6 +2627,38 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
         )}
       </Card>
     </div>
+  );
+}
+
+function ApplyCctBulkButton() {
+  const { toast } = useToast();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/employees/apply-cct-kit", { effectiveDate: new Date().toISOString().slice(0, 10) });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: `Kit CCT aplicado para ${data.count} vigilante(s)` });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        if (confirm("Aplicar Kit CCT SP 2025/2026 (R$2.432,50 base) para TODOS os vigilantes ativos?")) {
+          mutation.mutate();
+        }
+      }}
+      disabled={mutation.isPending}
+      data-testid="button-apply-cct-bulk"
+    >
+      {mutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <ShieldCheck className="w-3.5 h-3.5 mr-1" />}
+      Kit CCT
+    </Button>
   );
 }
 
@@ -2620,9 +2712,12 @@ export default function EmployeesPage() {
               <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-employees-title">Funcionários</h1>
               <p className="text-sm text-neutral-500 mt-1">Cadastro e gestão de funcionários</p>
             </div>
-            <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-employee">
-              <Plus className="w-4 h-4 mr-2" /> Novo Funcionário
-            </Button>
+            <div className="flex gap-2">
+              {isDiretoria && <ApplyCctBulkButton />}
+              <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-employee">
+                <Plus className="w-4 h-4 mr-2" /> Novo Funcionário
+              </Button>
+            </div>
           </div>
 
           {(() => {
