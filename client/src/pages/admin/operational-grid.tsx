@@ -3650,10 +3650,47 @@ function ManageRefPointsDialog({ open, onClose, refPoints }: { open: boolean; on
   );
 }
 
-function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void }) {
+function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[] }) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+  const [rowForwardUpdate, setRowForwardUpdate] = useState<any>(null);
+  const [rowForwardEmail, setRowForwardEmail] = useState("");
+  const [rowForwardMsg, setRowForwardMsg] = useState("");
+  const [rowSendingEmail, setRowSendingEmail] = useState(false);
+  const [rowShowHistory, setRowShowHistory] = useState(false);
+
+  const { data: unreadUpdates = [] } = useQuery<any[]>({
+    queryKey: ["/api/mission/updates", "unread"],
+    queryFn: async () => {
+      const res = await authFetch("/api/mission/updates?unread=true");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  const rowForwardOsId = rowForwardUpdate?.serviceOrderId;
+  const { data: rowForwardHistory = [] } = useQuery<any[]>({
+    queryKey: ["/api/service-orders", rowForwardOsId, "forwards"],
+    queryFn: async () => {
+      if (!rowForwardOsId) return [];
+      const res = await authFetch(`/api/service-orders/${rowForwardOsId}/forwards`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!rowForwardOsId,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] }); },
+  });
+
+  const getUnreadForOs = (osNumber: string) => unreadUpdates.filter((u: any) => u.osNumber === osNumber);
 
   const { data: refPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
 
@@ -3972,6 +4009,31 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-xs hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-vehicle-${v.id}`}>
                               {v.activeOs.osNumber}
                             </Link>
+                            {(() => {
+                              const osUnreads = getUnreadForOs(v.activeOs!.osNumber);
+                              const latestUnread = osUnreads.length > 0 ? osUnreads[0] : null;
+                              if (!latestUnread) return null;
+                              return (
+                                <button
+                                  onClick={() => {
+                                    setRowForwardUpdate(latestUnread);
+                                    const gridItem = gridData.find((g: GridItem) => g.osNumber === latestUnread.osNumber);
+                                    const client = gridItem?.clientName ? (clients || []).find((c: any) => c.name === gridItem.clientName) : null;
+                                    setRowForwardEmail(client?.email || "");
+                                    setRowForwardMsg("");
+                                    setRowShowHistory(false);
+                                  }}
+                                  className="relative p-1 rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors animate-pulse"
+                                  data-testid={`btn-row-alert-${v.id}`}
+                                  title={`${osUnreads.length} atualização(ões) não lida(s)`}
+                                >
+                                  <Bell className="w-3.5 h-3.5" />
+                                  {osUnreads.length > 1 && (
+                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-600 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{osUnreads.length}</span>
+                                  )}
+                                </button>
+                              );
+                            })()}
                             {hasLocation && (
                               <Tooltip>
                                 <TooltipTrigger>
@@ -4134,6 +4196,146 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
         refPoints={refPoints}
       />
     )}
+
+    <Dialog open={!!rowForwardUpdate} onOpenChange={() => {}}>
+      <DialogContent
+        className="p-0 overflow-hidden border-0 [&>button]:hidden max-w-2xl bg-white max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="px-4 pt-4 pb-2 relative">
+          <DialogTitle className="text-sm font-bold flex items-center gap-2 text-neutral-900">
+            <Send className="w-4 h-4" /> Encaminhar — {rowForwardUpdate?.osNumber || ""}
+          </DialogTitle>
+          <button
+            className="absolute top-3 right-3 p-1 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+            onClick={() => {
+              const uid = rowForwardUpdate?.id;
+              setRowForwardUpdate(null);
+              if (uid) markReadMutation.mutate([uid]);
+            }}
+            data-testid="btn-close-row-forward"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </DialogHeader>
+
+        {rowForwardUpdate && (
+          <div className="px-4">
+            <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+              <div className="flex items-start gap-3">
+                {rowForwardUpdate.photoUrl && (
+                  <img src={rowForwardUpdate.photoUrl} alt="Foto" className="w-20 h-20 rounded-lg object-cover border border-neutral-200 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-neutral-800">"{rowForwardUpdate.message}"</p>
+                  <p className="text-[10px] text-neutral-500 mt-1">
+                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? new Date(rowForwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Email do Cliente</label>
+                <input type="email" value={rowForwardEmail} onChange={(e) => setRowForwardEmail(e.target.value)} placeholder="email@cliente.com.br" className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500" data-testid="input-row-forward-email" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Mensagem adicional (opcional)</label>
+                <textarea value={rowForwardMsg} onChange={(e) => setRowForwardMsg(e.target.value)} placeholder="Observação para o cliente..." rows={2} className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500 resize-none" data-testid="input-row-forward-msg" />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                disabled={!rowForwardEmail || rowSendingEmail}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={async () => {
+                  if (!rowForwardUpdate || !rowForwardEmail) return;
+                  setRowSendingEmail(true);
+                  try {
+                    const res = await authFetch(`/api/mission/updates/${rowForwardUpdate.id}/forward`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipientEmail: rowForwardEmail, customMessage: rowForwardMsg }) });
+                    if (!res.ok) { const err = await res.json().catch(() => ({ message: "Erro" })); throw new Error(err.message); }
+                    toast({ title: "Email enviado!", description: `Encaminhado para ${rowForwardEmail}` });
+                    queryClient.invalidateQueries({ queryKey: ["/api/service-orders", rowForwardOsId, "forwards"] });
+                    setRowShowHistory(true);
+                  } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+                  setRowSendingEmail(false);
+                }}
+                data-testid="btn-row-send-email"
+              >
+                {rowSendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                {rowSendingEmail ? "Enviando..." : "Enviar por Email"}
+              </button>
+
+              {rowForwardUpdate?.photoUrl && (
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
+                  onClick={async () => {
+                    const ok = await copyImageToClipboard(rowForwardUpdate.photoUrl);
+                    toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" });
+                  }}
+                  data-testid="btn-row-copy-photo"
+                >
+                  <Camera className="w-4 h-4" /> Copiar Foto
+                </button>
+              )}
+
+              <button
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-neutral-900 text-white hover:bg-neutral-800"
+                onClick={async () => {
+                  if (!rowForwardUpdate) return;
+                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
+                  const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
+                  const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                  try { await navigator.clipboard.writeText(reportText); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                }}
+                data-testid="btn-row-copy-form"
+              >
+                <Copy className="w-4 h-4" /> Copiar Formulário
+              </button>
+            </div>
+
+            {rowForwardHistory.length > 0 && (
+              <div className="mt-3">
+                <button onClick={() => setRowShowHistory(!rowShowHistory)} className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 hover:text-neutral-900" data-testid="btn-row-toggle-history">
+                  <Clock className="w-3.5 h-3.5" /> Histórico ({rowForwardHistory.length}) <ChevronRight className={`w-3 h-3 transition-transform ${rowShowHistory ? "rotate-90" : ""}`} />
+                </button>
+                {rowShowHistory && (
+                  <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+                    {rowForwardHistory.map((fwd: any) => (
+                      <div key={fwd.id} className="flex items-center gap-2 text-xs bg-neutral-50 rounded-md px-3 py-2 border border-neutral-100">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                        <span className="font-semibold text-neutral-700">{fwd.recipientEmail}</span>
+                        <span className="text-neutral-400">·</span>
+                        <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}..."` : "—"}</span>
+                        {fwd.photoIncluded && <span className="text-neutral-400">📷</span>}
+                        <span className="text-neutral-400 ml-auto flex-shrink-0">{new Date(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-4 pb-4 pt-2 flex justify-end">
+          <button
+            className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs bg-red-600 text-white hover:bg-red-700"
+            onClick={() => {
+              const uid = rowForwardUpdate?.id;
+              setRowForwardUpdate(null);
+              if (uid) markReadMutation.mutate([uid]);
+            }}
+            data-testid="btn-row-forward-finalize"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" /> Finalizar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }
@@ -4903,7 +5105,7 @@ export default function OperationalGridPage() {
               />
             )}
             <OperationNotificationsBar />
-            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} />
+            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 2 minutos
             </div>
