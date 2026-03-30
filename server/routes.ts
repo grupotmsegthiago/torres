@@ -1944,6 +1944,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
 
       function drawFieldCell(x: number, y: number, w: number, h: number, label: string, value: string, options?: { valueColor?: string; link?: string | null }) {
+        const savedY = doc.y;
         doc.save();
         doc.rect(x, y, w, h).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
         doc.rect(x, y, w, 12).fill("#f8fafc");
@@ -1954,9 +1955,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         doc.font("Helvetica-Bold").fontSize(8).fillColor(valColor)
           .text(value || "--", x + 6, y + 16, { width: w - 12, link: options?.link || undefined });
         doc.restore();
+        doc.y = savedY;
       }
 
       function drawKmTimeCard(x: number, y: number, w: number, h: number, label: string, value: string, color: string) {
+        const savedY = doc.y;
         doc.save();
         doc.rect(x, y, w, h).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
         doc.rect(x, y, w, 14).fill("#e2e8f0");
@@ -1966,6 +1969,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         doc.font("Helvetica-Bold").fontSize(14).fillColor(color)
           .text(value, x + 2, y + 18, { width: w - 4, align: "center", lineBreak: false });
         doc.restore();
+        doc.y = savedY;
       }
 
       function drawTableHeader(cols: { text: string; w: number }[]) {
@@ -2094,14 +2098,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const teamH2 = measureTeamCardHeight(emp2, !!emp2);
       const teamH = Math.max(teamH1, teamH2);
       ensureSpace(teamH);
+      const teamBaseY = doc.y;
       if (emp1) {
         doc.save();
-        doc.rect(LM, doc.y, teamW, teamH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
-        doc.rect(LM, doc.y, teamW, 14).fill("#dbeafe");
-        doc.rect(LM, doc.y, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
-        doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE PRINCIPAL", LM + 8, doc.y + 3.5, { width: teamW - 16 });
-        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp1.fullName || emp1.name).toUpperCase(), LM + 8, doc.y + 18, { width: teamW - 16 });
-        let emp1Y = doc.y + 18;
+        doc.rect(LM, teamBaseY, teamW, teamH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+        doc.rect(LM, teamBaseY, teamW, 14).fill("#dbeafe");
+        doc.rect(LM, teamBaseY, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+        doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE PRINCIPAL", LM + 8, teamBaseY + 3.5, { width: teamW - 16 });
+        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp1.fullName || emp1.name).toUpperCase(), LM + 8, teamBaseY + 18, { width: teamW - 16 });
+        let emp1Y = teamBaseY + 18;
         doc.font("Helvetica-Bold").fontSize(8.5);
         emp1Y += doc.heightOfString(sanitize(emp1.fullName || emp1.name).toUpperCase(), { width: teamW - 16 }) + 2;
         if (emp1.cpf) { doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp1.cpf}`, LM + 8, emp1Y, { width: teamW - 16 }); emp1Y += 12; }
@@ -2111,18 +2116,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (emp2) {
         const ex = LM + teamW;
         doc.save();
-        doc.rect(ex, doc.y, teamW, teamH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
-        doc.rect(ex, doc.y, teamW, 14).fill("#dbeafe");
-        doc.rect(ex, doc.y, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
-        doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE AUXILIAR", ex + 8, doc.y + 3.5, { width: teamW - 16 });
-        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp2.fullName || emp2.name).toUpperCase(), ex + 8, doc.y + 18, { width: teamW - 16 });
-        let emp2Y = doc.y + 18;
+        doc.rect(ex, teamBaseY, teamW, teamH).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+        doc.rect(ex, teamBaseY, teamW, 14).fill("#dbeafe");
+        doc.rect(ex, teamBaseY, teamW, 14).lineWidth(0.5).strokeColor(GRAY_BORDER).stroke();
+        doc.font("Helvetica-Bold").fontSize(6.5).fillColor(BLUE).text("AGENTE AUXILIAR", ex + 8, teamBaseY + 3.5, { width: teamW - 16 });
+        doc.font("Helvetica-Bold").fontSize(8.5).fillColor(PRIMARY).text(sanitize(emp2.fullName || emp2.name).toUpperCase(), ex + 8, teamBaseY + 18, { width: teamW - 16 });
+        let emp2Y = teamBaseY + 18;
         doc.font("Helvetica-Bold").fontSize(8.5);
         emp2Y += doc.heightOfString(sanitize(emp2.fullName || emp2.name).toUpperCase(), { width: teamW - 16 }) + 2;
         if (emp2.cpf) { doc.font("Helvetica").fontSize(7).fillColor(GRAY_TEXT).text(`CPF: ${emp2.cpf}`, ex + 8, emp2Y, { width: teamW - 16 }); }
         doc.restore();
       }
-      doc.y += teamH + 6;
+      doc.y = teamBaseY + teamH + 6;
 
       if (vehicle) {
         ensureSpace(36);
