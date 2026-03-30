@@ -35,74 +35,49 @@ const SMART_INTERVAL_FAST_MS = 1 * 60 * 1000;
 const SMART_INTERVAL_DISPLACEMENT_M = 500;
 
 async function ensureFinancialOriginColumns() {
-  let columnsEnsuredViaSql = false;
-  try {
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'" });
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT" });
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER" });
-    await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT" });
-    columnsEnsuredViaSql = true;
-    console.log("[Financial] origin columns ensured via exec_sql");
+  const migrations = [
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT",
+    "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_acionamento NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_hora_extra NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_carregado NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_vazio NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_franquia NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_km_extra NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_excedente NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_franquia NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_faturado NUMERIC DEFAULT 0",
+  ];
 
-    try {
-      const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id, placa_viatura");
-      if (billingsToFix && billingsToFix.length > 0) {
-        let fixedV2 = 0;
-        let fixedPlate = 0;
-        for (const b of billingsToFix) {
-          if (!b.service_order_id) continue;
-          const so = await storage.getServiceOrder(b.service_order_id);
-          if (!so) continue;
-          const updates: any = {};
-          if (!b.vigilante2_id && so.assignedEmployee2Id) {
-            const emp2 = await storage.getEmployee(so.assignedEmployee2Id);
-            if (emp2) { updates.vigilante2_id = so.assignedEmployee2Id; updates.vigilante2_name = emp2.name; fixedV2++; }
-          }
-          if (!b.placa_viatura && so.vehicleId) {
-            const veh = await storage.getVehicle(so.vehicleId);
-            if (veh?.plate) { updates.placa_viatura = veh.plate; fixedPlate++; }
-          }
-          if (Object.keys(updates).length > 0) {
-            await supabaseAdmin.from("escort_billings").update(updates).eq("id", b.id);
-          }
-        }
-        if (fixedV2 > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixedV2} billings`);
-        if (fixedPlate > 0) console.log(`[Financial] Backfilled placa_viatura on ${fixedPlate} billings`);
-      }
-    } catch (bfErr: any) {
-      console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
+  let ok = false;
+  try {
+    for (const q of migrations) {
+      await supabaseAdmin.rpc("exec_sql", { query: q });
     }
-  } catch (_e) {
-    console.log("[Financial] exec_sql unavailable, verifying columns via select...");
-  }
-  try {
-    await db.execute(sql`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'`);
-    await db.execute(sql`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_acionamento NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_hora_extra NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_carregado NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS fat_km_vazio NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_franquia NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS valor_km_extra NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_excedente NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_franquia NUMERIC DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_faturado NUMERIC DEFAULT 0`);
-    try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
-    console.log("[Financial] origin_type/origin_id + valor_estimado + vigilante2 + billing breakdown columns ensured via direct SQL");
-  } catch (_e2: any) {
-    console.log("[Financial] column check:", _e2?.message || "unknown");
+    ok = true;
+    console.log("[Financial] All columns ensured via Supabase RPC");
+  } catch (rpcErr: any) {
+    console.log("[Financial] Supabase RPC failed, trying direct SQL:", rpcErr?.message);
+    try {
+      for (const q of migrations) {
+        await db.execute(sql.raw(q));
+      }
+      try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
+      ok = true;
+      console.log("[Financial] All columns ensured via direct SQL (fallback)");
+    } catch (dbErr: any) {
+      console.error("[Financial] CRITICAL: column migration failed:", dbErr?.message);
+    }
   }
 
-  if (!columnsEnsuredViaSql) {
+  if (!ok) {
     const { error } = await supabaseAdmin.from("financial_transactions").select("origin_type, origin_id").limit(1);
-    if (error && (error.message.includes("origin_type") || error.message.includes("origin_id") || error.code === "42703")) {
-      console.error("[Financial] CRITICAL: origin_type/origin_id columns missing from financial_transactions. Auto-transactions will NOT work. Please add columns manually in Supabase: ALTER TABLE financial_transactions ADD COLUMN origin_type TEXT DEFAULT 'manual'; ALTER TABLE financial_transactions ADD COLUMN origin_id TEXT;");
-    } else {
-      console.log("[Financial] origin_type/origin_id columns verified OK");
+    if (error) {
+      console.error("[Financial] CRITICAL: origin columns missing. Auto-transactions will NOT work.");
     }
   }
 
@@ -131,7 +106,35 @@ async function ensureFinancialOriginColumns() {
     });
     console.log("[Financial] v_resumo_financeiro view created/updated OK");
   } catch (_e) {
-    console.log("[Financial] v_resumo_financeiro view creation skipped (exec_sql unavailable)");
+    console.log("[Financial] v_resumo_financeiro view creation skipped");
+  }
+
+  try {
+    const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id, placa_viatura");
+    if (billingsToFix && billingsToFix.length > 0) {
+      let fixedV2 = 0, fixedPlate = 0;
+      for (const b of billingsToFix) {
+        if (!b.service_order_id) continue;
+        const so = await storage.getServiceOrder(b.service_order_id);
+        if (!so) continue;
+        const updates: any = {};
+        if (!b.vigilante2_id && so.assignedEmployee2Id) {
+          const emp2 = await storage.getEmployee(so.assignedEmployee2Id);
+          if (emp2) { updates.vigilante2_id = so.assignedEmployee2Id; updates.vigilante2_name = emp2.name; fixedV2++; }
+        }
+        if (!b.placa_viatura && so.vehicleId) {
+          const veh = await storage.getVehicle(so.vehicleId);
+          if (veh?.plate) { updates.placa_viatura = veh.plate; fixedPlate++; }
+        }
+        if (Object.keys(updates).length > 0) {
+          await supabaseAdmin.from("escort_billings").update(updates).eq("id", b.id);
+        }
+      }
+      if (fixedV2 > 0) console.log(`[Financial] Backfilled vigilante2 on ${fixedV2} billings`);
+      if (fixedPlate > 0) console.log(`[Financial] Backfilled placa_viatura on ${fixedPlate} billings`);
+    }
+  } catch (bfErr: any) {
+    console.log("[Financial] billing backfill skip:", bfErr?.message || "unknown");
   }
 }
 ensureFinancialOriginColumns();
