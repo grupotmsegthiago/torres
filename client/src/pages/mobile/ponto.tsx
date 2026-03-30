@@ -225,7 +225,7 @@ export default function MobilePontoPage() {
                 <div>
                   <p className="text-xs font-bold text-red-700 uppercase">Distância da Sede</p>
                   <p className="text-2xl font-black text-red-600">{(geofenceBlock.distance / 1000).toFixed(1)} km</p>
-                  <p className="text-[10px] text-red-500">Máximo permitido: 300m</p>
+                  <p className="text-[10px] text-red-500">Máximo permitido: 500m</p>
                 </div>
               </div>
 

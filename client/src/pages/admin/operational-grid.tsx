@@ -454,7 +454,7 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 *OS* ${os.osNumber} | *STATUS:* ${statusLabel}
 
 🗓 *DATA:* ${date}    *HORA:* ${time}
-🛡 *OPERAÇÃO:* CARACTERIZADA
+🛡 *OPERAÇÃO:* ${statusLabel}
 🏢 *CLIENTE:* ${os.clientName?.toUpperCase() || "—"}
 
 📍 *ORIGEM:* ${origin?.toUpperCase() || "—"}

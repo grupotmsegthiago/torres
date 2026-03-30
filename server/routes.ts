@@ -7312,7 +7312,7 @@ Regras:
   // ─── MOBILE: Folha de Ponto (Clock In/Out with photo + GPS) ──────────
   const HQ_LAT = -23.4827;
   const HQ_LNG = -46.7346;
-  const HQ_RADIUS_METERS = 300;
+  const HQ_RADIUS_METERS = 500;
 
   function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371000;
