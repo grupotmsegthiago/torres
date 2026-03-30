@@ -3901,76 +3901,97 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
               </div>
             </div>
 
-            {data.billing && (
-              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
-                <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1.5">Dados do Faturamento</h4>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  {data.billing.km_total != null && (
-                    <>
-                      <span className="text-neutral-500">KM Total</span>
-                      <span className="font-bold text-neutral-800">{data.billing.km_total} km</span>
-                    </>
-                  )}
-                  {data.billing.km_excedente != null && Number(data.billing.km_excedente) > 0 && (
-                    <>
-                      <span className="text-neutral-500">KM Excedente</span>
-                      <span className="font-bold text-neutral-800">{data.billing.km_excedente} km</span>
-                    </>
-                  )}
-                  {data.billing.horas_trabalhadas != null && (
-                    <>
-                      <span className="text-neutral-500">Horas Trabalhadas</span>
-                      <span className="font-bold text-neutral-800">{Number(data.billing.horas_trabalhadas).toFixed(1)}h</span>
-                    </>
-                  )}
+            {data.billing && (() => {
+              const b = data.billing;
+              const kmTotal = Number(b.km_total || 0);
+              const kmExc = Number(b.km_excedente || 0);
+              const kmFranquia = Number(b.km_franquia || 0);
+              const horas = Number(b.horas_trabalhadas || 0);
+              const fatAcionamento = Number(b.fat_acionamento || 0);
+              const fatKm = Number(b.fat_km || b.valor_km_extra || 0);
+              const fatHoraExtra = Number(b.fat_hora_extra || 0);
+              const fatAdicNoturno = Number(b.fat_adicional_noturno || 0);
+              const fatEstadia = Number(b.fat_estadia || 0);
+              const fatPernoite = Number(b.fat_pernoite || 0);
+              const fatTotal = Number(b.fat_total || 0);
+              return (
+                <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                  <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-2">Dados do Faturamento</h4>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-neutral-200">
+                        <th className="text-left py-1 text-[10px] font-bold text-neutral-400 uppercase">Item</th>
+                        <th className="text-center py-1 text-[10px] font-bold text-neutral-400 uppercase">Qtd</th>
+                        <th className="text-right py-1 text-[10px] font-bold text-neutral-400 uppercase">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fatAcionamento > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">Acionamento</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">1x</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fmtBRL(fatAcionamento)}</td>
+                        </tr>
+                      )}
+                      {kmTotal > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">KM Total{kmFranquia > 0 ? ` (franquia ${kmFranquia} km)` : ""}</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">{kmTotal} km</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fatKm > 0 ? fmtBRL(fatKm) : "—"}</td>
+                        </tr>
+                      )}
+                      {kmExc > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600 pl-3">↳ KM Excedente</td>
+                          <td className="py-1.5 text-center font-semibold text-amber-700">{kmExc} km</td>
+                          <td className="py-1.5 text-right font-bold text-amber-700">{fmtBRL(fatKm)}</td>
+                        </tr>
+                      )}
+                      {horas > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">Horas Trabalhadas</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">{horas.toFixed(1)}h</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fatHoraExtra > 0 ? fmtBRL(fatHoraExtra) : "—"}</td>
+                        </tr>
+                      )}
+                      {fatHoraExtra > 0 && horas > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600 pl-3">↳ Hora Extra</td>
+                          <td className="py-1.5 text-center font-semibold text-amber-700">{(() => { const franquiaH = Number(b.franquia_horas || 0); return franquiaH > 0 ? `${(horas - franquiaH).toFixed(1)}h` : "—"; })()}</td>
+                          <td className="py-1.5 text-right font-bold text-amber-700">{fmtBRL(fatHoraExtra)}</td>
+                        </tr>
+                      )}
+                      {fatAdicNoturno > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">Adicional Noturno</td>
+                          <td className="py-1.5 text-center text-neutral-400">—</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fmtBRL(fatAdicNoturno)}</td>
+                        </tr>
+                      )}
+                      {fatEstadia > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">Estadia</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">{Number(b.horas_estadia || 0).toFixed(1)}h</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fmtBRL(fatEstadia)}</td>
+                        </tr>
+                      )}
+                      {fatPernoite > 0 && (
+                        <tr className="border-b border-neutral-100">
+                          <td className="py-1.5 text-neutral-600">Pernoite/Diária</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">1x</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-800">{fmtBRL(fatPernoite)}</td>
+                        </tr>
+                      )}
+                      <tr className="border-t-2 border-neutral-300">
+                        <td className="py-2 font-black text-neutral-800">Faturamento Total</td>
+                        <td className="py-2"></td>
+                        <td className="py-2 text-right font-black text-emerald-700 text-sm">{fmtBRL(fatTotal)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div className="mt-2 pt-2 border-t border-neutral-200">
-                  <h5 className="text-[10px] font-bold text-neutral-500 uppercase mb-1">Composição do Faturamento</h5>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                    {Number(data.billing.fat_acionamento || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">Acionamento</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_acionamento))}</span>
-                      </>
-                    )}
-                    {Number(data.billing.fat_km || data.billing.valor_km_extra || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">KM Extra</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_km || data.billing.valor_km_extra || 0))}</span>
-                      </>
-                    )}
-                    {Number(data.billing.fat_hora_extra || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">Hora Extra</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_hora_extra))}</span>
-                      </>
-                    )}
-                    {Number(data.billing.fat_adicional_noturno || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">Adicional Noturno</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_adicional_noturno))}</span>
-                      </>
-                    )}
-                    {Number(data.billing.fat_estadia || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">Estadia</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_estadia))}</span>
-                      </>
-                    )}
-                    {Number(data.billing.fat_pernoite || 0) > 0 && (
-                      <>
-                        <span className="text-neutral-500">Pernoite/Diária</span>
-                        <span className="font-bold text-neutral-800">{fmtBRL(Number(data.billing.fat_pernoite))}</span>
-                      </>
-                    )}
-                    <>
-                      <span className="text-neutral-700 font-bold pt-1 border-t border-neutral-200">Faturamento Total</span>
-                      <span className="font-black text-emerald-700 pt-1 border-t border-neutral-200">{fmtBRL(Number(data.billing.fat_total || 0))}</span>
-                    </>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         ) : null}
       </DialogContent>
