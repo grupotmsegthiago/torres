@@ -24,7 +24,7 @@ const fmtHoras = (val: number) => {
   return `${h}h${m.toString().padStart(2, "0")}`;
 };
 
-const META_DIARIA_CARRO = 1800;
+const META_MENSAL_VIATURA = 40000;
 
 type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR";
 
@@ -66,9 +66,9 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
   }
 }
 
-function getDaysInRange(range: { start: Date; end: Date }): number {
-  const diff = range.end.getTime() - range.start.getTime();
-  return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+function getMonthsInRange(range: { start: Date; end: Date }): number {
+  const diff = (range.end.getFullYear() - range.start.getFullYear()) * 12 + (range.end.getMonth() - range.start.getMonth()) + 1;
+  return Math.max(1, diff);
 }
 
 function navigatePeriod(period: Period, refDate: Date, direction: number): Date {
@@ -126,7 +126,7 @@ export default function BalancoGerencialPage() {
   });
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
-  const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
+  const monthsInPeriod = useMemo(() => getMonthsInRange(range), [range]);
 
   const filtered = useMemo(() => {
     if (!data) return {
@@ -368,9 +368,9 @@ export default function BalancoGerencialPage() {
         </div>
 
         {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} />}
-        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} totals={totals} />}
-        {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} daysInPeriod={daysInPeriod} period={period} />}
-        {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} />}
+        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} totals={totals} />}
+        {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} monthsInPeriod={monthsInPeriod} period={period} />}
+        {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} />}
         {activeTab === "MISSOES" && <MissoesTab missions={filtered.missionDetails} />}
       </div>
     </AdminLayout>
@@ -506,11 +506,11 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period }: {
   );
 }
 
-function MetasTab({ vehicles, agents, daysInPeriod, period, totals }: {
-  vehicles: any[]; agents: any[]; daysInPeriod: number; period: Period;
+function MetasTab({ vehicles, agents, monthsInPeriod, period, totals }: {
+  vehicles: any[]; agents: any[]; monthsInPeriod: number; period: Period;
   totals: { fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number };
 }) {
-  const metaPeriodoViatura = META_DIARIA_CARRO * daysInPeriod;
+  const metaPeriodoViatura = META_MENSAL_VIATURA * monthsInPeriod;
   const totalViaturas = vehicles.length;
   const metaGlobal = metaPeriodoViatura * totalViaturas;
   const metaGlobalPct = metaGlobal > 0 ? (totals.fat / metaGlobal) * 100 : 0;
@@ -521,7 +521,7 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals }: {
         <h4 className="text-sm font-black text-neutral-900 uppercase mb-2 flex items-center gap-2">
           <Target size={16} /> Resumo de Metas
         </h4>
-        <p className="text-xs text-neutral-500 font-bold mb-4">Meta diária por viatura: {fmt(META_DIARIA_CARRO)} | Meta do período ({daysInPeriod} dias): {fmt(metaPeriodoViatura)}/viatura</p>
+        <p className="text-xs text-neutral-500 font-bold mb-4">Meta mensal por viatura: {fmt(META_MENSAL_VIATURA)} | Meta do período ({monthsInPeriod} {monthsInPeriod === 1 ? "mês" : "meses"}): {fmt(metaPeriodoViatura)}/viatura</p>
 
         {totalViaturas === 0 ? (
           <div className="text-center py-8 text-neutral-400">
@@ -642,8 +642,8 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals }: {
   );
 }
 
-function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; daysInPeriod: number; period: Period }) {
-  const metaPeriodo = META_DIARIA_CARRO * daysInPeriod;
+function VeiculosTab({ vehicles, monthsInPeriod, period }: { vehicles: any[]; monthsInPeriod: number; period: Period }) {
+  const metaPeriodo = META_MENSAL_VIATURA * monthsInPeriod;
 
   return (
     <div className="space-y-4" data-testid="panel-veiculos">
@@ -653,7 +653,7 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
             <Target size={16} /> Desempenho por Viatura
           </h4>
           <Badge variant="outline" className="text-xs font-black uppercase" data-testid="badge-meta">
-            Meta: {fmt(metaPeriodo)} ({daysInPeriod}d × {fmt(META_DIARIA_CARRO)})
+            Meta: {fmt(metaPeriodo)} / {PERIOD_LABELS[period].toLowerCase()}
           </Badge>
         </div>
 
@@ -735,8 +735,8 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
   );
 }
 
-function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPeriod: number; period: Period }) {
-  const metaPeriodo = META_DIARIA_CARRO * daysInPeriod;
+function AgentesTab({ agents, monthsInPeriod, period }: { agents: any[]; monthsInPeriod: number; period: Period }) {
+  const metaPeriodo = META_MENSAL_VIATURA * monthsInPeriod;
 
   return (
     <div className="space-y-4" data-testid="panel-agentes">
@@ -746,7 +746,7 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
             <Users size={16} /> Desempenho por Agente
           </h4>
           <Badge variant="outline" className="text-xs font-black uppercase" data-testid="badge-meta-agente">
-            Meta: {fmt(metaPeriodo)} ({daysInPeriod}d × {fmt(META_DIARIA_CARRO)})
+            Meta: {fmt(metaPeriodo)} / {PERIOD_LABELS[period].toLowerCase()}
           </Badge>
         </div>
 
