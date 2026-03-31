@@ -1635,6 +1635,76 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino"];
+    const changedBillingFields = existing && billingRelevantFields.some(f => {
+      const oldVal = (existing as any)[f];
+      const newVal = (parsed.data as any)[f];
+      return newVal !== undefined && String(newVal || "") !== String(oldVal || "");
+    });
+    const isConcluded = ["concluída", "concluida"].includes(data.status || "") || data.missionStatus === "encerrada";
+    if (changedBillingFields && isConcluded && data.type === "escolta") {
+      try {
+        const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+          .select("*")
+          .eq("service_order_id", data.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const bill = existingBilling?.[0];
+        if (bill && bill.status === "A_VERIFICAR") {
+          let contrato: any = null;
+          if (bill.contract_id) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", bill.contract_id).single();
+            contrato = cc;
+          }
+          if (!contrato) {
+            contrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          }
+
+          const kmIni = Number((data as any).kmSaida || bill.km_inicial || 0);
+          const kmFin = Number((data as any).kmRetorno || bill.km_final || 0);
+          const horarioInicio = data.missionStartedAt ? new Date(data.missionStartedAt).toISOString() : (bill.horario_inicio || null);
+          const horarioFim = data.completedDate ? new Date(data.completedDate).toISOString() : (bill.horario_fim || null);
+          const horarioAgendado = data.scheduledDate ? new Date(data.scheduledDate).toISOString() : (bill.horario_agendado || null);
+
+          const resultado = calcularEscolta({
+            km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
+            horas_missao: 0, horas_estadia: Number(bill.horas_estadia || 0),
+            teve_pernoite: !!bill.teve_pernoite, horario_inicio: horarioInicio, horario_fim: horarioFim,
+            horario_agendado: horarioAgendado,
+            despesas_pedagio: Number(bill.despesas_pedagio || 0), despesas_combustivel: Number(bill.despesas_combustivel || 0),
+            despesas_outras: Number(bill.despesas_outras || 0), contrato,
+          });
+
+          const nb = (v: any) => Number(v) || 0;
+          await supabaseAdmin.from("escort_billings").update({
+            km_inicial: nb(kmIni), km_final: nb(kmFin),
+            km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
+            km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
+            km_excedente: nb(resultado.km_excedente),
+            horario_agendado: horarioAgendado, horario_inicio: horarioInicio, horario_fim: horarioFim,
+            horario_inicio_considerado: resultado.horario_inicio_considerado,
+            horas_missao: nb(resultado.horas_trabalhadas), horas_trabalhadas: nb(resultado.horas_trabalhadas),
+            is_noturno: resultado.is_noturno,
+            fat_acionamento: nb(resultado.fat_acionamento), fat_hora_extra: nb(resultado.fat_hora_extra),
+            fat_km: nb(resultado.fat_km), fat_km_carregado: nb(resultado.faturamento.km_carregado),
+            fat_km_vazio: nb(resultado.faturamento.km_vazio),
+            fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
+            fat_diaria: nb(resultado.fat_pernoite),
+            fat_adicional_noturno: nb(resultado.fat_adicional_noturno), fat_total: nb(resultado.fat_total),
+            valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
+            pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
+            pag_adicional_noturno: nb(resultado.pag_adicional_noturno), pag_reembolsos: nb(resultado.pag_reembolsos),
+            pag_total: nb(resultado.pag_total),
+            resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
+            margem_percentual: nb(resultado.resultado.margem_pct),
+          }).eq("id", bill.id);
+          console.log(`[OS-Billing] Auto-recalculated billing #${bill.id} for OS ${data.osNumber} (fields changed: ${billingRelevantFields.filter(f => (parsed.data as any)[f] !== undefined).join(", ")})`);
+        }
+      } catch (recalcErr: any) {
+        console.error(`[OS-Billing] Auto-recalc failed for OS ${data.osNumber}:`, recalcErr.message);
+      }
+    }
+
     const wasCanceled = existing && !["cancelada"].includes(existing.status || "") && data.status === "cancelada";
     if (wasCanceled) {
       try { await removeAutoTransaction("service_order", String(data.id)); } catch (_e) {}
