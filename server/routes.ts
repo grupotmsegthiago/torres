@@ -4251,8 +4251,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.get("/api/vehicle-tracking", requireAuth, async (_req, res) => {
     const allVehicles = await storage.getVehicles();
     const orders = await storage.getServiceOrders();
+    const FINISHED_MISSION = ["finalizada", "retorno_base", "chegada_base", "encerrada"];
     const activeOrders = orders.filter(
-      (o) => o.status === "em_andamento" || (o.status === "agendada" && o.missionStatus)
+      (o) => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStatus))
+    );
+    const vehicleActiveOrders = activeOrders.filter(
+      (o) => !FINISHED_MISSION.includes(o.missionStatus || "")
     );
     const scheduledOrders = orders.filter(
       (o) => (o.status === "aberta" || o.status === "agendada") && !o.missionStatus
@@ -4444,7 +4448,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
         }
 
-        const linkedOrder = activeOrders.find((o) => o.vehicleId === v.id);
+        const linkedOrder = vehicleActiveOrders.find((o) => o.vehicleId === v.id);
 
         return {
           id: v.id,
