@@ -20,7 +20,7 @@ const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "
 
 function fmtDate(d: string | null) {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("pt-BR");
+  return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 function fmtCurrency(v: number | null) {
   if (v == null) return "-";

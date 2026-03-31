@@ -25,7 +25,7 @@ export default function MobileHomePage() {
             {firstName}
           </h1>
           <p className="text-xs text-neutral-500 mt-1">
-            {now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
+            {now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
 

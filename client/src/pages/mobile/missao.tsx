@@ -345,8 +345,8 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
       <div className="space-y-0">
         {display.map((log: any, i: number) => {
           const dt = new Date(log.completedAt);
-          const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-          const dateStr = dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const timeStr = dt.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+          const dateStr = dt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
           const isLast = i === display.length - 1;
           return (
             <div key={`${log.step}-${i}`} className="flex gap-3" data-testid={`timeline-entry-${log.step}-${i}`}>
@@ -1154,7 +1154,7 @@ export default function MobileMissaoPage() {
                       </div>
                       <div>
                         <p className="text-xs font-black text-neutral-900 uppercase tracking-wider">{s.osNumber}</p>
-                        <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(s.scheduledDate).toLocaleString("pt-BR") : "Agendada"}</p>
+                        <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(s.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "Agendada"}</p>
                       </div>
                     </div>
                     {s.priority === "imediata" && (
@@ -1166,9 +1166,9 @@ export default function MobileMissaoPage() {
                     <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2">
                       <Clock className="w-3.5 h-3.5 text-neutral-400" />
                       <span className="font-semibold text-neutral-700">
-                        {new Date(s.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                        {new Date(s.scheduledDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" })}
                         {" às "}
-                        {new Date(s.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(s.scheduledDate).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
                   )}
@@ -1369,7 +1369,7 @@ export default function MobileMissaoPage() {
               {mission.scheduledDate && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <Bell className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR")}</span>
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 </div>
               )}
               {mission.origin && (
@@ -1455,7 +1455,7 @@ export default function MobileMissaoPage() {
               {mission.scheduledDate && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <Bell className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR")}</span>
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 </div>
               )}
               {mission.description && (

@@ -1699,7 +1699,7 @@ function HomologacaoTab({ client }: { client: Client }) {
                         <span key={i} className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">{d}</span>
                       ))}
                     </div>
-                    <p className="text-[9px] text-neutral-400 mt-1.5">{new Date(log.sentAt).toLocaleString("pt-BR")}{log.sentBy ? ` • por ${log.sentBy}` : ""}</p>
+                    <p className="text-[9px] text-neutral-400 mt-1.5">{new Date(log.sentAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}{log.sentBy ? ` • por ${log.sentBy}` : ""}</p>
                   </div>
                 ))}
               </div>
@@ -1977,7 +1977,7 @@ function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => vo
                   {b.revisado_por && (
                     <div className="mt-3 bg-neutral-50 p-3 rounded-xl">
                       <p className="text-[9px] font-black text-neutral-400 uppercase">Revisado por</p>
-                      <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR") : "—"}</p>
+                      <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
                     </div>
                   )}
 

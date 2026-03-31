@@ -471,7 +471,7 @@ export default function FinanceiroPage() {
     if (filteredByStep.length === 0) return;
     const headers = ["Data", "Descrição", "Favorecido", "Categoria", "Valor", "Status"];
     const rows = filteredByStep.map(t => [
-      new Date(t.due_date).toLocaleDateString("pt-BR"),
+      new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
       t.description,
       t.entity_name || "Geral",
       t.category_name || "",
@@ -560,7 +560,7 @@ export default function FinanceiroPage() {
                 <tr key={t.id} className={`hover:bg-neutral-50 transition-colors ${isOverdue ? "bg-red-50/50" : ""}`} data-testid={`row-transaction-${t.id}`}>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-mono font-bold ${isOverdue ? "text-red-600" : "text-neutral-500"}`}>
-                      {new Date(t.due_date).toLocaleDateString("pt-BR")}
+                      {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                     </span>
                     {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                     {t.installment_total && t.installment_total > 1 && (
@@ -1108,7 +1108,7 @@ export default function FinanceiroPage() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-amber-100 text-amber-800 text-[10px] font-black border-0">A VERIFICAR</Badge>
-                            <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR")}</span>
+                            <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                           </div>
                           <span className="text-[10px] font-bold text-neutral-500">{b.vigilante_name || "—"}</span>
                         </div>
@@ -1186,7 +1186,7 @@ export default function FinanceiroPage() {
                           {b.status === "APROVADA" && <Badge className="bg-green-100 text-green-800 text-[9px] font-black border-0">Aprovada</Badge>}
                           {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Rejeitada</Badge>}
                         </div>
-                        <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR")}</span>
+                        <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-neutral-600 truncate">{b.client_name || "Sem cliente"} {b.origem && b.destino ? `· ${b.origem}→${b.destino}` : ""}</span>

@@ -184,7 +184,7 @@ export default function MobilePontoPage() {
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
               <div className="space-y-1.5 mb-3">
                 <div className="flex items-center justify-between text-white text-xs">
-                  <span className="flex items-center gap-1"><Clock size={12} /> {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="flex items-center gap-1"><Clock size={12} /> {now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}</span>
                   <span className="flex items-center gap-1"><MapPin size={12} /> {freshGeo ? `${freshGeo.lat.toFixed(4)}, ${freshGeo.lng.toFixed(4)}` : geo.position ? `${geo.position.coords.latitude.toFixed(4)}, ${geo.position.coords.longitude.toFixed(4)}` : "Obtendo..."}</span>
                 </div>
                 {geoAddress && (
@@ -266,13 +266,13 @@ export default function MobilePontoPage() {
           </Link>
           <div>
             <h1 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Folha de Ponto</h1>
-            <p className="text-xs text-neutral-400">{now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</p>
+            <p className="text-xs text-neutral-400">{now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long" })}</p>
           </div>
         </div>
 
         <div className="bg-neutral-900 rounded-2xl p-5 text-center">
           <p className="text-3xl font-black text-white font-mono" data-testid="text-current-time">
-            {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            {now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </p>
           {geo.denied ? (
             <p className="text-xs mt-1 flex items-center justify-center gap-1 text-red-400">

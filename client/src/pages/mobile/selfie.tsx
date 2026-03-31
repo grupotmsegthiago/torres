@@ -180,9 +180,9 @@ export default function SelfiePage() {
             {user.name}
           </p>
           <p className="text-[10px] text-neutral-400">
-            {new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            {new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", year: "numeric", month: "long", day: "numeric" })}
             {" · "}
-            {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            {new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
           </p>
           <div className="flex items-center justify-center gap-1 mt-1">
             <MapPin className="w-3 h-3 text-emerald-500" />

@@ -17,8 +17,8 @@ const fmt = (val: number | null | undefined) => {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
 
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
-const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
 const fmtHoras = (val: number | null | undefined) => {
   if (!val) return "0h00";
   const h = Math.floor(val);
@@ -637,7 +637,7 @@ export default function BoletimMedicaoPage() {
                       {b.revisado_por && (
                         <div className="bg-neutral-50 p-3 rounded-xl">
                           <p className="text-[9px] font-black text-neutral-400 uppercase">Revisado por</p>
-                          <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR") : "—"}</p>
+                          <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
                         </div>
                       )}
 

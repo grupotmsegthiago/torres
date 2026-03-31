@@ -480,7 +480,7 @@ function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: Veh
             )}
 
             <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
-              Registrado em {fueling.createdAt ? new Date(fueling.createdAt).toLocaleString("pt-BR") : "-"} · ID #{fueling.id}
+              Registrado em {fueling.createdAt ? new Date(fueling.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-"} · ID #{fueling.id}
             </div>
           </div>
         </div>
