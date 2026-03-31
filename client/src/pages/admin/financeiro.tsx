@@ -111,7 +111,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [type, setType] = useState<TransactionType>(editingTransaction?.type || "EXPENSE");
   const [description, setDescription] = useState(editingTransaction?.description || "");
   const [amount, setAmount] = useState(editingTransaction?.amount?.toString() || "");
-  const [dueDate, setDueDate] = useState(editingTransaction?.due_date?.split("T")[0] || new Date().toISOString().split("T")[0]);
+  const [dueDate, setDueDate] = useState(editingTransaction?.due_date?.split("T")[0] || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
   const [categoryId, setCategoryId] = useState(editingTransaction?.category_id || "");
   const [accountId, setAccountId] = useState(editingTransaction?.account_id || "");
   const [entityName, setEntityName] = useState(editingTransaction?.entity_name || "");
@@ -330,8 +330,8 @@ export default function FinanceiroPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [viewPeriod, setViewPeriod] = useState<ViewPeriod>("MONTH");
-  const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [customStartDate, setCustomStartDate] = useState(new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
+  const [customEndDate, setCustomEndDate] = useState(new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<FinancialTransaction | null>(null);
   const [closingNotes, setClosingNotes] = useState("");
@@ -471,7 +471,7 @@ export default function FinanceiroPage() {
     if (filteredByStep.length === 0) return;
     const headers = ["Data", "Descrição", "Favorecido", "Categoria", "Valor", "Status"];
     const rows = filteredByStep.map(t => [
-      new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+      new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" }),
       t.description,
       t.entity_name || "Geral",
       t.category_name || "",
@@ -482,7 +482,7 @@ export default function FinanceiroPage() {
     const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `FINANCEIRO_${activeStep}_${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `FINANCEIRO_${activeStep}_${new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}.csv`;
     link.click();
   };
 
@@ -560,7 +560,7 @@ export default function FinanceiroPage() {
                 <tr key={t.id} className={`hover:bg-neutral-50 transition-colors ${isOverdue ? "bg-red-50/50" : ""}`} data-testid={`row-transaction-${t.id}`}>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-mono font-bold ${isOverdue ? "text-red-600" : "text-neutral-500"}`}>
-                      {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                      {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
                     </span>
                     {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                     {t.installment_total && t.installment_total > 1 && (
