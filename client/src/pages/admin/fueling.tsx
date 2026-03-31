@@ -193,7 +193,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
   const [form, setForm] = useState({
     vehicleId: fueling?.vehicleId || 0,
     driverId: fueling?.driverId || null as number | null,
-    date: fueling?.date || new Date().toISOString().slice(0, 10),
+    date: fueling?.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
     liters: fueling?.liters || "",
     costPerLiter: fueling?.costPerLiter || "",
     totalCost: fueling?.totalCost || "",

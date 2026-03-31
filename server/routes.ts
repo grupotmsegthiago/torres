@@ -159,7 +159,7 @@ async function syncMissingAutoTransactions() {
         amount: Number(f.totalCost),
         type: "EXPENSE",
         status: "PAID",
-        due_date: f.date || new Date().toISOString().split("T")[0],
+        due_date: f.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "fueling",
         origin_id: String(f.id),
         category_name: "Combustível",
@@ -179,7 +179,7 @@ async function syncMissingAutoTransactions() {
         amount: Number(m.cost),
         type: "EXPENSE",
         status: "PAID",
-        due_date: m.date || new Date().toISOString().split("T")[0],
+        due_date: m.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "maintenance",
         origin_id: String(m.id),
         category_name: "Manutenção Veicular",
@@ -1855,7 +1855,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             description: `RECEITA OS ${data.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
             amount: revenueAmount,
             type: "INCOME",
-            due_date: new Date().toISOString().split("T")[0],
+            due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
             origin_type: "service_order",
             origin_id: String(data.id),
             category_name: "Receita de Escolta",
@@ -2410,7 +2410,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           description: `CUSTO MISSÃO ${osNum} - ${category} ${description || ""}`.toUpperCase().trim(),
           amount: numAmount,
           type: "EXPENSE",
-          due_date: new Date().toISOString().split("T")[0],
+          due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
           origin_type: "mission_cost",
           origin_id: String(cost.id),
           category_name: "Custos de Missão",
@@ -3495,7 +3495,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         description: `MANUTENÇÃO ${plateStr} - ${parsed.data.type} ${parsed.data.description || ""}`.toUpperCase().trim(),
         amount: Number(parsed.data.cost),
         type: "EXPENSE",
-        due_date: parsed.data.date || new Date().toISOString().split("T")[0],
+        due_date: parsed.data.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "maintenance",
         origin_id: String(data.id),
         category_name: "Manutenção Veicular",
@@ -3521,7 +3521,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         description: `MANUTENÇÃO ${vehicle?.plate || ""} - ${data.type} ${data.description || ""}`.toUpperCase().trim(),
         amount: newCost,
         type: "EXPENSE",
-        due_date: data.date || new Date().toISOString().split("T")[0],
+        due_date: data.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "maintenance",
         origin_id: String(data.id),
         category_name: "Manutenção Veicular",
@@ -3587,7 +3587,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         description: `ABASTECIMENTO ${plateStr}${agentStr} - ${parsed.data.fuelType || "diesel"} ${parsed.data.liters}L`.toUpperCase().trim(),
         amount: Number(parsed.data.totalCost),
         type: "EXPENSE",
-        due_date: parsed.data.date || new Date().toISOString().split("T")[0],
+        due_date: parsed.data.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "fueling",
         origin_id: String(data.id),
         category_name: "Combustível",
@@ -3618,7 +3618,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         description: `ABASTECIMENTO ${vehicle?.plate || ""}${agentStr} - ${data.fuelType || "diesel"} ${data.liters}L`.toUpperCase().trim(),
         amount: newCost,
         type: "EXPENSE",
-        due_date: data.date || new Date().toISOString().split("T")[0],
+        due_date: data.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "fueling",
         origin_id: String(data.id),
         category_name: "Combustível",
@@ -3965,8 +3965,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.get("/api/api-logs/stats", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
-    const today = new Date().toISOString().split("T")[0];
-    const todayLogs = logs.filter(l => l.createdAt && l.createdAt.toISOString().startsWith(today));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const todayLogs = logs.filter(l => l.createdAt && l.createdAt.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === today);
     const byEndpoint: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
     for (const l of logs) {
@@ -5576,7 +5576,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
               amount: revenueAmount,
               type: "INCOME",
-              due_date: new Date().toISOString().split("T")[0],
+              due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
               origin_type: "service_order",
               origin_id: String(serviceOrderId),
               category_name: "Receita de Escolta",
@@ -5856,7 +5856,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               description: `RECEITA OS ${so.osNumber} - ${clientName} ${plateStr}`.toUpperCase().trim(),
               amount: revenueAmount,
               type: "INCOME",
-              due_date: new Date().toISOString().split("T")[0],
+              due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
               origin_type: "service_order",
               origin_id: String(serviceOrderId),
               category_name: "Receita de Escolta",
@@ -7512,8 +7512,8 @@ Regras:
             description: `${description} (${i + 1}/${installments})`,
             amount: Math.round((amount / installments) * 100) / 100,
             type, status: status || "PENDING",
-            due_date: d.toISOString().split("T")[0],
-            payment_date: status === "PAID" ? d.toISOString().split("T")[0] : null,
+            due_date: d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+            payment_date: status === "PAID" ? d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null,
             category_id, category_name, account_id, account_name,
             entity_type, entity_name, notes,
             installment_group: installmentGroup,
@@ -7603,7 +7603,7 @@ Regras:
       const { data: all, error } = await supabaseAdmin.from("financial_transactions").select("*");
       if (error) throw error;
       const txs = all || [];
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const expenses = txs.filter((t: any) => t.type === "EXPENSE");
       const incomes = txs.filter((t: any) => t.type === "INCOME");
       res.json({
@@ -8021,7 +8021,7 @@ Regras:
       const { data: all, error } = await query;
       if (error) throw error;
       const txs = all || [];
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
       const incomes = txs.filter((t: any) => t.type === "INCOME");
       const expenses = txs.filter((t: any) => t.type === "EXPENSE");
@@ -9655,9 +9655,9 @@ Regras:
       }
 
       const [fueling] = await db.insert(vehicleFueling).values({
-        vehicleId, driverId: employeeId, date: new Date().toISOString().split("T")[0],
+        vehicleId, driverId: employeeId, date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         liters: liters?.toString() || "0", costPerLiter: costPerLiter?.toString(), totalCost: totalCost?.toString(),
-        km, fuelType: fuelType || "diesel", fullTank: true, station,
+        km, fuelType: fuelType || "gasolina", fullTank: true, station,
         receiptPhoto, pumpPhoto, odometerPhoto, platePhoto, latitude, longitude, address,
       }).returning();
 
