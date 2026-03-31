@@ -384,6 +384,21 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     }
   }, [form.clientId, escortContracts]);
 
+  useEffect(() => {
+    if (form.escortContractId && !form.valorEstimado) {
+      const contract = escortContracts.find(c => c.id === form.escortContractId);
+      if (contract) {
+        const acion = Number(contract.valor_acionamento || 0);
+        const kmVal = Number(contract.valor_km_carregado || 0);
+        const franquia = Number(contract.franquia_minima_km || contract.franquia_km || 0);
+        const estimado = acion + (kmVal * franquia);
+        if (estimado > 0) {
+          setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: String(estimado) });
+        }
+      }
+    }
+  }, [form.escortContractId]);
+
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
     if (priority === "imediata") {
