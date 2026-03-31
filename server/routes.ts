@@ -1286,8 +1286,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const { data: existing } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
       const existingBilling = existing?.[0];
-      const isRejected = existingBilling?.status === "REJEITADA";
-      if (existingBilling && !isLive && !isRejected) return res.status(400).json({ message: "Billing ja existe para esta OS" });
+      const canRecalculate = !existingBilling || existingBilling.status === "REJEITADA" || existingBilling.status === "A_VERIFICAR" || isLive;
+      if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
       if (existingBilling) {
         await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
       }
