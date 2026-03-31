@@ -7759,15 +7759,8 @@ Regras:
           }
         }
 
-        if (fuelingTx.length === 0 && vPlate) {
-          const { data: allFuelTx } = await supabaseAdmin.from("financial_transactions")
-            .select("*")
-            .eq("origin_type", "fueling");
-          fuelingTx = (allFuelTx || []).filter((r: any) => {
-            const desc = (r.description || "").toUpperCase();
-            return desc.includes(vPlate);
-          });
-        }
+
+
       }
 
       let missionCostPedagio = 0;

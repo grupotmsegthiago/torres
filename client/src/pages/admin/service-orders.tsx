@@ -379,23 +379,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     if (!order && form.clientId > 0 && !form.escortContractId) {
       const cc = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
       if (cc.length === 1) {
-        const updates: any = { escortContractId: cc[0].id };
-        if (!form.valorEstimado && cc[0].valor_acionamento) {
-          updates.valorEstimado = String(cc[0].valor_acionamento);
-        }
-        setForm(prev => ({ ...prev, ...updates }));
+        setForm(prev => ({ ...prev, escortContractId: cc[0].id }));
       }
     }
   }, [form.clientId, escortContracts]);
-
-  useEffect(() => {
-    if (form.escortContractId && !form.valorEstimado) {
-      const contract = escortContracts.find(c => c.id === form.escortContractId);
-      if (contract?.valor_acionamento) {
-        setForm(prev => ({ ...prev, valorEstimado: String(contract.valor_acionamento) }));
-      }
-    }
-  }, [form.escortContractId]);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
