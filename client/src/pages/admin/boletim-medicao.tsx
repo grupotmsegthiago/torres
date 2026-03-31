@@ -568,7 +568,7 @@ export default function BoletimMedicaoPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="bg-green-50 p-3 rounded-xl text-center border border-green-100">
                           <p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p>
                           <p className="text-xl font-black font-mono text-green-700">{fmt(Number(b.fat_total))}</p>
@@ -576,6 +576,10 @@ export default function BoletimMedicaoPage() {
                         <div className="bg-red-50 p-3 rounded-xl text-center border border-red-100">
                           <p className="text-[9px] font-black text-red-700 uppercase">Pag. Vigilante</p>
                           <p className="text-xl font-black font-mono text-red-700">{fmt(Number(b.pag_total))}</p>
+                        </div>
+                        <div className="bg-amber-50 p-3 rounded-xl text-center border border-amber-100">
+                          <p className="text-[9px] font-black text-amber-700 uppercase">Pedágio</p>
+                          <p className="text-xl font-black font-mono text-amber-700">{fmt(Number(b.despesas_pedagio || 0))}</p>
                         </div>
                         <div className={`p-3 rounded-xl text-center border ${Number(b.resultado_liquido) >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
                           <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
