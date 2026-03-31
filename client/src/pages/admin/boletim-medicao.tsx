@@ -398,7 +398,15 @@ export default function BoletimMedicaoPage() {
                     <div className="bg-neutral-50 p-3 rounded-xl">
                       <p className="text-[9px] font-black text-neutral-400 uppercase">Data da Missão</p>
                       <p className="text-sm font-bold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</p>
-                      {os.missionStartedAt && <p className="text-[10px] text-neutral-400">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : "em andamento"}</p>}
+                      {os.missionStartedAt && (
+                        <p className="text-[10px] text-neutral-400">
+                          {(() => {
+                            const startT = new Date(os.missionStartedAt).getTime();
+                            const schedT = os.scheduledDate ? new Date(os.scheduledDate).getTime() : 0;
+                            return schedT > startT ? fmtTime(os.scheduledDate) : fmtTime(os.missionStartedAt);
+                          })()} — {os.completedDate ? fmtTime(os.completedDate) : "em andamento"}
+                        </p>
+                      )}
                     </div>
                   </div>
 
