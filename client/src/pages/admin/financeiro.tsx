@@ -325,7 +325,7 @@ export default function FinanceiroPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const isDiretoria = user?.role === "diretoria";
+  const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");

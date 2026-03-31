@@ -499,7 +499,7 @@ export default function FuelingPage() {
   const [viewMode, setViewMode] = useState<"dashboard" | "history">("dashboard");
   const { toast } = useToast();
   const { user } = useAuth();
-  const isDiretoria = user?.role === "diretoria";
+  const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
 
   const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
