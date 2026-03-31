@@ -8485,15 +8485,7 @@ Regras:
       const { observacoes, despesas_pedagio } = req.body;
       const updateData: any = {};
       if (observacoes !== undefined) updateData.observacoes = observacoes;
-      if (despesas_pedagio !== undefined) {
-        const newPedagio = Number(despesas_pedagio) || 0;
-        updateData.despesas_pedagio = newPedagio;
-
-        const { data: full } = await supabaseAdmin.from("escort_billings").select("despesas_combustivel, despesas_outras").eq("id", req.params.id).single();
-        const combustivel = Number(full?.despesas_combustivel || 0);
-        const outras = Number(full?.despesas_outras || 0);
-        updateData.despesas_total = newPedagio + combustivel + outras;
-      }
+      if (despesas_pedagio !== undefined) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
@@ -8501,10 +8493,14 @@ Regras:
       if (data && despesas_pedagio !== undefined) {
         const fatTotal = Number(data.fat_total || 0);
         const pagTotal = Number(data.pag_total || 0);
-        const despTotal = Number(data.despesas_total || 0);
+        const pedagio = Number(data.despesas_pedagio || 0);
+        const combustivel = Number(data.despesas_combustivel || 0);
+        const outras = Number(data.despesas_outras || 0);
+        const despTotal = pedagio + combustivel + outras;
         const resultado = fatTotal - pagTotal - despTotal;
-        await supabaseAdmin.from("escort_billings").update({ resultado_liquido: resultado }).eq("id", req.params.id);
+        await supabaseAdmin.from("escort_billings").update({ resultado_liquido: resultado, resultado_bruto: fatTotal - pagTotal }).eq("id", req.params.id);
         data.resultado_liquido = resultado;
+        data.resultado_bruto = fatTotal - pagTotal;
       }
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
