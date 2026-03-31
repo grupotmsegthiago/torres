@@ -8819,6 +8819,7 @@ Regras:
         missionsByDay[d].push(b);
       });
 
+      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0);
       const byVehicle: Record<string, { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }> = {};
       items.forEach((b: any) => {
         const plate = b.placa_viatura || "SEM PLACA";
@@ -8826,7 +8827,7 @@ Regras:
           const v = (vehicles || []).find((v: any) => v.plate === plate);
           byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
         }
-        byVehicle[plate].fat_total += Number(b.fat_total || 0);
+        byVehicle[plate].fat_total += calcFat(b);
         byVehicle[plate].pag_total += Number(b.pag_total || 0);
         byVehicle[plate].missions += 1;
         byVehicle[plate].despesas += Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
@@ -8856,14 +8857,14 @@ Regras:
         const id = b.vigilante_id || 0;
         const key = String(id || name);
         if (!byAgent[key]) byAgent[key] = { id, name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
-        byAgent[key].fat_total += Number(b.fat_total || 0);
+        byAgent[key].fat_total += calcFat(b);
         byAgent[key].pag_total += Number(b.pag_total || 0);
         byAgent[key].missions += 1;
 
         if (b.vigilante2_id && b.vigilante2_name) {
           const key2 = String(b.vigilante2_id);
           if (!byAgent[key2]) byAgent[key2] = { id: b.vigilante2_id, name: b.vigilante2_name, fat_total: 0, pag_total: 0, missions: 0, horas_trabalhadas: 0 };
-          byAgent[key2].fat_total += Number(b.fat_total || 0);
+          byAgent[key2].fat_total += calcFat(b);
           byAgent[key2].pag_total += Number(b.pag_total || 0);
           byAgent[key2].missions += 1;
         }
@@ -8873,7 +8874,12 @@ Regras:
         agent.horas_trabalhadas = timesheetHoursByEmployee[agent.id] || 0;
       });
 
-      const byMission = items.map((b: any) => ({
+      const byMission = items.map((b: any) => {
+        const fat = calcFat(b);
+        const desp = Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
+        const pag = Number(b.pag_total || 0);
+        const lucro = fat - pag - desp;
+        return {
         id: b.id,
         data: b.data_missao || b.created_at,
         origem: b.origem,
@@ -8883,19 +8889,18 @@ Regras:
         vigilante_id: b.vigilante_id || 0,
         vigilante2: b.vigilante2_name || null,
         vigilante2_id: b.vigilante2_id || null,
-        fat_total: Number(b.fat_total || 0),
-        pag_total: Number(b.pag_total || 0),
-        despesas: Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0),
-        lucro: Number(b.fat_total || 0) - Number(b.pag_total || 0) - Number(b.despesas_pedagio || 0) - Number(b.despesas_combustivel || 0) - Number(b.despesas_outras || 0),
-        margem: Number(b.fat_total || 0) > 0
-          ? Math.round(((Number(b.fat_total || 0) - Number(b.pag_total || 0) - Number(b.despesas_pedagio || 0) - Number(b.despesas_combustivel || 0) - Number(b.despesas_outras || 0)) / Number(b.fat_total || 0)) * 10000) / 100
-          : 0,
+        fat_total: fat,
+        pag_total: pag,
+        despesas: desp,
+        lucro,
+        margem: fat > 0 ? Math.round((lucro / fat) * 10000) / 100 : 0,
         km_total: Number(b.km_total || 0),
         horas_trabalhadas: Number(b.horas_trabalhadas || 0),
         boletim: b.boletim_numero,
         status: b.status,
         client_name: b.client_name,
-      }));
+      };
+      });
 
       const expenseTransactions = txns
         .filter((t: any) => t.type === "EXPENSE")
