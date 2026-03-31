@@ -464,8 +464,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         kitId: data.kitId ? Number(data.kitId) : null,
         escortContractId: data.escortContractId || null,
         scheduledDate: localInputToUtc(data.scheduledDate),
-        missionStartedAt: localInputToUtc(data.missionStartedAt),
-        completedDate: localInputToUtc(data.completedDate),
+        ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
+        ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
         valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
       };
       if (order) {
