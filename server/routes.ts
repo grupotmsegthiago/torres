@@ -8485,10 +8485,27 @@ Regras:
       const { observacoes, despesas_pedagio } = req.body;
       const updateData: any = {};
       if (observacoes !== undefined) updateData.observacoes = observacoes;
-      if (despesas_pedagio !== undefined) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
+      if (despesas_pedagio !== undefined) {
+        const newPedagio = Number(despesas_pedagio) || 0;
+        updateData.despesas_pedagio = newPedagio;
+
+        const { data: full } = await supabaseAdmin.from("escort_billings").select("despesas_combustivel, despesas_outras").eq("id", req.params.id).single();
+        const combustivel = Number(full?.despesas_combustivel || 0);
+        const outras = Number(full?.despesas_outras || 0);
+        updateData.despesas_total = newPedagio + combustivel + outras;
+      }
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
+
+      if (data && despesas_pedagio !== undefined) {
+        const fatTotal = Number(data.fat_total || 0);
+        const pagTotal = Number(data.pag_total || 0);
+        const despTotal = Number(data.despesas_total || 0);
+        const resultado = fatTotal - pagTotal - despTotal;
+        await supabaseAdmin.from("escort_billings").update({ resultado_liquido: resultado }).eq("id", req.params.id);
+        data.resultado_liquido = resultado;
+      }
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

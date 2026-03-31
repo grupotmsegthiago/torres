@@ -137,6 +137,16 @@ export default function BoletimMedicaoPage() {
   });
 
   useEffect(() => {
+    if (selectedOs && osConcluidas.length > 0) {
+      const fresh = osConcluidas.find((o: any) => o.id === selectedOs.id);
+      if (fresh && fresh !== selectedOs) {
+        setSelectedOs(fresh);
+        return;
+      }
+    }
+  }, [osConcluidas]);
+
+  useEffect(() => {
     if (selectedOs) {
       setOverrideKmChegada(selectedOs.km_chegada_origem != null ? String(selectedOs.km_chegada_origem) : "");
       setOverrideKmFim(selectedOs.km_final != null ? String(selectedOs.km_final) : "");
