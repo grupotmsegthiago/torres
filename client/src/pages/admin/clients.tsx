@@ -92,11 +92,39 @@ type ClientTab = "VEICULOS" | "TABELA" | "CONTRATO" | "RELATORIO_MISSOES" | "REL
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
   const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+
+  const sendTestEmail = async () => {
+    const targetEmail = form.emailOperacional || form.emailFinanceiro || form.email;
+    if (!targetEmail) {
+      toast({ title: "Preencha ao menos um e-mail", variant: "destructive" });
+      return;
+    }
+    setTestingEmail(true);
+    try {
+      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+      const r = await fetch("/api/email-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ to: targetEmail }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.message);
+      toast({ title: "E-mail enviado", description: data.message });
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   const [form, setForm] = useState({
     name: client?.name || "",
     cnpj: client?.cnpj || "",
     cpf: client?.cpf || "",
     email: client?.email || "",
+    emailOperacional: client?.emailOperacional || "",
+    emailFinanceiro: client?.emailFinanceiro || "",
     phone: client?.phone || "",
     contactPerson: client?.contactPerson || "",
     address: client?.address || "",
@@ -203,8 +231,16 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} data-testid="input-client-cpf" />
         </div>
         <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Geral</label>
           <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-client-email" />
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Operacional</label>
+          <Input type="email" value={form.emailOperacional} onChange={(e) => setForm({ ...form, emailOperacional: e.target.value })} placeholder="Recebe pré-alertas de escolta" data-testid="input-client-email-operacional" />
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Financeiro</label>
+          <Input type="email" value={form.emailFinanceiro} onChange={(e) => setForm({ ...form, emailFinanceiro: e.target.value })} placeholder="Recebe boletins e faturas" data-testid="input-client-email-financeiro" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
@@ -234,11 +270,14 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-client-notes" />
         </div>
-        <div className="md:col-span-2 flex gap-3">
+        <div className="md:col-span-2 flex gap-3 items-center">
           <Button type="submit" disabled={mutation.isPending} data-testid="button-save-client">
             {mutation.isPending ? "Salvando..." : "Salvar"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button type="button" variant="outline" size="sm" onClick={sendTestEmail} disabled={testingEmail} className="ml-auto" data-testid="button-test-email">
+            {testingEmail ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Enviando...</> : <><Mail className="w-3.5 h-3.5 mr-1.5" /> Testar E-mail</>}
+          </Button>
         </div>
       </form>
     </Card>

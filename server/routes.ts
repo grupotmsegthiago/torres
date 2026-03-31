@@ -1623,7 +1623,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     (async () => {
       try {
         const client = await storage.getClient(data.clientId);
-        if (!client?.email) return;
+        const recipientEmail = client?.emailOperacional || client?.email;
+        if (!recipientEmail) return;
         const smtpHost = process.env.SMTP_HOST;
         const smtpUser = process.env.SMTP_USER;
         const smtpPass = process.env.SMTP_PASS;
@@ -1681,11 +1682,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         await transporter.sendMail({
           from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
-          to: client.email,
+          to: recipientEmail,
           subject: `Pré-Alerta de Escolta Armada — ${data.osNumber}`,
           html: htmlBody,
         });
-        console.log(`[pre-alert] Email enviado para ${client.email} (OS ${data.osNumber})`);
+        console.log(`[pre-alert] Email enviado para ${recipientEmail} (OS ${data.osNumber})`);
       } catch (err: any) {
         console.error(`[pre-alert] Erro ao enviar email: ${err.message}`);
       }
@@ -9430,6 +9431,49 @@ Regras:
   app.get("/api/email-config", requireAuth, async (_req, res) => {
     const configured = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
     res.json({ configured, host: process.env.SMTP_HOST || "", port: process.env.SMTP_PORT || "587", user: process.env.SMTP_USER || "" });
+  });
+
+  app.post("/api/email-test", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { to } = req.body;
+      if (!to) return res.status(400).json({ message: "Informe o e-mail de destino" });
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+      if (!smtpHost || !smtpUser || !smtpPass) return res.status(500).json({ message: "SMTP não configurado. Defina SMTP_HOST, SMTP_USER e SMTP_PASS." });
+      const port = parseInt(process.env.SMTP_PORT || "587");
+      const transporter = nodemailer.createTransport({
+        host: smtpHost, port, secure: port === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
+      });
+      await transporter.sendMail({
+        from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+        to,
+        subject: "Teste de E-mail — Torres Gestão",
+        html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;">
+  <div style="background:#1a1a1a;padding:20px 30px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</h1>
+    <p style="color:#999;font-size:12px;margin:4px 0 0;">CNPJ: 36.982.392/0001-89</p>
+  </div>
+  <div style="padding:30px;border:1px solid #e0e0e0;border-top:none;">
+    <h2 style="color:#1a1a1a;font-size:16px;">Teste de E-mail</h2>
+    <p>Este é um e-mail de teste enviado pelo sistema Torres Gestão.</p>
+    <p>Se você recebeu este e-mail, o envio está funcionando corretamente.</p>
+    <p style="color:#666;font-size:13px;margin-top:20px;">Enviado em: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+  </div>
+  <div style="background:#f5f5f5;padding:15px 30px;text-align:center;border:1px solid #e0e0e0;border-top:none;">
+    <p style="color:#999;font-size:11px;margin:0;">Este e-mail foi enviado automaticamente pelo sistema Torres Gestão.</p>
+  </div>
+</body></html>`,
+      });
+      console.log(`[email-test] Email de teste enviado para ${to}`);
+      res.json({ success: true, message: `E-mail de teste enviado para ${to}` });
+    } catch (err: any) {
+      console.error(`[email-test] Erro: ${err.message}`);
+      res.status(500).json({ message: `Falha ao enviar: ${err.message}` });
+    }
   });
 
   app.post("/api/homologation/send", requireAuth, async (req, res) => {
