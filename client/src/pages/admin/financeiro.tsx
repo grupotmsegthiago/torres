@@ -140,6 +140,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
       toast({ title: editingTransaction ? "Lançamento atualizado" : "Lançamento criado" });
       onClose();
     },
