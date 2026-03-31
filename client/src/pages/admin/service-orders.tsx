@@ -1225,11 +1225,11 @@ export default function ServiceOrdersPage() {
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
                       const mk = (o as any).missionKm as { saida_base: number | null; chegada_origem: number | null; chegada_destino: number | null; fim_missao: number | null } | null;
-                      const tSaida = getStepTime(logs, ["checkout_km_saida", "aguardando"]);
+                      const tSaida = o.missionStartedAt ? new Date(o.missionStartedAt).toISOString() : getStepTime(logs, ["checkout_km_saida", "aguardando"]);
                       const tChegCliente = getStepTime(logs, ["checkin_chegada_km", "em_transito_origem"]);
                       const tInicioMissao = getStepTime(logs, ["iniciar_missao"]);
                       const tChegDestino = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
-                      const tFim = getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
+                      const tFim = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
                       return (
                         <>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
