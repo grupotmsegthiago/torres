@@ -1153,6 +1153,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Origem</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Destino</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Final</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-900 uppercase tracking-wider whitespace-nowrap bg-neutral-100">KM Total</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
@@ -1240,6 +1241,11 @@ export default function ServiceOrdersPage() {
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-origem-${o.id}`}>{mk?.chegada_origem != null ? mk.chegada_origem.toLocaleString("pt-BR") : "—"}</td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-destino-${o.id}`}>{mk?.chegada_destino != null ? mk.chegada_destino.toLocaleString("pt-BR") : "—"}</td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-final-${o.id}`}>{mk?.fim_missao != null ? mk.fim_missao.toLocaleString("pt-BR") : "—"}</td>
+                          <td className="p-3 text-center text-xs font-mono font-bold whitespace-nowrap bg-neutral-50" data-testid={`km-total-${o.id}`}>{
+                            mk?.saida_base != null && mk?.fim_missao != null
+                              ? (mk.fim_missao - mk.saida_base).toLocaleString("pt-BR")
+                              : "—"
+                          }</td>
                         </>
                       );
                     })()}
