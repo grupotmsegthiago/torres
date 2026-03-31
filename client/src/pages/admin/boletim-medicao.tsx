@@ -601,10 +601,15 @@ export default function BoletimMedicaoPage() {
                           <p className="text-[9px] font-black text-amber-700 uppercase">Pedágio</p>
                           <p className="text-xl font-black font-mono text-amber-700">{fmt(Number(b.despesas_pedagio || 0))}</p>
                         </div>
-                        <div className={`p-3 rounded-xl text-center border ${Number(b.resultado_liquido) >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
-                          <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
-                          <p className={`text-xl font-black font-mono ${Number(b.resultado_liquido) >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(Number(b.resultado_liquido))}</p>
-                        </div>
+                        {(() => {
+                          const resultado = Number(b.fat_total || 0) + Number(b.despesas_pedagio || 0) - Number(b.pag_total || 0);
+                          return (
+                            <div className={`p-3 rounded-xl text-center border ${resultado >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
+                              <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
+                              <p className={`text-xl font-black font-mono ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(resultado)}</p>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {isPendente && (
