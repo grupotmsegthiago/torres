@@ -306,10 +306,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Combustível</label>
           <select value={form.fuelType} onChange={(e) => setForm({ ...form, fuelType: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-fueling-type">
             <option value="gasolina">Gasolina</option>
-            <option value="diesel">Diesel</option>
-            <option value="diesel_s10">Diesel S10</option>
             <option value="etanol">Etanol</option>
-            <option value="gnv">GNV</option>
           </select>
         </div>
         <div className="flex items-end pb-1">
