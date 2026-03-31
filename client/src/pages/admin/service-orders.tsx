@@ -725,7 +725,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {order && (
                 <div>
                   <FieldLabel>Data Conclusão</FieldLabel>
-                  <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} className="text-sm" data-testid="input-os-completed" />
+                  <Input type="datetime-local" value={form.completedDate} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-completed" />
                 </div>
               )}
               <div>
