@@ -579,41 +579,46 @@ export default function BoletimMedicaoPage() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-4 gap-3">
-                        <div className="bg-blue-50 p-3 rounded-xl text-center">
-                          <p className="text-[9px] font-black text-blue-600 uppercase">KM Total</p>
-                          <p className="text-lg font-black font-mono text-blue-800">{Number(b.km_total || 0)}</p>
-                        </div>
-                        <div className="bg-blue-50 p-3 rounded-xl text-center">
-                          <p className="text-[9px] font-black text-blue-600 uppercase">Franquia</p>
-                          <p className="text-lg font-black font-mono text-blue-800">{Number(b.km_franquia || 0)}</p>
-                        </div>
-                        <div className={`p-3 rounded-xl text-center ${Number(b.km_excedente) > 0 ? "bg-red-50" : "bg-neutral-50"}`}>
-                          <p className="text-[9px] font-black uppercase text-neutral-500">KM Excedente</p>
-                          <p className={`text-lg font-black font-mono ${Number(b.km_excedente) > 0 ? "text-red-600" : "text-neutral-600"}`}>{Number(b.km_excedente || 0)}</p>
-                        </div>
-                        {(() => {
-                          const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
-                          const fmtToHHMM = (v: string | null) => {
-                            if (!v) return null;
-                            try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
-                          };
-                          const ini = b.horario_inicio_considerado || b.horario_inicio;
-                          const fimReal = fmtToHHMM(os.hora_fim_missao) || b.horario_fim;
-                          let hCalc = Number(b.horas_trabalhadas || b.horas_missao || 0);
-                          if (ini && fimReal) {
-                            let diff = toMin(fimReal) - toMin(ini);
-                            if (diff < 0) diff += 24 * 60;
-                            hCalc = Math.round((diff / 60) * 100) / 100;
-                          }
-                          return (
+                      {(() => {
+                        const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b.km_inicial || 0);
+                        const kmFim = Number(os.km_final || b.km_final || 0);
+                        const kmTotalCalc = Math.max(0, kmFim - kmChegada);
+                        const franquia = Number(b.km_franquia || 0);
+                        const kmExcCalc = Math.max(0, kmTotalCalc - franquia);
+                        const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+                        const fmtToHHMM = (v: string | null) => {
+                          if (!v) return null;
+                          try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
+                        };
+                        const ini = b.horario_inicio_considerado || b.horario_inicio;
+                        const fimReal = fmtToHHMM(os.hora_fim_missao) || b.horario_fim;
+                        let hCalc = Number(b.horas_trabalhadas || b.horas_missao || 0);
+                        if (ini && fimReal) {
+                          let diff = toMin(fimReal) - toMin(ini);
+                          if (diff < 0) diff += 24 * 60;
+                          hCalc = Math.round((diff / 60) * 100) / 100;
+                        }
+                        return (
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="bg-blue-50 p-3 rounded-xl text-center">
+                              <p className="text-[9px] font-black text-blue-600 uppercase">KM Total</p>
+                              <p className="text-lg font-black font-mono text-blue-800">{kmTotalCalc}</p>
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded-xl text-center">
+                              <p className="text-[9px] font-black text-blue-600 uppercase">Franquia</p>
+                              <p className="text-lg font-black font-mono text-blue-800">{franquia}</p>
+                            </div>
+                            <div className={`p-3 rounded-xl text-center ${kmExcCalc > 0 ? "bg-red-50" : "bg-neutral-50"}`}>
+                              <p className="text-[9px] font-black uppercase text-neutral-500">KM Excedente</p>
+                              <p className={`text-lg font-black font-mono ${kmExcCalc > 0 ? "text-red-600" : "text-neutral-600"}`}>{kmExcCalc}</p>
+                            </div>
                             <div className="bg-neutral-50 p-3 rounded-xl text-center">
                               <p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p>
                               <p className="text-lg font-black font-mono text-neutral-800">{fmtHoras(hCalc)}</p>
                             </div>
-                          );
-                        })()}
-                      </div>
+                          </div>
+                        );
+                      })()}
 
                       {(() => {
                         const acionamento = Number(b.fat_acionamento || 0);

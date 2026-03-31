@@ -1294,8 +1294,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
       const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+      const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
       const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-      const kmInicial = kmSaidaPhoto?.kmValue || 0;
+      const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
       const kmFinal = kmFinalPhoto?.kmValue || 0;
 
       const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -1427,8 +1428,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         if (updatedSo) {
           const phs = await storage.getMissionPhotosByOS(osId);
           const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
+          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
           const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
-          const kmI = kmSP?.kmValue || 0;
+          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
           const kmF = kmFP?.kmValue || 0;
           const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
           const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
@@ -3281,8 +3283,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       // === BOLETIM DE MEDICAO (Financial Section) ===
       try {
         const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+        const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
         const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-        const kmInicial = kmSaidaPhoto?.kmValue || 0;
+        const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
         let kmFinal = kmFinalPhoto?.kmValue || 0;
         if (kmFinal <= kmInicial) kmFinal = kmInicial;
 
@@ -4083,7 +4086,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-            const kmInicial = kmSaidaPhoto?.kmValue || 0;
+            const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
 
             const scheduledTime = o.scheduledDate ? new Date(o.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
@@ -5766,8 +5769,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       try {
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
         const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
+        const kmChegadaPhoto = [...photos].reverse().find(p => p.step === "km_chegada");
         const kmFinalPhoto = photos.find(p => p.step === "km_final");
-        const kmInicial = kmSaidaPhoto?.kmValue || 0;
+        const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
         const kmFinal = kmFinalPhoto?.kmValue || 0;
 
         const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
@@ -7658,8 +7662,9 @@ Regras:
           }
           const missionPhotos = await storage.getMissionPhotosByOS(osId);
           const kmSaidaP = missionPhotos.find((p: any) => p.step === "km_saida");
+          const kmChegadaP = [...missionPhotos].reverse().find((p: any) => p.step === "km_chegada");
           const kmFinalP = missionPhotos.find((p: any) => p.step === "km_final");
-          const kmInicial = Number(kmSaidaP?.kmValue || 0);
+          const kmInicial = Number(kmChegadaP?.kmValue || kmSaidaP?.kmValue || 0);
           const kmFinal = Number(kmFinalP?.kmValue || 0);
           const startedAt = so.missionStartedAt || so.scheduledDate;
           const now = new Date();
@@ -7803,7 +7808,7 @@ Regras:
           const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = kmSaidaPhoto?.kmValue || 0;
+          const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
           const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
           const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
           const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -8681,8 +8686,9 @@ Regras:
           }
           const photos = await storage.getMissionPhotosByOS(so.id);
           const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
+          const kmChegadaP = [...photos].reverse().find((p: any) => p.step === "km_chegada");
           const kmFinalP = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = nb(kmSaidaP?.kmValue);
+          const kmInicial = nb(kmChegadaP?.kmValue || kmSaidaP?.kmValue);
           const kmFinal = nb(kmFinalP?.kmValue);
           const startedAt = so.missionStartedAt || so.scheduledDate;
           const now = new Date();
