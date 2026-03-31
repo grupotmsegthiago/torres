@@ -592,10 +592,27 @@ export default function BoletimMedicaoPage() {
                           <p className="text-[9px] font-black uppercase text-neutral-500">KM Excedente</p>
                           <p className={`text-lg font-black font-mono ${Number(b.km_excedente) > 0 ? "text-red-600" : "text-neutral-600"}`}>{Number(b.km_excedente || 0)}</p>
                         </div>
-                        <div className="bg-neutral-50 p-3 rounded-xl text-center">
-                          <p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p>
-                          <p className="text-lg font-black font-mono text-neutral-800">{fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0))}</p>
-                        </div>
+                        {(() => {
+                          const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+                          const fmtToHHMM = (v: string | null) => {
+                            if (!v) return null;
+                            try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
+                          };
+                          const ini = b.horario_inicio_considerado || b.horario_inicio;
+                          const fimReal = fmtToHHMM(os.hora_fim_missao) || b.horario_fim;
+                          let hCalc = Number(b.horas_trabalhadas || b.horas_missao || 0);
+                          if (ini && fimReal) {
+                            let diff = toMin(fimReal) - toMin(ini);
+                            if (diff < 0) diff += 24 * 60;
+                            hCalc = Math.round((diff / 60) * 100) / 100;
+                          }
+                          return (
+                            <div className="bg-neutral-50 p-3 rounded-xl text-center">
+                              <p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p>
+                              <p className="text-lg font-black font-mono text-neutral-800">{fmtHoras(hCalc)}</p>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
