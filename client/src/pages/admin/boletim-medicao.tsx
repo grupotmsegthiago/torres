@@ -727,7 +727,7 @@ export default function BoletimMedicaoPage() {
                     </div>
                   )}
 
-                  {b?.status === "REJEITADA" && (
+                  {(b?.status === "REJEITADA" || b?.status === "A_VERIFICAR") && (
                     <div className="pt-2">
                       <button
                         onClick={() => { calcularMutation.mutate(os.id); setSelectedOs(null); }}
