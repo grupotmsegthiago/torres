@@ -1217,8 +1217,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         ]);
 
         const photos = await storage.getMissionPhotosByOS(os.id);
-        const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
-        const kmFinalPhoto = photos.find(p => p.step === "km_final");
+        const kmSaidaPhoto = [...photos].reverse().find(p => p.step === "km_saida");
+        const kmChegadaPhoto = [...photos].reverse().find(p => p.step === "km_chegada");
+        const kmFinalPhoto = [...photos].reverse().find(p => p.step === "km_final");
+
+        const stepLogs = (os.stepLogs || []) as any[];
+        const getLogTime = (steps: string[]) => {
+          for (const s of steps) {
+            const entry = [...stepLogs].reverse().find((l: any) => l.step === s && l.timestamp);
+            if (entry) return entry.timestamp;
+          }
+          return null;
+        };
+        const horaChegadaOrigem = getLogTime(["checkin_chegada_km", "em_transito_origem"]);
+        const horaFimMissao = os.completedDate || getLogTime(["encerrada", "finalizada", "checkout_km_final"]);
 
         const { data: billing } = await supabaseAdmin.from("escort_billings")
           .select("*").eq("service_order_id", os.id).limit(1);
@@ -1244,8 +1256,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           employee2Name: emp2?.name || null,
           kitName: kit?.name || null,
           km_inicial: kmSaidaPhoto?.kmValue || 0,
+          km_chegada_origem: kmChegadaPhoto?.kmValue || null,
           km_final: kmFinalPhoto?.kmValue || 0,
           km_total: (kmFinalPhoto?.kmValue || 0) - (kmSaidaPhoto?.kmValue || 0),
+          hora_chegada_origem: horaChegadaOrigem,
+          hora_fim_missao: horaFimMissao,
           billing: billing?.[0] || null,
           hasContract: !!clientContract,
           contractId: clientContract?.id || null,
@@ -1352,6 +1367,114 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (error) throw error;
 
       res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/boletim-medicao/os/:id/diretoria-override", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas diretoria pode alterar esses campos" });
+      }
+      const osId = Number(req.params.id);
+      const so = await storage.getServiceOrder(osId);
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+        .select("status").eq("service_order_id", osId).limit(1);
+
+      if (existingBilling?.[0] && ["APROVADA", "FATURADO", "PAGO"].includes(existingBilling[0].status)) {
+        return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
+      }
+
+      const { completedDate, hora_chegada_origem, km_chegada_origem, km_fim_missao } = req.body;
+
+      const updates: any = {};
+      if (completedDate !== undefined) updates.completedDate = completedDate ? new Date(completedDate) : null;
+
+      if (Object.keys(updates).length > 0) {
+        await storage.updateServiceOrder(osId, updates);
+      }
+
+      if (km_chegada_origem !== undefined) {
+        const photos = await storage.getMissionPhotosByOS(osId);
+        const existing = [...photos].reverse().find(p => p.step === "km_chegada");
+        if (existing) {
+          await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_chegada_origem)} WHERE id = ${existing.id}`);
+        }
+      }
+
+      if (km_fim_missao !== undefined) {
+        const photos = await storage.getMissionPhotosByOS(osId);
+        const existing = [...photos].reverse().find(p => p.step === "km_final");
+        if (existing) {
+          await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_fim_missao)} WHERE id = ${existing.id}`);
+        }
+      }
+
+      if (hora_chegada_origem !== undefined) {
+        const currentLogs = ((so.stepLogs || []) as any[]).slice();
+        const existingIdx = currentLogs.findIndex((l: any) => l.step === "checkin_chegada_km");
+        if (existingIdx >= 0) {
+          currentLogs[existingIdx] = { ...currentLogs[existingIdx], timestamp: hora_chegada_origem };
+        } else if (hora_chegada_origem) {
+          currentLogs.push({ step: "checkin_chegada_km", timestamp: hora_chegada_origem });
+        }
+        await storage.updateServiceOrder(osId, { stepLogs: currentLogs });
+      }
+
+      if (existingBilling?.[0] && existingBilling[0].status === "A_VERIFICAR") {
+        const updatedSo = await storage.getServiceOrder(osId);
+        if (updatedSo) {
+          const phs = await storage.getMissionPhotosByOS(osId);
+          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
+          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
+          const kmI = kmSP?.kmValue || 0;
+          const kmF = kmFP?.kmValue || 0;
+          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+          const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
+
+          const updatedLogs = (updatedSo.stepLogs || []) as any[];
+          const checkinEntry = [...updatedLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && l.timestamp);
+          const stTime = checkinEntry ? toBRT(new Date(checkinEntry.timestamp)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
+
+          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
+          const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
+
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (updatedSo.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (updatedSo.clientId) {
+            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
+            if (cc2?.length) contrato = cc2[0];
+          }
+
+          const kmFN = kmF > kmI ? kmF : kmI;
+          const resultado = calcularEscolta({
+            km_inicial: kmI, km_final: kmFN, km_vazio: 0,
+            horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+            horario_inicio: stTime, horario_fim: eTime, horario_agendado: sTime,
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+          });
+
+          const n = (v: any) => Number(v) || 0;
+          await supabaseAdmin.from("escort_billings").update({
+            km_inicial: n(kmI), km_final: n(kmFN), km_total: n(resultado.km_total),
+            km_carregado: n(resultado.km_carregado), km_faturado: n(resultado.km_faturado),
+            km_franquia: n(resultado.km_franquia), km_excedente: n(resultado.km_excedente),
+            horario_inicio: stTime || null, horario_fim: eTime || null,
+            horario_inicio_considerado: resultado.horario_inicio_considerado,
+            horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
+            fat_acionamento: n(resultado.fat_acionamento), fat_hora_extra: n(resultado.fat_hora_extra),
+            fat_km: n(resultado.fat_km), fat_km_carregado: n(resultado.faturamento.km_carregado),
+            fat_km_vazio: n(resultado.faturamento.km_vazio),
+            fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
+            fat_adicional_noturno: n(resultado.fat_adicional_noturno), fat_total: n(resultado.fat_total),
+          }).eq("service_order_id", osId);
+        }
+      }
+
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

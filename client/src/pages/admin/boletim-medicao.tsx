@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, CheckCircle2, X, AlertTriangle, Clock, MapPin,
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
-  Car, User, Calculator, Filter, Lock,
+  Car, User, Calculator, Filter, Lock, Pencil,
 } from "lucide-react";
 
 const fmt = (val: number | null | undefined) => {
@@ -29,11 +30,18 @@ type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITAD
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const [expandedClient, setExpandedClient] = useState<number | null>(null);
   const [selectedOs, setSelectedOs] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [pedagioValue, setPedagioValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
+  const [editingFields, setEditingFields] = useState(false);
+  const [overrideKmChegada, setOverrideKmChegada] = useState("");
+  const [overrideKmFim, setOverrideKmFim] = useState("");
+  const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
+  const [overrideHoraFim, setOverrideHoraFim] = useState("");
 
   const { data: osConcluidas = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/boletim-medicao/os-concluidas"],
@@ -102,6 +110,33 @@ export default function BoletimMedicaoPage() {
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
+
+  const overrideMutation = useMutation({
+    mutationFn: async ({ osId, data }: { osId: number; data: any }) => {
+      return apiRequest("PATCH", `/api/boletim-medicao/os/${osId}/diretoria-override`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      setEditingFields(false);
+      toast({ title: "Atualizado", description: "Campos alterados e billing recalculado." });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  useEffect(() => {
+    if (selectedOs) {
+      setOverrideKmChegada(selectedOs.km_chegada_origem != null ? String(selectedOs.km_chegada_origem) : "");
+      setOverrideKmFim(selectedOs.km_final != null ? String(selectedOs.km_final) : "");
+      const fmtDt = (v: string | null) => {
+        if (!v) return "";
+        try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || ""; } catch { return ""; }
+      };
+      setOverrideHoraChegada(fmtDt(selectedOs.hora_chegada_origem));
+      setOverrideHoraFim(fmtDt(selectedOs.hora_fim_missao));
+      setEditingFields(false);
+    }
+  }, [selectedOs]);
 
   const clientGroups: Record<number, { clientName: string; orders: any[] }> = {};
   osConcluidas.forEach(os => {
@@ -395,6 +430,103 @@ export default function BoletimMedicaoPage() {
                       </div>
                     </div>
                   )}
+
+                  <div className="border-t border-neutral-100 pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1"><Clock size={12} /> KM e Horários da Missão</p>
+                      {isDiretoria && !editingFields && !(b && ["APROVADA", "FATURADO", "PAGO"].includes(b.status)) && (
+                        <button onClick={() => setEditingFields(true)} className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors" data-testid="button-editar-campos">
+                          <Pencil size={10} /> Editar
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-neutral-50 p-3 rounded-xl">
+                        <p className="text-[9px] font-black text-neutral-400 uppercase">KM Chegada Origem</p>
+                        {editingFields ? (
+                          <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideKmChegada} onChange={e => setOverrideKmChegada(e.target.value)} data-testid="input-km-chegada-origem" />
+                        ) : (
+                          <p className="text-sm font-black font-mono text-neutral-800">{os.km_chegada_origem != null ? Number(os.km_chegada_origem).toLocaleString("pt-BR") : "—"}</p>
+                        )}
+                      </div>
+                      <div className="bg-neutral-50 p-3 rounded-xl">
+                        <p className="text-[9px] font-black text-neutral-400 uppercase">KM Fim Missão</p>
+                        {editingFields ? (
+                          <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideKmFim} onChange={e => setOverrideKmFim(e.target.value)} data-testid="input-km-fim-missao" />
+                        ) : (
+                          <p className="text-sm font-black font-mono text-neutral-800">{os.km_final != null ? Number(os.km_final).toLocaleString("pt-BR") : "—"}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-neutral-50 p-3 rounded-xl">
+                        <p className="text-[9px] font-black text-neutral-400 uppercase">Hora Chegada Origem</p>
+                        {editingFields ? (
+                          <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideHoraChegada} onChange={e => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
+                        ) : (
+                          <p className="text-sm font-black font-mono text-neutral-800">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (os.scheduledDate ? `${fmtTime(os.scheduledDate)} (Agend.)` : "—")}</p>
+                        )}
+                      </div>
+                      <div className="bg-neutral-50 p-3 rounded-xl">
+                        <p className="text-[9px] font-black text-neutral-400 uppercase">Hora Fim Missão</p>
+                        {editingFields ? (
+                          <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideHoraFim} onChange={e => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
+                        ) : (
+                          <p className="text-sm font-black font-mono text-neutral-800">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : "—"}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {editingFields && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => {
+                            const payload: any = {};
+                            if (overrideKmChegada !== (os.km_chegada_origem != null ? String(os.km_chegada_origem) : "")) {
+                              payload.km_chegada_origem = Number(overrideKmChegada) || 0;
+                            }
+                            if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
+                              payload.km_fim_missao = Number(overrideKmFim) || 0;
+                            }
+                            if (overrideHoraFim) {
+                              const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
+                              const [hh, mm] = overrideHoraFim.split(":");
+                              const d = new Date(baseDate);
+                              d.setHours(Number(hh), Number(mm), 0, 0);
+                              payload.completedDate = d.toISOString();
+                            }
+                            if (overrideHoraChegada) {
+                              const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
+                              const [hh, mm] = overrideHoraChegada.split(":");
+                              const d = new Date(baseDate);
+                              d.setHours(Number(hh), Number(mm), 0, 0);
+                              payload.hora_chegada_origem = d.toISOString();
+                            }
+                            if (Object.keys(payload).length > 0) {
+                              overrideMutation.mutate({ osId: os.id, data: payload });
+                            } else {
+                              setEditingFields(false);
+                            }
+                          }}
+                          disabled={overrideMutation.isPending}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                          data-testid="button-salvar-override"
+                        >
+                          {overrideMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                          Salvar Alterações
+                        </button>
+                        <button
+                          onClick={() => setEditingFields(false)}
+                          className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors"
+                          data-testid="button-cancelar-override"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {b && (
                     <>
