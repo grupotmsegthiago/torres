@@ -615,29 +615,41 @@ export default function BoletimMedicaoPage() {
                         })()}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-green-50 p-3 rounded-xl text-center border border-green-100">
-                          <p className="text-[9px] font-black text-green-700 uppercase">Faturamento</p>
-                          <p className="text-xl font-black font-mono text-green-700">{fmt(Number(b.fat_total))}</p>
-                        </div>
-                        <div className="bg-red-50 p-3 rounded-xl text-center border border-red-100">
-                          <p className="text-[9px] font-black text-red-700 uppercase">Pag. Vigilante</p>
-                          <p className="text-xl font-black font-mono text-red-700">{fmt(Number(b.pag_total))}</p>
-                        </div>
-                        <div className="bg-amber-50 p-3 rounded-xl text-center border border-amber-100">
-                          <p className="text-[9px] font-black text-amber-700 uppercase">Pedágio</p>
-                          <p className="text-xl font-black font-mono text-amber-700">{fmt(Number(b.despesas_pedagio || 0))}</p>
-                        </div>
-                        {(() => {
-                          const resultado = Number(b.fat_total || 0) + Number(b.despesas_pedagio || 0) - Number(b.pag_total || 0);
-                          return (
-                            <div className={`p-3 rounded-xl text-center border ${resultado >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
-                              <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
-                              <p className={`text-xl font-black font-mono ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(resultado)}</p>
+                      {(() => {
+                        const acionamento = Number(b.fat_acionamento || 0);
+                        const horaExtra = Number(b.fat_hora_extra || 0);
+                        const kmExtra = Number(b.fat_km || 0);
+                        const pedagio = Number(b.despesas_pedagio || 0);
+                        const resultado = acionamento + horaExtra + kmExtra + pedagio;
+                        const items = [
+                          { label: "Acionamento", value: acionamento, color: "blue" },
+                          { label: "Hora Extra", value: horaExtra, color: "orange" },
+                          { label: "KM Excedente", value: kmExtra, color: "violet" },
+                          { label: "Pedágio", value: pedagio, color: "amber" },
+                        ].filter(i => i.value > 0 || i.label === "Acionamento" || i.label === "Pedágio");
+                        const colorMap: Record<string, string> = {
+                          blue: "bg-blue-50 border-blue-100 text-blue-700",
+                          orange: "bg-orange-50 border-orange-100 text-orange-700",
+                          violet: "bg-violet-50 border-violet-100 text-violet-700",
+                          amber: "bg-amber-50 border-amber-100 text-amber-700",
+                        };
+                        return (
+                          <>
+                            <div className={`grid gap-3 ${items.length <= 2 ? "grid-cols-2" : items.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+                              {items.map(i => (
+                                <div key={i.label} className={`p-3 rounded-xl text-center border ${colorMap[i.color]}`}>
+                                  <p className="text-[9px] font-black uppercase">{i.label}</p>
+                                  <p className="text-lg font-black font-mono">{fmt(i.value)}</p>
+                                </div>
+                              ))}
                             </div>
-                          );
-                        })()}
-                      </div>
+                            <div className={`p-3 rounded-xl text-center border ${resultado >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                              <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
+                              <p className={`text-2xl font-black font-mono ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(resultado)}</p>
+                            </div>
+                          </>
+                        );
+                      })()}
 
                       {isPendente && (
                         <div className="space-y-3">
