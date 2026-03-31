@@ -7567,9 +7567,6 @@ Regras:
       const user = req.user!;
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
-      if (existing.origin_type && existing.origin_type !== "manual") {
-        return res.status(403).json({ message: "Lançamentos automáticos não podem ser alterados manualmente" });
-      }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         status: newStatus,

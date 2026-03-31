@@ -601,18 +601,12 @@ export default function FinanceiroPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {t.origin_type && t.origin_type !== "manual" ? (
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
-                        t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"
-                      }`}>{t.status === "PAID" ? "Pago" : "Pendente"}</span>
-                    ) : (
-                      <button onClick={() => toggleMutation.mutate(t.id)} data-testid={`button-toggle-${t.id}`}
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
-                          t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
-                        }`}>
-                        {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
-                      </button>
-                    )}
+                    <button onClick={() => toggleMutation.mutate(t.id)} data-testid={`button-toggle-${t.id}`}
+                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
+                        t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}>
+                      {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
+                    </button>
                   </td>
                   <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === "INCOME" ? "text-green-600" : "text-red-600"}`}>
                     {formatCurrency(Number(t.amount))}
