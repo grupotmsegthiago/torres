@@ -61,13 +61,21 @@ export default function BoletimMedicaoPage() {
     },
   });
 
+  const invalidateAllRelated = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+  };
+
   const aprovarMutation = useMutation({
     mutationFn: async (billingId: string) => {
       return apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "APROVADA" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      invalidateAllRelated();
       toast({ title: "OS Aprovada", description: "Boletim gerado automaticamente." });
       setSelectedOs(null);
     },
@@ -79,8 +87,7 @@ export default function BoletimMedicaoPage() {
       return apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "REJEITADA", motivo_rejeicao: motivo });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      invalidateAllRelated();
       toast({ title: "OS Rejeitada", description: "Correção solicitada." });
       setSelectedOs(null);
     },
@@ -92,8 +99,7 @@ export default function BoletimMedicaoPage() {
       return apiRequest("POST", `/api/boletim-medicao/calcular/${osId}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      invalidateAllRelated();
       toast({ title: "Cálculo realizado", description: "Billing gerado com sucesso." });
     },
     onError: (err: Error) => toast({ title: "Erro ao calcular", description: err.message, variant: "destructive" }),
@@ -104,8 +110,7 @@ export default function BoletimMedicaoPage() {
       return apiRequest("POST", `/api/escort/billings/${billingId}/reabrir`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      invalidateAllRelated();
       toast({ title: "Reaberta", description: "OS voltou para 'A Verificar'. Agora pode ser editada." });
     },
     onError: (err: Error) => toast({ title: "Erro ao reabrir", description: err.message, variant: "destructive" }),
@@ -116,8 +121,7 @@ export default function BoletimMedicaoPage() {
       return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      invalidateAllRelated();
       toast({ title: "Salvo", description: "Observações e pedágio salvos com sucesso." });
     },
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
@@ -128,8 +132,7 @@ export default function BoletimMedicaoPage() {
       return apiRequest("PATCH", `/api/boletim-medicao/os/${osId}/diretoria-override`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      invalidateAllRelated();
       setEditingFields(false);
       toast({ title: "Atualizado", description: "Campos alterados e billing recalculado." });
     },

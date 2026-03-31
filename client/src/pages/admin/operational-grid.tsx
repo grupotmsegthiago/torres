@@ -2488,6 +2488,10 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
     },
     onError: (err: Error) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -3296,6 +3300,10 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
     },
     onError: (err: Error) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); },
   });

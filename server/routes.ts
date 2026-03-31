@@ -5681,13 +5681,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
-    if (currentStep === "finalizada") {
-      return res.status(400).json({
-        message: "Aguardando liberação do admin para retorno à base.",
-        code: "AWAITING_ADMIN_RETURN",
-      });
-    }
-
     if (currentStep === "chegada_base") {
       if (!so.baseReturnKm) {
         return res.status(400).json({ message: "Quilometragem de retorno obrigatória" });
@@ -5716,9 +5709,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    if (nextStep === "finalizada") {
+      updates.completedDate = new Date();
+    }
+
     if (nextStep === "encerrada") {
       updates.status = "concluida";
-      updates.completedDate = new Date();
       lastMissionPos.delete(serviceOrderId);
       try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
@@ -5766,12 +5762,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       console.error(`[mission-advance] Alert insert error (non-fatal): ${alertErr.message}`);
     }
 
-    if (nextStep === "encerrada" && so.kitId) {
+    if (nextStep === "finalizada" && so.kitId) {
       await storage.updateWeaponKit(so.kitId, { status: "disponível" });
     }
 
-    if (nextStep === "encerrada" && so.vehicleId) {
+    if (nextStep === "finalizada" && so.vehicleId) {
       try {
+        await storage.updateVehicle(so.vehicleId, { status: "disponível" });
         const veh = await storage.getVehicle(so.vehicleId);
         const photos = await storage.getMissionPhotosByOS(serviceOrderId);
         const allKmValues = [
@@ -5783,8 +5780,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           await storage.updateVehicle(so.vehicleId, { km: highestKm, lastKmUpdate: new Date() });
         }
       } catch (kmErr: any) {
-        console.error("Vehicle KM update on encerrada failed:", kmErr.message);
+        console.error("Vehicle KM/status update on finalizada failed:", kmErr.message);
       }
+    }
+
+    if (nextStep === "encerrada" && so.kitId) {
+      try { await storage.updateWeaponKit(so.kitId, { status: "disponível" }); } catch (_e) {}
     }
 
     if (nextStep === "encerrada") {
@@ -5798,7 +5799,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
         const startTime = so.missionStartedAt ? new Date(so.missionStartedAt).toTimeString().slice(0, 5) : undefined;
-        const endTime = updates.completedDate ? new Date(updates.completedDate).toTimeString().slice(0, 5) : undefined;
+        const completedDateVal = updated.completedDate || so.completedDate;
+        const endTime = completedDateVal ? new Date(completedDateVal as string).toTimeString().slice(0, 5) : undefined;
 
         let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
@@ -6044,9 +6046,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         if (currentStep === "chegada_destino") nextStep = "finalizada";
         const updates: any = { missionStatus: nextStep };
 
+        if (nextStep === "finalizada") {
+          updates.completedDate = new Date();
+        }
+
         if (nextStep === "encerrada") {
           updates.status = "concluida";
-          updates.completedDate = new Date();
           lastMissionPos.delete(serviceOrderId);
           try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
         }
@@ -6061,11 +6066,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         const updated = await storage.updateServiceOrder(serviceOrderId, updates);
 
-        if (nextStep === "encerrada" && so.kitId) {
+        if (nextStep === "finalizada" && so.kitId) {
           await storage.updateWeaponKit(so.kitId, { status: "disponível" });
         }
-        if (nextStep === "encerrada" && so.vehicleId) {
+        if (nextStep === "finalizada" && so.vehicleId) {
           try {
+            await storage.updateVehicle(so.vehicleId, { status: "disponível" });
             const veh = await storage.getVehicle(so.vehicleId);
             const photos = await storage.getMissionPhotosByOS(serviceOrderId);
             const allKmValues = [
@@ -6077,6 +6083,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               await storage.updateVehicle(so.vehicleId, { km: highestKm, lastKmUpdate: new Date() });
             }
           } catch {}
+        }
+        if (nextStep === "encerrada" && so.kitId) {
+          try { await storage.updateWeaponKit(so.kitId, { status: "disponível" }); } catch (_e) {}
         }
 
         return res.json({ message: `Avancou: ${currentStep} -> ${nextStep}`, missionStatus: nextStep, updated });
