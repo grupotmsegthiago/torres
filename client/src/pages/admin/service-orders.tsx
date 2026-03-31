@@ -370,6 +370,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedDriverPhone: (order as any)?.escortedDriverPhone || "",
     escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
     notes: order?.notes || "",
+    valorEstimado: (order as any)?.valorEstimado || "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -378,10 +379,23 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     if (!order && form.clientId > 0 && !form.escortContractId) {
       const cc = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
       if (cc.length === 1) {
-        setForm(prev => ({ ...prev, escortContractId: cc[0].id }));
+        const updates: any = { escortContractId: cc[0].id };
+        if (!form.valorEstimado && cc[0].valor_acionamento) {
+          updates.valorEstimado = String(cc[0].valor_acionamento);
+        }
+        setForm(prev => ({ ...prev, ...updates }));
       }
     }
   }, [form.clientId, escortContracts]);
+
+  useEffect(() => {
+    if (form.escortContractId && !form.valorEstimado) {
+      const contract = escortContracts.find(c => c.id === form.escortContractId);
+      if (contract?.valor_acionamento) {
+        setForm(prev => ({ ...prev, valorEstimado: String(contract.valor_acionamento) }));
+      }
+    }
+  }, [form.escortContractId]);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
@@ -448,6 +462,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         escortContractId: data.escortContractId || null,
         scheduledDate: localInputToUtc(data.scheduledDate),
         completedDate: localInputToUtc(data.completedDate),
+        valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
       };
       if (order) {
         await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
@@ -657,6 +672,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   </select>
                 </div>
               )}
+              <div>
+                <FieldLabel>Valor Estimado (R$)</FieldLabel>
+                <Input type="number" step="0.01" min="0" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: e.target.value })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+              </div>
               <div>
                 <FieldLabel>Solicitante</FieldLabel>
                 <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
