@@ -1531,19 +1531,41 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const emp = await storage.getEmployee(empId);
       if (!emp) return res.status(400).json({ message: `Agente com ID ${empId} não encontrado` });
       const label = emp.name;
-      if (!emp.cnhNumber) missingDocs.push(`CNH (número) de ${label}`);
-      if (!emp.cnhExpiry) missingDocs.push(`Validade da CNH de ${label}`);
-      if (!emp.cnvNumber) missingDocs.push(`CNV (número) de ${label}`);
-      if (!emp.cnvExpiry) missingDocs.push(`Validade da CNV de ${label}`);
-      if (emp.cnhExpiry) {
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-        if (emp.cnhExpiry < todayStr) expiredDocs.push(`CNH de ${label}`);
+
+      const empDocs = await storage.getEmployeeDocuments(empId);
+      const cnhDoc = empDocs.find((d: any) => d.type === "CNH");
+      const cnvDoc = empDocs.find((d: any) => d.type === "CNV");
+
+      const cnhNumber = emp.cnhNumber || cnhDoc?.documentNumber || null;
+      const cnhExpiry = emp.cnhExpiry || cnhDoc?.expiryDate || null;
+      const cnvNumber = emp.cnvNumber || cnvDoc?.documentNumber || null;
+      const cnvExpiry = emp.cnvExpiry || cnvDoc?.expiryDate || null;
+
+      if (!cnhNumber) missingDocs.push(`CNH (número) de ${label}`);
+      if (!cnhExpiry) missingDocs.push(`Validade da CNH de ${label}`);
+      if (!cnvNumber) missingDocs.push(`CNV (número) de ${label}`);
+      if (!cnvExpiry) missingDocs.push(`Validade da CNV de ${label}`);
+
+      if (cnhExpiry || cnvExpiry) {
+        const syncFields: any = {};
+        if (cnhNumber && !emp.cnhNumber) syncFields.cnhNumber = cnhNumber;
+        if (cnhExpiry && !emp.cnhExpiry) syncFields.cnhExpiry = cnhExpiry;
+        if (cnvNumber && !emp.cnvNumber) syncFields.cnvNumber = cnvNumber;
+        if (cnvExpiry && !emp.cnvExpiry) syncFields.cnvExpiry = cnvExpiry;
+        if (Object.keys(syncFields).length > 0) {
+          try { await storage.updateEmployee(empId, syncFields); } catch {}
+        }
       }
-      if (emp.cnvExpiry) {
+
+      if (cnhExpiry) {
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-        if (emp.cnvExpiry < todayStr) expiredDocs.push(`CNV de ${label}`);
+        if (cnhExpiry < todayStr) expiredDocs.push(`CNH de ${label}`);
+      }
+      if (cnvExpiry) {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        if (cnvExpiry < todayStr) expiredDocs.push(`CNV de ${label}`);
       }
     }
     if (missingDocs.length > 0) {
@@ -6840,12 +6862,32 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(docs);
   });
 
+  const syncDocToEmployee = async (docType: string, employeeId: number, documentNumber?: string | null, expiryDate?: string | null) => {
+    if (docType !== "CNH" && docType !== "CNV") return;
+    try {
+      const emp = await storage.getEmployee(employeeId);
+      if (!emp) return;
+      const syncFields: any = {};
+      if (docType === "CNH") {
+        if (documentNumber && !emp.cnhNumber) syncFields.cnhNumber = documentNumber;
+        if (expiryDate && !emp.cnhExpiry) syncFields.cnhExpiry = expiryDate;
+      } else if (docType === "CNV") {
+        if (documentNumber && !emp.cnvNumber) syncFields.cnvNumber = documentNumber;
+        if (expiryDate && !emp.cnvExpiry) syncFields.cnvExpiry = expiryDate;
+      }
+      if (Object.keys(syncFields).length > 0) {
+        await storage.updateEmployee(employeeId, syncFields);
+      }
+    } catch {}
+  };
+
   app.post("/api/employee-documents", requireAdminRole, async (req, res) => {
     const parsed = insertEmployeeDocumentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const emp = await storage.getEmployee(parsed.data.employeeId);
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
     const doc = await storage.createEmployeeDocument(parsed.data);
+    await syncDocToEmployee(parsed.data.type, parsed.data.employeeId, parsed.data.documentNumber, parsed.data.expiryDate);
     res.status(201).json(doc);
   });
 
@@ -6854,6 +6896,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const doc = await storage.updateEmployeeDocument(parseInt(req.params.id), parsed.data);
     if (!doc) return res.status(404).json({ message: "Documento não encontrado" });
+    if (doc.type && doc.employeeId) {
+      await syncDocToEmployee(doc.type, doc.employeeId, doc.documentNumber, doc.expiryDate);
+    }
     res.json(doc);
   });
 
