@@ -353,6 +353,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     status: order?.status || "agendada",
     priority: order?.priority || "agendada",
     scheduledDate: utcToLocalInput(order?.scheduledDate),
+    missionStartedAt: utcToLocalInput(order?.missionStartedAt),
     completedDate: utcToLocalInput(order?.completedDate),
     assignedEmployeeId: order?.assignedEmployeeId || null,
     assignedEmployee2Id: order?.assignedEmployee2Id || null,
@@ -463,6 +464,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         kitId: data.kitId ? Number(data.kitId) : null,
         escortContractId: data.escortContractId || null,
         scheduledDate: localInputToUtc(data.scheduledDate),
+        missionStartedAt: localInputToUtc(data.missionStartedAt),
         completedDate: localInputToUtc(data.completedDate),
         valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
       };
@@ -711,10 +713,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </div>
               )}
               <div>
-                <FieldLabel>Data/Hora Início</FieldLabel>
+                <FieldLabel>Data/Hora Agendada</FieldLabel>
                 <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
               </div>
-              {form.status === "concluída" && (
+              {order && (
+                <div>
+                  <FieldLabel>Início Missão</FieldLabel>
+                  <Input type="datetime-local" value={form.missionStartedAt} onChange={(e) => setForm({ ...form, missionStartedAt: e.target.value })} className="text-sm" data-testid="input-os-mission-started" />
+                </div>
+              )}
+              {order && (
                 <div>
                   <FieldLabel>Data Conclusão</FieldLabel>
                   <Input type="datetime-local" value={form.completedDate} onChange={(e) => setForm({ ...form, completedDate: e.target.value })} className="text-sm" data-testid="input-os-completed" />
