@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, CheckCircle2, X, AlertTriangle, Clock, MapPin,
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
-  Car, User, Calculator, Filter, Lock, Pencil,
+  Car, User, Calculator, Filter, Lock, Pencil, RotateCcw,
 } from "lucide-react";
 
 const fmt = (val: number | null | undefined) => {
@@ -31,7 +31,7 @@ type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITAD
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const isDiretoria = user?.role === "diretoria";
+  const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [expandedClient, setExpandedClient] = useState<number | null>(null);
   const [selectedOs, setSelectedOs] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -97,6 +97,18 @@ export default function BoletimMedicaoPage() {
       toast({ title: "Cálculo realizado", description: "Billing gerado com sucesso." });
     },
     onError: (err: Error) => toast({ title: "Erro ao calcular", description: err.message, variant: "destructive" }),
+  });
+
+  const reabrirMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/reabrir`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      toast({ title: "Reaberta", description: "OS voltou para 'A Verificar'. Agora pode ser editada." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao reabrir", description: err.message, variant: "destructive" }),
   });
 
   const salvarBillingMutation = useMutation({
@@ -625,9 +637,22 @@ export default function BoletimMedicaoPage() {
                       )}
 
                       {!isPendente && ["APROVADA", "FATURADO", "PAGO"].includes(b.status) && (
-                        <div className="flex items-center gap-2 bg-green-50 border border-green-200 p-3 rounded-xl">
-                          <Lock size={14} className="text-green-700" />
-                          <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Valores travados — Boletim aprovado por {b.revisado_por || "admin"}</p>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 bg-green-50 border border-green-200 p-3 rounded-xl">
+                            <Lock size={14} className="text-green-700" />
+                            <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Valores travados — Boletim aprovado por {b.revisado_por || "admin"}</p>
+                          </div>
+                          {isDiretoria && b.status === "APROVADA" && (
+                            <button
+                              onClick={() => { if (confirm("Tem certeza que deseja reabrir esta OS? Ela voltará para 'A Verificar' e poderá ser editada.")) reabrirMutation.mutate(b.id); }}
+                              disabled={reabrirMutation.isPending}
+                              className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                              data-testid="button-reabrir-os"
+                            >
+                              {reabrirMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                              Reabrir para Revisão
+                            </button>
+                          )}
                         </div>
                       )}
 
