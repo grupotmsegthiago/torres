@@ -244,7 +244,7 @@ export default function BoletimMedicaoPage() {
             {filteredGroups.map(group => {
               const isExpanded = expandedClient === group.clientId;
               const groupPending = group.orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
-              const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_total || 0), 0);
+              const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_acionamento || 0) + Number(o.billing?.fat_hora_extra || 0) + Number(o.billing?.fat_km || 0) + Number(o.billing?.despesas_pedagio || 0), 0);
 
               return (
                 <Card key={group.clientId} className="overflow-hidden border-neutral-200" data-testid={`client-group-${group.clientId}`}>
@@ -328,7 +328,7 @@ export default function BoletimMedicaoPage() {
                                     <span className="font-mono font-bold text-neutral-800">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3 text-right">
-                                    <span className="font-mono font-black text-green-700">{b ? fmt(Number(b.fat_total)) : "—"}</span>
+                                    <span className="font-mono font-black text-green-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3 text-center">
                                     <Badge className={`${status.color} border-0 font-black text-[9px]`}>{status.label}</Badge>
