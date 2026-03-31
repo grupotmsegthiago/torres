@@ -570,6 +570,9 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     cpf: employee?.cpf || "",
     rg: employee?.rg || "",
     cnhNumber: employee?.cnhNumber || "",
+    cnhExpiry: employee?.cnhExpiry || "",
+    cnvNumber: (employee as any)?.cnvNumber || "",
+    cnvExpiry: (employee as any)?.cnvExpiry || "",
     pis: employee?.pis || "",
     role: employee?.role || "Vigilante",
     category: employee?.category || "Mensalista",
@@ -1134,6 +1137,18 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNH</label>
               <Input value={form.cnhNumber} onChange={(e) => setForm({ ...form, cnhNumber: e.target.value })} data-testid="input-employee-cnh" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNH</label>
+              <Input type="date" value={form.cnhExpiry} onChange={(e) => setForm({ ...form, cnhExpiry: e.target.value })} data-testid="input-employee-cnh-expiry" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CNV (Número)</label>
+              <Input value={form.cnvNumber} onChange={(e) => setForm({ ...form, cnvNumber: e.target.value })} data-testid="input-employee-cnv" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Validade CNV</label>
+              <Input type="date" value={form.cnvExpiry} onChange={(e) => setForm({ ...form, cnvExpiry: e.target.value })} data-testid="input-employee-cnv-expiry" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">PIS</label>

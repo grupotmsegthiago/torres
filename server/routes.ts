@@ -685,7 +685,7 @@ export async function registerRoutes(
   app.post("/api/employees", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
-    const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
+    const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     const matricula = await storage.getNextMatricula();
     body.matricula = matricula;
@@ -744,7 +744,7 @@ export async function registerRoutes(
   app.patch("/api/employees/:id", requireAuth, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
-    const dateFields = ["birthDate", "hireDate", "vacationExpiry"];
+    const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     delete body.matricula;
     const parsed = insertEmployeeSchema.partial().safeParse(body);
