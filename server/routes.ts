@@ -9483,23 +9483,34 @@ Regras:
       const txns = transactions || [];
 
       const allOrders = await storage.getServiceOrders();
-      const activeOsIds = new Set(
-        allOrders
-          .filter((so: any) => so.type === "escolta" && so.status === "em_andamento" && so.missionStatus !== "aguardando")
-          .map((so: any) => so.id)
-      );
+      const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-      const items = (billings || []).filter((b: any) => !activeOsIds.has(b.service_order_id));
+      const todayEscoltaOs = allOrders.filter((so: any) => {
+        if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
+        if (so.status === "em_andamento") return true;
+        const oDate = so.scheduledDate
+          ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+          : so.completedDate
+            ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+            : null;
+        return oDate === todayBRT && (so.status === "concluida" || so.status === "concluída" || so.status === "cancelada");
+      });
+      const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
-      const billedOsIds = new Set(items.map((b: any) => b.service_order_id));
-      const needsCalc = allOrders.filter((so: any) =>
-        so.type === "escolta" &&
-        (so.status === "em_andamento" || so.status === "concluida" || so.status === "concluída") &&
-        so.missionStatus !== "aguardando" &&
-        !billedOsIds.has(so.id)
-      );
+      const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id));
 
-      for (const so of needsCalc) {
+      const calcHorasBRT = (startDate: Date, endDate: Date): number => {
+        const startTime = startDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+        const endTime = endDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+        const [sh, sm] = startTime.split(":").map(Number);
+        const [eh, em] = endTime.split(":").map(Number);
+        let startMin = sh * 60 + sm;
+        let endMin = eh * 60 + em;
+        if (endMin < startMin) endMin += 24 * 60;
+        return (endMin - startMin) / 60;
+      };
+
+      for (const so of todayEscoltaOs) {
         try {
           const nb = (v: any) => Number(v) || 0;
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
@@ -9512,40 +9523,50 @@ Regras:
           }
           const photos = await storage.getMissionPhotosByOS(so.id);
           const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
-          const kmChegadaP = [...photos].reverse().find((p: any) => p.step === "km_chegada");
+          const kmChegadaP = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalP = photos.find((p: any) => p.step === "km_final");
           const kmInicial = nb(kmChegadaP?.kmValue || kmSaidaP?.kmValue);
-          const kmFinal = nb(kmFinalP?.kmValue);
-          const startedAt = so.missionStartedAt || so.scheduledDate;
-          const now = new Date();
-          const horasMissao = startedAt ? Math.max(0, (now.getTime() - new Date(startedAt).getTime()) / 3600000) : 0;
-          const franquiaKm = nb(contrato.franquia_km || contrato.franquia_minima_km);
-          const km_carregado = Math.max(0, kmFinal - kmInicial);
+          const kmAtual = nb(kmFinalP?.kmValue || kmChegadaP?.kmValue || kmInicial);
+          const km_carregado = Math.max(0, kmAtual - kmInicial);
+
+          const startedAt = so.missionStartedAt ? new Date(so.missionStartedAt) : null;
+          const endedAt = so.completedDate ? new Date(so.completedDate) : null;
+          const endRef = endedAt || new Date();
+          const horasMissao = startedAt ? calcHorasBRT(startedAt, endRef) : 0;
+
+          const franquiaKm = nb(contrato.franquia_km) || nb(contrato.franquia_minima_km);
           const km_excedente = Math.max(0, km_carregado - franquiaKm);
           const hasAcion = nb(contrato.valor_acionamento) > 0;
           const franquiaHoras = nb(contrato.franquia_horas);
           let fat_total = 0, fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0;
           if (hasAcion) {
             fat_acionamento = nb(contrato.valor_acionamento);
-            fat_km = km_excedente * nb(contrato.valor_km_extra || contrato.valor_km_carregado);
-            const horasExc = Math.max(0, horasMissao - franquiaHoras);
-            fat_hora_extra = horasExc * nb(contrato.valor_hora_extra);
+            fat_km = km_excedente * (nb(contrato.valor_km_extra) || nb(contrato.valor_km_carregado));
+            if (franquiaHoras > 0 && horasMissao > franquiaHoras) {
+              fat_hora_extra = (horasMissao - franquiaHoras) * nb(contrato.valor_hora_extra);
+            }
             fat_total = fat_acionamento + fat_km + fat_hora_extra;
           } else {
             const km_faturado = Math.max(km_carregado, franquiaKm);
             fat_km = km_faturado * nb(contrato.valor_km_carregado);
             fat_total = fat_km;
           }
+
+          const existingBilling = (billings || []).find((b: any) => b.service_order_id === so.id);
+          const despesas_pedagio = nb(existingBilling?.despesas_pedagio);
+          const despesas_combustivel = nb(existingBilling?.despesas_combustivel);
+          const despesas_outras = nb(existingBilling?.despesas_outras);
+
           const r = (v: number) => Math.round(v * 100) / 100;
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
           const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
           const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
           items.push({
-            id: `calc-${so.id}`, service_order_id: so.id,
+            id: existingBilling?.id || `calc-${so.id}`, service_order_id: so.id,
             client_id: so.clientId, client_name: client?.name || "--",
             contract_id: contrato.id || null,
-            km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+            km_inicial: kmInicial, km_final: kmAtual, km_vazio: 0,
             km_carregado: r(km_carregado), km_total: r(km_carregado),
             km_faturado: r(Math.max(km_carregado, franquiaKm)), km_franquia: r(franquiaKm),
             km_excedente: r(km_excedente),
@@ -9559,8 +9580,8 @@ Regras:
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
             data_missao: so.scheduledDate || so.createdAt || new Date().toISOString(),
-            status: "A_VERIFICAR",
-            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+            status: existingBilling?.status || "A_VERIFICAR",
+            despesas_pedagio, despesas_combustivel, despesas_outras,
           });
         } catch (err: any) {
           console.error(`[dashboard] calc billing for OS ${so.osNumber}: ${err.message}`);
