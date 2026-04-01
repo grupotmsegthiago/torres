@@ -4597,22 +4597,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 else custoOutros += amt;
               }
 
-              if (o.vehicleId && o.scheduledDate) {
-                const oDate = new Date(o.scheduledDate).toISOString().split("T")[0];
+              if (o.vehicleId) {
+                const oDate = o.scheduledDate
+                  ? new Date(o.scheduledDate).toISOString().split("T")[0]
+                  : new Date().toISOString().split("T")[0];
                 const vehicle = await storage.getVehicle(o.vehicleId);
                 const vPlate = vehicle?.plate?.toUpperCase() || "";
                 if (vPlate) {
-                  const alreadyAssigned = vehicleFuelAssigned.get(vPlate);
-                  let skipFuel = false;
+                  const fuelKey = `${vPlate}:${oDate}`;
+                  const alreadyAssigned = vehicleFuelAssigned.get(fuelKey);
                   if (alreadyAssigned) {
-                    const prevTime = new Date(alreadyAssigned.timestamp).getTime();
-                    const curTime = new Date(o.scheduledDate).getTime();
-                    const diffHours = Math.abs(curTime - prevTime) / (1000 * 60 * 60);
-                    if (diffHours < 4) {
-                      skipFuel = true;
-                    }
-                  }
-                  if (!skipFuel) {
+                    custoCombustivel = 0;
+                  } else {
                     const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
                       .select("amount, description")
                       .eq("origin_type", "fueling")
@@ -4623,7 +4619,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                       custoCombustivel = vehicleFuel.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
                     }
                     if (custoCombustivel > 0) {
-                      vehicleFuelAssigned.set(vPlate, { osId: o.id, timestamp: o.scheduledDate || new Date().toISOString() });
+                      vehicleFuelAssigned.set(fuelKey, { osId: o.id, timestamp: oDate });
                     }
                   }
                 }
@@ -8440,6 +8436,7 @@ Regras:
       const dateTo = osEndDate ? new Date(osEndDate).toISOString().split("T")[0] : dateFrom;
 
       let fuelingTx: any[] = [];
+      let fuelProrateDivisor = 1;
       if (so.vehicleId && dateFrom) {
         const vPlate = vehicle?.plate?.toUpperCase() || "";
         if (vPlate) {
@@ -8463,10 +8460,17 @@ Regras:
               return desc.includes("ABASTECIMENTO") && desc.includes(vPlate);
             });
           }
+
+          const sameDayVehicleOrders = orders.filter((ox: any) => {
+            if (ox.vehicleId !== so.vehicleId) return false;
+            if (ox.status === "cancelada") return false;
+            const oxDate = ox.scheduledDate ? new Date(ox.scheduledDate).toISOString().split("T")[0] : null;
+            return oxDate === dateFrom;
+          });
+          if (sameDayVehicleOrders.length > 1) {
+            fuelProrateDivisor = sameDayVehicleOrders.length;
+          }
         }
-
-
-
       }
 
       let missionCostPedagio = 0;
@@ -8545,14 +8549,20 @@ Regras:
       const totalDiarias = diarias.reduce((s, d) => s + d.valor, 0);
 
       const directExpenses = (txDirect || []).filter((t: any) => t.type === "EXPENSE");
+      const proratedFuelingTx = fuelingTx.map((t: any) => ({
+        ...t,
+        amount: Math.round((Number(t.amount || 0) / fuelProrateDivisor) * 100) / 100,
+        originalAmount: Number(t.amount || 0),
+        prorated: fuelProrateDivisor > 1,
+      }));
       const allExpenses = [
         ...directExpenses,
         ...missionCostExpenses,
-        ...fuelingTx,
+        ...proratedFuelingTx,
       ];
       const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
 
-      const totalFueling = fuelingTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalFueling = proratedFuelingTx.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const totalOtherExpenses = directExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
       const billingPedagio = Number(billingRow?.despesas_pedagio || 0);

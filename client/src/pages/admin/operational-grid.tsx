@@ -4740,16 +4740,37 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
-                          {v.upcomingOrders && v.upcomingOrders.length > 0 && (
-                            <button
-                              onClick={() => setUpcomingVehicle(v)}
-                              className="mt-1 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
-                              data-testid={`button-upcoming-${v.id}`}
-                            >
-                              <CalendarClock className="w-3 h-3" />
-                              +{v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}
-                            </button>
-                          )}
+                          {v.upcomingOrders && v.upcomingOrders.length > 0 && (() => {
+                            const next = v.upcomingOrders[0];
+                            return (
+                              <div className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-next-mission-${v.id}`}>
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
+                                  <CalendarClock className="w-3 h-3" />
+                                  Próxima
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer" data-testid={`link-next-os-${v.id}`}>
+                                    {next.osNumber}
+                                  </Link>
+                                  {next.scheduledDate && (
+                                    <span className="text-[10px] text-blue-600 font-medium">
+                                      {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
+                                </div>
+                                {v.upcomingOrders.length > 1 && (
+                                  <button
+                                    onClick={() => setUpcomingVehicle(v)}
+                                    className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer"
+                                    data-testid={`button-more-upcoming-${v.id}`}
+                                  >
+                                    +{v.upcomingOrders.length - 1} mais
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
@@ -4766,26 +4787,64 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
-                          {v.upcomingOrders && v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 0 && (
-                            <button
-                              onClick={() => setUpcomingVehicle(v)}
-                              className="mt-1 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
-                              data-testid={`button-upcoming-scheduled-${v.id}`}
-                            >
-                              <CalendarClock className="w-3 h-3" />
-                              +{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length} agendamento{v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id).length > 1 ? "s" : ""}
-                            </button>
-                          )}
+                          {v.upcomingOrders && (() => {
+                            const extras = v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id);
+                            if (extras.length === 0) return null;
+                            const next = extras[0];
+                            return (
+                              <div className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-next-scheduled-${v.id}`}>
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
+                                  <CalendarClock className="w-3 h-3" />
+                                  Próxima
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer">
+                                    {next.osNumber}
+                                  </Link>
+                                  {next.scheduledDate && (
+                                    <span className="text-[10px] text-blue-600 font-medium">
+                                      {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
+                                </div>
+                                {extras.length > 1 && (
+                                  <button onClick={() => setUpcomingVehicle(v)} className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer">
+                                    +{extras.length - 1} mais
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ) : v.upcomingOrders && v.upcomingOrders.length > 0 ? (
-                        <button
-                          onClick={() => setUpcomingVehicle(v)}
-                          className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer transition-colors"
-                          data-testid={`button-upcoming-only-${v.id}`}
-                        >
-                          <CalendarClock className="w-3.5 h-3.5" />
-                          {v.upcomingOrders.length} agendamento{v.upcomingOrders.length > 1 ? "s" : ""}
-                        </button>
+                        (() => {
+                          const next = v.upcomingOrders[0];
+                          return (
+                            <div className="border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-upcoming-only-${v.id}`}>
+                              <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
+                                <CalendarClock className="w-3 h-3" />
+                                Agendada
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer" data-testid={`link-upcoming-os-${v.id}`}>
+                                  {next.osNumber}
+                                </Link>
+                                {next.scheduledDate && (
+                                  <span className="text-[10px] text-blue-600 font-medium">
+                                    {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
+                              </div>
+                              {v.upcomingOrders.length > 1 && (
+                                <button onClick={() => setUpcomingVehicle(v)} className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer" data-testid={`button-upcoming-only-${v.id}`}>
+                                  +{v.upcomingOrders.length - 1} mais
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
                       )}
