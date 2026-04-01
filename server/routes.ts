@@ -1490,6 +1490,168 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(data);
   });
 
+  app.get("/api/service-orders/:id/step-data", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+      const osId = Number(req.params.id);
+      const os = await storage.getServiceOrder(osId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+      const photos = await storage.getMissionPhotosByOS(osId);
+      const stepLogs = (os.stepLogs || []) as any[];
+      const kmSaida = [...photos].reverse().find(p => p.step === "km_saida");
+      const kmChegada = [...photos].reverse().find(p => p.step === "km_chegada");
+      const kmFinal = [...photos].reverse().find(p => p.step === "km_final");
+      const kmBase = [...photos].reverse().find(p => p.step === "base_hodometro");
+
+      const STEPS_FOR_GRID = [
+        { key: "checkout_km_saida", label: "Saída Base", hasKm: true, kmStep: "km_saida" },
+        { key: "em_transito_origem", label: "Em Trânsito Origem", hasKm: false },
+        { key: "checkin_chegada_km", label: "Chegada Origem", hasKm: true, kmStep: "km_chegada" },
+        { key: "iniciar_missao", label: "Início Missão", hasKm: false },
+        { key: "em_transito_destino", label: "Em Trânsito Destino", hasKm: false },
+        { key: "chegada_destino", label: "Chegada Destino", hasKm: true, kmStep: "km_final" },
+        { key: "finalizada", label: "Missão Finalizada", hasKm: false },
+        { key: "retorno_base", label: "Retorno Base", hasKm: false },
+        { key: "chegada_base", label: "Chegada Base", hasKm: true, kmStep: "base_hodometro" },
+      ];
+
+      const kmMap: Record<string, number | null> = {
+        km_saida: kmSaida?.kmValue ?? null,
+        km_chegada: kmChegada?.kmValue ?? null,
+        km_final: kmFinal?.kmValue ?? null,
+        base_hodometro: kmBase?.kmValue ?? null,
+      };
+
+      const steps = STEPS_FOR_GRID.map(s => {
+        const logEntry = [...stepLogs].reverse().find((l: any) => l.step === s.key);
+        return {
+          key: s.key,
+          label: s.label,
+          hasKm: s.hasKm,
+          kmStep: s.kmStep || null,
+          timestamp: logEntry?.timestamp || logEntry?.completedAt || null,
+          km: s.kmStep ? (kmMap[s.kmStep] ?? null) : null,
+          agentName: logEntry?.agentName || null,
+        };
+      });
+
+      res.json({ steps, completedDate: os.completedDate || null, missionStartedAt: os.missionStartedAt || null });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/service-orders/:id/step-adjustments", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "admin" && req.user!.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas Admin/Diretoria pode realizar ajustes manuais" });
+      }
+      const osId = Number(req.params.id);
+      const os = await storage.getServiceOrder(osId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const { adjustments } = req.body as { adjustments: { stepKey: string; timestamp?: string | null; km?: number | null; kmStep?: string | null }[] };
+      if (!adjustments || !Array.isArray(adjustments)) return res.status(400).json({ message: "Dados inválidos" });
+
+      const adminName = req.user!.name || req.user!.username || "Admin";
+      const currentLogs = ((os.stepLogs || []) as any[]).slice();
+      const auditEntries: string[] = [];
+
+      for (const adj of adjustments) {
+        if (adj.timestamp !== undefined) {
+          const existingIdx = currentLogs.findIndex((l: any) => l.step === adj.stepKey);
+          if (adj.timestamp) {
+            if (existingIdx >= 0) {
+              const oldTs = currentLogs[existingIdx].timestamp || currentLogs[existingIdx].completedAt;
+              currentLogs[existingIdx] = { ...currentLogs[existingIdx], timestamp: adj.timestamp, completedAt: adj.timestamp };
+              auditEntries.push(`Etapa "${adj.stepKey}" horário alterado de "${oldTs || 'vazio'}" para "${adj.timestamp}"`);
+            } else {
+              currentLogs.push({ step: adj.stepKey, timestamp: adj.timestamp, completedAt: adj.timestamp, agentName: `[Ajuste: ${adminName}]` });
+              auditEntries.push(`Etapa "${adj.stepKey}" horário inserido: "${adj.timestamp}"`);
+            }
+          } else if (existingIdx >= 0) {
+            const oldTs = currentLogs[existingIdx].timestamp || currentLogs[existingIdx].completedAt;
+            currentLogs.splice(existingIdx, 1);
+            auditEntries.push(`Etapa "${adj.stepKey}" horário removido (era "${oldTs}")`);
+          }
+        }
+
+        if (adj.km !== undefined && adj.kmStep) {
+          const photos = await storage.getMissionPhotosByOS(osId);
+          const existing = [...photos].reverse().find(p => p.step === adj.kmStep);
+          if (existing && adj.km !== null) {
+            const oldKm = existing.kmValue;
+            await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(adj.km)} WHERE id = ${existing.id}`);
+            auditEntries.push(`KM "${adj.kmStep}" alterado de ${oldKm ?? 'vazio'} para ${adj.km}`);
+          }
+        }
+      }
+
+      await storage.updateServiceOrder(osId, { stepLogs: currentLogs });
+
+      if (auditEntries.length > 0) {
+        const auditMessage = `AJUSTE MANUAL por ${adminName}:\n${auditEntries.join("\n")}`;
+        await storage.createMissionUpdate({
+          serviceOrderId: osId,
+          osNumber: os.osNumber,
+          employeeId: null,
+          employeeName: adminName,
+          message: auditMessage,
+          missionStep: "ajuste_manual",
+          latitude: null,
+          longitude: null,
+          photoUrl: null,
+          readByAdmin: 1,
+        });
+        console.log(`[Audit] Step adjustment on OS #${os.osNumber} by ${adminName}: ${auditEntries.length} changes`);
+      }
+
+      const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
+        .select("id, status").eq("service_order_id", osId).limit(1);
+      if (existingBilling?.[0] && existingBilling[0].status === "A_VERIFICAR") {
+        const updatedSo = await storage.getServiceOrder(osId);
+        if (updatedSo) {
+          const phs = await storage.getMissionPhotosByOS(osId);
+          const kmSP = [...phs].reverse().find((p: any) => p.step === "km_saida");
+          const kmCP = [...phs].reverse().find((p: any) => p.step === "km_chegada");
+          const kmFP = [...phs].reverse().find((p: any) => p.step === "km_final");
+          const kmI = kmCP?.kmValue || kmSP?.kmValue || 0;
+          const kmF = kmFP?.kmValue || 0;
+          const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+          const sTime = updatedSo.scheduledDate ? toBRT(new Date(updatedSo.scheduledDate)) : undefined;
+
+          const updatedLogs = (updatedSo.stepLogs || []) as any[];
+          const checkinEntry = [...updatedLogs].reverse().find((l: any) => l.step === "checkin_chegada_km" && (l.timestamp || l.completedAt));
+          const stTime = checkinEntry ? toBRT(new Date(checkinEntry.timestamp || checkinEntry.completedAt)) : (updatedSo.missionStartedAt ? toBRT(new Date(updatedSo.missionStartedAt as string)) : undefined);
+
+          const cdValid = updatedSo.completedDate && new Date(updatedSo.completedDate as string).getFullYear() > 2000;
+          const eTime = cdValid ? toBRT(new Date(updatedSo.completedDate as string)) : undefined;
+
+          let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (updatedSo.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", updatedSo.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (updatedSo.clientId) {
+            const { data: cc2 } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", updatedSo.clientId).eq("status", "Ativo").limit(1);
+            if (cc2?.length) contrato = cc2[0];
+          }
+
+          const kmFN = kmF > kmI ? kmF : kmI;
+          const resultado = calcularEscolta({
+            contrato, km_inicial: kmI, km_final: kmFN,
+            hora_saida_base: sTime, hora_inicio_escolta: stTime, hora_fim_escolta: eTime,
+          });
+
+          await supabaseAdmin.from("escort_billings").update({
+            km_saida: kmI, km_chegada: kmFN,
+            hora_inicio: stTime || null, hora_fim: eTime || null,
+            ...resultado,
+          }).eq("id", existingBilling[0].id);
+        }
+      }
+
+      res.json({ ok: true, changes: auditEntries.length });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/service-orders/:id/enriched", requireAuth, async (req, res) => {
     try {
       if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });

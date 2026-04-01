@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search, Wrench, Save, AlertTriangle, Loader2 } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
@@ -332,10 +332,183 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
   );
 }
 
+type StepDataEntry = {
+  key: string; label: string; hasKm: boolean; kmStep: string | null;
+  timestamp: string | null; km: number | null; agentName: string | null;
+};
+
+function StepAdjustmentSection({ orderId, osNumber }: { orderId: number; osNumber: string }) {
+  const { toast } = useToast();
+  const [editedSteps, setEditedSteps] = useState<Record<string, { timestamp?: string; km?: string }>>({});
+  const [saving, setSaving] = useState(false);
+
+  const { data: stepData, isLoading, refetch } = useQuery<{ steps: StepDataEntry[] }>({
+    queryKey: ["/api/service-orders", orderId, "step-data"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const hasChanges = Object.keys(editedSteps).length > 0;
+
+  const handleSave = async () => {
+    if (!stepData?.steps) return;
+    setSaving(true);
+    try {
+      const adjustments: any[] = [];
+      for (const [stepKey, edits] of Object.entries(editedSteps)) {
+        const original = stepData.steps.find(s => s.key === stepKey);
+        if (!original) continue;
+        const adj: any = { stepKey };
+        if (edits.timestamp !== undefined) {
+          adj.timestamp = edits.timestamp ? new Date(edits.timestamp).toISOString() : null;
+        }
+        if (edits.km !== undefined && original.hasKm && original.kmStep) {
+          adj.km = edits.km ? Number(edits.km) : null;
+          adj.kmStep = original.kmStep;
+        }
+        adjustments.push(adj);
+      }
+      if (adjustments.length === 0) { setSaving(false); return; }
+      await apiRequest("PATCH", `/api/service-orders/${orderId}/step-adjustments`, { adjustments });
+      toast({ title: "Ajustes salvos", description: `${adjustments.length} alteração(ões) registrada(s) com auditoria` });
+      setEditedSteps({});
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar ajustes", description: err.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const getVal = (stepKey: string, field: "timestamp" | "km", original: string | number | null) => {
+    const edited = editedSteps[stepKey];
+    if (edited && edited[field] !== undefined) return edited[field]!;
+    if (field === "timestamp" && original) {
+      const d = new Date(original as string);
+      if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
+        return d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T").slice(0, 16);
+      }
+    }
+    if (field === "km" && original !== null && original !== undefined) return String(original);
+    return "";
+  };
+
+  const setStepField = (stepKey: string, field: "timestamp" | "km", value: string) => {
+    setEditedSteps(prev => ({
+      ...prev,
+      [stepKey]: { ...prev[stepKey], [field]: value },
+    }));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="border-t border-neutral-100 pt-4">
+        <div className="flex items-center gap-2 text-neutral-400 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" /> Carregando etapas...
+        </div>
+      </div>
+    );
+  }
+
+  if (!stepData?.steps?.length) return null;
+
+  return (
+    <div className="border-t border-neutral-100 pt-4" data-testid="section-step-adjustment">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Wrench className="w-4 h-4 text-amber-600" />
+          <span className="text-xs uppercase tracking-wide text-neutral-600 font-bold">Ajuste de Etapas e KMs</span>
+          <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">Admin</Badge>
+        </div>
+        {hasChanges && (
+          <Button
+            type="button"
+            size="sm"
+            disabled={saving}
+            onClick={handleSave}
+            className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 text-xs h-7"
+            data-testid="button-save-step-adjustments"
+          >
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            {saving ? "Salvando..." : "Salvar Ajustes"}
+          </Button>
+        )}
+      </div>
+
+      {hasChanges && (
+        <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 mb-3">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+          <span className="text-xs text-amber-800">
+            Alterações manuais serão registradas com auditoria. O faturamento será recalculado automaticamente se houver boletim vinculado.
+          </span>
+        </div>
+      )}
+
+      <div className="border border-neutral-200 rounded-lg overflow-hidden">
+        <table className="w-full text-xs" data-testid="table-step-adjustments">
+          <thead>
+            <tr className="bg-neutral-50 border-b border-neutral-200">
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-semibold w-[180px]">Etapa</th>
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Data / Hora</th>
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-semibold w-[120px]">KM</th>
+              <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-semibold w-[120px]">Agente</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100">
+            {stepData.steps.map(s => {
+              const tsVal = getVal(s.key, "timestamp", s.timestamp);
+              const kmVal = getVal(s.key, "km", s.km);
+              const tsChanged = editedSteps[s.key]?.timestamp !== undefined;
+              const kmChanged = editedSteps[s.key]?.km !== undefined;
+              return (
+                <tr key={s.key} className={tsChanged || kmChanged ? "bg-amber-50/50" : ""}>
+                  <td className="px-3 py-2 font-medium text-neutral-800 text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.timestamp ? "bg-emerald-500" : "bg-neutral-300"}`} />
+                      {s.label}
+                    </div>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <input
+                      type="datetime-local"
+                      value={tsVal}
+                      onChange={(e) => setStepField(s.key, "timestamp", e.target.value)}
+                      className={`w-full text-xs border rounded px-2 py-1.5 font-mono ${tsChanged ? "border-amber-400 bg-amber-50" : "border-neutral-200 bg-white"}`}
+                      data-testid={`input-step-time-${s.key}`}
+                    />
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {s.hasKm ? (
+                      <input
+                        type="number"
+                        value={kmVal}
+                        onChange={(e) => setStepField(s.key, "km", e.target.value)}
+                        placeholder="—"
+                        className={`w-full text-xs border rounded px-2 py-1.5 font-mono text-right ${kmChanged ? "border-amber-400 bg-amber-50" : "border-neutral-200 bg-white"}`}
+                        data-testid={`input-step-km-${s.key}`}
+                      />
+                    ) : (
+                      <span className="text-neutral-300 text-[10px]">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-[10px] text-neutral-500 truncate max-w-[120px]">
+                    {s.agentName || "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled }: {
   order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean;
 }) {
   const { toast } = useToast();
+  const { user: formUser } = useAuth();
+  const formIsAdmin = formUser?.role === "admin" || formUser?.role === "diretoria";
   const [step, setStep] = useState(order ? 3 : 1);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
@@ -982,6 +1155,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             )}
 
             {order && <MissionCostsSection orderId={order.id} />}
+            {order && formIsAdmin && <StepAdjustmentSection orderId={order.id} osNumber={order.osNumber} />}
           </div>
         )}
 
