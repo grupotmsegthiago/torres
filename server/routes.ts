@@ -8109,20 +8109,65 @@ Regras:
   app.put("/api/financial/transactions/:id", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
-      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("origin_type").eq("id", req.params.id).single();
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (existing.origin_type && existing.origin_type !== "manual") {
         return res.status(403).json({ message: "Lançamentos automáticos não podem ser editados manualmente" });
       }
-      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao } = req.body;
-      const { data, error } = await supabaseAdmin.from("financial_transactions").update({
+      const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope } = req.body;
+
+      const updatePayload: any = {
         description, amount, type, status, due_date, payment_date,
         category_id, category_name, account_id, account_name,
         entity_type, entity_name, notes, status_conciliacao,
         updated_by: user.name,
-      }).eq("id", req.params.id).select().single();
-      if (error) throw error;
-      res.json(data);
+      };
+
+      if (update_scope === "future" && existing.installment_group && existing.installment_number) {
+        const { data: siblings, error: sibErr } = await supabaseAdmin
+          .from("financial_transactions")
+          .select("id, installment_number, due_date")
+          .eq("installment_group", existing.installment_group)
+          .gte("installment_number", existing.installment_number)
+          .order("installment_number", { ascending: true });
+
+        if (sibErr) throw sibErr;
+
+        const baseDueDate = new Date(due_date);
+        const originalDueDate = new Date(existing.due_date);
+        const monthDiff = (baseDueDate.getFullYear() - originalDueDate.getFullYear()) * 12 + (baseDueDate.getMonth() - originalDueDate.getMonth());
+
+        const updates = (siblings || []).map((sib: any) => {
+          const offset = sib.installment_number - existing.installment_number;
+          const newDue = new Date(baseDueDate);
+          newDue.setMonth(newDue.getMonth() + offset);
+          const sibDueStr = newDue.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+          const baseDesc = description.replace(/\s*\(\d+\/\d+\)\s*$/, "");
+          return supabaseAdmin.from("financial_transactions").update({
+            description: `${baseDesc} (${sib.installment_number}/${existing.installment_total})`,
+            amount, type,
+            category_id, category_name,
+            account_id, account_name,
+            entity_name, notes,
+            due_date: sibDueStr,
+            payment_date: (sib.installment_number === existing.installment_number && status === "PAID") ? sibDueStr : null,
+            status: sib.installment_number === existing.installment_number ? status : "PENDING",
+            updated_by: user.name,
+          }).eq("id", sib.id);
+        });
+
+        await Promise.all(updates);
+
+        const { data: updated, error: refetchErr } = await supabaseAdmin
+          .from("financial_transactions").select("*").eq("id", req.params.id).single();
+        if (refetchErr) throw refetchErr;
+        res.json({ ...updated, updated_count: siblings?.length || 1 });
+      } else {
+        const { data, error } = await supabaseAdmin.from("financial_transactions").update(updatePayload).eq("id", req.params.id).select().single();
+        if (error) throw error;
+        res.json(data);
+      }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

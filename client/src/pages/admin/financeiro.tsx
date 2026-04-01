@@ -108,8 +108,12 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   accounts: FinancialAccount[];
 }) {
   const { toast } = useToast();
+  const isEdit = !!editingTransaction;
+  const isSeries = isEdit && !!editingTransaction.installment_group && (editingTransaction.installment_total || 0) > 1;
   const [type, setType] = useState<TransactionType>(editingTransaction?.type || "EXPENSE");
-  const [description, setDescription] = useState(editingTransaction?.description || "");
+  const [description, setDescription] = useState(
+    isEdit ? (editingTransaction.description || "").replace(/\s*\(\d+\/\d+\)\s*$/, "") : ""
+  );
   const [amount, setAmount] = useState(editingTransaction?.amount?.toString() || "");
   const [dueDate, setDueDate] = useState(editingTransaction?.due_date?.split("T")[0] || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
   const [categoryId, setCategoryId] = useState(editingTransaction?.category_id || "");
@@ -117,50 +121,85 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
   const [entityName, setEntityName] = useState(editingTransaction?.entity_name || "");
   const [status, setStatus] = useState<TransactionStatus>(editingTransaction?.status || "PENDING");
   const [notes, setNotes] = useState(editingTransaction?.notes || "");
-  const [recurrence, setRecurrence] = useState<"SINGLE" | "INSTALLMENT">("SINGLE");
-  const [installments, setInstallments] = useState(2);
+  const [recurrence, setRecurrence] = useState<"SINGLE" | "INSTALLMENT">(
+    isEdit && isSeries ? "INSTALLMENT" : "SINGLE"
+  );
+  const [installments, setInstallments] = useState(
+    isEdit && editingTransaction.installment_total ? editingTransaction.installment_total : 2
+  );
+  const [showScopeDialog, setShowScopeDialog] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
 
+  const buildPayload = (scope?: "single" | "future") => {
+    const cat = categories.find(c => c.id === categoryId);
+    const acc = accounts.find(a => a.id === accountId);
+    const descFinal = isEdit && isSeries
+      ? `${description} (${editingTransaction.installment_number}/${editingTransaction.installment_total})`
+      : description;
+    return {
+      description: descFinal, amount: parseFloat(amount), type, status, due_date: dueDate,
+      payment_date: status === "PAID" ? dueDate : null,
+      category_id: categoryId || null, category_name: cat?.name || null,
+      account_id: accountId || null, account_name: acc?.name || null,
+      entity_name: entityName || null, notes: notes || null,
+      ...(!isEdit && recurrence === "INSTALLMENT" ? { installments } : {}),
+      ...(isEdit && isSeries && scope ? { update_scope: scope } : {}),
+    };
+  };
+
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      const cat = categories.find(c => c.id === categoryId);
-      const acc = accounts.find(a => a.id === accountId);
-      const payload = {
-        description, amount: parseFloat(amount), type, status, due_date: dueDate,
-        payment_date: status === "PAID" ? dueDate : null,
-        category_id: categoryId || null, category_name: cat?.name || null,
-        account_id: accountId || null, account_name: acc?.name || null,
-        entity_name: entityName || null, notes: notes || null,
-        ...((!editingTransaction && recurrence === "INSTALLMENT") ? { installments } : {}),
-      };
-      if (editingTransaction) {
+    mutationFn: async (scope?: "single" | "future") => {
+      const payload = buildPayload(scope);
+      if (isEdit) {
         return apiRequest("PUT", `/api/financial/transactions/${editingTransaction.id}`, payload);
       }
       return apiRequest("POST", "/api/financial/transactions", payload);
     },
-    onSuccess: () => {
+    onSuccess: (_data: any, scope?: "single" | "future") => {
       queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-      toast({ title: editingTransaction ? "Lançamento atualizado" : "Lançamento criado" });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      const msg = isEdit
+        ? scope === "future"
+          ? "Série atualizada com sucesso"
+          : "Lançamento atualizado"
+        : "Lançamento criado";
+      toast({ title: msg });
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
     },
   });
 
+  const handleSubmit = () => {
+    if (isEdit && isSeries) {
+      setShowScopeDialog(true);
+    } else {
+      saveMutation.mutate("single");
+    }
+  };
+
   const filteredCategories = categories.filter(c => c.type === type);
+  const remainingInstallments = isSeries ? (editingTransaction.installment_total! - editingTransaction.installment_number! + 1) : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-transaction-form">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
-          <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest" data-testid="text-form-title">
-            {editingTransaction ? "Editar Lançamento" : "Novo Lançamento"}
-          </h3>
+          <div>
+            <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest" data-testid="text-form-title">
+              {isEdit ? "Editar Lançamento" : "Novo Lançamento"}
+            </h3>
+            {isEdit && isSeries && (
+              <p className="text-[10px] font-bold text-amber-600 mt-0.5">
+                Parcela {editingTransaction.installment_number}/{editingTransaction.installment_total} — Série parcelada
+              </p>
+            )}
+          </div>
           <button onClick={onClose} data-testid="button-close-form"><X size={20} className="text-neutral-400 hover:text-neutral-600" /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="p-6 space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="p-6 space-y-4">
           <div className="flex bg-neutral-100 p-1 rounded-lg">
             <button type="button" onClick={() => setType("INCOME")} data-testid="button-type-income"
               className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === "INCOME" ? "bg-green-600 text-white shadow-sm" : "text-neutral-500"}`}>Receita</button>
@@ -181,7 +220,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               <input required type="date" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold bg-white" value={dueDate} onChange={e => setDueDate(e.target.value)} data-testid="input-due-date" />
             </div>
           </div>
-          {!editingTransaction && (
+          {!isEdit && (
             <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
               <div className="flex items-center gap-4 mb-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-700 uppercase">
@@ -196,10 +235,21 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                   <Layers size={16} className="text-neutral-500" />
                   <span className="text-xs font-bold text-neutral-600">Parcelas:</span>
                   <select className="p-1 border border-neutral-300 rounded text-sm bg-white font-bold" value={installments} onChange={e => setInstallments(parseInt(e.target.value))} data-testid="select-installments">
-                    {[2,3,4,5,6,7,8,9,10,11,12,18,24,36].map(n => <option key={n} value={n}>{n}x</option>)}
+                    {[2,3,4,5,6,7,8,9,10,11,12,18,24,36,48,60].map(n => <option key={n} value={n}>{n}x</option>)}
                   </select>
                 </div>
               )}
+            </div>
+          )}
+          {isEdit && isSeries && (
+            <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-700 uppercase">
+                <Layers size={14} />
+                Série: {editingTransaction.installment_number}/{editingTransaction.installment_total}
+              </div>
+              <p className="text-[10px] text-amber-600 mt-1">
+                Ao salvar, você poderá escolher alterar apenas esta parcela ou propagar para as {remainingInstallments} parcelas restantes.
+              </p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -239,10 +289,55 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
           <button disabled={saveMutation.isPending} type="submit" data-testid="button-save-transaction"
             className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50">
             {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            {editingTransaction ? "Salvar Alteração" : "Confirmar Lançamento"}
+            {isEdit ? "Salvar Alteração" : "Confirmar Lançamento"}
           </button>
         </form>
       </div>
+
+      {showScopeDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" data-testid="modal-scope-dialog">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-neutral-100 bg-amber-50">
+              <h3 className="font-bold text-neutral-800 uppercase text-xs tracking-widest flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-600" /> Atualização em Série
+              </h3>
+              <p className="text-[11px] text-neutral-600 mt-1">
+                Esta parcela ({editingTransaction!.installment_number}/{editingTransaction!.installment_total}) faz parte de uma série.
+              </p>
+            </div>
+            <div className="p-4 space-y-3">
+              <button
+                onClick={() => { setShowScopeDialog(false); saveMutation.mutate("single"); }}
+                disabled={saveMutation.isPending}
+                className="w-full p-4 border-2 border-neutral-200 rounded-xl text-left hover:border-neutral-400 hover:bg-neutral-50 transition-all group"
+                data-testid="button-scope-single"
+              >
+                <p className="text-sm font-black text-neutral-800 uppercase">Alterar apenas esta</p>
+                <p className="text-[10px] text-neutral-500 mt-0.5">Apenas a parcela {editingTransaction!.installment_number}/{editingTransaction!.installment_total} será modificada</p>
+              </button>
+              <button
+                onClick={() => { setShowScopeDialog(false); saveMutation.mutate("future"); }}
+                disabled={saveMutation.isPending}
+                className="w-full p-4 border-2 border-amber-300 rounded-xl text-left hover:border-amber-500 hover:bg-amber-50 transition-all group bg-amber-50/50"
+                data-testid="button-scope-future"
+              >
+                <p className="text-sm font-black text-amber-800 uppercase">Alterar esta e todas as futuras</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">
+                  {remainingInstallments} parcelas serão atualizadas ({editingTransaction!.installment_number}/{editingTransaction!.installment_total} até {editingTransaction!.installment_total}/{editingTransaction!.installment_total})
+                </p>
+              </button>
+              <button
+                onClick={() => setShowScopeDialog(false)}
+                className="w-full py-2 text-xs font-bold text-neutral-400 uppercase hover:text-neutral-600"
+                data-testid="button-scope-cancel"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCategoryModal && (
         <QuickCategoryModal
           initialType={type}
