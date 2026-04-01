@@ -21,8 +21,8 @@ const DEFAULTS = {
   vale_transporte: 0,
   vale_refeicao: 30.0,
   diasMes: 31,
-  notaFiscalPct: 21,
-  lucroPct: 20,
+  notaFiscalPct: 16,
+  lucroPct: 30,
   qtdVigilantes: 1,
   horasMissao: 8,
 };
@@ -214,8 +214,6 @@ export default function CotacaoGastoPage() {
                 <p className="text-[11px] text-neutral-500">Salário Base: <span className="font-bold text-neutral-900">{fmt(params.salarioBase)}</span></p>
                 <p className="text-[11px] text-neutral-500">Periculosidade: <span className="font-bold text-neutral-900">{fmt(params.periculosidade)}</span></p>
                 <p className="text-[11px] text-neutral-500">Base Salarial: <span className="font-bold text-neutral-900">{fmt(baseSalarial)}</span></p>
-                <p className="text-[11px] text-neutral-500">Encargos ({fmtPct(encargoPct * 100)}): <span className="font-bold text-neutral-900">{fmt(custoEncargos)}</span></p>
-                <p className="text-[11px] text-neutral-500">Benefícios (VT + VR): <span className="font-bold text-neutral-900">{fmt(beneficios)}</span></p>
                 <div className="border-t border-neutral-200 pt-1 mt-1">
                   <p className="text-[11px] text-neutral-500">Custo Mensal: <span className="font-black text-neutral-900">{fmt(custoMensalVigilante)}</span></p>
                   <p className="text-[11px] text-neutral-500">Custo Diário (÷{params.diasMes}): <span className="font-black text-neutral-900">{fmt(custoDiarioVigilante)}</span></p>
