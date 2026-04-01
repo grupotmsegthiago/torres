@@ -2,8 +2,9 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation, RotateCw } from "lucide-react";
+import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation, RotateCw, DollarSign, Check } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
+import { apiRequest } from "@/lib/queryClient";
 
 const DEFAULTS = {
   origem: "",
@@ -39,6 +40,7 @@ export default function CotacaoGastoPage() {
   const [params, setParams] = useState(DEFAULTS);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
+  const [tollInfo, setTollInfo] = useState<{ totalIdaVolta: number; count: number; loading: boolean } | null>(null);
 
   const set = (key: keyof typeof DEFAULTS, val: string) => {
     if (key === "origem" || key === "destino") {
@@ -50,17 +52,35 @@ export default function CotacaoGastoPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const calcTolls = useCallback(async (orig: string, dest: string) => {
+    setTollInfo({ totalIdaVolta: 0, count: 0, loading: true });
+    try {
+      const resp = await apiRequest("POST", "/api/calculate-tolls", { origin: orig, destination: dest });
+      const data = await resp.json();
+      const total = Number(data.totalIdaVolta || 0);
+      setTollInfo({ totalIdaVolta: total, count: data.count || 0, loading: false });
+      if (total > 0) {
+        setParams(prev => ({ ...prev, pedagios: total }));
+      }
+    } catch {
+      setTollInfo({ totalIdaVolta: 0, count: 0, loading: false });
+    }
+  }, []);
+
   const doCalculateRoute = useCallback(async (origin: string, destination: string) => {
     if (!origin || !destination || origin.length < 3 || destination.length < 3) return;
     setCalculatingRoute(true);
-    const info = await calculateRouteInfo(origin, destination);
+    const [info] = await Promise.all([
+      calculateRouteInfo(origin, destination),
+      calcTolls(origin, destination),
+    ]);
     setCalculatingRoute(false);
     if (info) {
       setRouteInfo(info);
       const kmRound = Math.round(info.distanceMeters / 1000);
       setParams(prev => ({ ...prev, kmPercurso: kmRound * 2 }));
     }
-  }, []);
+  }, [calcTolls]);
 
   const tryCalculateRoute = useCallback((origin: string, destination: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -181,8 +201,19 @@ export default function CotacaoGastoPage() {
                   <Input type="number" value={params.kmPercurso} onChange={e => set("kmPercurso", e.target.value)} data-testid="input-km-percurso" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Pedágios (R$)</label>
-                  <Input type="number" step="0.01" value={params.pedagios} onChange={e => set("pedagios", e.target.value)} data-testid="input-pedagios" />
+                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">
+                    Pedágios (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && <span className="text-amber-600 text-[9px] ml-1">AUTO</span>}
+                  </label>
+                  <div className="relative">
+                    <Input type="number" step="0.01" value={params.pedagios} onChange={e => set("pedagios", e.target.value)} className={params.pedagios > 0 ? "border-amber-300 bg-amber-50/30 font-mono" : "font-mono"} data-testid="input-pedagios" />
+                    {tollInfo?.loading && <Loader2 className="w-3 h-3 animate-spin absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400" />}
+                  </div>
+                  {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
+                    <p className="text-[10px] text-amber-600 mt-0.5 font-medium">{tollInfo.count} pedágio(s) ida+volta</p>
+                  )}
+                  {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta === 0 && params.origem && params.destino && (
+                    <p className="text-[10px] text-emerald-600 mt-0.5 font-medium flex items-center gap-1"><Check className="w-2.5 h-2.5" /> Sem pedágio</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Qtd Vigilantes</label>

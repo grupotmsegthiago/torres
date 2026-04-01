@@ -2128,6 +2128,34 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
 
+    const pedagioVal = Number((parsed.data as any).pedagioEstimado || 0);
+    if (pedagioVal > 0) {
+      try {
+        const cost = await storage.createMissionCost({
+          serviceOrderId: data.id,
+          category: "Pedágio",
+          description: "Pedágio Ida+Volta (cálculo automático)",
+          amount: pedagioVal.toFixed(2),
+        });
+        if (cost) {
+          await createAutoTransaction({
+            description: `CUSTO MISSÃO ${data.osNumber} - PEDÁGIO (AUTO)`,
+            amount: pedagioVal,
+            type: "EXPENSE",
+            due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+            origin_type: "mission_cost",
+            origin_id: String(cost.id),
+            category_name: "Custos de Missão",
+            entity_name: null,
+            created_by: "SISTEMA",
+          });
+        }
+        console.log(`[OS ${data.osNumber}] Pedágio automático R$${pedagioVal.toFixed(2)} registrado`);
+      } catch (e: any) {
+        console.error(`[OS ${data.osNumber}] Erro ao registrar pedágio:`, e.message);
+      }
+    }
+
     (async () => {
       try {
         const client = await storage.getClient(data.clientId);
@@ -2964,6 +2992,96 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         .orderBy(missionPositions.createdAt);
       res.json(positions);
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/calculate-tolls", requireAuth, async (req, res) => {
+    try {
+      const { origin, destination } = req.body;
+      if (!origin || !destination) return res.status(400).json({ message: "Origem e destino são obrigatórios" });
+
+      const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) return res.status(500).json({ message: "API key não configurada" });
+
+      const routesUrl = "https://routes.googleapis.com/directions/v2:computeRoutes";
+      const body = {
+        origin: { address: origin },
+        destination: { address: destination },
+        travelMode: "DRIVE",
+        extraComputations: ["TOLLS"],
+        routeModifiers: {
+          vehicleInfo: {
+            emissionType: "GASOLINE",
+          },
+          tollPasses: [],
+        },
+      };
+
+      const resp = await fetch(routesUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "routes.travelAdvisory.tollInfo,routes.distanceMeters,routes.duration,routes.legs.travelAdvisory.tollInfo",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error("[calculate-tolls] Routes API error:", resp.status, errText);
+        return res.status(502).json({ message: "Erro ao consultar rota", detail: errText });
+      }
+
+      const data = await resp.json();
+      const route = data.routes?.[0];
+      if (!route) return res.json({ tolls: [], totalIda: 0, totalIdaVolta: 0, count: 0 });
+
+      const tollInfo = route.travelAdvisory?.tollInfo;
+      let totalIda = 0;
+      const tollDetails: { name: string; price: number }[] = [];
+
+      if (tollInfo?.estimatedPrice) {
+        for (const price of tollInfo.estimatedPrice) {
+          if (price.currencyCode === "BRL") {
+            totalIda += parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
+          }
+        }
+      }
+
+      const legs = route.legs || [];
+      for (const leg of legs) {
+        const legToll = leg.travelAdvisory?.tollInfo;
+        if (legToll?.estimatedPrice) {
+          for (const price of legToll.estimatedPrice) {
+            if (price.currencyCode === "BRL") {
+              const val = parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
+              tollDetails.push({ name: "Pedágio", price: val });
+            }
+          }
+        }
+      }
+
+      if (totalIda === 0 && tollDetails.length > 0) {
+        totalIda = tollDetails.reduce((sum, t) => sum + t.price, 0);
+      }
+
+      const totalIdaVolta = Math.round(totalIda * 2 * 100) / 100;
+      const distanceMeters = route.distanceMeters || 0;
+
+      console.log(`[calculate-tolls] ${origin} → ${destination}: ${tollDetails.length} pedágio(s), ida=R$${totalIda.toFixed(2)}, ida+volta=R$${totalIdaVolta.toFixed(2)}`);
+
+      res.json({
+        tolls: tollDetails,
+        totalIda: Math.round(totalIda * 100) / 100,
+        totalIdaVolta,
+        count: tollDetails.length || (totalIda > 0 ? 1 : 0),
+        distanceMeters,
+      });
+    } catch (err: any) {
+      console.error("[calculate-tolls] Exception:", err.message);
       res.status(500).json({ message: err.message });
     }
   });
@@ -4800,6 +4918,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const cat = ((mc as any).category || "").toLowerCase();
                 if (cat.includes("pedágio") || cat.includes("pedagio")) custoPedagio += amt;
                 else custoOutros += amt;
+              }
+              if (custoPedagio === 0 && (o as any).pedagioEstimado) {
+                custoPedagio = Number((o as any).pedagioEstimado) || 0;
               }
 
               if (o.vehicleId) {

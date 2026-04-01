@@ -543,6 +543,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const formIsAdmin = formUser?.role === "admin" || formUser?.role === "diretoria";
   const [step, setStep] = useState(order ? 3 : 1);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [tollInfo, setTollInfo] = useState<{ totalIdaVolta: number; count: number; loading: boolean } | null>(null);
   const stepAdjHandleRef = useRef<StepAdjustmentHandle | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
@@ -582,6 +583,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
     notes: order?.notes || "",
     valorEstimado: (order as any)?.valorEstimado || "",
+    pedagioEstimado: (order as any)?.pedagioEstimado || "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -618,8 +620,23 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     setForm({ ...form, ...updates });
   };
 
+  const calcTolls = async (orig: string, dest: string) => {
+    setTollInfo({ totalIdaVolta: 0, count: 0, loading: true });
+    try {
+      const resp = await apiRequest("POST", "/api/calculate-tolls", { origin: orig, destination: dest });
+      const data = await resp.json();
+      const total = Number(data.totalIdaVolta || 0);
+      setTollInfo({ totalIdaVolta: total, count: data.count || 0, loading: false });
+      if (total > 0) {
+        setForm(prev => ({ ...prev, pedagioEstimado: total }));
+      }
+    } catch {
+      setTollInfo({ totalIdaVolta: 0, count: 0, loading: false });
+    }
+  };
+
   const calcRoute = async (orig: string, dest: string) => {
-    if (!orig.trim() || !dest.trim()) { setRouteInfo(null); return; }
+    if (!orig.trim() || !dest.trim()) { setRouteInfo(null); setTollInfo(null); return; }
     const routeStr = `${orig.trim()} → ${dest.trim()}`;
     setForm(prev => ({
       ...prev,
@@ -633,7 +650,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     }));
     setCalculatingRoute(true);
     try {
-      const info = await calculateRouteInfo(orig.trim(), dest.trim());
+      const [info] = await Promise.all([
+        calculateRouteInfo(orig.trim(), dest.trim()),
+        calcTolls(orig.trim(), dest.trim()),
+      ]);
       setRouteInfo(info);
     } catch {
       setRouteInfo(null);
@@ -675,6 +695,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
+    pedagioEstimado: data.pedagioEstimado ? Number(data.pedagioEstimado) : null,
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
@@ -973,6 +994,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <Input type="number" step="0.01" min="0" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: e.target.value })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
               </div>
               <div>
+                <FieldLabel>Pedágio (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 ? "✓" : ""}</FieldLabel>
+                <div className="relative">
+                  <Input type="number" step="0.01" min="0" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: e.target.value })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && Number(form.pedagioEstimado) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
+                  {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">AUTO</span>
+                  )}
+                </div>
+              </div>
+              <div>
                 <FieldLabel>Solicitante</FieldLabel>
                 <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
               </div>
@@ -1064,7 +1094,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       </div>
                     )}
                     {routeInfo && !calculatingRoute && (
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-3 text-xs flex-wrap">
                         <span className="flex items-center gap-1 text-neutral-600 bg-neutral-100 px-2 py-1 rounded font-medium" data-testid="text-route-distance">
                           <Navigation className="w-3 h-3" />
                           {routeInfo.distanceText}
@@ -1073,6 +1103,24 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <Clock className="w-3 h-3" />
                           {routeInfo.durationText}
                         </span>
+                        {tollInfo?.loading && (
+                          <span className="flex items-center gap-1 text-neutral-400 bg-neutral-50 px-2 py-1 rounded font-medium" data-testid="text-toll-loading">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Pedágios...
+                          </span>
+                        )}
+                        {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
+                          <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-1 rounded font-bold border border-amber-200" data-testid="text-toll-value">
+                            <DollarSign className="w-3 h-3" />
+                            {tollInfo.count} pedágio(s) — R$ {tollInfo.totalIdaVolta.toFixed(2)} (ida+volta)
+                          </span>
+                        )}
+                        {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta === 0 && (
+                          <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded font-medium" data-testid="text-toll-free">
+                            <Check className="w-3 h-3" />
+                            Sem pedágio
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
