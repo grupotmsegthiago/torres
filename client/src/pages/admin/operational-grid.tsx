@@ -4676,115 +4676,76 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             )}
                           </p>
                           {(() => {
-                            const gItem = gridData.find((g: GridItem) => g.osNumber === v.activeOs!.osNumber);
-                            const lc = gItem?.liveCost;
-                            if (!lc || lc.faturamento == null || lc.pagamento == null || lc.resultado == null) return null;
+                            const vtrItems = gridData.filter((g: GridItem) => g.vehicle?.plate === v.plate);
+                            const vtrWithCost = vtrItems.filter(g => g.liveCost && g.liveCost.faturamento != null);
+                            if (vtrWithCost.length === 0) return null;
+                            const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
+                            const totPag = vtrWithCost.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
+                            const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
+                            const totPed = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
+                            const totOutros = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
+                            const totCusto = totPag + totComb + totPed + totOutros;
+                            const totResult = totFat - totCusto;
                             const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
                             return (
-                              <div className="mt-0.5 flex items-center gap-1.5 flex-wrap" data-testid={`live-cost-${v.id}`}>
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 cursor-help">
-                                      <span>▲</span> {fmtBRL(lc.faturamento)}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs max-w-xs">
-                                    <p className="font-bold">Faturamento estimado</p>
-                                    <p>KM: {lc.km_total} ({lc.km_inicial} → {lc.km_atual})</p>
-                                    <p>Horas: {lc.horas_missao}h</p>
-                                    {lc.contrato_nome && <p className="text-emerald-400 font-semibold mt-1">Tabela: {lc.contrato_nome}</p>}
-                                    {lc.contrato_valores && (
-                                      <div className="mt-1 pt-1 border-t border-neutral-700 space-y-0.5">
-                                        {lc.contrato_valores.valor_acionamento > 0 && <p>Acionamento: R$ {lc.contrato_valores.valor_acionamento.toFixed(2)}</p>}
-                                        {lc.contrato_valores.valor_km_carregado > 0 && <p>R$/KM: {lc.contrato_valores.valor_km_carregado.toFixed(2)}</p>}
-                                        {lc.contrato_valores.franquia_horas > 0 && <p>Franquia: {lc.contrato_valores.franquia_horas}h / {lc.contrato_valores.franquia_km}km</p>}
-                                        {lc.contrato_valores.valor_hora_extra > 0 && <p>H. Extra: R$ {lc.contrato_valores.valor_hora_extra.toFixed(2)}</p>}
-                                        {lc.contrato_valores.vrp_base > 0 && <p>VRP: R$ {lc.contrato_valores.vrp_base.toFixed(2)}</p>}
-                                      </div>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
-                                      <span>▼</span> {fmtBRL(lc.custo_total ?? lc.pagamento)}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs max-w-xs">
-                                    <p className="font-bold">Custo Operacional Total</p>
-                                    <p>VRP/Agentes: {fmtBRL(lc.pagamento)}</p>
-                                    {lc.custo_combustivel > 0 && <p>Combustível: {fmtBRL(lc.custo_combustivel)}</p>}
-                                    {lc.custo_combustivel === 0 && lc.fuel_allocated_hint && (
-                                      <p className="text-amber-600">⛽ Combustível alocado na {lc.fuel_allocated_hint}</p>
-                                    )}
-                                    {lc.custo_pedagio > 0 && <p>Pedágio: {fmtBRL(lc.custo_pedagio)}</p>}
-                                    {lc.custo_outros > 0 && <p>Outros custos: {fmtBRL(lc.custo_outros)}</p>}
-                                  </TooltipContent>
-                                </Tooltip>
-                                {lc.custo_combustivel > 0 && (
+                              <div className="mt-0.5" data-testid={`live-cost-${v.id}`}>
+                                {vtrWithCost.length > 1 && (
+                                  <p className="text-[9px] text-neutral-400 font-semibold mb-0.5">{vtrWithCost.length} missões hoje</p>
+                                )}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 cursor-help">
+                                        <span>▲</span> {fmtBRL(totFat)}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="text-xs max-w-xs">
+                                      <p className="font-bold">Faturamento VTR (Hoje)</p>
+                                      {vtrWithCost.map(g => (
+                                        <p key={g.id}>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</p>
+                                      ))}
+                                      {vtrWithCost.length > 1 && <p className="font-bold border-t border-neutral-600 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
+                                        <span>▼</span> {fmtBRL(totCusto)}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="text-xs max-w-xs">
+                                      <p className="font-bold">Custo VTR (Hoje)</p>
+                                      <p>VRP/Agentes: {fmtBRL(totPag)}</p>
+                                      {totComb > 0 && <p>Combustível: {fmtBRL(totComb)}</p>}
+                                      {totPed > 0 && <p>Pedágio: {fmtBRL(totPed)}</p>}
+                                      {totOutros > 0 && <p>Outros: {fmtBRL(totOutros)}</p>}
+                                      {vtrWithCost.length > 1 && (
+                                        <div className="border-t border-neutral-600 pt-1 mt-1">
+                                          <p className="font-bold text-[10px]">Por missão:</p>
+                                          {vtrWithCost.map(g => (
+                                            <p key={g.id}>{g.osNumber}: custo {fmtBRL(g.liveCost?.custo_total || 0)}</p>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
+                                    = {fmtBRL(totResult)}
+                                  </span>
                                   <Tooltip>
                                     <TooltipTrigger>
                                       <button
                                         type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          authFetch(`/api/service-orders/${v.activeOs!.id}/fuel-allocation`, {
-                                            method: "PATCH",
-                                            headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ allocated: false }),
-                                          }).then(() => {
-                                            queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-                                          });
-                                        }}
-                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-600 hover:text-red-700 bg-amber-50 hover:bg-red-50 border border-amber-200 hover:border-red-200 rounded px-1 py-0.5 transition-colors"
-                                        data-testid={`button-remove-fuel-${v.id}`}
+                                        onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber }); }}
+                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
+                                        data-testid={`button-dre-${v.id}`}
                                       >
-                                        <Fuel className="w-3 h-3" /><X className="w-2.5 h-2.5" />
+                                        <FileText className="w-3 h-3" /> DRE
                                       </button>
                                     </TooltipTrigger>
-                                    <TooltipContent>Remover custo de combustível desta OS</TooltipContent>
+                                    <TooltipContent>DRE Operacional desta OS</TooltipContent>
                                   </Tooltip>
-                                )}
-                                {lc.custo_combustivel === 0 && lc.fuel_allocated_hint && (
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          authFetch(`/api/service-orders/${v.activeOs!.id}/fuel-allocation`, {
-                                            method: "PATCH",
-                                            headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ allocated: true }),
-                                          }).then(() => {
-                                            queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-                                          });
-                                        }}
-                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-400 hover:text-amber-700 bg-neutral-50 hover:bg-amber-50 border border-neutral-200 hover:border-amber-200 rounded px-1 py-0.5 transition-colors"
-                                        data-testid={`button-add-fuel-${v.id}`}
-                                      >
-                                        <Fuel className="w-3 h-3" /><Plus className="w-2.5 h-2.5" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Alocar combustível nesta OS (removerá da {lc.fuel_allocated_hint})</TooltipContent>
-                                  </Tooltip>
-                                )}
-                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${lc.resultado >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
-                                  = {fmtBRL(lc.resultado)}
-                                </span>
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber }); }}
-                                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
-                                      data-testid={`button-dre-${v.id}`}
-                                    >
-                                      <FileText className="w-3 h-3" /> DRE
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>DRE Operacional desta OS</TooltipContent>
-                                </Tooltip>
+                                </div>
                               </div>
                             );
                           })()}
