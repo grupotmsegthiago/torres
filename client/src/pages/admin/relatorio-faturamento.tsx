@@ -19,6 +19,16 @@ const fmtHHMM = (h: number) => {
   return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`;
 };
 const fmtDateDisp = (s: string) => { if (!s) return ""; const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; };
+const extractCity = (addr: string) => {
+  if (!addr) return "—";
+  const upper = addr.toUpperCase().trim();
+  const parts = upper.split(/[,\-\/]+/).map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const city = parts.find(p => !/^\d/.test(p) && p.length > 2 && !/^(SP|RJ|MG|PR|SC|RS|BA|GO|MT|MS|PA|AM|CE|PE|MA|PI|RN|PB|SE|AL|TO|RO|AC|AP|RR|ES|DF)$/.test(p));
+    return city || parts[0];
+  }
+  return parts[0] || upper;
+};
 
 export default function RelatorioFaturamentoPage() {
   const [selectedClient, setSelectedClient] = useState("");
@@ -70,9 +80,38 @@ export default function RelatorioFaturamentoPage() {
     setReportGenerated(false);
     try {
       const params = new URLSearchParams({ client_id: selectedClient, from: `${startDate}T00:00:00`, to: `${endDate}T23:59:59` });
-      const r = await authFetch(`/api/escort/billings?${params}`);
-      const data = await r.json();
-      const approved = (data || []).filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "PAGO");
+      const [billingsRes, ordersRes, vehiclesRes] = await Promise.all([
+        authFetch(`/api/escort/billings?${params}`),
+        authFetch(`/api/service-orders`),
+        authFetch(`/api/vehicles`),
+      ]);
+      const billingsData = await billingsRes.json();
+      const ordersData = await ordersRes.json();
+      const vehiclesData = await vehiclesRes.json();
+
+      const ordersMap = new Map<number, any>();
+      (ordersData || []).forEach((o: any) => ordersMap.set(o.id, o));
+      const vehiclesMap = new Map<number, any>();
+      (vehiclesData || []).forEach((v: any) => vehiclesMap.set(v.id, v));
+
+      const approved = (billingsData || [])
+        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "PAGO")
+        .map((b: any) => {
+          const so = ordersMap.get(b.service_order_id);
+          if (so) {
+            if (!b.origem && so.origin) b.origem = so.origin;
+            if (!b.destino && so.destination) b.destino = so.destination;
+            if (!b.placa_viatura && so.vehicleId) {
+              const veh = vehiclesMap.get(so.vehicleId);
+              if (veh) b.placa_viatura = veh.plate;
+            }
+            if (!b.placa_escoltado && so.escortedVehiclePlate) b.placa_escoltado = so.escortedVehiclePlate;
+            if (!b.os_number && so.osNumber) b.os_number = so.osNumber;
+            if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
+          }
+          return b;
+        });
+
       setBillings(approved);
       setReportGenerated(true);
     } catch (err) {
@@ -126,20 +165,29 @@ export default function RelatorioFaturamentoPage() {
       const fatPedagio = n(b.despesas_pedagio);
       const fatTotal = n(b.fat_total);
 
+      const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
+      const origem = b.origem || b.origin || "";
+      const destino = b.destino || b.destination || "";
+      const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
+      const viatura = b.placa_viatura || b.vehicle_plate || "—";
+      const escoltado = b.placa_escoltado || b.escorted_vehicle_plate || "—";
+
+      const dataMissao = b.data_missao || b.created_at;
+
       return {
-        id: b.os_number || `OS-${b.service_order_id}`,
+        id: osNum,
         billingId: b.id,
-        route: `${b.origin || "—"} → ${b.destination || "—"}`,
+        route: routeStr,
         activationFee: valorAcionamento,
         franchiseHours: franquiaHoras,
         franchiseKm: franquiaKm,
         unitHr: valorHoraExtra,
         unitKm: valorKmExtra,
-        startDate: fmtDate(b.horario_inicio ? `2026-01-01T${b.horario_inicio}` : b.created_at),
-        startTime: b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(b.created_at),
-        viatura: b.vehicle_plate || "—",
-        cargoPlate: b.escorted_vehicle_plate || "—",
-        endDate: fmtDate(b.horario_fim ? `2026-01-01T${b.horario_fim}` : b.created_at),
+        startDate: fmtDate(dataMissao),
+        startTime: b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(dataMissao),
+        viatura,
+        cargoPlate: escoltado,
+        endDate: fmtDate(dataMissao),
         endTime: b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
         kmStart: n(b.km_inicial),
         kmEnd: n(b.km_final),

@@ -1514,6 +1514,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         margem_percentual: n(resultado.resultado.margem_pct),
         vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
         vigilante2_id: (so as any).assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
+        os_number: so.osNumber || null,
         origem: so.origin || null, destino: so.destination || null,
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
