@@ -4721,7 +4721,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       (o) => !FINISHED_MISSION.includes(o.missionStatus || "")
     );
     const scheduledOrders = orders.filter(
-      (o) => (o.status === "aberta" || o.status === "agendada") && (!o.missionStatus || o.missionStatus === "aguardando")
+      (o) => (o.status === "aberta" || o.status === "agendada" || (o.status === "em_andamento" && o.missionStatus === "aguardando")) && (!o.missionStatus || o.missionStatus === "aguardando")
     );
 
     const tcPositions = await truckscontrol.getCachedPositions();
@@ -5003,7 +5003,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             };
           })(),
           scheduledOs: (() => {
-            const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id);
+            const scheduled = scheduledOrders.find((o) => o.vehicleId === v.id && o.id !== linkedOrder?.id);
             return scheduled ? { id: scheduled.id, osNumber: scheduled.osNumber, scheduledDate: scheduled.scheduledDate, priority: scheduled.priority } : null;
           })(),
           upcomingOrders: await (async () => {

@@ -946,7 +946,16 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const isIgnitionOn = v.tracker.ignition === true;
         const isMoving = isIgnitionOn && (v.tracker.speed ?? 0) > 5;
         const hasNoSignal = v.tracker.isLiveData === false && !!v.noSignalSince;
-        const statusColor = hasNoSignal ? "#6b7280" : isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#94a3b8";
+        let statusColor = hasNoSignal ? "#6b7280" : isMoving ? "#22c55e" : isIgnitionOn ? "#f59e0b" : "#94a3b8";
+        if (v.activeOs?.missionStatus) {
+          const ms = v.activeOs.missionStatus;
+          if (ms === "em_transito_destino" || ms === "em_transito_origem") statusColor = "#2563eb";
+          else if (ms === "iniciar_missao") statusColor = "#059669";
+          else if (ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno") statusColor = "#7c3aed";
+          else if (ms === "finalizada" || ms === "retorno_base" || ms === "chegada_base") statusColor = "#d97706";
+          else if (ms === "checkout_armamento" || ms === "checkout_viatura" || ms === "checkout_km_saida") statusColor = "#0891b2";
+          else if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista") statusColor = "#0891b2";
+        }
         markerIcon = {
           url: buildCarIcon(statusColor, v.plate, v.iconType),
           scaledSize: new window.google.maps.Size(48, 62),
@@ -4798,14 +4807,36 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       {(() => {
                         const rp = getVehicleRefPoint(v, refPoints);
-                        return rp ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded border" style={{ borderColor: rp.color + "40", backgroundColor: rp.color + "10", color: rp.color }}>
-                            <MapPin className="w-3 h-3" />
-                            {rp.name}
-                          </span>
-                        ) : (
-                          <span className="text-neutral-300 text-xs">—</span>
-                        );
+                        if (rp) {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded border" style={{ borderColor: rp.color + "40", backgroundColor: rp.color + "10", color: rp.color }}>
+                              <MapPin className="w-3 h-3" />
+                              {rp.name}
+                            </span>
+                          );
+                        }
+                        if (v.activeOs?.missionStatus) {
+                          const ms = v.activeOs.missionStatus;
+                          const transitLabel = getTransitStatus(ms);
+                          const transitColor = ms === "em_transito_destino" || ms === "em_transito_origem"
+                            ? "text-blue-700 bg-blue-50 border-blue-200"
+                            : ms === "iniciar_missao"
+                            ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                            : ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno"
+                            ? "text-purple-700 bg-purple-50 border-purple-200"
+                            : ms === "finalizada" || ms === "retorno_base" || ms === "chegada_base"
+                            ? "text-amber-700 bg-amber-50 border-amber-200"
+                            : ms === "aguardando"
+                            ? "text-neutral-600 bg-neutral-50 border-neutral-200"
+                            : "text-cyan-700 bg-cyan-50 border-cyan-200";
+                          return (
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
+                              <Navigation className="w-3 h-3" />
+                              {transitLabel}
+                            </span>
+                          );
+                        }
+                        return <span className="text-neutral-300 text-xs">—</span>;
                       })()}
                     </td>
                   </tr>
