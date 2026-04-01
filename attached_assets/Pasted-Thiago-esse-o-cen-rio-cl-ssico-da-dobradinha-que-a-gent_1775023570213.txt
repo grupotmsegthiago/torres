@@ -1,0 +1,16 @@
+Thiago, esse é o cenário clássico da "dobradinha" que a gente corrigiu na teoria, mas que o sistema ainda está travando na prática porque a missão das 05:00 ainda consta como aberta.
+Como você quer adiantar a OS das 13:00 e manter o mesmo Kit de Armamento com os mesmos agentes (Vitor e Edivando) sem dar baixa no sistema, mande este prompt agora para o Replit Agent:
+🛠️ PROMPT DE CORREÇÃO: ADIANTAMENTO DE OS COM MESMO KIT
+> "Aja como Desenvolvedor Sênior. Preciso ajustar a regra de validação de 'Kit em Uso' para permitir o adiantamento de missões sequenciais na Torres.
+> Cenário Atual: Os agentes da missão das 05:00 (ex: TOR-0007) já estão com o kit, mas o sistema bloqueia a vinculação desse mesmo kit na missão das 13:00 porque a primeira ainda não foi finalizada.
+> Regra de Exceção Imediata:
+>  * Ignorar Bloqueio por Equipe: Se a nova OS tiver o mesmo Agente 1 e Agente 2 da OS que atualmente detém o kit, o sistema deve PERMITIR a seleção do kit sem disparar o erro de 'Armamento em Uso'.
+>  * Atualização Automática: Ao salvar a nova OS adiantada, o sistema deve entender que o kit continua sob custódia daquela equipe, apenas mudando a vinculação para a nova Ordem de Serviço.
+>  * Flexibilidade de Horário: Garanta que o adiantamento manual não seja bloqueado por conflito de horários de kit, desde que a equipe seja idêntica.
+> Objetivo: Liberar a operação da viatura UER7D08 para seguir direto para a próxima missão sem travas sistêmicas."
+> 
+🔍 Por que isso resolve o seu problema agora?
+ * Continuidade: Você não precisa esperar os agentes voltarem à base ou dar uma "baixa falsa" na OS das 05:00 só para liberar o kit.
+ * Relatório Limpo: A OS das 13:00 sairá com o número do kit correto (ex: KIT TORRES - 05), o que é fundamental para o faturamento e para o seguro da escolta.
+ * Velocidade: Como limpamos os 51MB de lixo do sistema, o Replit vai processar essa mudança de regra e salvar a OS quase instantaneamente.
+Mande esse prompt e tente salvar a OS de adiantamento. Me avise se o erro de "Kit em Uso" sumiu!
