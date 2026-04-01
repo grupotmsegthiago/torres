@@ -262,6 +262,29 @@ export default function CotacaoGastoPage() {
                 {params.destino && (
                   <p className="text-sm text-neutral-700 mt-1"><span className="text-[10px] font-bold text-neutral-400 uppercase">Destino:</span> {params.destino}</p>
                 )}
+                {calculatingRoute && (
+                  <div className="flex items-center gap-2 text-xs text-neutral-500 mt-3 pt-3 border-t border-neutral-100">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Calculando rota...
+                  </div>
+                )}
+                {routeInfo && !calculatingRoute && (
+                  <div className="mt-3 pt-3 border-t border-neutral-100 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-neutral-50 rounded-lg p-3 text-center">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">Trecho</p>
+                        <p className="text-lg font-black text-neutral-900">{routeInfo.distanceText}</p>
+                      </div>
+                      <div className="bg-neutral-50 rounded-lg p-3 text-center">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">Ida + Volta</p>
+                        <p className="text-lg font-black text-neutral-900">{Math.round(routeInfo.distanceMeters / 1000 * 2)} km</p>
+                      </div>
+                    </div>
+                    <div className="bg-neutral-50 rounded-lg p-3 text-center">
+                      <p className="text-[10px] font-bold text-neutral-400 uppercase">Tempo Estimado (trecho)</p>
+                      <p className="text-lg font-black text-neutral-900">{routeInfo.durationText}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
