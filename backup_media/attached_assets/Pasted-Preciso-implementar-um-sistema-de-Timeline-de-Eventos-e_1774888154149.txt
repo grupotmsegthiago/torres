@@ -1,0 +1,15 @@
+Preciso implementar um sistema de Timeline de Eventos e Histórico no Grid Operacional. Atualmente, o sistema já recebe fotos e evidências dos agentes via API/Supabase, mas preciso de uma visualização histórica e em tempo real.
+Requisitos da Tarefa:
+1.	Novo Componente de Timeline: Crie um botão no Grid Operacional chamado 'Histórico de Alertas'. Ao clicar, deve abrir um modal ou painel lateral mostrando a timeline de todos os eventos/evidências recebidos, ordenados do mais recente para o mais antigo.
+2.	Destaque de Alerta Recente:
+• O último evento recebido (o mais novo no banco de dados) deve ter um destaque visual forte (borda pulsante vermelha ou fundo amarelo suave).
+• Se o alerta tiver menos de 10 minutos, ele deve ser considerado 'Crítico/Recente' visualmente.
+3.	Timer de Persistência: Adicione um contador em cada card de alerta na timeline mostrando: 'Recebido há [X] minutos/horas'. Esse timer deve atualizar em tempo real sem precisar dar refresh na página.
+4.	Lógica de Dados:
+• Busque os dados na tabela de evidências do Supabase.
+• Certifique-se de que a foto (URL do storage) seja exibida em miniatura, com opção de clique para expandir.
+5.	UI/UX: Use um design limpo, estilo dashboard de monitoramento, garantindo que o operador identifique imediatamente o que acabou de chegar através das cores de alerta."
+Dicas para economizar seu "Agent Usage" ($):
+• Validação de Tabela: Antes de ele começar a "codar" loucamente, o Agent pode perguntar qual o nome da tabela no Supabase. Se você souber (ex: evidencias ou logs_operacionais), já responda logo de cara.
+• Filtro de Tempo: Se você tiver muitos registros, peça para ele limitar o histórico aos "últimos 50 eventos" para evitar que o sistema fique lento ou gaste muitos créditos processando milhares de linhas.
+• Modo Economy: Como essa é uma tarefa de interface (UI) e consulta simples de banco de dados, você pode tentar mudar o seletor de Power para Economy após o Agent estruturar a primeira versão, caso precise apenas de ajustes estéticos.

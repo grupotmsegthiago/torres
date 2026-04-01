@@ -1,0 +1,34 @@
+Thiago, essa é a virada de chave para a operação da Torres. Como os agentes estão na ponta (nas viaturas), o sistema precisa ser Mobile-First. Não é apenas "encolher" a tela, é criar uma interface de botões grandes, leitura rápida e coleta de dados automática.
+
+O Replit consegue sim criar essa versão usando React com Tailwind CSS (que é responsivo por natureza) e você pode simular o funcionamento abrindo o link do WebView no navegador do seu próprio celular.
+
+Aqui está o prompt de "Mestre" para o Replit construir essa estrutura de telemetria e IA:
+
+Prompt para Versão Mobile e Telemetria de Campo (Replit AI)
+"Aja como Arquiteto de Software e Especialista em UX Mobile. Preciso criar a interface Mobile para Agentes do sistema Torres. Responda e execute em Português (Brasil).
+
+1. Interface Mobile-First:
+
+Crie um layout responsivo focado em smartphones. Utilize botões grandes e navegação simplificada (Bottom Navigation Bar) com as opções: 'Início', 'Minha Missão', 'Checklist' e 'Perfil'.
+
+O login deve detectar se o usuário é do tipo 'Agente' e redirecionar automaticamente para esta versão mobile simplificada.
+
+2. Coleta de Telemetria e Dados:
+
+Na tela 'Minha Missão', crie um formulário rápido de 'Atualização de Posição'.
+
+O Agente deve inserir: KM Atual (Hodômetro) e Foto do Painel (use a API de câmera do navegador).
+
+Lógica de Telemetria: O sistema deve calcular automaticamente a diferença entre o KM anterior e o atual, gerando a média de consumo da viatura e o total de KM rodado na missão.
+
+Controle de Horas: Capture o 'Timestamp' exato de cada atualização para gerar o relatório de horas trabalhadas e tempo de permanência em cada ponto.
+
+3. Análise de IA com OCR (KM do Painel):
+
+Implemente uma integração simples (ex: Tesseract.js ou Vision API) para que, ao subir a foto do painel, a IA tente ler o valor do KM e compare com o que o agente digitou. Se houver divergência acima de 5%, emita um alerta silencioso no banco de dados para a diretoria.
+
+4. Simulação de Teste:
+
+Crie uma rota /mobile-test que simule uma missão ativa para que eu possa testar os cliques, a câmera e os inputs de KM diretamente do meu celular.
+
+Por favor, garanta que todos os dados alimentem a tabela principal do Supabase para que eu possa ver o progresso no Dashboard administrativo."

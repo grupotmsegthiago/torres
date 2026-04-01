@@ -1,0 +1,167 @@
+Aqui está o código completo para você usar a busca por localização com raio no Google Maps em outro projeto:
+
+1. Configuração do Google Maps (lib/maps.ts)
+
+import { Libraries } from '@react-google-maps/api';
+export const libraries: Libraries = ['places', 'geometry'];
+export const googleMapsApiKey = 'SUA_GOOGLE_MAPS_API_KEY';
+export const googleMapsLoadConfig = {
+    googleMapsApiKey,
+    libraries,
+    language: 'pt-BR',
+    region: 'BR'
+};
+2. Função de distância Haversine (cálculo da distância entre dois pontos)
+
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371; // raio da Terra em km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+3. Componente principal com mapa + busca por raio
+
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { useLoadScript, GoogleMap, Marker, InfoWindow, Circle, Autocomplete } from '@react-google-maps/api';
+import { googleMapsLoadConfig } from './lib/maps';
+const mapStyle = { width: '100%', height: '600px', borderRadius: '1rem' };
+const defaultCenter = { lat: -15.79, lng: -47.88 }; // Brasília
+// Seus itens devem ter: { id, name, latitude, longitude, ... }
+type Item = { id: string; name: string; latitude: number; longitude: number; address: string };
+export default function MapWithRadius({ items }: { items: Item[] }) {
+    const { isLoaded } = useLoadScript(googleMapsLoadConfig);
+    const [mapInstance, setMapInstance] = useState<any>(null);
+    const [selected, setSelected] = useState<Item | null>(null);
+    // Estado do raio
+    const [radiusCenter, setRadiusCenter] = useState<{lat: number, lng: number} | null>(null);
+    const [radiusKm, setRadiusKm] = useState(20);
+    const [radiusActive, setRadiusActive] = useState(false);
+    const autocompleteRef = useRef<any>(null);
+    // Filtra itens dentro do raio com distância calculada
+    const itemsInRadius = useMemo(() => {
+        if (!radiusActive || !radiusCenter) return null;
+        return items
+            .filter(i => i.latitude && i.longitude)
+            .map(i => ({
+                ...i,
+                distance: haversineDistance(radiusCenter.lat, radiusCenter.lng, i.latitude, i.longitude)
+            }))
+            .filter(i => i.distance <= radiusKm)
+            .sort((a, b) => a.distance - b.distance);
+    }, [items, radiusCenter, radiusKm, radiusActive]);
+    const displayItems = radiusActive && itemsInRadius ? itemsInRadius : items;
+    // Quando o usuário seleciona uma cidade no autocomplete
+    const handlePlaceSelect = useCallback(() => {
+        const place = autocompleteRef.current?.getPlace();
+        if (place?.geometry?.location) {
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            setRadiusCenter({ lat, lng });
+            setRadiusActive(true);
+            if (mapInstance) {
+                mapInstance.panTo({ lat, lng });
+                const zoom = radiusKm <= 10 ? 12 : radiusKm <= 30 ? 10 : radiusKm <= 60 ? 9 : radiusKm <= 100 ? 8 : 7;
+                mapInstance.setZoom(zoom);
+            }
+        }
+    }, [mapInstance, radiusKm]);
+    const clearRadius = () => {
+        setRadiusCenter(null);
+        setRadiusActive(false);
+        mapInstance?.panTo(defaultCenter);
+        mapInstance?.setZoom(5);
+    };
+    if (!isLoaded) return <p>Carregando mapa...</p>;
+    return (
+        <div style={{ display: 'flex', gap: '1rem' }}>
+            {/* Painel lateral */}
+            <div style={{ width: '350px', maxHeight: '600px', overflowY: 'auto' }}>
+                {/* Busca por cidade */}
+                <Autocomplete
+                    onLoad={ref => autocompleteRef.current = ref}
+                    onPlaceChanged={handlePlaceSelect}
+                    options={{ componentRestrictions: { country: 'br' }, types: ['(cities)'] }}
+                >
+                    <input type="text" placeholder="Digite uma cidade..." 
+                        style={{ width: '100%', padding: '10px', marginBottom: '8px' }} />
+                </Autocomplete>
+                {radiusActive && (
+                    <div>
+                        <div>Raio: {radiusKm} km — {itemsInRadius?.length || 0} encontrados</div>
+                        <input type="range" min={5} max={200} step={5} value={radiusKm}
+                            onChange={e => {
+                                const r = Number(e.target.value);
+                                setRadiusKm(r);
+                                const zoom = r <= 10 ? 12 : r <= 30 ? 10 : r <= 60 ? 9 : r <= 100 ? 8 : 7;
+                                mapInstance?.setZoom(zoom);
+                            }}
+                            style={{ width: '100%' }} />
+                        <button onClick={clearRadius}>Limpar busca</button>
+                    </div>
+                )}
+                {/* Lista de resultados */}
+                {displayItems.map(item => (
+                    <div key={item.id} onClick={() => {
+                        setSelected(item);
+                        mapInstance?.panTo({ lat: item.latitude, lng: item.longitude });
+                        mapInstance?.setZoom(12);
+                    }} style={{ padding: '12px', borderBottom: '1px solid #eee', cursor: 'pointer' }}>
+                        <strong>{item.name}</strong>
+                        <p>{item.address}</p>
+                        {'distance' in item && <span>{(item as any).distance.toFixed(1)} km</span>}
+                    </div>
+                ))}
+            </div>
+            {/* Mapa */}
+            <div style={{ flex: 1 }}>
+                <GoogleMap mapContainerStyle={mapStyle} center={defaultCenter} zoom={5}
+                    onLoad={map => setMapInstance(map)}
+                    options={{ disableDefaultUI: true, zoomControl: true }}>
+                    
+                    {/* Círculo do raio */}
+                    {radiusActive && radiusCenter && (
+                        <>
+                            <Circle center={radiusCenter} radius={radiusKm * 1000}
+                                options={{ fillColor: '#ef4444', fillOpacity: 0.08,
+                                    strokeColor: '#ef4444', strokeOpacity: 0.5, strokeWeight: 2 }} />
+                            <Marker position={radiusCenter}
+                                icon={{ url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                                    scaledSize: new google.maps.Size(40, 40) }} />
+                        </>
+                    )}
+                    {/* Marcadores */}
+                    {displayItems.map(item => (
+                        <Marker key={item.id}
+                            position={{ lat: item.latitude, lng: item.longitude }}
+                            onClick={() => setSelected(item)} />
+                    ))}
+                    {/* Info Window */}
+                    {selected && (
+                        <InfoWindow position={{ lat: selected.latitude, lng: selected.longitude }}
+                            onCloseClick={() => setSelected(null)}>
+                            <div>
+                                <h4>{selected.name}</h4>
+                                <p>{selected.address}</p>
+                                {'distance' in selected && <p>{(selected as any).distance.toFixed(1)} km</p>}
+                            </div>
+                        </InfoWindow>
+                    )}
+                </GoogleMap>
+            </div>
+        </div>
+    );
+}
+4. Dependências necessárias (npm)
+
+npm install @react-google-maps/api
+Resumo da lógica:
+
+Google Autocomplete — o usuário digita uma cidade, o Google sugere, e ao selecionar, captura lat/lng
+Haversine — calcula a distância em km entre o ponto selecionado e cada item da lista
+Filtro por raio — só mostra itens dentro do raio definido pelo slider (5 a 200 km)
+Circle — desenha o círculo visual no mapa com @react-google-maps/api
+Ordenação — resultados são ordenados do mais próximo ao mais distante
+Precisa da API Key do Google Maps com as APIs Maps JavaScript e Places habilitadas.

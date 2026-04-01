@@ -1,0 +1,39 @@
+Se o sistema usa Preto com Degradê (Gradients) e Branco, vamos elevar o nível para um visual "Dark Mode" de luxo, que passa uma imagem de autoridade e tecnologia de ponta para a Escolta Armada.
+
+Para o Replit gerar isso, o segredo é usar CSS Flexbox para os cards e Linear Gradients para os cabeçalhos.
+
+Aqui está a estrutura de comando e o conceito visual que você deve pedir para ele implementar:
+
+💎 Conceito Visual: OS Ultra-Profissional
+Fundo do Documento: Branco (para economizar tinta e manter legibilidade).
+
+Cabeçalhos de Seção: Degradê do Preto Profundo (#000000) para um Cinza Grafite (#2C3E50).
+
+Cards dos Agentes: Bordas finas pretas com um leve "glow" ou sombra, e cabeçalho do card em degradê.
+
+Fotos: Molduras com bordas arredondadas e contorno em degradê.
+
+🛠️ Copie e Cole este Comando no Replit:
+"Reestilize o PDF da Ordem de Serviço de Escolta Armada com um layout de alto padrão (High-End).
+
+Especificações de Design:
+
+Paleta: Use Preto (#000000), Branco e Degradês (Linear Gradients) de Preto para Cinza Escuro nos cabeçalhos das seções.
+
+Header do PDF: O título 'ORDEM DE SERVIÇO' deve estar em um bloco preto sólido com texto branco, ocupando toda a largura, com a Logo da empresa à esquerda.
+
+Cards de Agentes: Crie um container (card) para cada agente.
+
+À ESQUERDA: Foto do agente (quadrada com cantos levemente arredondados, 80px).
+
+AO CENTRO: Dados de identificação (Nome em negrito, CPF, RG).
+
+À DIREITA: Bloco de Armamento com ícone discreto.
+
+Seção Viatura: Inclua um espaço para a Foto da Viatura em destaque, com os dados técnicos (Placa, Frota, Tecnologia) logo abaixo em uma grade moderna de 3 colunas.
+
+Marketing: No rodapé, adicione uma frase de efeito da empresa e um QR Code de autenticidade para passar mais segurança ao cliente.
+
+Tecnologia: Use HTML/CSS com a biblioteca Playwright ou Puppeteer para garantir que o degradê seja renderizado perfeitamente na impressão online (PDF)."
+
+configurar o CSS com print-color-adjust: exact;. Isso garante que o degradê preto que você quer saia forte e bonito na impressora do seu cliente, sem ficar "lavado".

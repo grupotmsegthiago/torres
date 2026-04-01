@@ -1,0 +1,41 @@
+Atue como um Engenheiro Full Stack Sênior. Preciso de uma reestruturação completa do backend e do sistema de autenticação. O objetivo é migrar 100% da persistência de dados do banco interno do Replit para o Supabase e reformular o controle de acesso (RBAC)."
+
+1. Migração e Conexão Supabase:
+
+Varra todo o diretório do projeto e substitua qualquer referência ao replit.db ou banco de dados local pela biblioteca @supabase/supabase-js.
+
+Certifique-se de que as variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY estão sendo lidas corretamente do arquivo .env ou Secrets do Replit.
+
+Valide se todas as funções de CRUD (Create, Read, Update, Delete) estão apontando para as tabelas do Supabase.
+
+2. Nova Estrutura de Tabelas (Schema SQL):
+Refaça as tabelas no Supabase seguindo este modelo:
+
+Tabela usuarios: id (uuid), email (text, unique), nome (text), role (text), avatar_url (text), created_at (timestamp).
+
+Tabela perfis_acesso: Defina o que cada role pode visualizar ou editar no sistema.
+
+3. Lógica de Autenticação e Usuário "Thiago":
+
+Login: O acesso deve ser obrigatoriamente via E-mail e Senha usando o Supabase Auth.
+
+Usuário Master (Thiago): Configure uma regra de exceção no middleware de segurança. O usuário com o e-mail do Thiago (defina como Diretoria) deve ter acesso total (Superuser). Ele ignora qualquer restrição de permissão. Se ele realizar uma ação, o sistema deve salvar e processar independentemente das travas de outros níveis.
+
+Funcionalidades de Conta: Adicione obrigatoriamente uma rota/tela para 'Troca de Senha' e uma tela de 'Perfil de Usuário' onde as permissões de visualização sejam carregadas dinamicamente.
+
+4. Interface e Feedback:
+
+Atualize os componentes de frontend para refletir os campos de Perfil.
+
+Garanta que usuários comuns vejam apenas o que o perfil deles permite, enquanto o perfil 'Diretoria' visualiza o painel administrativo completo."
+
+Como ajustar seu sistema agora (Dicas Práticas):
+Prepare o Supabase: Antes de rodar o prompt, vá ao seu painel do Supabase, em SQL Editor, e crie as tabelas. O Replit Agent consegue criar o código, mas ele precisa que as tabelas existam para testar a conexão.
+
+Variáveis de Ambiente: No Replit, clique no ícone de cadeado (Secrets) e adicione:
+
+SUPABASE_URL: (Sua URL do projeto)
+
+SUPABASE_ANON_KEY: (Sua chave API)
+
+Verificação de Segurança: Peça para o Replit implementar RLS (Row Level Security) no Supabase. Isso garante que, mesmo que alguém descubra sua URL, os dados só serão acessados por quem tem permissão (ou pelo Thiago).

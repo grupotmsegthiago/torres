@@ -1,0 +1,67 @@
+Prompt de Lógica para Sistema de OS (Segurança e Escolta)
+Contexto do Sistema:
+O sistema deve processar os dados de uma Ordem de Serviço (OS) preenchida pelo vigilante, aplicar regras de arredondamento de horário e calcular o faturamento com base em uma tabela de franquia pré-cadastrada.
+
+1. Fluxo de Status:
+
+Entrada: Funcionário preenche os dados da OS (Horários e KM).
+
+Processamento: O sistema coloca a OS no status "A Verificar".
+
+Ação Humana: O administrativo revisa e altera para "Aprovada" ou solicita correção.
+
+2. Regra de Horário de Início (Check-in na Origem):
+
+Horário Agendado (H_AG): Ex: 09:00h.
+
+Horário de Chegada Real (H_REAL):
+
+Se H_REAL <= H_AG: O sistema deve considerar como início o H_AG (09:00h).
+
+Se H_REAL > H_AG: O sistema deve considerar como início o H_REAL (Ex: 09:30h).
+
+Lógica: Inicio_Missao = max(Horario_Agendado, Horario_Chegada_Real)
+
+3. Cálculo de Faturamento (Franquia vs. Extra):
+
+Tempo Total: Fim_Missao - Inicio_Missao.
+
+KM Total: KM_Final - KM_Inicial.
+
+Cálculo de KM Extra:
+
+Verificar o limite de KM da franquia no cadastro do cliente (ex: 100km).
+
+KM_Excedente = max(0, KM_Total - Limite_Franquia).
+
+Valor_Deslocamento = KM_Excedente * Valor_KM_Extra_Tabela.
+
+4. Saída Esperada (JSON ou Estrutura de Dados):
+O sistema deve retornar um resumo para o conferencista com:
+
+Horário considerado para cobrança.
+
+Total de horas trabalhadas.
+
+KM rodado e KM excedente.
+
+Valor total sugerido (Valor Franquia + Valor KM Extra).
+
+Como implementar isso no Replit (Dica Técnica)
+Como você está usando o Replit, provavelmente está usando Python ou JavaScript. Para a lógica do horário, você pode usar uma função simples como esta (exemplo em Python):
+
+Python
+from datetime import datetime
+
+def calcular_inicio_cobrança(agendado, chegado):
+    # Converte strings para objeto de hora se necessário
+    fmt = "%H:%M"
+    h_ag = datetime.strptime(agendado, fmt)
+    h_real = datetime.strptime(chegado, fmt)
+    
+    # Se chegou antes ou no horário, conta o agendado. Se chegou depois, conta o real.
+    return max(h_ag, h_real).strftime(fmt)
+
+# Exemplo de uso:
+# print(calcular_inicio_cobrança("09:00", "08:00")) -> Saída: 09:00
+# print(calcular_inicio_cobrança("09:00", "09:30")) -> Saída: 09:30
