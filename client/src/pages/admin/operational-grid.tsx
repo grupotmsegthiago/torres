@@ -529,16 +529,16 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 🛡 *OPERAÇÃO:* ${statusLabel}
 🏢 *CLIENTE:* ${os.clientName?.toUpperCase() || "—"}
 
+🚔 *VIATURA:* ${vehiclePlate}
+👮 *AGENTE 01:* ${agent1?.toUpperCase()}
+👮 *AGENTE 02:* ${agent2?.toUpperCase()}
+
 📍 *ORIGEM:* ${origin?.toUpperCase() || "—"}
 🏁 *DESTINO:* ${destination?.toUpperCase() || "—"}
 
 🚛 *VEÍCULO:* ${driverPlate}
 👤 *MOTORISTA:* ${driverName?.toUpperCase() || "—"}
 📞 *CONTATO:* ${driverPhone}
-
-🚔 *VIATURA:* ${vehiclePlate}
-👮 *AGENTE 01:* ${agent1?.toUpperCase()}
-👮 *AGENTE 02:* ${agent2?.toUpperCase()}
 
 📈 *PROGRESSO DA MISSÃO:* ${progress}%
 📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* ${etapaAvancada?.toUpperCase()}
