@@ -117,7 +117,8 @@ export default function CotacaoGastoPage() {
   const lucroTabelaKm = precoTabelaKm - baseNF;
   const margemTabelaKm = precoTabelaKm > 0 ? (lucroTabelaKm / precoTabelaKm) * 100 : 0;
 
-  const horasMissaoCalc = params.kmPercurso > 0 ? params.kmPercurso / 40 : params.horasMissao;
+  const kmTrecho = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : (params.kmPercurso > 0 ? Math.round(params.kmPercurso / 2) : 0);
+  const horasMissaoCalc = kmTrecho > 0 ? Math.max(kmTrecho / 40, routeInfo ? routeInfo.durationSeconds / 3600 : 0) : params.horasMissao;
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
   const custoHoraFinal = horasMissaoCalc > 0 ? precoFinal / horasMissaoCalc : 0;
 
@@ -315,7 +316,7 @@ export default function CotacaoGastoPage() {
                       <div className="bg-neutral-900 rounded-lg p-3 text-center">
                         <p className="text-[10px] font-bold text-neutral-400 uppercase">Horas Missão</p>
                         <p className="text-lg font-black text-white">{horasMissaoCalc.toFixed(1)}h</p>
-                        <p className="text-[9px] text-neutral-500">KM ÷ 40</p>
+                        <p className="text-[9px] text-neutral-500">{kmTrecho} km trecho ÷ 40</p>
                       </div>
                     </div>
                     <Button
