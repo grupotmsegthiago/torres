@@ -4439,6 +4439,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       (o) => (o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
 
+    const vehicleFuelAssigned = new Map<string, { osId: number; timestamp: string }>();
+
     const enriched = await Promise.all(
       activeOrders.map(async (o) => {
         const [client, vehicle, emp1, emp2] = await Promise.all([
@@ -4598,14 +4600,29 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const vehicle = await storage.getVehicle(o.vehicleId);
                 const vPlate = vehicle?.plate?.toUpperCase() || "";
                 if (vPlate) {
-                  const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
-                    .select("amount, description")
-                    .eq("origin_type", "fueling")
-                    .gte("due_date", oDate)
-                    .lte("due_date", oDate);
-                  if (fuelRows) {
-                    const vehicleFuel = fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate));
-                    custoCombustivel = vehicleFuel.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                  const alreadyAssigned = vehicleFuelAssigned.get(vPlate);
+                  let skipFuel = false;
+                  if (alreadyAssigned) {
+                    const prevTime = new Date(alreadyAssigned.timestamp).getTime();
+                    const curTime = new Date(o.scheduledDate).getTime();
+                    const diffHours = Math.abs(curTime - prevTime) / (1000 * 60 * 60);
+                    if (diffHours < 4) {
+                      skipFuel = true;
+                    }
+                  }
+                  if (!skipFuel) {
+                    const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
+                      .select("amount, description")
+                      .eq("origin_type", "fueling")
+                      .gte("due_date", oDate)
+                      .lte("due_date", oDate);
+                    if (fuelRows) {
+                      const vehicleFuel = fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate));
+                      custoCombustivel = vehicleFuel.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                    }
+                    if (custoCombustivel > 0) {
+                      vehicleFuelAssigned.set(vPlate, { osId: o.id, timestamp: o.scheduledDate || new Date().toISOString() });
+                    }
                   }
                 }
               }
