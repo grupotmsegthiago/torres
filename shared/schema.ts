@@ -214,6 +214,7 @@ export const serviceOrders = pgTable("service_orders", {
   earlyStartApproved: boolean("early_start_approved").default(false),
   escortContractId: text("escort_contract_id"),
   valorEstimado: real("valor_estimado"),
+  fuelAllocated: boolean("fuel_allocated"),
   stepLogs: jsonb("step_logs").default([]),
   createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),

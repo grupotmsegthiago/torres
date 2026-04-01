@@ -1842,6 +1842,45 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.patch("/api/service-orders/:id/fuel-allocation", requireAuth, async (req, res) => {
+    try {
+      if (req.user!.role !== "admin" && req.user!.role !== "diretoria") {
+        return res.status(403).json({ message: "Apenas Admin/Diretoria" });
+      }
+      const osId = Number(req.params.id);
+      const os = await storage.getServiceOrder(osId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const { allocated } = req.body as { allocated: boolean };
+      await db.update(serviceOrders).set({ fuelAllocated: allocated }).where(eq(serviceOrders.id, osId));
+
+      if (allocated && os.vehicleId) {
+        const vehicle = await storage.getVehicle(os.vehicleId);
+        const vPlate = vehicle?.plate?.toUpperCase() || "";
+        const osDate = os.scheduledDate
+          ? new Date(os.scheduledDate).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0];
+        if (vPlate) {
+          const allOrders = await storage.getServiceOrders();
+          const sameDaySameVehicle = allOrders.filter(o =>
+            o.id !== osId &&
+            o.vehicleId === os.vehicleId &&
+            o.status !== "concluída" && o.status !== "concluida" && o.status !== "cancelada" &&
+            o.missionStatus !== "encerrada" &&
+            ((o.scheduledDate ? new Date(o.scheduledDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]) === osDate)
+          );
+          for (const other of sameDaySameVehicle) {
+            if (other.fuelAllocated === true) {
+              await db.update(serviceOrders).set({ fuelAllocated: false }).where(eq(serviceOrders.id, other.id));
+            }
+          }
+        }
+      }
+
+      res.json({ ok: true, fuelAllocated: allocated });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/service-orders/:id/enriched", requireAuth, async (req, res) => {
     try {
       if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
@@ -4485,7 +4524,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         ? new Date(o.scheduledDate).toISOString().split("T")[0]
         : todayStr;
       const fuelKey = `${vPlate}:${oDate}`;
-      if (!vehicleFuelFirstOS.has(fuelKey)) {
+      if (o.fuelAllocated === true) {
+        vehicleFuelFirstOS.set(fuelKey, o.id);
+      }
+    }
+    for (const o of activeOrders) {
+      if (!o.vehicleId) continue;
+      const gv = gridVehicles.find(vv => vv.id === o.vehicleId);
+      const vPlate = gv?.plate?.toUpperCase() || "";
+      if (!vPlate) continue;
+      const oDate = o.scheduledDate
+        ? new Date(o.scheduledDate).toISOString().split("T")[0]
+        : todayStr;
+      const fuelKey = `${vPlate}:${oDate}`;
+      if (!vehicleFuelFirstOS.has(fuelKey) && o.fuelAllocated !== false) {
         vehicleFuelFirstOS.set(fuelKey, o.id);
       }
     }
@@ -4665,6 +4717,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const resultadoComCustos = resultado.faturamento.total - custoTotal;
             const margemComCustos = resultado.faturamento.total > 0 ? (resultadoComCustos / resultado.faturamento.total) * 100 : 0;
 
+            let fuelAllocatedHint: string | null = null;
+            if (custoCombustivel === 0 && o.vehicleId) {
+              const vPlate2 = vehicle?.plate?.toUpperCase() || "";
+              const oDate2 = o.scheduledDate ? new Date(o.scheduledDate).toISOString().split("T")[0] : todayStr;
+              const fk2 = `${vPlate2}:${oDate2}`;
+              const ownerOsId = vehicleFuelFirstOS.get(fk2);
+              if (ownerOsId && ownerOsId !== o.id) {
+                const ownerOs = activeOrders.find(x => x.id === ownerOsId);
+                fuelAllocatedHint = ownerOs?.osNumber || null;
+              }
+            }
+
             liveCost = {
               km_inicial: kmInicial,
               km_atual: kmFinalNorm,
@@ -4678,6 +4742,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               custo_total: custoTotal,
               resultado: resultadoComCustos,
               margem_pct: Math.round(margemComCustos * 100) / 100,
+              fuel_allocated: o.fuelAllocated !== false && custoCombustivel > 0,
+              fuel_allocated_hint: fuelAllocatedHint,
               contrato_nome: contratoNome || contrato.name || null,
               contrato_valores: {
                 valor_acionamento: contrato.valor_acionamento || 0,

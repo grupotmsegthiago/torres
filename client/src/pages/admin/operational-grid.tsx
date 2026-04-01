@@ -18,7 +18,7 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
-  CircleFadingPlus, Eye,
+  CircleFadingPlus, Eye, Fuel,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -309,6 +309,8 @@ interface GridItem {
     custo_total: number;
     resultado: number;
     margem_pct: number;
+    fuel_allocated: boolean;
+    fuel_allocated_hint: string | null;
     contrato_nome: string | null;
     contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
   } | null;
@@ -4712,10 +4714,61 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <p className="font-bold">Custo Operacional Total</p>
                                     <p>VRP/Agentes: {fmtBRL(lc.pagamento)}</p>
                                     {lc.custo_combustivel > 0 && <p>Combustível: {fmtBRL(lc.custo_combustivel)}</p>}
+                                    {lc.custo_combustivel === 0 && lc.fuel_allocated_hint && (
+                                      <p className="text-amber-600">⛽ Combustível alocado na {lc.fuel_allocated_hint}</p>
+                                    )}
                                     {lc.custo_pedagio > 0 && <p>Pedágio: {fmtBRL(lc.custo_pedagio)}</p>}
                                     {lc.custo_outros > 0 && <p>Outros custos: {fmtBRL(lc.custo_outros)}</p>}
                                   </TooltipContent>
                                 </Tooltip>
+                                {lc.custo_combustivel > 0 && (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          authFetch(`/api/service-orders/${v.activeOs!.id}/fuel-allocation`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ allocated: false }),
+                                          }).then(() => {
+                                            queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                                          });
+                                        }}
+                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-600 hover:text-red-700 bg-amber-50 hover:bg-red-50 border border-amber-200 hover:border-red-200 rounded px-1 py-0.5 transition-colors"
+                                        data-testid={`button-remove-fuel-${v.id}`}
+                                      >
+                                        <Fuel className="w-3 h-3" /><X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Remover custo de combustível desta OS</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {lc.custo_combustivel === 0 && lc.fuel_allocated_hint && (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          authFetch(`/api/service-orders/${v.activeOs!.id}/fuel-allocation`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ allocated: true }),
+                                          }).then(() => {
+                                            queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                                          });
+                                        }}
+                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-400 hover:text-amber-700 bg-neutral-50 hover:bg-amber-50 border border-neutral-200 hover:border-amber-200 rounded px-1 py-0.5 transition-colors"
+                                        data-testid={`button-add-fuel-${v.id}`}
+                                      >
+                                        <Fuel className="w-3 h-3" /><Plus className="w-2.5 h-2.5" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Alocar combustível nesta OS (removerá da {lc.fuel_allocated_hint})</TooltipContent>
+                                  </Tooltip>
+                                )}
                                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${lc.resultado >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
                                   = {fmtBRL(lc.resultado)}
                                 </span>
