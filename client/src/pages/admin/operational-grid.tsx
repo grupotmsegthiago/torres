@@ -4770,7 +4770,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {(() => {
                             const vtrItems = gridData.filter((g: GridItem) => g.vehicle?.plate === v.plate);
                             if (vtrItems.length === 0) return null;
-                            const vtrWithCost = vtrItems;
+                            const vtrWithCost = [...vtrItems].sort((a, b) => {
+                              const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+                              const db2 = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+                              return da - db2;
+                            });
                             const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
                             const totPag = vtrWithCost.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
                             const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
@@ -4816,9 +4820,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <p className="font-bold">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
+                                        const hora = g.scheduledDate ? new Date(g.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                                         return (
                                           <p key={g.id} className="flex items-center gap-1">
                                             <span className={st.cls}>{st.icon}</span>
+                                            <span className="text-neutral-400">{hora}</span>
                                             <span>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
                                             <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
                                           </p>
