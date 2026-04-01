@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Input } from "@/components/ui/input";
-import { Calculator, Fuel, User, FileText, MapPin } from "lucide-react";
+import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation } from "lucide-react";
+import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 
 const DEFAULTS = {
   origem: "",
@@ -35,6 +36,8 @@ function fmtPct(v: number) {
 
 export default function CotacaoGastoPage() {
   const [params, setParams] = useState(DEFAULTS);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [calculatingRoute, setCalculatingRoute] = useState(false);
 
   const set = (key: keyof typeof DEFAULTS, val: string) => {
     if (key === "origem" || key === "destino") {
@@ -43,6 +46,18 @@ export default function CotacaoGastoPage() {
       setParams(prev => ({ ...prev, [key]: Number(val) || 0 }));
     }
   };
+
+  const tryCalculateRoute = useCallback(async (origin: string, destination: string) => {
+    if (!origin || !destination) return;
+    setCalculatingRoute(true);
+    const info = await calculateRouteInfo(origin, destination);
+    setCalculatingRoute(false);
+    if (info) {
+      setRouteInfo(info);
+      const kmRound = Math.round(info.distanceMeters / 1000);
+      setParams(prev => ({ ...prev, kmPercurso: kmRound * 2 }));
+    }
+  }, []);
 
   const custoCombustivelKm = params.kmPorLitro > 0 ? params.valorLitro / params.kmPorLitro : 0;
   const custoCombustivelMissao = custoCombustivelKm * params.kmPercurso;
@@ -85,13 +100,47 @@ export default function CotacaoGastoPage() {
               <div className="grid grid-cols-1 gap-3 mb-3">
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Origem</label>
-                  <Input type="text" placeholder="Ex: TECON SANTOS - GUARUJÁ/SP" value={params.origem} onChange={e => set("origem", e.target.value)} data-testid="input-origem" />
+                  <PlacesAutocomplete
+                    value={params.origem}
+                    onChange={val => set("origem", val)}
+                    onPlaceSelect={place => {
+                      set("origem", place.address);
+                      tryCalculateRoute(place.address, params.destino);
+                    }}
+                    placeholder="Ex: TECON SANTOS - GUARUJÁ/SP"
+                    theme="light"
+                    data-testid="input-origem"
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Destino</label>
-                  <Input type="text" placeholder="Ex: DHL EXTREMA - EXTREMA/MG" value={params.destino} onChange={e => set("destino", e.target.value)} data-testid="input-destino" />
+                  <PlacesAutocomplete
+                    value={params.destino}
+                    onChange={val => set("destino", val)}
+                    onPlaceSelect={place => {
+                      set("destino", place.address);
+                      tryCalculateRoute(params.origem, place.address);
+                    }}
+                    placeholder="Ex: DHL EXTREMA - EXTREMA/MG"
+                    theme="light"
+                    data-testid="input-destino"
+                  />
                 </div>
               </div>
+              {calculatingRoute && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500 mt-2">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Calculando rota...
+                </div>
+              )}
+              {routeInfo && !calculatingRoute && (
+                <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-3">
+                  <Navigation size={14} className="text-emerald-600 shrink-0" />
+                  <div className="text-xs text-emerald-800">
+                    <span className="font-bold">{routeInfo.distanceText}</span> (trecho) · <span className="font-bold">{routeInfo.durationText}</span> estimado
+                    <span className="text-emerald-600 ml-2">→ KM ida+volta preenchido automaticamente</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-xl border border-neutral-200 p-5">
