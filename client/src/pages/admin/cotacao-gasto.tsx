@@ -209,30 +209,6 @@ export default function CotacaoGastoPage() {
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Periculosidade (30%)</label>
                   <Input type="number" step="0.01" value={params.periculosidade} onChange={e => set("periculosidade", e.target.value)} data-testid="input-periculosidade" />
                 </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">INSS (%)</label>
-                  <Input type="number" step="0.01" value={params.inss} onChange={e => set("inss", e.target.value)} data-testid="input-inss" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">FGTS (%)</label>
-                  <Input type="number" step="0.01" value={params.fgts} onChange={e => set("fgts", e.target.value)} data-testid="input-fgts" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">13° Provisão (%)</label>
-                  <Input type="number" step="0.01" value={params.provisao13} onChange={e => set("provisao13", e.target.value)} data-testid="input-prov13" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Férias Provisão (%)</label>
-                  <Input type="number" step="0.01" value={params.provisaoFerias} onChange={e => set("provisaoFerias", e.target.value)} data-testid="input-prov-ferias" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Vale Transporte</label>
-                  <Input type="number" step="0.01" value={params.vale_transporte} onChange={e => set("vale_transporte", e.target.value)} data-testid="input-vt" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Vale Refeição</label>
-                  <Input type="number" step="0.01" value={params.vale_refeicao} onChange={e => set("vale_refeicao", e.target.value)} data-testid="input-vr" />
-                </div>
               </div>
               <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">
                 <p className="text-[11px] text-neutral-500">Salário Base: <span className="font-bold text-neutral-900">{fmt(params.salarioBase)}</span></p>
