@@ -1591,10 +1591,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
       if (kit.status === "em_uso") {
         const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+        const newA1 = Number(parsed.data.assignedEmployeeId) || 0;
+        const newA2 = Number(parsed.data.assignedEmployee2Id) || 0;
         for (const activeWithKit of ordersWithKit) {
-          const sameTeam = parsed.data.assignedEmployeeId && activeWithKit.assignedEmployeeId &&
-            parsed.data.assignedEmployeeId === activeWithKit.assignedEmployeeId &&
-            (parsed.data.assignedEmployee2Id || null) === (activeWithKit.assignedEmployee2Id || null);
+          const curA1 = Number(activeWithKit.assignedEmployeeId) || 0;
+          const curA2 = Number(activeWithKit.assignedEmployee2Id) || 0;
+          const sameTeam = newA1 > 0 && curA1 > 0 && newA1 === curA1 && newA2 === curA2;
           if (sameTeam) continue;
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
@@ -1729,12 +1731,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (kit.status === "em_uso") {
         const allOrders = await storage.getServiceOrders();
         const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
-        const newAgent1 = parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId;
-        const newAgent2 = parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id;
+        const newA1 = Number(parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId) || 0;
+        const newA2 = Number(parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id) || 0;
         for (const activeWithKit of ordersWithKit) {
-          const sameTeam = newAgent1 && activeWithKit.assignedEmployeeId &&
-            newAgent1 === activeWithKit.assignedEmployeeId &&
-            (newAgent2 || null) === (activeWithKit.assignedEmployee2Id || null);
+          const curA1 = Number(activeWithKit.assignedEmployeeId) || 0;
+          const curA2 = Number(activeWithKit.assignedEmployee2Id) || 0;
+          const sameTeam = newA1 > 0 && curA1 > 0 && newA1 === curA1 && newA2 === curA2;
           if (sameTeam) continue;
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
@@ -4478,7 +4480,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
         }
 
-        const linkedOrder = vehicleActiveOrders.find((o) => o.vehicleId === v.id);
+        const vehicleOrders = vehicleActiveOrders.filter((o) => o.vehicleId === v.id);
+        const linkedOrder = vehicleOrders.length > 0
+          ? vehicleOrders.sort((a, b) => {
+              const aInProgress = a.status === "em_andamento" && a.missionStatus !== "aguardando" ? 1 : 0;
+              const bInProgress = b.status === "em_andamento" && b.missionStatus !== "aguardando" ? 1 : 0;
+              if (aInProgress !== bInProgress) return bInProgress - aInProgress;
+              const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+              const db2 = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+              return da - db2;
+            })[0]
+          : undefined;
 
         return {
           id: v.id,
