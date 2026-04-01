@@ -10539,5 +10539,137 @@ Regras:
     }
   });
 
+  // ============== PONTO OPERACIONAL ==============
+
+  app.get("/api/ponto-operacional/aberto", requireAuth, async (req: any, res) => {
+    try {
+      const empId = req.user!.employeeId;
+      if (!empId) return res.json(null);
+      const { data } = await supabaseAdmin.from("ponto_operacional")
+        .select("*").eq("employee_id", empId).eq("status", "aberto").order("entrada", { ascending: false }).limit(1);
+      res.json(data?.[0] || null);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/ponto-operacional/entrada", requireAuth, async (req: any, res) => {
+    try {
+      const empId = req.user!.employeeId;
+      if (!empId) return res.status(400).json({ message: "Usuário não vinculado a funcionário" });
+      const { data: open } = await supabaseAdmin.from("ponto_operacional")
+        .select("id").eq("employee_id", empId).eq("status", "aberto").limit(1);
+      if (open?.length) return res.status(409).json({ message: "Já existe um ponto em aberto. Finalize antes de abrir outro." });
+      const emp = await storage.getEmployee(empId);
+      const { data, error } = await supabaseAdmin.from("ponto_operacional").insert({
+        employee_id: empId,
+        employee_name: emp?.name || req.user!.name || "—",
+        entrada: new Date().toISOString(),
+        status: "aberto",
+        observacao: req.body.observacao || null,
+      }).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/ponto-operacional/saida", requireAuth, async (req: any, res) => {
+    try {
+      const empId = req.user!.employeeId;
+      if (!empId) return res.status(400).json({ message: "Usuário não vinculado a funcionário" });
+      const { data: open } = await supabaseAdmin.from("ponto_operacional")
+        .select("*").eq("employee_id", empId).eq("status", "aberto").order("entrada", { ascending: false }).limit(1);
+      if (!open?.length) return res.status(404).json({ message: "Nenhum ponto em aberto encontrado." });
+      const ponto = open[0];
+      const saida = new Date();
+      const entrada = new Date(ponto.entrada);
+      const diffMs = saida.getTime() - entrada.getTime();
+      const horasDecimal = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+      const { data, error } = await supabaseAdmin.from("ponto_operacional").update({
+        saida: saida.toISOString(),
+        horas_decimal: horasDecimal,
+        status: "fechado",
+        observacao: req.body.observacao || ponto.observacao,
+        updated_at: saida.toISOString(),
+      }).eq("id", ponto.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/ponto-operacional/resumo-mensal", requireAuth, async (req: any, res) => {
+    try {
+      const isAdmin = req.user!.role === "admin" || req.user!.role === "diretoria";
+      if (!isAdmin) return res.status(403).json({ message: "Acesso negado" });
+      const mes = req.query.mes ? String(req.query.mes) : new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).slice(0, 7);
+      const inicioMes = `${mes}-01T00:00:00-03:00`;
+      const [y, m] = mes.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+
+      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
+        .select("*").gte("entrada", inicioMes).lte("entrada", fimMes).order("entrada", { ascending: true });
+
+      const { data: abertos } = await supabaseAdmin.from("ponto_operacional")
+        .select("*").eq("status", "aberto");
+
+      const allEmployees = await storage.getEmployees();
+      const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
+
+      const SALARIO_BASE = 2432.50;
+      const LIMITE_HORAS = 220;
+      const VALOR_HORA = +(SALARIO_BASE / LIMITE_HORAS).toFixed(2);
+
+      const resumo = activeEmployees.map((emp: any) => {
+        const empPontos = (pontos || []).filter((p: any) => p.employee_id === emp.id);
+        const empAberto = (abertos || []).find((p: any) => p.employee_id === emp.id && p.status === "aberto");
+        const totalHoras = empPontos.reduce((acc: number, p: any) => acc + (Number(p.horas_decimal) || 0), 0);
+        const jornadasConcluidas = empPontos.filter((p: any) => p.status === "fechado").length;
+        const horasExtras = Math.max(0, totalHoras - LIMITE_HORAS);
+        const custoHoraExtra = +(horasExtras * VALOR_HORA * 1.5).toFixed(2);
+        const bonusFuncionario = +(custoHoraExtra * 0.5).toFixed(2);
+        const custoEmpresa = +(custoHoraExtra * 0.5).toFixed(2);
+
+        return {
+          employeeId: emp.id,
+          employeeName: emp.name,
+          role: emp.role,
+          totalHoras: +totalHoras.toFixed(2),
+          jornadasConcluidas,
+          limiteHoras: LIMITE_HORAS,
+          horasExtras: +horasExtras.toFixed(2),
+          custoHoraExtra,
+          bonusFuncionario,
+          custoEmpresa,
+          valorHora: VALOR_HORA,
+          pontoAberto: empAberto ? { id: empAberto.id, entrada: empAberto.entrada } : null,
+          status: totalHoras >= LIMITE_HORAS ? "hora_extra" : totalHoras >= 190 ? "alerta" : "normal",
+          registros: empPontos,
+        };
+      });
+
+      resumo.sort((a: any, b: any) => b.totalHoras - a.totalHoras);
+      res.json({ mes, resumo, limiteHoras: LIMITE_HORAS, valorHora: VALOR_HORA, salarioBase: SALARIO_BASE });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/ponto-operacional/historico/:employeeId", requireAuth, async (req: any, res) => {
+    try {
+      const isAdmin = req.user!.role === "admin" || req.user!.role === "diretoria";
+      const empId = Number(req.params.employeeId);
+      if (!isAdmin && req.user!.employeeId !== empId) return res.status(403).json({ message: "Acesso negado" });
+      const { data } = await supabaseAdmin.from("ponto_operacional")
+        .select("*").eq("employee_id", empId).order("entrada", { ascending: false }).limit(100);
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/ponto-operacional/:id", requireAuth, async (req: any, res) => {
+    try {
+      const isAdmin = req.user!.role === "admin" || req.user!.role === "diretoria";
+      if (!isAdmin) return res.status(403).json({ message: "Acesso negado" });
+      await supabaseAdmin.from("ponto_operacional").delete().eq("id", req.params.id);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   return httpServer;
 }
