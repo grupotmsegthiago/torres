@@ -4784,7 +4784,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const statusLabel = (s: string) => {
                               if (s === "concluida") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
                               if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
-                              return { icon: "⟳", cls: "text-blue-400", label: "Em andamento" };
+                              return { icon: "⟳", cls: "text-sky-400", label: "Em andamento" };
                             };
                             return (
                               <div className="mt-0.5" data-testid={`live-cost-${v.id}`}>
@@ -4812,7 +4812,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         );
                                       })}
                                       {vtrWithCost.length > 1 && <p className="font-bold border-t border-neutral-600 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
-                                      <div className={`border-t border-neutral-600 pt-1 mt-1 font-bold ${metaBatida ? "text-emerald-400" : "text-amber-400"}`}>
+                                      <div className={`border-t border-neutral-600 pt-1 mt-1 font-bold ${metaBatida ? "text-emerald-400" : "text-neutral-300"}`}>
                                         Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ META BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
                                       </div>
                                     </TooltipContent>
@@ -4859,7 +4859,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <div className="mt-1 flex items-center gap-1.5">
                                   <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
                                     <div
-                                      className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-amber-400" : "bg-blue-400"}`}
+                                      className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-blue-500" : "bg-neutral-400"}`}
                                       style={{ width: `${Math.min((totFat / META_VTR) * 100, 100)}%` }}
                                     />
                                   </div>
