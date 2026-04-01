@@ -1,0 +1,18 @@
+Thiago, entendi perfeitamente a sua lógica. Para a Torres, o armamento não é um item fixo da viatura, ele é uma extensão da responsabilidade do agente.
+Se o Vitor e o Edivando pegaram o Kit 05 às 05:00, esse vínculo tem que "viajar" com eles para a OS das 13:00 e para qualquer outra no mesmo dia, aparecendo de forma clara em cada Ordem de Serviço individualmente.
+Mande este prompt agora para o Replit Agent para ele mudar a estrutura de dados e parar de considerar o kit como "ocupado" por horário, e sim "vinculado" à equipe:
+🛠️ PROMPT DE REESTRUTURAÇÃO: VÍNCULO DE KIT POR AGENTE
+> "Aja como Desenvolvedor Sênior de Sistemas ERP. Preciso mudar a lógica de custódia de armamento na Torres.
+> Nova Regra de Negócio:
+>  * Vínculo por Equipe: O Kit de Armamento deve estar amarrado aos Agentes (Agente 1 e 2) e não à Ordem de Serviço ou Horário isolado.
+>  * Multiplicidade de OS: Se a mesma equipe tiver 2 ou 3 missões no mesmo dia (ex: 05:00 e 13:00), o sistema DEVE permitir e exibir o mesmo Kit em todas essas Ordens de Serviço simultaneamente.
+>  * Fim do Bloqueio 'Em Uso': Remova a validação que impede selecionar um Kit que já consta como 'Em Uso', DESDE QUE os IDs dos agentes escalados sejam os mesmos que já detêm a posse do kit no sistema.
+>  * Exibição no Grid: Garanta que, ao visualizar as missões no Grid Operacional, o Kit apareça preenchido em ambas as linhas (manhã e tarde), mantendo a rastreabilidade para o seguro.
+> Objetivo: Permitir o adiantamento de missões e a 'dobradinha' de escala sem que o sistema gere erro de conflito de armamento."
+> 
+🔍 Por que isso resolve o seu problema de vez?
+ * Faturamento e Seguro: Se acontecer um sinistro na missão das 13:00, a OS vai mostrar o kit vinculado corretamente, garantindo que você receba o valor do seguro.
+ * Operação Fluida: Você não vai mais precisar ficar "limpando" o kit no sistema para conseguir salvar a segunda viagem do dia.
+ * Controle Total: Você saberá exatamente com quem está cada arma, independente de quantas missões eles façam no turno de 24h.
+Mande esse comando e tente vincular o kit na OS das 13:00 agora. Como o sistema está leve (limpamos os 51MB), ele deve salvar essa nova regra em segundos!
+Conseguiu salvar as duas Ordens de Serviço com o mesmo kit aparecendo?

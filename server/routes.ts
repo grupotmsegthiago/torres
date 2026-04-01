@@ -1590,22 +1590,19 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const kit = await storage.getWeaponKit(parsed.data.kitId);
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
       if (kit.status === "em_uso") {
-        const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
-        if (activeWithKit) {
+        const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+        for (const activeWithKit of ordersWithKit) {
+          const sameTeam = parsed.data.assignedEmployeeId && activeWithKit.assignedEmployeeId &&
+            parsed.data.assignedEmployeeId === activeWithKit.assignedEmployeeId &&
+            (parsed.data.assignedEmployee2Id || null) === (activeWithKit.assignedEmployee2Id || null);
+          if (sameTeam) continue;
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
-            const sameTeam = parsed.data.assignedEmployeeId && activeWithKit.assignedEmployeeId &&
-              parsed.data.assignedEmployeeId === activeWithKit.assignedEmployeeId &&
-              (parsed.data.assignedEmployee2Id || null) === (activeWithKit.assignedEmployee2Id || null);
-            if (!sameTeam) {
-              return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
-            }
+            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento) com equipe diferente` });
           }
-          if (!isEmAndamento) {
-            await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
-          }
+          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
         }
-        if (!activeWithKit) {
+        if (ordersWithKit.length === 0) {
           await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
         }
       }
@@ -1722,24 +1719,21 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (!kit) return res.status(400).json({ message: "Kit de armamento não encontrado" });
       if (kit.status === "em_uso") {
         const allOrders = await storage.getServiceOrders();
-        const activeWithKit = allOrders.find(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
-        if (activeWithKit) {
+        const ordersWithKit = allOrders.filter(o => o.kitId === parsed.data.kitId && o.id !== Number(req.params.id) && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+        const newAgent1 = parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId;
+        const newAgent2 = parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id;
+        for (const activeWithKit of ordersWithKit) {
+          const sameTeam = newAgent1 && activeWithKit.assignedEmployeeId &&
+            newAgent1 === activeWithKit.assignedEmployeeId &&
+            (newAgent2 || null) === (activeWithKit.assignedEmployee2Id || null);
+          if (sameTeam) continue;
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
-            const newAgent1 = parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId;
-            const newAgent2 = parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id;
-            const sameTeam = newAgent1 && activeWithKit.assignedEmployeeId &&
-              newAgent1 === activeWithKit.assignedEmployeeId &&
-              (newAgent2 || null) === (activeWithKit.assignedEmployee2Id || null);
-            if (!sameTeam) {
-              return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
-            }
+            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento) com equipe diferente` });
           }
-          if (!isEmAndamento) {
-            await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
-          }
+          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
         }
-        if (!activeWithKit) {
+        if (ordersWithKit.length === 0) {
           await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
         }
       }
