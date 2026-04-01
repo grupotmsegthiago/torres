@@ -886,7 +886,7 @@ export async function registerRoutes(
           cestaBasica: cestaProporcional,
           total: totalVencimentos,
         },
-        descontos: discounts.map(d => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.createdBy })),
+        descontos: discounts.map(d => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.createdBy, createdAt: d.createdAt })),
         totalDescontos,
         liquido,
         cctRef: { salarioBase: CCT.salarioBase, periculosidadePct: CCT.periculosidadePct, valeRefeicaoDia: CCT.valeRefeicaoDia, cestaBasica: CCT.cestaBasica, totalBruto },

@@ -11,7 +11,7 @@ import { PlacesAutocomplete } from "@/components/places-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin } from "lucide-react";
+import { Plus, X, Pencil, Trash2, KeyRound, Camera, Loader2, DollarSign, Search, FileText, Upload, AlertTriangle, Eye, ScanLine, CheckCircle2, ShieldCheck, Car, ClipboardList, Ban, Clock, Shield, FolderOpen, ArrowLeft, Download, Home, RefreshCw, MapPin, UserX, Fuel } from "lucide-react";
 import type { Employee, EmployeeSalary, EmployeeDocument } from "@shared/schema";
 
 const CARGOS = ["Vigilante", "Adm", "Gerente", "Supervisor", "Operador"];
@@ -1763,8 +1763,10 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
     queryFn: getQueryFn({ on401: "throw" }),
   });
   const [showDiscountForm, setShowDiscountForm] = useState(false);
-  const [discountForm, setDiscountForm] = useState({ type: "Abastecimento indevido", description: "", amount: "" });
+  const [discountCategory, setDiscountCategory] = useState<"falta" | "multa" | "abastecimento" | null>(null);
+  const [discountForm, setDiscountForm] = useState({ type: "Falta injustificada", description: "", amount: "", numFaltas: "1", occurrenceDate: "" });
   const DISCOUNT_TYPES = ["Abastecimento indevido", "Multa de trânsito", "Falta injustificada", "Atraso", "Dano a equipamento", "Adiantamento", "Outro"];
+  const [heHours, setHeHours] = useState("");
   const addDiscountMut = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", `/api/employees/${employee.id}/salary-discounts`, {
@@ -1774,7 +1776,8 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
     onSuccess: () => {
       refetchSummary();
       setShowDiscountForm(false);
-      setDiscountForm({ type: "Abastecimento indevido", description: "", amount: "" });
+      setDiscountCategory(null);
+      setDiscountForm({ type: "Falta injustificada", description: "", amount: "", numFaltas: "1", occurrenceDate: "" });
       toast({ title: "Desconto lançado" });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -1836,8 +1839,8 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <ShieldCheck className="w-3 h-3" /> Kit CCT
             </Button>
           )}
-          <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowDiscountForm(!showDiscountForm)} data-testid="button-launch-discount">
-            <Ban className="w-3 h-3" /> Desconto
+          <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => { setShowDiscountForm(!showDiscountForm); setDiscountCategory(null); }} data-testid="button-launch-discount">
+            <Ban className="w-3 h-3" /> Lançar Ocorrência
           </Button>
           {summary && (
             <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={printHolerite} data-testid="button-print-holerite">
@@ -1940,18 +1943,24 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                 ) : (
                   <div className="space-y-2">
                     {summary.descontos.map((d: any) => (
-                      <div key={d.id} className="bg-white border border-red-100 rounded-lg p-3 flex items-center justify-between">
-                        <div className="flex-1 min-w-0 mr-2">
-                          <div className="text-xs font-semibold text-neutral-800">{d.type}</div>
-                          <div className="text-[10px] text-neutral-400 mt-0.5 truncate">{d.description}{d.createdBy ? ` — por ${d.createdBy}` : ""}</div>
+                      <div key={d.id} className="bg-white border border-red-100 rounded-lg p-3" data-testid={`discount-item-${d.id}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0 mr-2">
+                            <div className="text-xs font-semibold text-neutral-800">{d.type}</div>
+                            <div className="text-[10px] text-neutral-400 mt-0.5 truncate">{d.description}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-sm font-bold text-red-600 tabular-nums">- {fmtR(d.amount)}</span>
+                            {isDiretoria && (
+                              <button onClick={() => deleteDiscountMut.mutate(d.id)} className="text-red-300 hover:text-red-600 transition-colors" data-testid={`button-delete-discount-${d.id}`}>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-bold text-red-600 tabular-nums">- {fmtR(d.amount)}</span>
-                          {isDiretoria && (
-                            <button onClick={() => deleteDiscountMut.mutate(d.id)} className="text-red-300 hover:text-red-600 transition-colors" data-testid={`button-delete-discount-${d.id}`}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                        <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-red-50">
+                          <span className="text-[9px] text-neutral-400 font-mono">{d.createdAt ? new Date(d.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                          {d.createdBy && <span className="text-[9px] text-neutral-400">por {d.createdBy}</span>}
                         </div>
                       </div>
                     ))}
@@ -1965,30 +1974,195 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             <div className="border border-red-200 rounded-xl p-4 bg-red-50/30" data-testid="form-discount">
               <div className="flex items-center gap-2 mb-3">
                 <Ban className="w-4 h-4 text-red-600" />
-                <span className="text-xs uppercase tracking-wider text-red-700 font-bold">Novo Desconto — {MESES[selMonth-1]} {selYear}</span>
+                <span className="text-xs uppercase tracking-wider text-red-700 font-bold">Lançar Ocorrência — {MESES[selMonth-1]} {selYear}</span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Tipo</label>
-                  <select value={discountForm.type} onChange={(e) => setDiscountForm({ ...discountForm, type: e.target.value })} className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-xs bg-white" data-testid="select-discount-type">
-                    {DISCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+
+              {!discountCategory ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="discount-category-selector">
+                  <button
+                    className="border-2 border-neutral-200 rounded-xl p-4 hover:border-red-300 hover:bg-red-50/50 transition-all text-left group"
+                    onClick={() => {
+                      const diaSalario = +(CCT_SP_2025.salarioBase / 30).toFixed(2);
+                      const dsrProporcional = +(diaSalario / 6).toFixed(2);
+                      const totalFalta = +(diaSalario + dsrProporcional).toFixed(2);
+                      setDiscountCategory("falta");
+                      setDiscountForm({ type: "Falta injustificada", description: `1 falta(s) — Dia: R$${diaSalario.toFixed(2)} + DSR: R$${dsrProporcional.toFixed(2)}`, amount: String(totalFalta), numFaltas: "1", occurrenceDate: "" });
+                    }}
+                    data-testid="btn-category-falta"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                        <UserX className="w-4 h-4 text-red-600" />
+                      </div>
+                      <span className="text-sm font-bold text-neutral-800">Falta</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 leading-relaxed">Desconta o dia + DSR proporcional automaticamente</p>
+                  </button>
+                  <button
+                    className="border-2 border-neutral-200 rounded-xl p-4 hover:border-amber-300 hover:bg-amber-50/50 transition-all text-left group"
+                    onClick={() => {
+                      setDiscountCategory("multa");
+                      setDiscountForm({ type: "Multa de trânsito", description: "", amount: "", numFaltas: "1", occurrenceDate: "" });
+                    }}
+                    data-testid="btn-category-multa"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <span className="text-sm font-bold text-neutral-800">Multa / Avaria</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 leading-relaxed">Valor fixo informado — multas, danos, avarias</p>
+                  </button>
+                  <button
+                    className="border-2 border-neutral-200 rounded-xl p-4 hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left group"
+                    onClick={() => {
+                      setDiscountCategory("abastecimento");
+                      setDiscountForm({ type: "Abastecimento indevido", description: "", amount: "", numFaltas: "1", occurrenceDate: "" });
+                    }}
+                    data-testid="btn-category-abastecimento"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                        <Fuel className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <span className="text-sm font-bold text-neutral-800">Abastecimento</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-500 leading-relaxed">Abastecimento indevido ou excedente</p>
+                  </button>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Descrição</label>
-                  <Input value={discountForm.description} onChange={(e) => setDiscountForm({ ...discountForm, description: e.target.value })} placeholder="Ex: Abastecimento dia 15/03" className="text-xs h-9" data-testid="input-discount-description" />
+              ) : discountCategory === "falta" ? (
+                <div className="space-y-3" data-testid="form-falta">
+                  <div className="bg-white border border-red-100 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <UserX className="w-4 h-4 text-red-600" />
+                      <span className="text-xs font-bold text-red-700 uppercase tracking-wide">Desconto por Falta</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Qtd. de Faltas</label>
+                        <Input type="number" min="1" max="30" value={discountForm.numFaltas} onChange={(e) => {
+                          const n = Math.max(1, Number(e.target.value) || 1);
+                          const diaSalario = +(CCT_SP_2025.salarioBase / 30).toFixed(2);
+                          const dsrProporcional = +((diaSalario * n) / 6).toFixed(2);
+                          const totalFalta = +(diaSalario * n + dsrProporcional).toFixed(2);
+                          setDiscountForm({ ...discountForm, numFaltas: String(n), amount: String(totalFalta), description: `${n} falta(s) — Dia: R$${(diaSalario * n).toFixed(2)} + DSR: R$${dsrProporcional.toFixed(2)}` });
+                        }} className="text-xs h-9" data-testid="input-faltas-qty" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data da Ocorrência</label>
+                        <Input type="date" value={discountForm.occurrenceDate} onChange={(e) => setDiscountForm({ ...discountForm, occurrenceDate: e.target.value })} className="text-xs h-9" data-testid="input-falta-date" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor Calculado (R$)</label>
+                        <Input type="number" step="0.01" value={discountForm.amount} readOnly className="text-xs h-9 bg-red-50 font-bold text-red-700" data-testid="input-falta-amount" />
+                      </div>
+                    </div>
+                    <div className="mt-2 bg-neutral-50 rounded-md p-2">
+                      <p className="text-[10px] text-neutral-500">
+                        <span className="font-semibold">Cálculo:</span> Salário Base (R$ {CCT_SP_2025.salarioBase.toFixed(2)}) ÷ 30 = R$ {(CCT_SP_2025.salarioBase / 30).toFixed(2)}/dia × {discountForm.numFaltas} falta(s) + DSR proporcional (1/6)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => {
+                      const dateStr = discountForm.occurrenceDate ? ` em ${new Date(discountForm.occurrenceDate + "T12:00:00").toLocaleDateString("pt-BR")}` : "";
+                      const desc = `${discountForm.numFaltas} falta(s)${dateStr} — Dia + DSR proporcional`;
+                      discountForm.description = desc;
+                      addDiscountMut.mutate();
+                    }} disabled={!discountForm.amount || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 gap-1.5" data-testid="button-save-falta">
+                      {addDiscountMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                      Lançar Falta
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => { setDiscountCategory(null); setShowDiscountForm(false); }}>Cancelar</Button>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor (R$)</label>
-                  <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="50.00" className="text-xs h-9" data-testid="input-discount-amount" />
+              ) : (
+                <div className="space-y-3" data-testid={`form-${discountCategory}`}>
+                  <div className="bg-white border border-neutral-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      {discountCategory === "multa" ? <AlertTriangle className="w-4 h-4 text-amber-600" /> : <Fuel className="w-4 h-4 text-blue-600" />}
+                      <span className="text-xs font-bold text-neutral-700 uppercase tracking-wide">{discountCategory === "multa" ? "Multa / Avaria" : "Abastecimento Indevido"}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {discountCategory === "multa" && (
+                        <div>
+                          <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Tipo</label>
+                          <select value={discountForm.type} onChange={(e) => setDiscountForm({ ...discountForm, type: e.target.value })} className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-xs bg-white" data-testid="select-multa-type">
+                            <option value="Multa de trânsito">Multa de trânsito</option>
+                            <option value="Dano a equipamento">Dano a equipamento</option>
+                            <option value="Avaria na viatura">Avaria na viatura</option>
+                            <option value="Outro">Outro</option>
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Descrição</label>
+                        <Input value={discountForm.description} onChange={(e) => setDiscountForm({ ...discountForm, description: e.target.value })} placeholder={discountCategory === "multa" ? "Ex: Multa radar BR-101 viatura UER7D08" : "Ex: Abastecimento dia 15/03 - R$ a mais"} className="text-xs h-9" data-testid="input-occurrence-description" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor (R$)</label>
+                        <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="150.00" className="text-xs h-9" data-testid="input-occurrence-amount" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => addDiscountMut.mutate()} disabled={!discountForm.amount || !discountForm.description || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 gap-1.5" data-testid="button-save-occurrence">
+                      {addDiscountMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                      Lançar Desconto
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => { setDiscountCategory(null); setShowDiscountForm(false); }}>Cancelar</Button>
+                  </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {summary && (
+            <div className="border border-indigo-200 rounded-xl overflow-hidden" data-testid="card-horas-extras">
+              <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <Clock className="w-3.5 h-3.5 text-indigo-700" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wider text-indigo-800 font-bold">Horas Extras (HE)</span>
+                </div>
+                <span className="text-[10px] text-indigo-600 font-medium">50% Folha + 50% Bônus</span>
               </div>
-              <div className="flex gap-2 mt-3">
-                <Button size="sm" onClick={() => addDiscountMut.mutate()} disabled={!discountForm.amount || !discountForm.description || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 gap-1.5" data-testid="button-save-discount">
-                  {addDiscountMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
-                  {addDiscountMut.isPending ? "Salvando..." : "Lançar Desconto"}
-                </Button>
-                <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setShowDiscountForm(false)}>Cancelar</Button>
+              <div className="p-3 space-y-3">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Total de Horas Extras no Mês</label>
+                    <Input type="number" min="0" step="0.5" value={heHours} onChange={(e) => setHeHours(e.target.value)} placeholder="Ex: 12" className="text-xs h-9" data-testid="input-he-hours" />
+                  </div>
+                  {heHours && Number(heHours) > 0 && (() => {
+                    const heVal = CCT_SP_2025.horaExtraValor;
+                    const totalHE = +(Number(heHours) * heVal * 1.5).toFixed(2);
+                    const folha = +(totalHE / 2).toFixed(2);
+                    const bonus = +(totalHE - folha).toFixed(2);
+                    return (
+                      <div className="flex-1 bg-indigo-50/50 border border-indigo-100 rounded-lg p-3">
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[9px] uppercase tracking-wide text-neutral-500 font-bold">Total HE</p>
+                            <p className="text-sm font-bold text-indigo-700 tabular-nums">{fmtR(totalHE)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] uppercase tracking-wide text-emerald-600 font-bold">Folha (50%)</p>
+                            <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtR(folha)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] uppercase tracking-wide text-amber-600 font-bold">Bônus (50%)</p>
+                            <p className="text-sm font-bold text-amber-700 tabular-nums">{fmtR(bonus)}</p>
+                          </div>
+                        </div>
+                        <p className="text-[9px] text-neutral-400 text-center mt-1.5">
+                          {heHours}h × R$ {heVal.toFixed(2)} × 1.5 = {fmtR(totalHE)} → Metade folha, metade extra-folha
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           )}
