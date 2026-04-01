@@ -9644,13 +9644,17 @@ Regras:
         agent.horas_trabalhadas = timesheetHoursByEmployee[agent.id] || 0;
       });
 
+      const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
+
       const byMission = items.map((b: any) => {
         const fat = calcFat(b);
         const desp = Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
         const pag = Number(b.pag_total || 0);
         const lucro = fat - pag - desp;
+        const so = osLookup.get(b.service_order_id);
         return {
         id: b.id,
+        os_number: so?.osNumber || b.os_number || null,
         data: b.data_missao || b.created_at,
         origem: b.origem,
         destino: b.destino,
@@ -9663,12 +9667,22 @@ Regras:
         fat_acionamento: Number(b.fat_acionamento || 0),
         fat_hora_extra: Number(b.fat_hora_extra || 0),
         fat_km: Number(b.fat_km || 0),
+        fat_adicional_noturno: Number(b.fat_adicional_noturno || 0),
+        fat_estadia: Number(b.fat_estadia || 0),
+        fat_pernoite: Number(b.fat_pernoite || 0),
         pag_total: pag,
+        pag_vrp: Number(b.pag_vrp || 0),
         despesas: desp,
+        despesas_pedagio: Number(b.despesas_pedagio || 0),
+        despesas_combustivel: Number(b.despesas_combustivel || 0),
         lucro,
         margem: fat > 0 ? Math.round((lucro / fat) * 10000) / 100 : 0,
         km_total: Number(b.km_total || 0),
+        km_carregado: Number(b.km_carregado || 0),
+        km_franquia: Number(b.km_franquia || 0),
+        km_excedente: Number(b.km_excedente || 0),
         horas_trabalhadas: Number(b.horas_trabalhadas || 0),
+        horas_missao: Number(b.horas_missao || 0),
         boletim: b.boletim_numero,
         status: b.status,
         client_name: b.client_name,

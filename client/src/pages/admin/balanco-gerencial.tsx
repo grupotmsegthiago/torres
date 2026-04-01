@@ -1,12 +1,12 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
-  Calendar, ChevronLeft, ChevronRight, BarChart3, ArrowUpRight,
+  Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
   Trophy,
 } from "lucide-react";
@@ -1030,6 +1030,7 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
 function MissoesTab({ missions }: { missions: any[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const canceladas = missions.filter(m => m.status === "CANCELADO");
+  const fmtH = (v: number) => { const h = Math.floor(v); const m = Math.round((v - h) * 60); return `${h}h${m.toString().padStart(2, "0")}`; };
   return (
     <div className="space-y-4" data-testid="panel-missoes">
       {canceladas.length > 0 && (
@@ -1046,9 +1047,9 @@ function MissoesTab({ missions }: { missions: any[] }) {
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-neutral-200">
           <h4 className="text-sm font-black text-neutral-900 uppercase flex items-center gap-2">
-            <Crosshair size={16} /> Lucratividade por Missão
+            <Crosshair size={16} /> Relatório Detalhado por Missão
           </h4>
-          <p className="text-xs text-neutral-400 font-bold uppercase mt-1">{missions.length} missões no período</p>
+          <p className="text-xs text-neutral-400 font-bold uppercase mt-1">{missions.length} missões no período · Clique em uma linha para expandir</p>
         </div>
 
         {missions.length === 0 ? (
@@ -1057,114 +1058,165 @@ function MissoesTab({ missions }: { missions: any[] }) {
             <p className="text-sm font-bold uppercase">Nenhuma missão no período</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full" data-testid="table-missoes">
-              <thead>
-                <tr className="bg-neutral-50 border-b border-neutral-200">
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Data</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Boletim</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Status</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Cliente</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Rota</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Viatura</th>
-                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Agente</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Fat.</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Custo</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Lucro</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Margem</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">KM</th>
-                </tr>
-              </thead>
-              <tbody>
-                {missions.map(m => {
-                  const custoTotal = m.pag_total + m.despesas;
-                  const isCancelada = m.status === "CANCELADO";
-                  return (
-                    <Fragment key={m.id}>
-                      <tr
-                        className={`border-b transition-colors cursor-pointer ${isCancelada ? "bg-red-50/60 border-red-100 hover:bg-red-50" : "border-neutral-100 hover:bg-neutral-50"}`}
-                        onClick={() => isCancelada ? setExpandedId(expandedId === m.id ? null : m.id) : null}
-                        data-testid={`row-mission-${m.id}`}>
-                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
-                          {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-black text-neutral-900">{m.boletim || "-"}</td>
-                        <td className="px-3 py-2.5">
-                          {isCancelada ? (
-                            <Badge className="bg-red-600 text-white text-[10px] font-black px-1.5 py-0 border-0 hover:bg-red-600">CANCELADA</Badge>
-                          ) : (
-                            <Badge className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0 border-0 hover:bg-emerald-100">OK</Badge>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[120px] truncate">{m.client_name || "-"}</td>
-                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
-                          <span className="max-w-[100px] truncate block">{m.origem || "-"} → {m.destino || "-"}</span>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-black text-neutral-700">{m.placa_viatura || "-"}</td>
-                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[100px] truncate">{m.vigilante || "-"}</td>
-                        <td className={`px-3 py-2.5 text-xs font-black font-mono text-right ${isCancelada ? "text-red-700" : "text-green-700"}`}>
-                          {fmt(m.fat_total)}
-                          {isCancelada && <span className="block text-[10px] font-bold text-red-500">Ressarcimento</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-black text-red-600 font-mono text-right">{fmt(custoTotal)}</td>
-                        <td className={`px-3 py-2.5 text-xs font-black font-mono text-right ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</td>
-                        <td className="px-3 py-2.5 text-right">
-                          <Badge className={`text-xs font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
-                            {fmtPct(m.margem)}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-500 font-mono text-right">{m.km_total.toLocaleString("pt-BR")}</td>
-                      </tr>
-                      {isCancelada && expandedId === m.id && (
-                        <tr key={`${m.id}-detail`} className="bg-red-50 border-b border-red-100">
-                          <td colSpan={12} className="px-4 py-3">
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-black text-red-800 uppercase">Memória de Cálculo - Cancelamento</p>
-                              {m.observacoes && <p className="text-xs font-bold text-red-700">{m.observacoes}</p>}
-                              <div className="flex gap-4 text-xs font-bold text-red-600">
-                                {m.fat_acionamento > 0 && <span>Acionamento: {fmt(m.fat_acionamento)}</span>}
-                                {m.fat_hora_extra > 0 && <span>HE: {fmt(m.fat_hora_extra)}</span>}
-                                {m.fat_km > 0 && <span>KM Extra: {fmt(m.fat_km)}</span>}
-                              </div>
-                              <p className="text-[10px] font-bold text-red-400 uppercase">Clique na linha para fechar</p>
-                            </div>
-                          </td>
-                        </tr>
+          <div className="divide-y divide-neutral-100">
+            {missions.map(m => {
+              const custoTotal = m.pag_total + m.despesas;
+              const isCancelada = m.status === "CANCELADO";
+              const isExpanded = expandedId === m.id;
+              return (
+                <div key={m.id} data-testid={`row-mission-${m.id}`}>
+                  <button
+                    className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${isCancelada ? "bg-red-50/40 hover:bg-red-50" : "hover:bg-neutral-50"}`}
+                    onClick={() => setExpandedId(isExpanded ? null : m.id)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {isExpanded ? <ChevronDown size={14} className="text-neutral-400 shrink-0" /> : <ChevronRight size={14} className="text-neutral-400 shrink-0" />}
+                      <span className="text-xs font-black text-neutral-900 shrink-0">{m.os_number || m.boletim || "-"}</span>
+                      <span className="text-[10px] text-neutral-400 shrink-0">
+                        {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
+                      </span>
+                      {isCancelada ? (
+                        <Badge className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0 border-0 hover:bg-red-600 shrink-0">CANCELADA</Badge>
+                      ) : m.status === "APROVADA" ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0 border-0 hover:bg-emerald-100 shrink-0">APROVADA</Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0 border-0 hover:bg-amber-100 shrink-0">{m.status || "CALC"}</Badge>
                       )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-neutral-50 border-t-2 border-neutral-300">
-                  <td colSpan={7} className="px-3 py-3 text-xs font-black text-neutral-700 uppercase">Total ({missions.length} missões{canceladas.length > 0 ? ` | ${canceladas.length} cancelada${canceladas.length > 1 ? "s" : ""}` : ""})</td>
-                  <td className="px-3 py-3 text-xs font-black text-green-700 font-mono text-right">
-                    {fmt(missions.reduce((a: number, m: any) => a + m.fat_total, 0))}
-                  </td>
-                  <td className="px-3 py-3 text-xs font-black text-red-600 font-mono text-right">
-                    {fmt(missions.reduce((a: number, m: any) => a + m.pag_total + m.despesas, 0))}
-                  </td>
-                  <td className="px-3 py-3 text-xs font-black text-blue-700 font-mono text-right">
-                    {fmt(missions.reduce((a: number, m: any) => a + m.lucro, 0))}
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    {(() => {
-                      const totalFat = missions.reduce((a: number, m: any) => a + m.fat_total, 0);
-                      const totalLucro = missions.reduce((a: number, m: any) => a + m.lucro, 0);
-                      const avgMargem = totalFat > 0 ? (totalLucro / totalFat) * 100 : 0;
-                      return (
-                        <Badge className={`text-xs font-black ${avgMargem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : avgMargem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
-                          {fmtPct(avgMargem)}
+                      <span className="text-xs text-neutral-500 truncate">{m.client_name || "-"}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-bold text-neutral-500">{m.placa_viatura || "-"}</span>
+                      <span className={`text-xs font-black font-mono ${isCancelada ? "text-red-700" : "text-green-700"}`}>{fmt(m.fat_total)}</span>
+                      <span className={`text-xs font-black font-mono ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</span>
+                      <Badge className={`text-[10px] font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                        {fmtPct(m.margem)}
+                      </Badge>
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className={`px-6 pb-4 pt-1 ${isCancelada ? "bg-red-50/30" : "bg-neutral-50/50"}`}>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">OS / Boletim</p>
+                          <p className="font-black text-neutral-800">{m.os_number || "-"} {m.boletim ? `· ${m.boletim}` : ""}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Data</p>
+                          <p className="font-bold text-neutral-700">{m.data ? new Date(m.data).toLocaleDateString("pt-BR") : "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Cliente</p>
+                          <p className="font-bold text-neutral-700">{m.client_name || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Viatura</p>
+                          <p className="font-black text-neutral-800">{m.placa_viatura || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Agente 01</p>
+                          <p className="font-bold text-neutral-700">{m.vigilante || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Agente 02</p>
+                          <p className="font-bold text-neutral-700">{m.vigilante2 || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Origem</p>
+                          <p className="font-bold text-neutral-700 truncate max-w-[200px]" title={m.origem}>{m.origem || "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Destino</p>
+                          <p className="font-bold text-neutral-700 truncate max-w-[200px]" title={m.destino}>{m.destino || "-"}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">KM Total</p>
+                          <p className="font-black text-neutral-800">{m.km_total?.toLocaleString("pt-BR")} km</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">KM Franquia / Excedente</p>
+                          <p className="font-bold text-neutral-700">{m.km_franquia || 0} / {m.km_excedente || 0} km</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Horas Missão</p>
+                          <p className="font-black text-neutral-800">{fmtH(m.horas_missao || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Horas Trabalhadas</p>
+                          <p className="font-bold text-neutral-700">{fmtH(m.horas_trabalhadas || 0)}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-4">
+                        <div className="bg-white rounded-lg border border-neutral-200 p-3">
+                          <p className="text-[10px] font-black text-green-700 uppercase tracking-wide mb-2">Faturamento</p>
+                          <div className="space-y-1 text-xs">
+                            {m.fat_acionamento > 0 && <div className="flex justify-between"><span className="text-neutral-500">Acionamento</span><span className="font-bold text-neutral-800">{fmt(m.fat_acionamento)}</span></div>}
+                            {m.fat_km > 0 && <div className="flex justify-between"><span className="text-neutral-500">KM Extra</span><span className="font-bold text-neutral-800">{fmt(m.fat_km)}</span></div>}
+                            {m.fat_hora_extra > 0 && <div className="flex justify-between"><span className="text-neutral-500">Hora Extra</span><span className="font-bold text-neutral-800">{fmt(m.fat_hora_extra)}</span></div>}
+                            {m.fat_adicional_noturno > 0 && <div className="flex justify-between"><span className="text-neutral-500">Adic. Noturno</span><span className="font-bold text-neutral-800">{fmt(m.fat_adicional_noturno)}</span></div>}
+                            {m.fat_estadia > 0 && <div className="flex justify-between"><span className="text-neutral-500">Estadia</span><span className="font-bold text-neutral-800">{fmt(m.fat_estadia)}</span></div>}
+                            {m.fat_pernoite > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pernoite</span><span className="font-bold text-neutral-800">{fmt(m.fat_pernoite)}</span></div>}
+                            <div className="flex justify-between border-t border-neutral-200 pt-1 mt-1"><span className="font-black text-green-700">TOTAL FATURAMENTO</span><span className="font-black text-green-700">{fmt(m.fat_total)}</span></div>
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg border border-neutral-200 p-3">
+                          <p className="text-[10px] font-black text-red-700 uppercase tracking-wide mb-2">Custos</p>
+                          <div className="space-y-1 text-xs">
+                            {m.pag_vrp > 0 && <div className="flex justify-between"><span className="text-neutral-500">VRP Agentes</span><span className="font-bold text-neutral-800">{fmt(m.pag_vrp)}</span></div>}
+                            {m.pag_total > 0 && m.pag_total !== m.pag_vrp && <div className="flex justify-between"><span className="text-neutral-500">Pagamento Total</span><span className="font-bold text-neutral-800">{fmt(m.pag_total)}</span></div>}
+                            {m.despesas_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio</span><span className="font-bold text-neutral-800">{fmt(m.despesas_pedagio)}</span></div>}
+                            {m.despesas_combustivel > 0 && <div className="flex justify-between"><span className="text-neutral-500">Combustível</span><span className="font-bold text-neutral-800">{fmt(m.despesas_combustivel)}</span></div>}
+                            {m.despesas > 0 && m.despesas !== (m.despesas_pedagio || 0) + (m.despesas_combustivel || 0) && <div className="flex justify-between"><span className="text-neutral-500">Outras Despesas</span><span className="font-bold text-neutral-800">{fmt(m.despesas - (m.despesas_pedagio || 0) - (m.despesas_combustivel || 0))}</span></div>}
+                            <div className="flex justify-between border-t border-neutral-200 pt-1 mt-1"><span className="font-black text-red-700">TOTAL CUSTOS</span><span className="font-black text-red-700">{fmt(custoTotal)}</span></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-4 bg-white rounded-lg border border-neutral-200 p-3">
+                        <div className="flex-1">
+                          <div className="flex justify-between text-xs">
+                            <span className={`font-black ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>RESULTADO LÍQUIDO</span>
+                            <span className={`font-black text-sm ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</span>
+                          </div>
+                        </div>
+                        <Badge className={`text-xs font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                          Margem {fmtPct(m.margem)}
                         </Badge>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-3 py-3 text-xs font-black text-neutral-500 font-mono text-right">
-                    {missions.reduce((a: number, m: any) => a + m.km_total, 0).toLocaleString("pt-BR")}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                      </div>
+                      {m.observacoes && (
+                        <div className="mt-2 text-xs text-neutral-500 italic">Obs: {m.observacoes}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="bg-neutral-50 border-t-2 border-neutral-300 px-4 py-3 flex items-center justify-between">
+              <span className="text-xs font-black text-neutral-700 uppercase">
+                Total ({missions.length} missões{canceladas.length > 0 ? ` · ${canceladas.length} cancelada${canceladas.length > 1 ? "s" : ""}` : ""})
+              </span>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-black text-green-700 font-mono">{fmt(missions.reduce((a: number, m: any) => a + m.fat_total, 0))}</span>
+                <span className="text-xs font-black text-red-600 font-mono">{fmt(missions.reduce((a: number, m: any) => a + m.pag_total + m.despesas, 0))}</span>
+                <span className="text-xs font-black text-blue-700 font-mono">{fmt(missions.reduce((a: number, m: any) => a + m.lucro, 0))}</span>
+                {(() => {
+                  const totalFat = missions.reduce((a: number, m: any) => a + m.fat_total, 0);
+                  const totalLucro = missions.reduce((a: number, m: any) => a + m.lucro, 0);
+                  const avgMargem = totalFat > 0 ? (totalLucro / totalFat) * 100 : 0;
+                  return (
+                    <Badge className={`text-xs font-black ${avgMargem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : avgMargem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                      {fmtPct(avgMargem)}
+                    </Badge>
+                  );
+                })()}
+                <span className="text-xs font-black text-neutral-500 font-mono">{missions.reduce((a: number, m: any) => a + m.km_total, 0).toLocaleString("pt-BR")} km</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
