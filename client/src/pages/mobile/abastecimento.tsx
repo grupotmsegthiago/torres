@@ -28,8 +28,11 @@ export default function MobileAbastecimentoPage() {
   const [captureMode, setCaptureMode] = useState<CaptureMode | null>(null);
   const [photos, setPhotos] = useState<Record<PhotoKey, string>>({ pumpPhoto: "", receiptPhoto: "", odometerPhoto: "" });
   const [km, setKm] = useState("");
+  const [fuelType, setFuelType] = useState<"gasolina" | "etanol">("gasolina");
   const [liters, setLiters] = useState("");
   const [costPerLiter, setCostPerLiter] = useState("");
+  const [etanolPrice, setEtanolPrice] = useState("");
+  const [gasolinaPrice, setGasolinaPrice] = useState("");
   const [station, setStation] = useState("");
   const [oilAlert, setOilAlert] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -127,7 +130,7 @@ export default function MobileAbastecimentoPage() {
         body: JSON.stringify({
           vehicleId: selectedVehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
           costPerLiter: parseFloat(costPerLiter) || undefined, totalCost,
-          station, ...photos, platePhoto,
+          fuelType, station, ...photos, platePhoto,
           latitude: coords.lat.toString(), longitude: coords.lng.toString(),
           address: geoAddress || undefined,
         }),
@@ -411,6 +414,59 @@ export default function MobileAbastecimentoPage() {
                   </div>
                 );
               })}
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Tipo de Combustível</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setFuelType("gasolina")}
+                  data-testid="btn-fuel-gasolina"
+                  className={`py-3 rounded-xl font-black text-sm uppercase tracking-wider border-2 transition-all ${fuelType === "gasolina" ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 bg-white text-neutral-400"}`}
+                >
+                  ⛽ Gasolina
+                </button>
+                <button
+                  onClick={() => setFuelType("etanol")}
+                  data-testid="btn-fuel-etanol"
+                  className={`py-3 rounded-xl font-black text-sm uppercase tracking-wider border-2 transition-all ${fuelType === "etanol" ? "border-green-500 bg-green-50 text-green-700" : "border-neutral-200 bg-white text-neutral-400"}`}
+                >
+                  🌿 Etanol
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Comparar Preços</p>
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Gasolina</label>
+                    <input type="number" step="0.01" value={gasolinaPrice} onChange={e => setGasolinaPrice(e.target.value)} placeholder="0.00"
+                      className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-gasolina-price" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Etanol</label>
+                    <input type="number" step="0.01" value={etanolPrice} onChange={e => setEtanolPrice(e.target.value)} placeholder="0.00"
+                      className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-etanol-price" />
+                  </div>
+                </div>
+                {gasolinaPrice && etanolPrice && parseFloat(gasolinaPrice) > 0 && (
+                  (() => {
+                    const ratio = parseFloat(etanolPrice) / parseFloat(gasolinaPrice);
+                    const etanolVale = ratio <= 0.7;
+                    return (
+                      <div className={`mt-3 rounded-xl p-3 text-center border ${etanolVale ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                        <p className="text-[10px] font-bold text-neutral-500 uppercase">Relação Etanol/Gasolina</p>
+                        <p className={`text-2xl font-black font-mono ${etanolVale ? "text-green-700" : "text-amber-700"}`}>{(ratio * 100).toFixed(1)}%</p>
+                        <p className={`text-xs font-bold mt-1 ${etanolVale ? "text-green-600" : "text-amber-600"}`}>
+                          {etanolVale ? "✅ ETANOL compensa! (≤ 70%)" : "⛽ GASOLINA é melhor (> 70%)"}
+                        </p>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">
