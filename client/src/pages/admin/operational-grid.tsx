@@ -4777,7 +4777,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const totOutros = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
                             const totCusto = totPag + totComb + totPed + totOutros;
                             const totResult = totFat - totCusto;
+                            const META_VTR = 1800;
+                            const metaBatida = totFat >= META_VTR;
                             const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+                            const statusLabel = (s: string) => {
+                              if (s === "concluida") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
+                              if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
+                              return { icon: "⟳", cls: "text-blue-400", label: "Em andamento" };
+                            };
                             return (
                               <div className="mt-0.5" data-testid={`live-cost-${v.id}`}>
                                 {vtrWithCost.length > 1 && (
@@ -4786,16 +4793,27 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <Tooltip>
                                     <TooltipTrigger>
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 cursor-help">
+                                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 cursor-help ${metaBatida ? "text-emerald-800 bg-emerald-100 border-2 border-emerald-400 ring-1 ring-emerald-300" : "text-emerald-700 bg-emerald-50 border border-emerald-200"}`}>
                                         <span>▲</span> {fmtBRL(totFat)}
+                                        {metaBatida && <span className="ml-0.5">🏆</span>}
                                       </span>
                                     </TooltipTrigger>
                                     <TooltipContent side="bottom" className="text-xs max-w-xs">
                                       <p className="font-bold">Faturamento VTR (Hoje)</p>
-                                      {vtrWithCost.map(g => (
-                                        <p key={g.id}>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</p>
-                                      ))}
+                                      {vtrWithCost.map(g => {
+                                        const st = statusLabel(g.status);
+                                        return (
+                                          <p key={g.id} className="flex items-center gap-1">
+                                            <span className={st.cls}>{st.icon}</span>
+                                            <span>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
+                                            <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
+                                          </p>
+                                        );
+                                      })}
                                       {vtrWithCost.length > 1 && <p className="font-bold border-t border-neutral-600 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
+                                      <div className={`border-t border-neutral-600 pt-1 mt-1 font-bold ${metaBatida ? "text-emerald-400" : "text-amber-400"}`}>
+                                        Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ META BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
+                                      </div>
                                     </TooltipContent>
                                   </Tooltip>
                                   <Tooltip>
@@ -4836,6 +4854,20 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     </TooltipTrigger>
                                     <TooltipContent>DRE Operacional desta OS</TooltipContent>
                                   </Tooltip>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1.5">
+                                  <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
+                                    <div
+                                      className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-amber-400" : "bg-blue-400"}`}
+                                      style={{ width: `${Math.min((totFat / META_VTR) * 100, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[9px] font-bold text-neutral-400">{Math.round((totFat / META_VTR) * 100)}%</span>
+                                  {metaBatida && (
+                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1 py-0.5 uppercase" data-testid={`meta-batida-${v.id}`}>
+                                      Meta Batida!
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
