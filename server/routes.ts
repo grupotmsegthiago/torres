@@ -10838,9 +10838,18 @@ Regras:
         const horasPontoOp = empPontos.reduce((acc: number, p: any) => acc + (Number(p.horas_decimal) || 0), 0);
 
         const empTimesheets = mesTimesheets.filter((ts: any) => ts.employeeId === emp.id);
+        const nowBRT = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+        const todayDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
         const horasTimesheet = empTimesheets.reduce((acc: number, ts: any) => {
           if (ts.hoursWorked != null && Number(ts.hoursWorked) > 0) return acc + Number(ts.hoursWorked);
-          return acc + parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+          if (ts.checkOut && ts.checkOut.length > 0) return acc + parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+          if (ts.checkIn && (!ts.checkOut || ts.checkOut.length === 0)) {
+            const tsDateStr = ts.date ? (typeof ts.date === "string" ? ts.date.slice(0, 10) : new Date(ts.date).toISOString().slice(0, 10)) : "";
+            if (tsDateStr === todayDateStr) {
+              return acc + parseTimeToHours(ts.checkIn, nowBRT);
+            }
+          }
+          return acc;
         }, 0);
 
         const totalHoras = horasPontoOp + horasTimesheet;
@@ -10853,9 +10862,17 @@ Regras:
         const custoEmpresa = +(custoHoraExtra * 0.5).toFixed(2);
 
         const timesheetRegistros = empTimesheets.map((ts: any) => {
-          const hours = ts.hoursWorked != null && Number(ts.hoursWorked) > 0
-            ? Number(ts.hoursWorked)
-            : parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+          let hours = 0;
+          if (ts.hoursWorked != null && Number(ts.hoursWorked) > 0) {
+            hours = Number(ts.hoursWorked);
+          } else if (ts.checkOut && ts.checkOut.length > 0) {
+            hours = parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+          } else if (ts.checkIn && (!ts.checkOut || ts.checkOut.length === 0)) {
+            const tsDateStr2 = ts.date ? (typeof ts.date === "string" ? ts.date.slice(0, 10) : new Date(ts.date).toISOString().slice(0, 10)) : "";
+            if (tsDateStr2 === todayDateStr) {
+              hours = parseTimeToHours(ts.checkIn, nowBRT);
+            }
+          }
           const tsDate = new Date(ts.date);
           tsDate.setHours(
             ts.checkIn ? Number(ts.checkIn.split(":")[0]) : 8,
