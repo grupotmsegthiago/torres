@@ -4781,12 +4781,23 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const META_VTR = 1800;
                             const metaBatida = totFat >= META_VTR;
                             const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-                            const statusLabel = (s: string) => {
+                            const statusLabel = (g2: GridItem) => {
+                              const s = g2.status;
+                              const ms = g2.missionStatus;
                               if (s === "concluida") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
                               if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
                               if (s === "agendada") return { icon: "📅", cls: "text-blue-300", label: "Agendada" };
-                              if (s === "aberta") return { icon: "○", cls: "text-neutral-400", label: "Aberta" };
-                              return { icon: "⟳", cls: "text-sky-400", label: "Em andamento" };
+                              if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista")
+                                return { icon: "📍", cls: "text-orange-400", label: "Na Origem" };
+                              if (ms === "em_transito_origem")
+                                return { icon: "🚗", cls: "text-sky-400", label: "Em Trânsito Origem" };
+                              if (ms === "em_transito_destino" || ms === "iniciar_missao")
+                                return { icon: "🚛", cls: "text-sky-400", label: "Em Trânsito" };
+                              if (ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno")
+                                return { icon: "🏁", cls: "text-purple-400", label: "No Destino" };
+                              if (ms === "retorno_base" || ms === "chegada_base")
+                                return { icon: "🏠", cls: "text-neutral-400", label: "Retorno Base" };
+                              return { icon: "⟳", cls: "text-sky-400", label: "Em Operação" };
                             };
                             return (
                               <div className="mt-0.5" data-testid={`live-cost-${v.id}`}>
@@ -4804,7 +4815,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <TooltipContent side="bottom" className="text-xs max-w-xs">
                                       <p className="font-bold">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
-                                        const st = statusLabel(g.status);
+                                        const st = statusLabel(g);
                                         return (
                                           <p key={g.id} className="flex items-center gap-1">
                                             <span className={st.cls}>{st.icon}</span>
