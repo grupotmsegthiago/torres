@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Input } from "@/components/ui/input";
-import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calculator, Fuel, User, FileText, MapPin, Loader2, Navigation, RotateCw } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 
 const DEFAULTS = {
@@ -47,8 +48,10 @@ export default function CotacaoGastoPage() {
     }
   };
 
-  const tryCalculateRoute = useCallback(async (origin: string, destination: string) => {
-    if (!origin || !destination) return;
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const doCalculateRoute = useCallback(async (origin: string, destination: string) => {
+    if (!origin || !destination || origin.length < 3 || destination.length < 3) return;
     setCalculatingRoute(true);
     const info = await calculateRouteInfo(origin, destination);
     setCalculatingRoute(false);
@@ -58,6 +61,17 @@ export default function CotacaoGastoPage() {
       setParams(prev => ({ ...prev, kmPercurso: kmRound * 2 }));
     }
   }, []);
+
+  const tryCalculateRoute = useCallback((origin: string, destination: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doCalculateRoute(origin, destination), 800);
+  }, [doCalculateRoute]);
+
+  useEffect(() => {
+    if (params.origem && params.destino && params.origem.length >= 3 && params.destino.length >= 3 && !routeInfo) {
+      tryCalculateRoute(params.origem, params.destino);
+    }
+  }, [params.origem, params.destino]);
 
   const custoCombustivelKm = params.kmPorLitro > 0 ? params.valorLitro / params.kmPorLitro : 0;
   const custoCombustivelMissao = custoCombustivelKm * params.kmPercurso;
@@ -267,6 +281,19 @@ export default function CotacaoGastoPage() {
                     <Loader2 className="w-3 h-3 animate-spin" /> Calculando rota...
                   </div>
                 )}
+                {!calculatingRoute && !routeInfo && params.origem && params.destino && (
+                  <div className="mt-3 pt-3 border-t border-neutral-100">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => doCalculateRoute(params.origem, params.destino)}
+                      data-testid="btn-calcular-rota"
+                    >
+                      <RotateCw size={12} className="mr-1.5" /> Calcular Rota
+                    </Button>
+                  </div>
+                )}
                 {routeInfo && !calculatingRoute && (
                   <div className="mt-3 pt-3 border-t border-neutral-100 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
@@ -283,6 +310,15 @@ export default function CotacaoGastoPage() {
                       <p className="text-[10px] font-bold text-neutral-400 uppercase">Tempo Estimado (trecho)</p>
                       <p className="text-lg font-black text-neutral-900">{routeInfo.durationText}</p>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-[10px] text-neutral-400 hover:text-neutral-600"
+                      onClick={() => doCalculateRoute(params.origem, params.destino)}
+                      data-testid="btn-recalcular-rota"
+                    >
+                      <RotateCw size={10} className="mr-1" /> Recalcular
+                    </Button>
                   </div>
                 )}
               </div>
