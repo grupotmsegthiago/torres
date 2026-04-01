@@ -367,27 +367,27 @@ function toSafeUser(user: any) {
   };
 }
 
-const DEFAULT_REPORT_TEMPLATE = `TORRES VIGILÂNCIA PATRIMONIAL
-OS {{osNumber}} | STATUS: {{transitStatus}}
+const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
+*OS {{osNumber}}* | *STATUS:* {{transitStatus}}
 
-🗓 DATA: {{date}}    HORA: {{time}}
-🛡 OPERAÇÃO: {{statusLabel}}
-🏢 CLIENTE: {{clientName}}
+🗓 *DATA:* {{date}}    *HORA:* {{time}}
+🛡 *OPERAÇÃO:* {{statusLabel}}
+🏢 *CLIENTE:* {{clientName}}
 
-📍 ORIGEM: {{origin}}
-🏁 DESTINO: {{destination}}
+📍 *ORIGEM:* {{origin}}
+🏁 *DESTINO:* {{destination}}
 
-🚛 VEÍCULO: {{driverPlate}}
-👤 MOTORISTA: {{driverName}}
-📞 CONTATO: {{driverPhone}}
+🚛 *VEÍCULO:* {{driverPlate}}
+👤 *MOTORISTA:* {{driverName}}
+📞 *CONTATO:* {{driverPhone}}
 
-🚔 VIATURA: {{vehiclePlate}}
-👮 AGENTE 01: {{agent1}}
-👮 AGENTE 02: {{agent2}}
+🚔 *VIATURA:* {{vehiclePlate}}
+👮 *AGENTE 01:* {{agent1}}
+👮 *AGENTE 02:* {{agent2}}
 
-📈 PROGRESSO DA MISSÃO: {{progress}}%
-📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: {{etapaAvancada}}
-🏙️ LOCALIZAÇÃO: {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+📈 *PROGRESSO DA MISSÃO:* {{progress}}%
+📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* {{etapaAvancada}}
+🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 
 async function ensureSystemSettingsTable() {
   try {

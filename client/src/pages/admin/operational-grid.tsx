@@ -518,27 +518,27 @@ function getFirstLastName(fullName: string | null | undefined): string {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
-const FALLBACK_REPORT_TEMPLATE = `TORRES VIGILÂNCIA PATRIMONIAL
-OS {{osNumber}} | STATUS: {{transitStatus}}
+const FALLBACK_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
+*OS {{osNumber}}* | *STATUS:* {{transitStatus}}
 
-🗓 DATA: {{date}}    HORA: {{time}}
-🛡 OPERAÇÃO: {{statusLabel}}
-🏢 CLIENTE: {{clientName}}
+🗓 *DATA:* {{date}}    *HORA:* {{time}}
+🛡 *OPERAÇÃO:* {{statusLabel}}
+🏢 *CLIENTE:* {{clientName}}
 
-📍 ORIGEM: {{origin}}
-🏁 DESTINO: {{destination}}
+📍 *ORIGEM:* {{origin}}
+🏁 *DESTINO:* {{destination}}
 
-🚛 VEÍCULO: {{driverPlate}}
-👤 MOTORISTA: {{driverName}}
-📞 CONTATO: {{driverPhone}}
+🚛 *VEÍCULO:* {{driverPlate}}
+👤 *MOTORISTA:* {{driverName}}
+📞 *CONTATO:* {{driverPhone}}
 
-🚔 VIATURA: {{vehiclePlate}}
-👮 AGENTE 01: {{agent1}}
-👮 AGENTE 02: {{agent2}}
+🚔 *VIATURA:* {{vehiclePlate}}
+👮 *AGENTE 01:* {{agent1}}
+👮 *AGENTE 02:* {{agent2}}
 
-📈 PROGRESSO DA MISSÃO: {{progress}}%
-📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: {{etapaAvancada}}
-🏙️ LOCALIZAÇÃO: {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+📈 *PROGRESSO DA MISSÃO:* {{progress}}%
+📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* {{etapaAvancada}}
+🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 
 let _cachedReportTemplate: string | null = null;
 let _templateFetchedAt = 0;
@@ -604,10 +604,10 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     const dist = haversineKm(lat, lng, destLat, destLng);
     const roadDist = Math.round(dist * 1.3);
     const eta = calcEta(dist, v.tracker?.speed);
-    etaLine = `\n\n🛣️ DISTÂNCIA ATÉ DESTINO: ${roadDist} km\n⏱️ PREVISÃO DE CHEGADA: ${eta}`;
+    etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${roadDist} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
   }
 
-  const mapsBlock = mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : "";
+  const mapsBlock = mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : "";
 
   return {
     osNumber: os.osNumber || "—",
