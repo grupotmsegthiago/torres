@@ -4228,6 +4228,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
   const [nextOsDetail, setNextOsDetail] = useState<{ os: any; vehicle: TrackedVehicle } | null>(null);
+  const [agendamentosModalOpen, setAgendamentosModalOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const [rowForwardUpdate, setRowForwardUpdate] = useState<any>(null);
   const [rowForwardEmail, setRowForwardEmail] = useState("");
@@ -5078,14 +5079,87 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
         allNext.sort((a, b) => new Date(a.os.scheduledDate).getTime() - new Date(b.os.scheduledDate).getTime());
         if (allNext.length === 0) return null;
 
+        const nextOs = allNext[0];
+        const nextDt = nextOs.os.scheduledDate ? new Date(nextOs.os.scheduledDate) : null;
+        const nextDiff = nextDt ? nextDt.getTime() - Date.now() : 0;
+        const nextIsPast = nextDiff < 0;
+        const nextIsUrgent = nextDiff > 0 && nextDiff < 3600000;
+
         return (
-          <div className="border-t border-neutral-200 bg-blue-50/50 px-4 py-3" data-testid="section-proximos-agendamentos">
-            <div className="flex items-center gap-2 mb-2">
-              <CalendarClock className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-black text-blue-800 uppercase tracking-wide">Próximos Agendamentos</span>
-              <span className="text-[10px] font-bold bg-blue-600 text-white rounded-full px-1.5 py-0.5">{allNext.length}</span>
-            </div>
-            <div className="space-y-2">
+          <div className="border-t border-neutral-200 px-4 py-2" data-testid="section-proximos-agendamentos">
+            <button
+              onClick={() => setAgendamentosModalOpen(true)}
+              className={`w-full flex items-center justify-between rounded-lg px-3 py-2 cursor-pointer transition-all hover:shadow-md border ${
+                nextIsPast ? "border-red-300 bg-red-50 hover:bg-red-100" :
+                nextIsUrgent ? "border-amber-300 bg-amber-50 hover:bg-amber-100" :
+                "border-blue-200 bg-blue-50 hover:bg-blue-100"
+              }`}
+              data-testid="button-open-agendamentos"
+            >
+              <div className="flex items-center gap-2">
+                <CalendarClock className={`w-4 h-4 ${nextIsPast ? "text-red-600" : nextIsUrgent ? "text-amber-600" : "text-blue-600"}`} />
+                <span className="text-[10px] font-black uppercase text-neutral-700">Próximo Agendamento</span>
+                <span className="font-black text-xs text-neutral-900">{nextOs.os.osNumber}</span>
+                {nextDt && (
+                  <span className="text-xs font-bold text-neutral-700">
+                    {nextDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                  </span>
+                )}
+                <span className="text-[11px] text-neutral-500 truncate max-w-[160px]">{nextOs.os.clientName}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${nextIsPast ? "bg-red-200 text-red-800" : nextIsUrgent ? "bg-amber-200 text-amber-800" : "bg-blue-200 text-blue-800"}`}>
+                  {allNext.length}
+                </span>
+                <ChevronRight className="w-4 h-4 text-neutral-400" />
+              </div>
+            </button>
+          </div>
+        );
+      })()}
+    </Card>
+    <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
+
+    <Dialog open={agendamentosModalOpen} onOpenChange={setAgendamentosModalOpen}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <CalendarClock className="w-5 h-5 text-blue-600" />
+            Próximos Agendamentos
+          </DialogTitle>
+        </DialogHeader>
+        {(() => {
+          const allNext: { os: any; veh: TrackedVehicle | null }[] = [];
+          for (const v of vehicles) {
+            for (const u of (v.upcomingOrders || [])) {
+              if (u.scheduledDate && !allNext.find(a => a.os.id === u.id)) {
+                allNext.push({ os: u, veh: v });
+              }
+            }
+          }
+          for (const g of gridData) {
+            if ((g.status === "agendada" || g.status === "aberta") && g.scheduledDate && !allNext.find(a => a.os.id === g.id)) {
+              const veh = vehicles.find(vh => vh.plate === g.vehicle?.plate) || null;
+              allNext.push({
+                os: {
+                  id: g.id, osNumber: g.osNumber, status: g.status, priority: g.priority || "agendada",
+                  scheduledDate: g.scheduledDate, clientName: g.clientName || "—",
+                  origin: g.origin || null, destination: g.destination || null,
+                  employee1Name: g.employee1?.name || null, employee1Phone: g.employee1?.phone || null,
+                  employee2Name: g.employee2?.name || null, employee2Phone: g.employee2?.phone || null,
+                  escortedDriverName: g.escortedDriverName || null, escortedDriverPhone: g.escortedDriverPhone || null,
+                  escortedVehiclePlate: g.escortedVehiclePlate || null, type: "escolta",
+                },
+                veh,
+              });
+            }
+          }
+          allNext.sort((a, b) => new Date(a.os.scheduledDate).getTime() - new Date(b.os.scheduledDate).getTime());
+
+          if (allNext.length === 0) return <p className="text-sm text-neutral-400 text-center py-6">Nenhum agendamento pendente</p>;
+
+          return (
+            <div className="space-y-3">
               {allNext.map((item, idx) => {
                 const { os, veh } = item;
                 const scheduledDt = os.scheduledDate ? new Date(os.scheduledDate) : null;
@@ -5097,67 +5171,105 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const timeStr = h > 0 ? `${h}h${m > 0 ? m + "min" : ""}` : `${m}min`;
 
                 return (
-                  <div
-                    key={os.id}
-                    className={`rounded-lg border-2 p-3 cursor-pointer transition-all hover:shadow-md ${
-                      isPast ? "border-red-300 bg-red-50 hover:bg-red-100" :
-                      isUrgent ? "border-amber-300 bg-amber-50 hover:bg-amber-100" :
-                      "border-blue-200 bg-white hover:bg-blue-50"
-                    }`}
-                    onClick={() => setNextOsDetail({ os, vehicle: veh || { id: 0, plate: "—", model: "—", brand: "", color: null, status: "", hasTracker: false, trackerId: null, trackerType: "", tracker: null, activeOs: null, scheduledOs: null, upcomingOrders: [] } })}
-                    data-testid={`card-prox-agendamento-${os.id}`}
-                  >
+                  <div key={os.id} className={`rounded-xl border-2 p-4 space-y-3 transition-colors ${
+                    idx === 0 ? (isPast ? "border-red-300 bg-red-50/50" : isUrgent ? "border-amber-300 bg-amber-50/50" : "border-blue-300 bg-blue-50/50") : "border-neutral-200 bg-white"
+                  }`} data-testid={`modal-agendamento-${os.id}`}>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {idx === 0 && <span className="text-[9px] font-black bg-neutral-900 text-white px-1.5 py-0.5 rounded uppercase">Próxima</span>}
-                        <span className="font-black text-sm text-neutral-900">{os.osNumber}</span>
-                        <span className="text-xs font-bold text-neutral-600">{os.clientName}</span>
-                        {veh && <span className="text-[10px] text-neutral-400 font-medium">{veh.plate}</span>}
-                        {!veh && <span className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Sem viatura</span>}
-                      </div>
                       <div className="flex items-center gap-2">
+                        {idx === 0 && <span className="text-[9px] font-black bg-neutral-900 text-white px-1.5 py-0.5 rounded uppercase">Próxima</span>}
+                        <span className="font-black text-lg text-neutral-900">{os.osNumber}</span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isPast ? "bg-red-100 text-red-700" : isUrgent ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
                           {isPast ? `Atrasada −${timeStr}` : timeStr}
                         </span>
-                        {scheduledDt && (
-                          <span className="text-sm font-black text-neutral-800">
+                      </div>
+                      {scheduledDt && (
+                        <div className="text-right">
+                          <p className="text-lg font-black text-neutral-800">
                             {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                          </span>
-                        )}
-                        {scheduledDt && (
-                          <span className="text-[10px] text-neutral-500">
-                            {scheduledDt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                          </span>
-                        )}
+                          </p>
+                          <p className="text-[10px] text-neutral-500 font-medium">
+                            {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
+                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-0.5">Cliente</p>
+                        <p className="text-xs font-bold text-neutral-800 truncate">{os.clientName}</p>
+                      </div>
+                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
+                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-0.5">Viatura</p>
+                        <p className="text-xs font-bold text-neutral-800">{veh ? `${veh.plate} — ${veh.model}` : "Sem viatura"}</p>
                       </div>
                     </div>
+
                     {(os.origin || os.destination) && (
-                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-neutral-600">
-                        {os.origin && <span><span className="font-bold text-green-700">DE:</span> {os.origin}</span>}
-                        {os.destination && <span><span className="font-bold text-red-700">PARA:</span> {os.destination}</span>}
+                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
+                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-1">Rota</p>
+                        {os.origin && <p className="text-[11px] text-neutral-700"><span className="font-bold text-green-700">ORIGEM:</span> {os.origin}</p>}
+                        {os.destination && <p className="text-[11px] text-neutral-700 mt-0.5"><span className="font-bold text-red-700">DESTINO:</span> {os.destination}</p>}
                       </div>
                     )}
-                    {(os.employee1Name || os.employee2Name) && (
-                      <div className="flex items-center gap-2 mt-1 text-[11px]">
-                        <Users className="w-3 h-3 text-neutral-400" />
-                        <span className="font-bold text-neutral-700">{[os.employee1Name, os.employee2Name].filter(Boolean).join(" • ")}</span>
+
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {os.employee1Name && (
+                        <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
+                          <Users className="w-3.5 h-3.5 text-neutral-400" />
+                          <span className="text-[11px] font-bold text-neutral-800">{os.employee1Name}</span>
+                          {os.employee1Phone && (
+                            <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
+                              <SiWhatsapp className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {os.employee2Name && (
+                        <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
+                          <Users className="w-3.5 h-3.5 text-neutral-400" />
+                          <span className="text-[11px] font-bold text-neutral-800">{os.employee2Name}</span>
+                          {os.employee2Phone && (
+                            <a href={`https://wa.me/55${os.employee2Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
+                              <SiWhatsapp className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {!os.employee1Name && !os.employee2Name && (
+                        <span className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-200 rounded px-2 py-1">Sem agentes designados</span>
+                      )}
+                    </div>
+
+                    {(os.escortedDriverName || os.escortedVehiclePlate) && (
+                      <div className="flex items-center gap-2 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
+                        <Truck className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <div className="text-[11px]">
+                          {os.escortedDriverName && <span className="font-bold text-neutral-800">{os.escortedDriverName}</span>}
+                          {os.escortedVehiclePlate && <span className="text-neutral-500 ml-2">Placa: {os.escortedVehiclePlate}</span>}
+                        </div>
                       </div>
                     )}
-                    {!os.employee1Name && !os.employee2Name && (
-                      <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-600">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span className="font-bold">Sem agentes designados</span>
-                      </div>
-                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <Link href={`/admin/service-orders?os=${os.id}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full text-xs" data-testid={`button-open-os-modal-${os.id}`}>
+                          <ExternalLink className="w-3.5 h-3.5 mr-1" /> Abrir OS
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-        );
-      })()}
-    </Card>
-    <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
+          );
+        })()}
+        <div className="pt-2">
+          <Button variant="outline" onClick={() => setAgendamentosModalOpen(false)} className="w-full">Fechar</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <Dialog open={!!nextOsDetail} onOpenChange={(v) => { if (!v) setNextOsDetail(null); }}>
       <DialogContent className="max-w-md">
         {nextOsDetail && (() => {
