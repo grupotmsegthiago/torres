@@ -4453,7 +4453,41 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       (o) => (o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
 
-    const vehicleFuelAssigned = new Map<string, { osId: number; timestamp: string }>();
+    const todayStr = new Date().toISOString().split("T")[0];
+    const vehicleFuelCache = new Map<string, number>();
+    try {
+      const { data: allFuelToday } = await supabaseAdmin.from("financial_transactions")
+        .select("amount, description")
+        .eq("origin_type", "fueling")
+        .gte("due_date", todayStr)
+        .lte("due_date", todayStr);
+      if (allFuelToday) {
+        for (const fr of allFuelToday) {
+          const desc = (fr.description || "").toUpperCase();
+          for (const v of allVehicles) {
+            const plate = v.plate?.toUpperCase() || "";
+            if (plate && desc.includes(plate)) {
+              vehicleFuelCache.set(plate, (vehicleFuelCache.get(plate) || 0) + Number(fr.amount || 0));
+            }
+          }
+        }
+      }
+    } catch (_e) {}
+
+    const vehicleFuelFirstOS = new Map<string, number>();
+    for (const o of activeOrders) {
+      if (!o.vehicleId) continue;
+      const v = allVehicles.find(vv => vv.id === o.vehicleId);
+      const vPlate = v?.plate?.toUpperCase() || "";
+      if (!vPlate) continue;
+      const oDate = o.scheduledDate
+        ? new Date(o.scheduledDate).toISOString().split("T")[0]
+        : todayStr;
+      const fuelKey = `${vPlate}:${oDate}`;
+      if (!vehicleFuelFirstOS.has(fuelKey)) {
+        vehicleFuelFirstOS.set(fuelKey, o.id);
+      }
+    }
 
     const enriched = await Promise.all(
       activeOrders.map(async (o) => {
@@ -4612,27 +4646,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               if (o.vehicleId) {
                 const oDate = o.scheduledDate
                   ? new Date(o.scheduledDate).toISOString().split("T")[0]
-                  : new Date().toISOString().split("T")[0];
-                const vehicle = await storage.getVehicle(o.vehicleId);
+                  : todayStr;
                 const vPlate = vehicle?.plate?.toUpperCase() || "";
                 if (vPlate) {
                   const fuelKey = `${vPlate}:${oDate}`;
-                  const alreadyAssigned = vehicleFuelAssigned.get(fuelKey);
-                  if (alreadyAssigned) {
+                  const firstOsForFuel = vehicleFuelFirstOS.get(fuelKey);
+                  if (firstOsForFuel !== o.id) {
                     custoCombustivel = 0;
                   } else {
-                    const { data: fuelRows } = await supabaseAdmin.from("financial_transactions")
-                      .select("amount, description")
-                      .eq("origin_type", "fueling")
-                      .gte("due_date", oDate)
-                      .lte("due_date", oDate);
-                    if (fuelRows) {
-                      const vehicleFuel = fuelRows.filter((r: any) => (r.description || "").toUpperCase().includes(vPlate));
-                      custoCombustivel = vehicleFuel.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-                    }
-                    if (custoCombustivel > 0) {
-                      vehicleFuelAssigned.set(fuelKey, { osId: o.id, timestamp: oDate });
-                    }
+                    custoCombustivel = vehicleFuelCache.get(vPlate) || 0;
                   }
                 }
               }
