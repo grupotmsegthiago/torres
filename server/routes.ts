@@ -28,6 +28,27 @@ import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
 import OpenAI from "openai";
 
+function createSmtpTransporter() {
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host, port, secure: port === 465,
+    requireTLS: port === 587,
+    auth: { user, pass },
+    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+  });
+}
+
+function getSmtpFrom() {
+  return `"Grupo TM SEG" <${process.env.SMTP_FROM || process.env.SMTP_USER || "adm@grupotmseg.com.br"}>`;
+}
+
+const SMTP_BCC_OS = "thiago@grupotmseg.com.br, operacional@grupotmseg.com.br";
+const SMTP_BCC_WELCOME = "thiago@grupotmseg.com.br";
+
 const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
 const lastRecordedPos: Map<number, { lat: number; lng: number; time: number; osId?: number }> = new Map();
 const MISSION_POS_MIN_DISTANCE = 50;
@@ -1978,10 +1999,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const client = await storage.getClient(data.clientId);
         const recipientEmail = client?.emailOperacional || client?.email;
         if (!recipientEmail) return;
-        const smtpHost = process.env.SMTP_HOST;
-        const smtpUser = process.env.SMTP_USER;
-        const smtpPass = process.env.SMTP_PASS;
-        if (!smtpHost || !smtpUser || !smtpPass) return;
+        const transporter = createSmtpTransporter();
+        if (!transporter) return;
 
         const [emp1, emp2, vehicle] = await Promise.all([
           data.assignedEmployeeId ? storage.getEmployee(data.assignedEmployeeId) : null,
@@ -2026,17 +2045,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   </div>
 </body></html>`;
 
-        const port = parseInt(process.env.SMTP_PORT || "587");
-        const transporter = nodemailer.createTransport({
-          host: smtpHost, port, secure: port === 465,
-          requireTLS: port === 587,
-          auth: { user: smtpUser, pass: smtpPass },
-          tls: { ciphers: "SSLv3", rejectUnauthorized: false },
-        });
-
         await transporter.sendMail({
-          from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+          from: getSmtpFrom(),
           to: recipientEmail,
+          bcc: SMTP_BCC_OS,
           subject: `Pré-Alerta de Escolta Armada — ${data.osNumber}`,
           html: htmlBody,
         });
@@ -5594,10 +5606,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const client = await storage.getClient(os.clientId);
 
-      const smtpHost = process.env.SMTP_HOST;
-      const smtpUser = process.env.SMTP_USER;
-      const smtpPass = process.env.SMTP_PASS;
-      if (!smtpHost || !smtpUser || !smtpPass) return res.status(500).json({ message: "SMTP não configurado" });
+      const transporter = createSmtpTransporter();
+      if (!transporter) return res.status(500).json({ message: "SMTP não configurado" });
 
       const missionLabelMap: Record<string, string> = {
         aguardando: "Saída da Base", checkout_armamento: "Saída da Base", checkout_viatura: "Saída da Base", checkout_km_saida: "Saída da Base",
@@ -5646,17 +5656,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   </div>
 </body></html>`;
 
-      const port = parseInt(process.env.SMTP_PORT || "587");
-      const transporter = nodemailer.createTransport({
-        host: smtpHost, port, secure: port === 465,
-        requireTLS: port === 587,
-        auth: { user: smtpUser, pass: smtpPass },
-        tls: { ciphers: "SSLv3", rejectUnauthorized: false },
-      });
-
       await transporter.sendMail({
-        from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+        from: getSmtpFrom(),
         to: recipientEmail,
+        bcc: SMTP_BCC_OS,
         subject: `Atualização de Escolta — ${os.osNumber} — ${stepLabel}`,
         html: htmlBody,
       });
@@ -6792,19 +6795,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 </p>
               </div>
             `;
-            const host = process.env.SMTP_HOST;
-            const smtpUser = process.env.SMTP_USER;
-            const pass = process.env.SMTP_PASS;
-            if (host && smtpUser && pass) {
-              const port = parseInt(process.env.SMTP_PORT || "587");
-              const transporter = nodemailer.createTransport({
-                host, port, secure: port === 465,
-                requireTLS: port === 587,
-                auth: { user: smtpUser, pass },
-                tls: { ciphers: "SSLv3", rejectUnauthorized: false },
-              });
-              transporter.sendMail({
-                from: process.env.SMTP_FROM || smtpUser,
+            const auditTransporter = createSmtpTransporter();
+            if (auditTransporter) {
+              auditTransporter.sendMail({
+                from: getSmtpFrom(),
                 to: "thiago@grupotmseg.com.br",
                 subject: `⚠️ ALERTA: ${actionLabels[action] || action} na residência — ${emp.fullName || emp.name}`,
                 html,
@@ -10102,21 +10096,12 @@ Regras:
     try {
       const { to } = req.body;
       if (!to) return res.status(400).json({ message: "Informe o e-mail de destino" });
-      const smtpHost = process.env.SMTP_HOST;
-      const smtpUser = process.env.SMTP_USER;
-      const smtpPass = process.env.SMTP_PASS;
-      if (!smtpHost || !smtpUser || !smtpPass) return res.status(500).json({ message: "SMTP não configurado. Defina SMTP_HOST, SMTP_USER e SMTP_PASS." });
-      const port = parseInt(process.env.SMTP_PORT || "587");
-      const transporter = nodemailer.createTransport({
-        host: smtpHost, port, secure: port === 465,
-        requireTLS: port === 587,
-        auth: { user: smtpUser, pass: smtpPass },
-        tls: { ciphers: "SSLv3", rejectUnauthorized: false },
-      });
+      const transporter = createSmtpTransporter();
+      if (!transporter) return res.status(500).json({ message: "SMTP não configurado. Defina SMTP_HOST, SMTP_USER/EMAIL_USER e SMTP_PASS/EMAIL_PASS." });
       await transporter.sendMail({
-        from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
+        from: getSmtpFrom(),
         to,
-        subject: "Teste de E-mail — Torres Gestão",
+        subject: "Teste de E-mail — Grupo TM SEG",
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;">
   <div style="background:#1a1a1a;padding:20px 30px;text-align:center;">
@@ -10152,14 +10137,9 @@ Regras:
         return res.status(400).json({ message: "Selecione ao menos um documento para enviar" });
       }
 
-      const host = smtpHost || process.env.SMTP_HOST;
-      const port = parseInt(smtpPort || process.env.SMTP_PORT || "587");
-      const user = smtpUser || process.env.SMTP_USER;
-      const pass = smtpPass || process.env.SMTP_PASS;
-      const from = smtpFrom || process.env.SMTP_FROM || user;
-
-      if (!host || !user || !pass) {
-        return res.status(400).json({ message: "Configurações SMTP não definidas. Configure as variáveis de ambiente SMTP_HOST, SMTP_USER e SMTP_PASS ou preencha os campos de configuração." });
+      const homoTransporter = createSmtpTransporter();
+      if (!homoTransporter) {
+        return res.status(400).json({ message: "Configurações SMTP não definidas. Configure as variáveis de ambiente SMTP_HOST, SMTP_USER e SMTP_PASS." });
       }
 
       const docs = documentTypes && documentTypes.length > 0
@@ -10188,14 +10168,6 @@ Regras:
       if (includeValues) {
         docLabels.push("Tabela de Valores");
       }
-
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-        tls: { rejectUnauthorized: false },
-      });
 
       const greeting = recipientName ? `Prezado(a) ${recipientName}` : "Prezado(a)";
 
@@ -10228,8 +10200,8 @@ Regras:
 </body>
 </html>`;
 
-      await transporter.sendMail({
-        from: `"Torres Vigilância Patrimonial" <${from}>`,
+      await homoTransporter.sendMail({
+        from: getSmtpFrom(),
         to: recipientEmail,
         subject: `Documentação para Homologação — Torres Vigilância Patrimonial LTDA`,
         html: htmlBody,
