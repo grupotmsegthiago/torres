@@ -3144,17 +3144,12 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
                     <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-neutral-900 text-white">ATUAL</span>
                   )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                    o.status === "em_andamento" ? "bg-amber-100 text-amber-800 border-amber-300" :
                     o.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" :
                     "bg-blue-50 text-blue-600 border-blue-200"
                   }`}>
-                    {o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
-                  </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${
-                    o.status === "em_andamento" ? "bg-neutral-900 text-white border-neutral-900" :
-                    o.status === "agendada" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                    "bg-neutral-100 text-neutral-600 border-neutral-200"
-                  }`}>
-                    {o.status === "agendada" ? (o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDAMENTO") : o.status?.toUpperCase()}
+                    {o.status === "em_andamento" ? "EM ANDAMENTO" :
+                     o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
                   </span>
                 </div>
               </div>
