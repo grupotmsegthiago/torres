@@ -312,6 +312,8 @@ interface GridItem {
     km_total: number;
     horas_missao: number;
     faturamento: number;
+    fat_hora_extra: number;
+    fat_km_extra: number;
     pagamento: number;
     custo_combustivel: number;
     custo_pedagio: number;
@@ -4807,6 +4809,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               return da - db2;
                             });
                             const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
+                            const totHE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
                             const totPag = vtrWithCost.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
                             const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
                             const totPed = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
@@ -4844,6 +4847,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <TooltipTrigger>
                                       <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 cursor-help ${metaBatida ? "text-emerald-800 bg-emerald-100 border-2 border-emerald-400 ring-1 ring-emerald-300" : "text-emerald-700 bg-emerald-50 border border-emerald-200"}`}>
                                         <span>▲</span> {fmtBRL(totFat)}
+                                        {totHE > 0 && <span className="text-[8px] font-black text-amber-600 bg-amber-100 rounded px-0.5 ml-0.5">HE</span>}
                                         {metaBatida && <span className="ml-0.5">🏆</span>}
                                       </span>
                                     </TooltipTrigger>
@@ -4852,16 +4856,37 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
                                         const hora = g.scheduledDate ? new Date(g.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                                        const he = g.liveCost?.fat_hora_extra || 0;
+                                        const ke = g.liveCost?.fat_km_extra || 0;
                                         return (
-                                          <p key={g.id} className="flex items-center gap-1">
-                                            <span className={st.cls}>{st.icon}</span>
-                                            <span className="text-neutral-400">{hora}</span>
-                                            <span>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
-                                            <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
-                                          </p>
+                                          <div key={g.id}>
+                                            <p className="flex items-center gap-1">
+                                              <span className={st.cls}>{st.icon}</span>
+                                              <span className="text-neutral-400">{hora}</span>
+                                              <span>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
+                                              <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
+                                            </p>
+                                            {(he > 0 || ke > 0) && (
+                                              <p className="pl-4 text-[10px] text-amber-300">
+                                                {he > 0 && <span>HE: {fmtBRL(he)} </span>}
+                                                {ke > 0 && <span>KM exc: {fmtBRL(ke)}</span>}
+                                              </p>
+                                            )}
+                                          </div>
                                         );
                                       })}
                                       {vtrWithCost.length > 1 && <p className="font-bold border-t border-neutral-600 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
+                                      {(() => {
+                                        const totHE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
+                                        const totKE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_km_extra || 0), 0);
+                                        if (totHE <= 0 && totKE <= 0) return null;
+                                        return (
+                                          <p className="text-[10px] text-amber-300">
+                                            {totHE > 0 && <span>Total HE: {fmtBRL(totHE)} </span>}
+                                            {totKE > 0 && <span>Total KM exc: {fmtBRL(totKE)}</span>}
+                                          </p>
+                                        );
+                                      })()}
                                       <div className={`border-t border-neutral-600 pt-1 mt-1 font-bold ${metaBatida ? "text-emerald-400" : "text-neutral-300"}`}>
                                         Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ META BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
                                       </div>

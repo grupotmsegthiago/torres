@@ -4746,6 +4746,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               km_total: resultado.km_total,
               horas_missao: Math.round(horasCalc * 100) / 100,
               faturamento: resultado.faturamento.total,
+              fat_hora_extra: Math.round(fatHoraExtra * 100) / 100,
+              fat_km_extra: Math.round(fatKmExtra * 100) / 100,
               pagamento: resultado.pagamento.total,
               custo_combustivel: custoCombustivel,
               custo_pedagio: custoPedagio,
