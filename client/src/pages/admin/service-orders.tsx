@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
@@ -1094,6 +1094,10 @@ export default function ServiceOrdersPage() {
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
+  const isAdminOrDiretoria = user?.role === "admin" || user?.role === "diretoria";
+  const [editingTimeOs, setEditingTimeOs] = useState<number | null>(null);
+  const [editInicioMissao, setEditInicioMissao] = useState("");
+  const [editFimMissao, setEditFimMissao] = useState("");
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
@@ -1133,6 +1137,20 @@ export default function ServiceOrdersPage() {
     onError: (err: any) => {
       toast({ title: "Erro ao voltar etapa", description: err.message, variant: "destructive" });
     },
+  });
+
+  const saveTimeMutation = useMutation({
+    mutationFn: async ({ id, missionStartedAt, completedDate }: { id: number; missionStartedAt?: string | null; completedDate?: string | null }) => {
+      await apiRequest("PATCH", `/api/service-orders/${id}`, { missionStartedAt, completedDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      setEditingTimeOs(null);
+      toast({ title: "Horários atualizados" });
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   useEffect(() => {
@@ -1218,6 +1236,9 @@ export default function ServiceOrdersPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Hor. Agendado</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Origem</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Destino</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída Base</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Cliente</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Início Missão</th>
@@ -1296,6 +1317,15 @@ export default function ServiceOrdersPage() {
                         <span className="text-xs text-neutral-400">-</span>
                       )}
                     </td>
+                    <td className="p-3 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
+                      {o.scheduledDate ? (() => {
+                        const d = new Date(o.scheduledDate);
+                        if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
+                        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+                      })() : "—"}
+                    </td>
+                    <td className="p-3 text-xs text-neutral-600 max-w-[120px] truncate" title={(o as any).origin || ""} data-testid={`text-origem-${o.id}`}>{(o as any).origin || "—"}</td>
+                    <td className="p-3 text-xs text-neutral-600 max-w-[120px] truncate" title={(o as any).destination || ""} data-testid={`text-destino-${o.id}`}>{(o as any).destination || "—"}</td>
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
                       const mk = (o as any).missionKm as { saida_base: number | null; chegada_origem: number | null; chegada_destino: number | null; fim_missao: number | null } | null;
@@ -1304,13 +1334,24 @@ export default function ServiceOrdersPage() {
                       const tInicioMissao = getStepTime(logs, ["iniciar_missao"]);
                       const tChegDestino = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
                       const tFim = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
+                      const isConcluida = o.status === "concluída" || o.status === "concluida" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada";
+                      const canEditTimes = isAdminOrDiretoria && isConcluida;
+                      const isEditing = editingTimeOs === o.id;
                       return (
                         <>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegcliente-${o.id}`}>{formatTime(tChegCliente)}</td>
-                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-iniciomissao-${o.id}`}>{formatTime(tInicioMissao)}</td>
+                          <td className={`p-3 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-iniciomissao-${o.id}`}>
+                            {isEditing ? (
+                              <input type="datetime-local" className="text-xs border rounded px-1 py-0.5 w-[140px]" value={editInicioMissao} onChange={e => setEditInicioMissao(e.target.value)} data-testid={`input-inicio-${o.id}`} />
+                            ) : formatTime(tInicioMissao)}
+                          </td>
                           <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegdestino-${o.id}`}>{formatTime(tChegDestino)}</td>
-                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-fim-${o.id}`}>{formatTime(tFim)}</td>
+                          <td className={`p-3 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-fim-${o.id}`}>
+                            {isEditing ? (
+                              <input type="datetime-local" className="text-xs border rounded px-1 py-0.5 w-[140px]" value={editFimMissao} onChange={e => setEditFimMissao(e.target.value)} data-testid={`input-fim-${o.id}`} />
+                            ) : formatTime(tFim)}
+                          </td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-saida-${o.id}`}>{mk?.saida_base != null ? mk.saida_base.toLocaleString("pt-BR") : "—"}</td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-origem-${o.id}`}>{mk?.chegada_origem != null ? mk.chegada_origem.toLocaleString("pt-BR") : "—"}</td>
                           <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-destino-${o.id}`}>{mk?.chegada_destino != null ? mk.chegada_destino.toLocaleString("pt-BR") : "—"}</td>
@@ -1396,6 +1437,29 @@ export default function ServiceOrdersPage() {
                             toast({ title: "Erro ao baixar PDF", variant: "destructive" });
                           }
                         }} title="Baixar PDF" data-testid={`button-pdf-order-${o.id}`}><Download className="w-4 h-4 text-neutral-500" /></Button>
+                        {isAdminOrDiretoria && (o.status === "concluída" || o.status === "concluida" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada") && (
+                          editingTimeOs === o.id ? (
+                            <>
+                              <Button variant="ghost" size="icon" onClick={() => {
+                                saveTimeMutation.mutate({
+                                  id: o.id,
+                                  missionStartedAt: editInicioMissao ? localInputToUtc(editInicioMissao) : undefined,
+                                  completedDate: editFimMissao ? localInputToUtc(editFimMissao) : undefined,
+                                });
+                              }} disabled={saveTimeMutation.isPending} title="Salvar Horários" data-testid={`button-save-times-${o.id}`}><Check className="w-4 h-4 text-green-600" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => setEditingTimeOs(null)} title="Cancelar" data-testid={`button-cancel-times-${o.id}`}><X className="w-4 h-4 text-red-500" /></Button>
+                            </>
+                          ) : (
+                            <Button variant="ghost" size="icon" onClick={() => {
+                              setEditingTimeOs(o.id);
+                              const logs = o.stepLogs as StepLogEntry[] | null;
+                              const tIni = getStepTime(logs, ["iniciar_missao"]);
+                              const tFimVal = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
+                              setEditInicioMissao(utcToLocalInput(o.missionStartedAt || tIni));
+                              setEditFimMissao(utcToLocalInput(tFimVal));
+                            }} title="Editar Horários da Missão" data-testid={`button-edit-times-${o.id}`}><Timer className="w-4 h-4 text-amber-500" /></Button>
+                          )
+                        )}
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
                         {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente OS ${o.osNumber}?`)) deleteMutation.mutate(o.id); }} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                       </div>
