@@ -511,6 +511,14 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
   const lng = v.tracker?.longitude;
   const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
 
+  const lastStep = os.lastAgentUpdate?.missionStep;
+  const currentMs = os.missionStatus;
+  const etapaAvancada = lastStep && currentMs
+    ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
+    : getMissionLabel(currentMs);
+
+  const photoUrl = os.lastAgentUpdate?.photoUrl || null;
+
   return `*TORRES VIGILÂNCIA PATRIMONIAL*
 *OS* ${os.osNumber} | *STATUS:* ${transitStatus}
 
@@ -529,9 +537,9 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 👮 *AGENTE 01:* ${agent1?.toUpperCase()}
 👮 *AGENTE 02:* ${agent2?.toUpperCase()}
 
-📈*PROGRESSO DA MISSÃO:* ${progress}%
-📣 *OCORRÊNCIA:* ${occurrence?.toUpperCase()}
-🏙️ *LOCALIZAÇÃO:* ${locationAddr}${mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:* ${mapsLink}` : ""}`;
+📈 *PROGRESSO DA MISSÃO:* ${progress}%
+📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* ${etapaAvancada?.toUpperCase()}
+🏙️ *LOCALIZAÇÃO:* ${locationAddr}${photoUrl ? `\n\n📷 *FOTO:* ${photoUrl}` : ""}${mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : ""}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
