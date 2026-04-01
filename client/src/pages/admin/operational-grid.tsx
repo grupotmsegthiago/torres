@@ -4784,6 +4784,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const statusLabel = (s: string) => {
                               if (s === "concluida") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
                               if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
+                              if (s === "agendada") return { icon: "📅", cls: "text-blue-300", label: "Agendada" };
+                              if (s === "aberta") return { icon: "○", cls: "text-neutral-400", label: "Aberta" };
                               return { icon: "⟳", cls: "text-sky-400", label: "Em andamento" };
                             };
                             return (
