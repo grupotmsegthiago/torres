@@ -609,7 +609,7 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
                       </div>
                       <div className="text-right">
                         <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
-                        <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(lucro)}</p>
+                        <p className="text-xs font-bold font-mono text-green-700">{fmt(v.fat_total)}</p>
                       </div>
                     </div>
                     <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
@@ -647,7 +647,7 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
                       </div>
                       <div className="text-right">
                         <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
-                        <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(a.fat_total)}</p>
+                        <p className="text-xs font-bold font-mono text-green-700">{fmt(a.fat_total)}</p>
                       </div>
                     </div>
                     <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
