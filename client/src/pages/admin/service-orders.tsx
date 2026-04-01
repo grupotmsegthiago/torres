@@ -1621,6 +1621,7 @@ export default function ServiceOrdersPage() {
                 <option value="ontem">Ontem</option>
                 <option value="semana">Esta Semana</option>
                 <option value="mes">Este Mês</option>
+                <option value="ano">Este Ano</option>
               </select>
 
               {hasAnyFilter && (
@@ -1680,6 +1681,9 @@ export default function ServiceOrdersPage() {
               const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
               periodStart = new Date(startOfDay(brNow).getTime() - diffToMonday * 86400000);
               periodEnd = new Date(periodStart.getTime() + 7 * 86400000);
+            } else if (filterPeriod === "ano") {
+              periodStart = new Date(brNow.getFullYear(), 0, 1);
+              periodEnd = new Date(brNow.getFullYear() + 1, 0, 1);
             } else {
               periodStart = new Date(brNow.getFullYear(), brNow.getMonth(), 1);
               periodEnd = new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1);
@@ -1698,6 +1702,11 @@ export default function ServiceOrdersPage() {
             const agent2 = getEmployeeName(o.assignedEmployee2Id)?.toLowerCase() || "";
             return o.osNumber.toLowerCase().includes(s) || authName.includes(s) || client.includes(s) || agent1.includes(s) || agent2.includes(s);
           }) : filtered;
+          displayOrders.sort((a, b) => {
+            const numA = parseInt(a.osNumber.replace(/\D/g, ""), 10) || 0;
+            const numB = parseInt(b.osNumber.replace(/\D/g, ""), 10) || 0;
+            return numB - numA;
+          });
           if (displayOrders.length === 0) return (
             <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada com os filtros selecionados</div>
           );
