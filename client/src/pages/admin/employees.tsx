@@ -1747,6 +1747,265 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
   );
 }
 
+function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSalForm, setShowSalForm, salForm, setSalForm, addSalary, deleteSalary }: {
+  employee: Employee; isDiretoria: boolean; salaries: any[]; loadingSal: boolean;
+  showSalForm: boolean; setShowSalForm: (v: boolean) => void;
+  salForm: { baseSalary: string; effectiveDate: string; reason: string }; setSalForm: (v: any) => void;
+  addSalary: any; deleteSalary: any;
+}) {
+  const { toast } = useToast();
+  const now = new Date();
+  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
+  const [selYear, setSelYear] = useState(now.getFullYear());
+  const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery<any>({
+    queryKey: [`/api/employees/${employee.id}/salary-summary?month=${selMonth}&year=${selYear}`],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+  const [showDiscountForm, setShowDiscountForm] = useState(false);
+  const [discountForm, setDiscountForm] = useState({ type: "Abastecimento indevido", description: "", amount: "" });
+  const DISCOUNT_TYPES = ["Abastecimento indevido", "Multa de trânsito", "Falta injustificada", "Atraso", "Dano a equipamento", "Adiantamento", "Outro"];
+  const addDiscountMut = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/employees/${employee.id}/salary-discounts`, {
+        ...discountForm, amount: Number(discountForm.amount), month: selMonth, year: selYear,
+      });
+    },
+    onSuccess: () => {
+      refetchSummary();
+      setShowDiscountForm(false);
+      setDiscountForm({ type: "Abastecimento indevido", description: "", amount: "" });
+      toast({ title: "Desconto lançado" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+  const deleteDiscountMut = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/salary-discounts/${id}`); },
+    onSuccess: () => { refetchSummary(); toast({ title: "Desconto removido" }); },
+  });
+  const fmtR = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+  const printHolerite = () => {
+    if (!summary) return;
+    const v = summary.vencimentos;
+    const propLabel = summary.proporcional ? ` (${summary.diasTrabalhados}/30 dias)` : "";
+    const lines = [
+      `TORRES VIGILÂNCIA PATRIMONIAL LTDA — CNPJ 36.982.392/0001-89`,
+      `HOLERITE — ${MESES[selMonth-1].toUpperCase()} / ${selYear}`,
+      ``,
+      `Funcionário: ${summary.employee.name}`,
+      `Matrícula: ${summary.employee.matricula || "—"} | CPF: ${summary.employee.cpf || "—"} | Cargo: ${summary.employee.role || "—"}`,
+      summary.proporcional ? `Admissão: ${summary.employee.hireDate} — Proporcional ${summary.diasTrabalhados} dias` : "",
+      ``,
+      `═══════════════════ VENCIMENTOS ═══════════════════`,
+      `Salário Base${propLabel}: ${fmtR(v.salarioBase)}`,
+      `Periculosidade (30%)${propLabel}: ${fmtR(v.periculosidade)}`,
+      `Vale Refeição${propLabel}: ${fmtR(v.valeRefeicao)}`,
+      `Cesta Básica${propLabel}: ${fmtR(v.cestaBasica)}`,
+      `TOTAL VENCIMENTOS: ${fmtR(v.total)}`,
+      ``,
+    ];
+    if (summary.descontos.length > 0) {
+      lines.push(`═══════════════════ DESCONTOS ═══════════════════`);
+      for (const d of summary.descontos) lines.push(`${d.type}: ${d.description} — ${fmtR(d.amount)}`);
+      lines.push(`TOTAL DESCONTOS: ${fmtR(summary.totalDescontos)}`);
+      lines.push(``);
+    }
+    lines.push(`═══════════════════════════════════════════════════`);
+    lines.push(`LÍQUIDO A RECEBER: ${fmtR(summary.liquido)}`);
+    lines.push(`═══════════════════════════════════════════════════`);
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(`<pre style="font-family:monospace;font-size:13px;padding:40px;max-width:700px;margin:auto;">${lines.filter(l=>l!==undefined).join("\n")}</pre>`); w.document.close(); w.print(); }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="section-salarios">
+      <div className="flex items-center gap-2 mb-2">
+        <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="border border-neutral-200 rounded px-2 py-1.5 text-xs font-medium" data-testid="select-salary-month">
+          {MESES.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+        </select>
+        <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="border border-neutral-200 rounded px-2 py-1.5 text-xs font-medium" data-testid="select-salary-year">
+          {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      {loadingSummary ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : summary && (
+        <>
+          <div className="border border-neutral-200 rounded-lg overflow-hidden" data-testid="card-holerite">
+            <div className="bg-neutral-900 px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-white" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">{CCT_SP_2025.label} — {MESES[selMonth-1]} {selYear}</h3>
+              </div>
+              <Button variant="ghost" size="sm" onClick={printHolerite} className="text-white/70 hover:text-white hover:bg-white/10 text-[10px] gap-1 h-6" data-testid="button-print-holerite">
+                <Download className="w-3 h-3" /> Holerite
+              </Button>
+            </div>
+
+            {summary.proporcional && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="text-[11px] text-amber-800 font-medium">
+                  Proporcional: Admissão em {summary.employee.hireDate} — {summary.diasTrabalhados} dias trabalhados ({(summary.fatorProporcional * 100).toFixed(1)}%)
+                </span>
+              </div>
+            )}
+
+            <div className="p-3 space-y-1.5">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-1">Vencimentos</div>
+              <div className="grid grid-cols-1 gap-1">
+                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
+                  <span className="text-neutral-600">Salário Base{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
+                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.salarioBase)}</span>
+                </div>
+                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
+                  <span className="text-neutral-600">Periculosidade (30%){summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
+                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.periculosidade)}</span>
+                </div>
+                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
+                  <span className="text-neutral-600">Vale Refeição{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
+                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.valeRefeicao)}</span>
+                </div>
+                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
+                  <span className="text-neutral-600">Cesta Básica{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
+                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
+                </div>
+                <div className="flex justify-between bg-emerald-50 border border-emerald-200 rounded px-3 py-2 text-xs font-bold">
+                  <span className="text-emerald-800">Total Vencimentos</span>
+                  <span className="text-emerald-800">{fmtR(summary.vencimentos.total)}</span>
+                </div>
+              </div>
+
+              {summary.descontos.length > 0 && (
+                <>
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mt-3 mb-1">Descontos</div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {summary.descontos.map((d: any) => (
+                      <div key={d.id} className="flex items-center justify-between bg-white border border-red-100 rounded px-3 py-2 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-neutral-700 font-medium">{d.type}</span>
+                          <span className="text-neutral-400 ml-1.5">— {d.description}</span>
+                          {d.createdBy && <span className="text-neutral-300 ml-1 text-[10px]">({d.createdBy})</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="font-semibold text-red-600">- {fmtR(d.amount)}</span>
+                          {isDiretoria && (
+                            <button onClick={() => deleteDiscountMut.mutate(d.id)} className="text-red-400 hover:text-red-600 p-0.5" data-testid={`button-delete-discount-${d.id}`}>
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between bg-red-50 border border-red-200 rounded px-3 py-2 text-xs font-bold">
+                      <span className="text-red-800">Total Descontos</span>
+                      <span className="text-red-800">- {fmtR(summary.totalDescontos)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-between items-center bg-neutral-900 text-white rounded px-4 py-3 text-sm mt-2">
+                <span className="font-semibold">Líquido a Receber</span>
+                <span className="font-bold text-xl" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
+              </div>
+              <p className="text-[10px] text-neutral-400 italic">Pagamento todo 5º dia útil do mês</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowDiscountForm(!showDiscountForm)}
+              className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
+              data-testid="button-launch-discount"
+            >
+              <Ban className="w-3.5 h-3.5" /> Lançar Desconto
+            </Button>
+            {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026 (Base R$${CCT_SP_2025.salarioBase.toFixed(2)} + Periculosidade ${CCT_SP_2025.periculosidadePct}% R$${CCT_SP_2025.periculosidade.toFixed(2)} + VR R$${CCT_SP_2025.valeRefeicaoDia}/dia + Cesta R$${CCT_SP_2025.cestaBasica})` });
+                  setShowSalForm(true);
+                }}
+                data-testid="button-apply-cct-kit"
+              >
+                <DollarSign className="w-3.5 h-3.5 mr-0.5" /> Kit CCT
+              </Button>
+            )}
+          </div>
+
+          {showDiscountForm && (
+            <div className="bg-red-50/50 border border-red-200 rounded-lg p-3 space-y-2" data-testid="form-discount">
+              <div className="text-[10px] uppercase tracking-wider text-red-600 font-bold">Novo Desconto — {MESES[selMonth-1]} {selYear}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Tipo *</label>
+                  <select value={discountForm.type} onChange={(e) => setDiscountForm({ ...discountForm, type: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid="select-discount-type">
+                    {DISCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Valor (R$) *</label>
+                  <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="50.00" className="text-xs" data-testid="input-discount-amount" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Descrição *</label>
+                <Input value={discountForm.description} onChange={(e) => setDiscountForm({ ...discountForm, description: e.target.value })} placeholder="Ex: Abastecimento não autorizado dia 15/03" className="text-xs" data-testid="input-discount-description" />
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => addDiscountMut.mutate()} disabled={!discountForm.amount || !discountForm.description || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white" data-testid="button-save-discount">
+                  {addDiscountMut.isPending ? "Salvando..." : "Lançar Desconto"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowDiscountForm(false)}>Cancelar</Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="flex justify-between items-center mt-2">
+        <h3 className="text-sm font-bold text-neutral-700">Histórico Salarial</h3>
+        <Button size="sm" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
+      </div>
+      {showSalForm && (
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Salário Base (R$) *</label><Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="Ex: 2500.00" data-testid="input-salary-value-pasta" /></div>
+            <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data Vigência *</label><Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} data-testid="input-salary-date-pasta" /></div>
+          </div>
+          <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste CCT)" data-testid="input-salary-reason-pasta" />
+          <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} data-testid="button-save-salary-pasta">
+            {addSalary.isPending ? "Salvando..." : "Adicionar"}
+          </Button>
+        </div>
+      )}
+      {loadingSal ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : salaries.length === 0 ? (
+        <p className="text-sm text-neutral-400 text-center py-4">Nenhum salário registrado</p>
+      ) : (
+        <div className="space-y-2">
+          {salaries.map((s: any) => (
+            <div key={s.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-salary-pasta-${s.id}`}>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-semibold text-neutral-900">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                <span className="text-xs text-neutral-500 ml-2">{s.effectiveDate}</span>
+                {s.reason && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{s.reason}</p>}
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => deleteSalary.mutate(s.id)} data-testid={`button-delete-salary-pasta-${s.id}`}>
+                <Trash2 className="w-3 h-3 text-red-500" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; onClose: () => void; onEdit: () => void }) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -2557,91 +2816,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
           </div>
         )}
 
-        {tab === "salarios" && (
-          <div className="space-y-4">
-            <div className="border border-neutral-200 rounded-lg overflow-hidden">
-              <div className="bg-neutral-900 px-4 py-2.5 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-white" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">{CCT_SP_2025.label} — Kit Vigilante</h3>
-              </div>
-              <div className="p-3 bg-neutral-50/50 space-y-2">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
-                    <span className="text-neutral-600">Salário Base</span>
-                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.salarioBase.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
-                    <span className="text-neutral-600">Periculosidade ({CCT_SP_2025.periculosidadePct}%)</span>
-                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.periculosidade.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
-                    <span className="text-neutral-600">Vale Refeição ({CCT_SP_2025.diasUteisMes}d × R${CCT_SP_2025.valeRefeicaoDia.toFixed(2)})</span>
-                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.valeRefeicaoMes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2">
-                    <span className="text-neutral-600">Cesta Básica</span>
-                    <span className="font-semibold text-neutral-900">R$ {CCT_SP_2025.cestaBasica.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center bg-neutral-900 text-white rounded px-3 py-2 text-sm">
-                  <span className="font-semibold">Total Remuneração</span>
-                  <span className="font-bold text-lg">R$ {CCT_SP_2025.totalBruto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                </div>
-                <p className="text-[10px] text-neutral-400 italic">Pagamento todo 5º dia útil do mês</p>
-
-                {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026 (Base R$${CCT_SP_2025.salarioBase.toFixed(2)} + Periculosidade ${CCT_SP_2025.periculosidadePct}% R$${CCT_SP_2025.periculosidade.toFixed(2)} + VR R$${CCT_SP_2025.valeRefeicaoDia}/dia + Cesta R$${CCT_SP_2025.cestaBasica})` });
-                      setShowSalForm(true);
-                    }}
-                    data-testid="button-apply-cct-kit"
-                  >
-                    <DollarSign className="w-3.5 h-3.5 mr-1" /> Aplicar Kit CCT para {employee.name.split(" ")[0]}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold text-neutral-700">Histórico Salarial</h3>
-              <Button size="sm" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
-            </div>
-            {showSalForm && (
-              <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Salário Base (R$) *</label><Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="Ex: 2500.00" data-testid="input-salary-value-pasta" /></div>
-                  <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data Vigência *</label><Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} data-testid="input-salary-date-pasta" /></div>
-                </div>
-                <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste CCT)" data-testid="input-salary-reason-pasta" />
-                <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} data-testid="button-save-salary-pasta">
-                  {addSalary.isPending ? "Salvando..." : "Adicionar"}
-                </Button>
-              </div>
-            )}
-            {loadingSal ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : salaries.length === 0 ? (
-              <p className="text-sm text-neutral-400 text-center py-4">Nenhum salário registrado</p>
-            ) : (
-              <div className="space-y-2">
-                {salaries.map((s: any) => (
-                  <div key={s.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-salary-pasta-${s.id}`}>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-neutral-900">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                      <span className="text-xs text-neutral-500 ml-2">{s.effectiveDate}</span>
-                      {s.reason && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{s.reason}</p>}
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => deleteSalary.mutate(s.id)} data-testid={`button-delete-salary-pasta-${s.id}`}>
-                      <Trash2 className="w-3 h-3 text-red-500" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {tab === "salarios" && <SalaryTabContent employee={employee} isDiretoria={isDiretoria} salaries={salaries} loadingSal={loadingSal} showSalForm={showSalForm} setShowSalForm={setShowSalForm} salForm={salForm} setSalForm={setSalForm} addSalary={addSalary} deleteSalary={deleteSalary} />}
       </Card>
     </div>
   );

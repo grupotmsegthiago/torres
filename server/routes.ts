@@ -15,7 +15,7 @@ import {
   type InsertTelemetryEvent,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
-  auditLogs, users, loginSelfies,
+  auditLogs, users, loginSelfies, employeeSalaryDiscounts,
   companyDocuments, homologationLogs, missionUpdates,
   referencePoints, insertReferencePointSchema,
   missionPositions,
@@ -804,6 +804,94 @@ export async function registerRoutes(
   app.delete("/api/employee-salaries/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteEmployeeSalary(Number(req.params.id));
     res.json({ message: "Registro salarial removido" });
+  });
+
+  app.get("/api/employees/:id/salary-discounts", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+    const empId = Number(req.params.id);
+    const month = req.query.month ? Number(req.query.month) : new Date().getMonth() + 1;
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const rows = await db.select().from(employeeSalaryDiscounts)
+      .where(and(eq(employeeSalaryDiscounts.employeeId, empId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)))
+      .orderBy(desc(employeeSalaryDiscounts.createdAt));
+    res.json(rows);
+  });
+
+  app.post("/api/employees/:id/salary-discounts", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+    const empId = Number(req.params.id);
+    const { month, year, type, description, amount } = req.body;
+    if (!type || !description || !amount || !month || !year) return res.status(400).json({ message: "Campos obrigatórios: tipo, descrição, valor, mês e ano" });
+    const adminName = req.user!.name || req.user!.username || "Admin";
+    const [row] = await db.insert(employeeSalaryDiscounts).values({
+      employeeId: empId, month: Number(month), year: Number(year),
+      type, description, amount: String(amount), createdBy: adminName,
+    }).returning();
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/salary-discounts/:id", requireAuth, requireDiretoria, async (req, res) => {
+    await db.delete(employeeSalaryDiscounts).where(eq(employeeSalaryDiscounts.id, Number(req.params.id)));
+    res.json({ ok: true });
+  });
+
+  app.get("/api/employees/:id/salary-summary", requireAuth, async (req, res) => {
+    if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
+    try {
+      const empId = Number(req.params.id);
+      const month = req.query.month ? Number(req.query.month) : new Date().getMonth() + 1;
+      const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+      const emp = await storage.getEmployee(empId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00, cestaBasica: 208.45, diasUteisMes: 22 };
+      const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
+      const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
+      const totalBruto = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
+
+      let proporcional = false;
+      let diasTrabalhados = 30;
+      let fatorProporcional = 1;
+      if (emp.hireDate) {
+        const hire = new Date(emp.hireDate);
+        const hireMonth = hire.getMonth() + 1;
+        const hireYear = hire.getFullYear();
+        if (hireYear === year && hireMonth === month) {
+          const hireDay = hire.getDate();
+          const daysInMonth = new Date(year, month, 0).getDate();
+          diasTrabalhados = daysInMonth - hireDay + 1;
+          fatorProporcional = diasTrabalhados / 30;
+          proporcional = true;
+        }
+      }
+
+      const salarioProporcional = +(CCT.salarioBase * fatorProporcional).toFixed(2);
+      const periculosidadeProporcional = +(periculosidade * fatorProporcional).toFixed(2);
+      const vrProporcional = +(valeRefeicaoMes * fatorProporcional).toFixed(2);
+      const cestaProporcional = +(CCT.cestaBasica * fatorProporcional).toFixed(2);
+      const totalVencimentos = +(salarioProporcional + periculosidadeProporcional + vrProporcional + cestaProporcional).toFixed(2);
+
+      const discounts = await db.select().from(employeeSalaryDiscounts)
+        .where(and(eq(employeeSalaryDiscounts.employeeId, empId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
+      const totalDescontos = discounts.reduce((sum, d) => sum + Number(d.amount), 0);
+      const liquido = +(totalVencimentos - totalDescontos).toFixed(2);
+
+      res.json({
+        employee: { id: emp.id, name: emp.name, matricula: emp.matricula, role: emp.role, hireDate: emp.hireDate, cpf: emp.cpf },
+        month, year, proporcional, diasTrabalhados, fatorProporcional,
+        vencimentos: {
+          salarioBase: salarioProporcional,
+          periculosidade: periculosidadeProporcional,
+          valeRefeicao: vrProporcional,
+          cestaBasica: cestaProporcional,
+          total: totalVencimentos,
+        },
+        descontos: discounts.map(d => ({ id: d.id, type: d.type, description: d.description, amount: Number(d.amount), createdBy: d.createdBy })),
+        totalDescontos,
+        liquido,
+        cctRef: { salarioBase: CCT.salarioBase, periculosidadePct: CCT.periculosidadePct, valeRefeicaoDia: CCT.valeRefeicaoDia, cestaBasica: CCT.cestaBasica, totalBruto },
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.post("/api/employees/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {

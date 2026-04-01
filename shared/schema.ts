@@ -629,6 +629,22 @@ export const insertEmployeePayslipSchema = createInsertSchema(employeePayslips).
 export type InsertEmployeePayslip = z.infer<typeof insertEmployeePayslipSchema>;
 export type EmployeePayslip = typeof employeePayslips.$inferSelect;
 
+export const employeeSalaryDiscounts = pgTable("employee_salary_discounts", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  month: integer("month").notNull(),
+  year: integer("year").notNull(),
+  type: text("type").notNull(),
+  description: text("description").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEmployeeSalaryDiscountSchema = createInsertSchema(employeeSalaryDiscounts).omit({ id: true, createdAt: true });
+export type InsertEmployeeSalaryDiscount = z.infer<typeof insertEmployeeSalaryDiscountSchema>;
+export type EmployeeSalaryDiscount = typeof employeeSalaryDiscounts.$inferSelect;
+
 export const loginSelfies = pgTable("login_selfies", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),

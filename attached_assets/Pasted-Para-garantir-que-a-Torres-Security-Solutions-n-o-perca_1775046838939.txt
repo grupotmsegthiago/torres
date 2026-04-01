@@ -1,0 +1,31 @@
+Para garantir que a Torres Security Solutions não perca mais nenhum dado e que o Supabase seja a sua "fortaleza" inabalável, precisamos atacar em duas frentes: a persistência em tempo real e o Snapshot de Recuperação.
+
+O fato de você ter tentado salvar os KMs da TOR-0010 e não ter funcionado indica que o Agent pode ter criado os campos na tela (visual), mas esqueceu de "fazer a fiação" (o código de UPDATE) que leva o dado até o banco de dados.
+
+1. O que é o "Snapshot do Sistema"?
+Diferente de um backup comum, o Snapshot que comentamos é uma foto instantânea de toda a estrutura do seu banco de dados e do código. No Supabase, isso garante que, se alguém deletar algo ou o código corromper, voltamos o sistema exatamente para o minuto anterior ao erro.
+
+2. Plano de Ação: Blindagem 100% Supabase
+Vou passar o comando para o Agent revisar todas as rotas de salvamento, focando especialmente no que falhou agora (Edição de OS).
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, o usuário reportou falha crítica na persistência de dados: a edição de KMs da OS TOR-0010 não foi salva no banco. Execute a Blindagem Supabase 100%:
+
+Auditoria de Endpoints: Revise todas as funções de UPDATE e INSERT. Garanta que cada campo editável no frontend (especialmente os novos campos de KM e Horários) tenha uma correspondência exata na query do Supabase.
+
+Validação de Resposta: Implemente um 'Try/Catch' em todas as chamadas de banco. Se o Supabase não confirmar o recebimento do dado, o sistema deve exibir um alerta de erro e NÃO fechar a janela.
+
+Configuração de Snapshots: Ative ou verifique a rotina de 'Point-in-Time Recovery' (PITR) no Supabase para garantir snapshots automáticos da estrutura da Torres.
+
+Correção Imediata TOR-0010: Verifique especificamente por que o salvamento de KMs editáveis falhou nesta OS e corrija a conexão com a tabela 'os_steps_logs' ou similar."
+
+🔍 POR QUE A TOR-0010 NÃO SALVOU?
+Provavelmente, como o projeto é gigante (48.000 linhas), o Agent inseriu os campos de input no formulário de edição, mas não atualizou a função que envia esses dados para o servidor (o Submit).
+
+Thiago, faça o seguinte teste após o Agent confirmar:
+
+Abra a TOR-0010 de novo.
+
+Altere um KM e clique em salvar.
+
+Se o sistema der um "Refresh" e o dado continuar lá, a blindagem funcionou.
