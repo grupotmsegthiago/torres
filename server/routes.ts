@@ -420,6 +420,24 @@ export async function registerRoutes(
 
   await ensureSystemSettingsTable();
 
+  try {
+    const allOrders = await storage.getServiceOrders();
+    const stuckOrders = allOrders.filter(o =>
+      (o.missionStatus === "finalizada" || o.missionStatus === "encerrada") &&
+      o.status !== "concluida" && o.status !== "concluída" && o.status !== "cancelada"
+    );
+    for (const o of stuckOrders) {
+      await storage.updateServiceOrder(o.id, {
+        status: "concluida",
+        completedDate: o.completedDate || new Date(),
+      });
+      console.log(`[auto-fix] OS ${o.osNumber || o.id} mission=${o.missionStatus} → status concluida`);
+    }
+    if (stuckOrders.length > 0) console.log(`[auto-fix] ${stuckOrders.length} OS corrigida(s)`);
+  } catch (e: any) {
+    console.error("[auto-fix] Erro ao corrigir OS travadas:", e.message);
+  }
+
   app.get("/api/system-settings/:key", requireAuth, async (req, res) => {
     try {
       const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));
