@@ -4387,7 +4387,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
     const orders = await storage.getServiceOrders();
     const activeOrders = orders.filter(
-      (o) => o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada"
+      (o) => (o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
 
     const enriched = await Promise.all(

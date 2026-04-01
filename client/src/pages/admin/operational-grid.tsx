@@ -3104,17 +3104,21 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
 
 function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehicle | null; open: boolean; onClose: () => void }) {
   if (!vehicle) return null;
+  const HIDDEN_STATUS = ["concluida", "concluída", "cancelada"];
+  const HIDDEN_MISSION = ["encerrada"];
+  const isVisible = (o: any) => !HIDDEN_STATUS.includes(o.status) && !HIDDEN_MISSION.includes(o.missionStatus);
   const allOrders = [
-    ...(vehicle.activeOs ? [{
+    ...(vehicle.activeOs && isVisible(vehicle.activeOs) ? [{
       id: vehicle.activeOs.id,
       osNumber: vehicle.activeOs.osNumber,
       status: vehicle.activeOs.status,
       priority: vehicle.activeOs.priority,
+      missionStatus: vehicle.activeOs.missionStatus,
       scheduledDate: vehicle.activeOs.scheduledDate || null,
       clientName: vehicle.activeOs.clientName,
       isCurrent: true,
     }] : []),
-    ...(vehicle.upcomingOrders || []).map(u => ({ ...u, isCurrent: false })),
+    ...(vehicle.upcomingOrders || []).filter(isVisible).map(u => ({ ...u, isCurrent: false })),
   ].sort((a, b) => {
     const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
     const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
