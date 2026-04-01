@@ -1803,12 +1803,14 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const kmFN = kmF > kmI ? kmF : kmI;
           const resultado = calcularEscolta({
             contrato, km_inicial: kmI, km_final: kmFN,
-            hora_saida_base: sTime, hora_inicio_escolta: stTime, hora_fim_escolta: eTime,
+            km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+            horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
+            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
           });
 
           await supabaseAdmin.from("escort_billings").update({
-            km_saida: kmI, km_chegada: kmFN,
-            hora_inicio: stTime || null, hora_fim: eTime || null,
+            km_inicial: kmI, km_final: kmFN,
+            horario_inicio: stTime || null, horario_fim: eTime || null,
             ...resultado,
           }).eq("id", existingBilling[0].id);
         }
