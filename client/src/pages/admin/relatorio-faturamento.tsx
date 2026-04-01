@@ -227,31 +227,31 @@ export default function RelatorioFaturamentoPage() {
     const printCSS = `
       @page { size: A4 landscape; margin: 4mm 5mm; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      html, body { margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', sans-serif; font-size: 6.5pt; color: #1f2937; }
+      html, body { margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 6.5pt; color: #374151; letter-spacing: 0.15px; }
       table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1.5px solid #111; }
-      td, th { padding: 2px 5px; font-size: 6.5pt; border: 0.5px solid #d1d5db; line-height: 1.35; white-space: nowrap; text-align: center; vertical-align: middle; }
-      td.route-cell { white-space: normal; word-wrap: break-word; text-align: left; min-width: 90px; max-width: 180px; font-weight: 600; font-size: 6pt; }
+      td, th { padding: 3px 5px; font-size: 6.5pt; border: 0.5px solid #d1d5db; line-height: 1.4; white-space: nowrap; text-align: center; vertical-align: middle; letter-spacing: 0.2px; }
+      td.route-cell { white-space: normal; word-wrap: break-word; text-align: left; min-width: 80px; max-width: 160px; font-weight: 700; font-size: 5.5pt; line-height: 1.25; color: #111; }
       thead { display: table-header-group; }
       tfoot { display: table-footer-group; }
       tr { page-break-inside: avoid; }
       tbody tr:nth-child(odd) { background-color: #ffffff; }
       tbody tr:nth-child(even) { background-color: #f9fafb; }
-      .group-hdr th { font-size: 7pt; padding: 3px 3px; font-weight: 900; letter-spacing: 0.4px; border-bottom: 1.5px solid #111; border-top: 1.5px solid #111; }
-      .sub-hdr th { font-size: 5.5pt; padding: 2px 3px; font-weight: 800; border-bottom: 1px solid #374151; text-transform: uppercase; letter-spacing: 0.2px; }
-      .boletim-header { margin-bottom: 4mm; text-align: center; padding-bottom: 2mm; border-bottom: 1px solid #111; }
-      .boletim-header h1 { font-size: 13pt; margin: 0; color: #111; }
-      .subtitle-line { font-size: 9pt; margin: 1.5mm 0 0.5mm; color: #374151; }
-      .ref-line { font-size: 7pt; margin: 0; color: #6b7280; }
+      .group-hdr th { font-size: 7pt; padding: 4px 4px; font-weight: 900; letter-spacing: 0.5px; border-bottom: 1.5px solid #111; border-top: 1.5px solid #111; }
+      .sub-hdr th { font-size: 5.5pt; padding: 3px 4px; font-weight: 800; border-bottom: 1px solid #374151; text-transform: uppercase; letter-spacing: 0.3px; }
+      .boletim-header { margin-bottom: 4mm; text-align: center; padding-bottom: 2mm; border-bottom: 1.5px solid #111; }
+      .boletim-header h1 { font-size: 13pt; margin: 0; color: #111; letter-spacing: 1px; }
+      .subtitle-line { font-size: 9pt; margin: 1.5mm 0 0.5mm; color: #374151; letter-spacing: 0.3px; }
+      .ref-line { font-size: 7pt; margin: 0; color: #6b7280; letter-spacing: 0.2px; }
       .sign-section { margin-top: 10mm; break-inside: avoid; display: flex; justify-content: space-between; padding: 0 10mm; border-top: 1px solid #111; padding-top: 4mm; }
       .sign-box { width: 60mm; text-align: center; }
-      .digital-signature { font-size: 13pt; font-family: 'Brush Script MT', cursive; font-weight: 700; color: #111; border-bottom: 1.5px solid #374151; padding-bottom: 1px; display: inline-block; }
+      .digital-signature { font-size: 13pt; font-family: 'Dancing Script', 'Brush Script MT', cursive; font-weight: 700; color: #111; border-bottom: 1.5px solid #374151; padding-bottom: 1px; display: inline-block; }
       .sign-role { font-size: 7pt; font-weight: 900; text-transform: uppercase; color: #111; letter-spacing: 0.8px; margin-top: 1mm; }
       .sign-cnpj { font-size: 6pt; color: #6b7280; }
       .sign-system { font-size: 6pt; color: #9ca3af; }
       .sign-cliente { font-size: 7pt; font-weight: 900; text-transform: uppercase; color: #111; }
       .sign-data { font-size: 6pt; color: #6b7280; margin-top: 1mm; }
-      tfoot tr { break-inside: avoid; border-top: 2px solid #111; }
-      tfoot td { font-size: 7pt; font-weight: 900; padding: 3px 5px; }
+      tfoot tr { break-inside: avoid; border-top: 2.5px solid #111; }
+      tfoot td { font-size: 7pt; font-weight: 900; padding: 4px 6px; letter-spacing: 0.3px; }
     `;
 
     pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição — Torres</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
@@ -300,27 +300,31 @@ export default function RelatorioFaturamentoPage() {
     XLSX.writeFile(wb, fileName, { compression: true });
   }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
-  const cellStyle: React.CSSProperties = { border: "1px solid #d1d5db", padding: "4px 6px", fontSize: "10px", fontFamily: "'Inter', sans-serif", textAlign: "center", whiteSpace: "nowrap", color: "#1f2937", lineHeight: "1.4" };
+  const fontBase = "'Inter', 'Segoe UI', system-ui, sans-serif";
+  const fontMono = "'Roboto Mono', 'SF Mono', 'Consolas', monospace";
+
+  const cellStyle: React.CSSProperties = { border: "1px solid #d1d5db", padding: "5px 7px", fontSize: "10px", fontFamily: fontBase, textAlign: "center", whiteSpace: "nowrap", color: "#374151", lineHeight: "1.45", letterSpacing: "0.2px" };
   const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: "#111827" };
-  const headerStyle: React.CSSProperties = { ...cellStyle, backgroundColor: "#f3f4f6", fontWeight: 900, fontSize: "9px", textTransform: "uppercase" as const, color: "#111", padding: "5px 4px", letterSpacing: "0.2px" };
-  const groupHeaderStyle: React.CSSProperties = { ...headerStyle, backgroundColor: "#111", color: "#fff", fontSize: "10px", letterSpacing: "0.5px", padding: "6px 4px" };
+  const cellMono: React.CSSProperties = { ...cellStyle, fontFamily: fontMono, fontSize: "9.5px", letterSpacing: "0.3px", color: "#1f2937" };
+  const headerStyle: React.CSSProperties = { ...cellStyle, backgroundColor: "#f3f4f6", fontWeight: 800, fontSize: "8.5px", textTransform: "uppercase" as const, color: "#111", padding: "6px 7px", letterSpacing: "0.3px" };
+  const groupHeaderStyle: React.CSSProperties = { border: "1px solid #000", backgroundColor: "#111", color: "#fff", fontWeight: 900, fontSize: "9.5px", textTransform: "uppercase" as const, padding: "7px 7px", letterSpacing: "0.6px", fontFamily: fontBase, textAlign: "center", whiteSpace: "nowrap", lineHeight: "1.3" };
 
-  const bgKm = "#f9fafb";
-  const bgHr = "#f3f4f6";
-  const bgKmExc = "#e5e7eb";
-  const bgHrExc = "#d1d5db";
-  const bgVal = "#e5e7eb";
+  const bgKm = "#f8fafc";
+  const bgHr = "#f1f5f9";
+  const bgKmExc = "#e2e8f0";
+  const bgHrExc = "#cbd5e1";
+  const bgVal = "#e2e8f0";
 
-  const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: "#e5e7eb" };
-  const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: "#d1d5db" };
-  const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: "#9ca3af", color: "#fff" };
-  const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: "#6b7280", color: "#fff" };
-  const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: "#374151", color: "#fff" };
+  const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: "#e2e8f0" };
+  const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: "#cbd5e1" };
+  const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: "#94a3b8", color: "#fff" };
+  const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: "#64748b", color: "#fff" };
+  const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: "#334155", color: "#fff" };
 
-  const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#374151" };
-  const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#1f2937" };
-  const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#111827" };
-  const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#030712" };
+  const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#334155" };
+  const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#1e293b" };
+  const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#0f172a" };
+  const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#020617" };
   const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: "#000" };
 
   return (
@@ -489,40 +493,40 @@ export default function RelatorioFaturamentoPage() {
               <tbody>
                 {rowsData.map((r, i) => (
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
-                    <td style={cellBold}>{r.id}</td>
-                    <td className="route-cell" style={{ ...cellStyle, textAlign: "left", whiteSpace: "normal", wordWrap: "break-word", fontWeight: 600 }}>{r.route}</td>
-                    <td style={{ ...cellStyle, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.activationFee)}</td>
-                    <td style={cellStyle}>{r.franchiseHoursFmt}</td>
-                    <td style={cellStyle}>{r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "—"}</td>
-                    <td style={{ ...cellStyle, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.unitHr)}</td>
-                    <td style={{ ...cellStyle, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.unitKm)}</td>
+                    <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.id}</td>
+                    <td className="route-cell" style={{ ...cellStyle, textAlign: "left", whiteSpace: "normal", wordWrap: "break-word", fontWeight: 700, fontSize: "9px", lineHeight: "1.3", color: "#111" }}>{r.route}</td>
+                    <td style={{ ...cellMono, fontWeight: 700 }}>{fmt(r.activationFee)}</td>
+                    <td style={{ ...cellMono }}>{r.franchiseHoursFmt}</td>
+                    <td style={{ ...cellMono }}>{r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "—"}</td>
+                    <td style={{ ...cellMono }}>{fmt(r.unitHr)}</td>
+                    <td style={{ ...cellMono }}>{fmt(r.unitKm)}</td>
                     <td style={cellStyle}>{r.startDate}</td>
-                    <td style={cellStyle}>{r.startTime}</td>
-                    <td style={{ ...cellStyle, fontWeight: 700 }}>{r.viatura}</td>
-                    <td style={cellStyle}>{r.cargoPlate}</td>
+                    <td style={{ ...cellMono }}>{r.startTime}</td>
+                    <td style={{ ...cellStyle, fontWeight: 700, color: "#111", letterSpacing: "0.5px" }}>{r.viatura}</td>
+                    <td style={{ ...cellStyle, letterSpacing: "0.3px" }}>{r.cargoPlate}</td>
                     <td style={cellStyle}>{r.endDate}</td>
-                    <td style={cellStyle}>{r.endTime}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKm }}>{r.kmStart > 0 ? fmtNum(r.kmStart) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKm }}>{r.kmEnd > 0 ? fmtNum(r.kmEnd) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKm, fontWeight: 700 }}>{r.kmTotal > 0 ? fmtNum(r.kmTotal) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.startTime}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.endTime}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHr, fontWeight: 700 }}>{r.timeTotal}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.kmExtraQtd > 0 ? fmt(r.kmExtraUnit) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.kmExtraTotal > 0 ? fmt(r.kmExtraTotal) : "R$ 0,00"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.hrExtraQtd > 0 ? fmt(r.hrExtraUnit) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.hrExtraTotal > 0 ? fmt(r.hrExtraTotal) : "R$ 0,00"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.tollVal > 0 ? fmt(r.tollVal) : "R$ 0,00"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontWeight: 900, fontFamily: "'Roboto Mono', monospace", fontSize: "10px", color: "#111" }}>{fmt(r.totalGeral)}</td>
+                    <td style={{ ...cellMono }}>{r.endTime}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKm }}>{r.kmStart > 0 ? fmtNum(r.kmStart) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKm }}>{r.kmEnd > 0 ? fmtNum(r.kmEnd) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKm, fontWeight: 700 }}>{r.kmTotal > 0 ? fmtNum(r.kmTotal) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.startTime}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.endTime}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHr, fontWeight: 700 }}>{r.timeTotal}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmt(r.kmExtraUnit) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgKmExc, fontWeight: 700 }}>{r.kmExtraTotal > 0 ? fmt(r.kmExtraTotal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmt(r.hrExtraUnit) : "—"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgHrExc, fontWeight: 700 }}>{r.hrExtraTotal > 0 ? fmt(r.hrExtraTotal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmt(r.tollVal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellMono, backgroundColor: bgVal, fontWeight: 900, fontSize: "10px", color: "#111" }}>{fmt(r.totalGeral)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: "2px solid #111" }}>
-                  <td colSpan={26} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "6px 8px" }}>TOTAL GERAL</td>
-                  <td style={{ ...cellBold, fontSize: "11px", fontFamily: "'Roboto Mono', monospace", backgroundColor: "#111", color: "#fff", padding: "6px 8px" }}>{fmt(grandTotal)}</td>
+                <tr style={{ borderTop: "2.5px solid #111" }}>
+                  <td colSpan={26} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "7px 10px", letterSpacing: "0.5px" }}>TOTAL GERAL</td>
+                  <td style={{ ...cellBold, fontSize: "11px", fontFamily: fontMono, backgroundColor: "#111", color: "#fff", padding: "7px 10px", letterSpacing: "0.3px" }}>{fmt(grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
