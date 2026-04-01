@@ -1842,6 +1842,17 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
           <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => { setShowDiscountForm(!showDiscountForm); setDiscountCategory(null); }} data-testid="button-launch-discount">
             <Ban className="w-3 h-3" /> Lançar Ocorrência
           </Button>
+          {isDiretoria && summary && (
+            <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={async () => {
+              try {
+                const res = await apiRequest("POST", "/api/payroll/sync-financial", { month: selMonth, year: selYear });
+                const data = await res.json();
+                toast({ title: "Folha sincronizada", description: data.message });
+              } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+            }} data-testid="button-sync-payroll">
+              <DollarSign className="w-3 h-3" /> Lançar no Caixa
+            </Button>
+          )}
           {summary && (
             <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={printHolerite} data-testid="button-print-holerite">
               <Download className="w-3 h-3" /> Holerite

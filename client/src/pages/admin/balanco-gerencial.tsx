@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,9 @@ import {
   Calendar, ChevronLeft, ChevronRight, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
 } from "lucide-react";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 const fmt = (val: number) =>
   val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -129,6 +131,10 @@ export default function BalancoGerencialPage() {
   const [period, setPeriod] = useState<Period>("MONTH");
   const [refDate, setRefDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
+  const [syncingPayroll, setSyncingPayroll] = useState(false);
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ["/api/financial/dashboard"],
@@ -156,8 +162,11 @@ export default function BalancoGerencialPage() {
 
     const missions = data.byMission.filter(m => {
       if (!m.data) return false;
-      const dt = new Date(m.data);
-      const d = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+      const raw = String(m.data);
+      const d = raw.includes("T") ? raw.split("T")[0] : (() => {
+        const dt = new Date(raw);
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+      })();
       return d >= startStr && d <= endStr;
     });
 
@@ -166,7 +175,7 @@ export default function BalancoGerencialPage() {
       return t.date >= startStr && t.date <= endStr;
     });
 
-    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, other: 0, total: 0 };
+    const expenseSums = { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, other: 0, total: 0 };
     const expensesByVehicle: Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }> = {};
 
     periodExpenses.forEach(t => {
@@ -174,6 +183,7 @@ export default function BalancoGerencialPage() {
       if (t.origin_type === "fueling") expenseSums.fueling += amt;
       else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
       else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
+      else if (t.origin_type === "payroll") expenseSums.payroll += amt;
       else expenseSums.other += amt;
       expenseSums.total += amt;
 
@@ -266,6 +276,7 @@ export default function BalancoGerencialPage() {
       desp_combustivel: despFin.fueling,
       desp_pedagio: despFin.mission_cost,
       desp_manutencao: despFin.maintenance,
+      desp_folha: despFin.payroll,
       desp_outras: despFin.other,
     };
   }, [filtered]);
@@ -297,6 +308,22 @@ export default function BalancoGerencialPage() {
             <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
           </div>
           <div className="flex items-center gap-2">
+            {isDiretoria && (
+              <Button variant="outline" size="sm" className="text-xs gap-1.5 font-bold" disabled={syncingPayroll} onClick={async () => {
+                setSyncingPayroll(true);
+                try {
+                  const now = new Date();
+                  const res = await apiRequest("POST", "/api/payroll/sync-financial", { month: now.getMonth() + 1, year: now.getFullYear() });
+                  const result = await res.json();
+                  toast({ title: "Folha sincronizada", description: result.message });
+                  queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+                } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+                setSyncingPayroll(false);
+              }} data-testid="button-sync-payroll-dashboard">
+                {syncingPayroll ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
+                Folha → Caixa
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] })} data-testid="button-refresh-dashboard">
               <RefreshCw size={14} />
             </Button>
@@ -356,6 +383,7 @@ export default function BalancoGerencialPage() {
               {totals.desp_combustivel > 0 && <p>Combustível: {fmt(totals.desp_combustivel)}</p>}
               {totals.desp_pedagio > 0 && <p>Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
               {totals.desp_manutencao > 0 && <p>Manutenção: {fmt(totals.desp_manutencao)}</p>}
+              {totals.desp_folha > 0 && <p>Folha (RH): {fmt(totals.desp_folha)}</p>}
               {totals.desp_outras > 0 && <p>Outras: {fmt(totals.desp_outras)}</p>}
               {totals.pag === 0 && totals.desp === 0 && <p>Sem despesas no período</p>}
             </div>

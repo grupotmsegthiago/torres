@@ -894,6 +894,67 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/payroll/sync-financial", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const month = Number(req.body.month) || new Date().getMonth() + 1;
+      const year = Number(req.body.year) || new Date().getFullYear();
+      const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+      const mesLabel = MESES[month - 1];
+
+      const allEmployees = await storage.getEmployees();
+      const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
+
+      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00, cestaBasica: 208.45, diasUteisMes: 22 };
+      const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
+      const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
+      const totalBruto = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
+
+      const dueDate = `${year}-${String(month).padStart(2, "0")}-05`;
+      let created = 0;
+      let skipped = 0;
+
+      for (const emp of activeEmployees) {
+        const originId = `payroll-${emp.id}-${year}-${month}`;
+
+        const { data: existing } = await supabaseAdmin.from("financial_transactions")
+          .select("id").eq("origin_type", "payroll").eq("origin_id", originId).limit(1);
+        if (existing && existing.length > 0) { skipped++; continue; }
+
+        let fatorProporcional = 1;
+        let diasTrabalhados = 30;
+        if (emp.hireDate) {
+          const hire = new Date(emp.hireDate);
+          if (hire.getFullYear() === year && hire.getMonth() + 1 === month) {
+            const hireDay = hire.getDate();
+            const daysInMonth = new Date(year, month, 0).getDate();
+            diasTrabalhados = daysInMonth - hireDay + 1;
+            fatorProporcional = diasTrabalhados / 30;
+          }
+        }
+
+        const discounts = await db.select().from(employeeSalaryDiscounts)
+          .where(and(eq(employeeSalaryDiscounts.employeeId, emp.id), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
+        const totalDescontos = discounts.reduce((sum, d) => sum + Number(d.amount), 0);
+        const liquido = +((totalBruto * fatorProporcional) - totalDescontos).toFixed(2);
+
+        await createAutoTransaction({
+          description: `FOLHA DE PAGAMENTO - ${emp.name?.toUpperCase()} - ${mesLabel.toUpperCase()}/${year}`,
+          amount: Math.max(0, liquido),
+          type: "EXPENSE",
+          due_date: dueDate,
+          origin_type: "payroll",
+          origin_id: originId,
+          category_name: "Recursos Humanos",
+          entity_name: emp.name || "",
+          created_by: req.user!.name || req.user!.username || "SISTEMA",
+        });
+        created++;
+      }
+
+      res.json({ message: `Folha sincronizada: ${created} lançamento(s) criado(s), ${skipped} já existente(s)`, created, skipped });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/employees/apply-cct-kit", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 43.00, cestaBasica: 208.45, diasUteisMes: 22 };

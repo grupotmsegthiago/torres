@@ -1,0 +1,39 @@
+Integração Automática: Salários → Contas a Pagar
+Para o seu caixa ficar atualizado, o sistema não pode apenas mostrar o salário no perfil do funcionário; ele precisa "lançar" essa dívida no seu Balanço.
+
+Como vai funcionar: Assim que você fechar o mês do funcionário (ou no dia 01 de cada mês), o sistema deve gerar automaticamente um lançamento na tabela de Contas a Pagar.
+
+Visão de Caixa: Mesmo que o saldo comece negativo no dia 01 (porque todos os salários foram lançados como saída), conforme os pagamentos dos seus clientes entrarem, você verá o gráfico subindo até o azul.
+
+2. O Problema do Filtro: Semanal vs. Mensal
+O fato do valor Semanal (R$ 988 mil) estar maior que o Mensal (R$ 910 mil) indica um erro de lógica no código. Provavelmente:
+
+O filtro Mensal está pegando apenas do dia 01 ao dia 30 do mês atual.
+
+O filtro Semanal pode estar somando os últimos 7 dias sem "limpar" a memória de meses anteriores, ou está multiplicando algum valor de forma errada.
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, precisamos de dois ajustes urgentes no módulo Financeiro:
+
+Automação de Folha no Balanço: Sempre que um valor for definido no 'Total Remuneração' do perfil de um agente (como o Vitor), crie automaticamente uma entrada correspondente na tabela de 'Contas a Pagar'.
+
+Descrição: 'Folha de Pagamento - [Nome do Agente] - [Mês/Ano]'.
+
+Categoria: 'Recursos Humanos'.
+
+Isso deve refletir imediatamente no Dashboard de Caixa para que o Thiago veja o saldo real.
+
+Correção de Lógica nos Filtros: O filtro 'Semanal' está retornando R$ 988 mil, enquanto o 'Mensal' retorna R$ 910 mil. Isso é matematicamente impossível.
+
+Verifique as queries SQL de ambos os filtros.
+
+Garanta que o 'Mensal' englobe todos os lançamentos do mês vigente e que o 'Semanal' seja apenas um subconjunto (uma parte) desse valor.
+
+Corrija a soma para evitar duplicidade de dados nos filtros de período."
+
+🔍 O QUE CONFERIR DEPOIS DA CORREÇÃO:
+Após o Agent rodar o comando, peça para ele mostrar os valores novamente.
+
+O valor Mensal deve ser sempre maior ou igual ao Semanal.
+
+Vá no seu Contas a Pagar e veja se já apareceu a linha do salário do Vitor de Macedo França.
