@@ -2029,8 +2029,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const port = parseInt(process.env.SMTP_PORT || "587");
         const transporter = nodemailer.createTransport({
           host: smtpHost, port, secure: port === 465,
+          requireTLS: port === 587,
           auth: { user: smtpUser, pass: smtpPass },
-          tls: { rejectUnauthorized: false },
+          tls: { ciphers: "SSLv3", rejectUnauthorized: false },
         });
 
         await transporter.sendMail({
@@ -5652,8 +5653,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const port = parseInt(process.env.SMTP_PORT || "587");
       const transporter = nodemailer.createTransport({
         host: smtpHost, port, secure: port === 465,
+        requireTLS: port === 587,
         auth: { user: smtpUser, pass: smtpPass },
-        tls: { rejectUnauthorized: false },
+        tls: { ciphers: "SSLv3", rejectUnauthorized: false },
       });
 
       await transporter.sendMail({
@@ -6801,8 +6803,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               const port = parseInt(process.env.SMTP_PORT || "587");
               const transporter = nodemailer.createTransport({
                 host, port, secure: port === 465,
+                requireTLS: port === 587,
                 auth: { user: smtpUser, pass },
-                tls: { rejectUnauthorized: false },
+                tls: { ciphers: "SSLv3", rejectUnauthorized: false },
               });
               transporter.sendMail({
                 from: process.env.SMTP_FROM || smtpUser,
