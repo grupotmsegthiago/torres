@@ -18,3 +18,9 @@ id = "Cnmeso9ORDLsFAUP-gwdG"
 uri = "file://simulacao_os_completa.txt"
 type = "text"
 title = "Simulação Completa do Fluxo de OS — Torres Vigilância Patrimonial"
+
+[[outputs]]
+id = "JW72bFXV8NoC1EJuL2l3x"
+uri = "file://lovable_backup_completo.tar.gz"
+type = "unspecified"
+title = "Backup Completo Torres - Para Lovable"
