@@ -291,6 +291,10 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   latitude: text("latitude"),
   longitude: text("longitude"),
   address: text("address"),
+  gasolinePrice: decimal("gasoline_price", { precision: 10, scale: 3 }),
+  ethanolPrice: decimal("ethanol_price", { precision: 10, scale: 3 }),
+  fuelRecommendation: text("fuel_recommendation"),
+  recommendationFollowed: boolean("recommendation_followed"),
   createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });

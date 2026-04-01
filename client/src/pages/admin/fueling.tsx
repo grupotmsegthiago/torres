@@ -202,7 +202,15 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     fullTank: fueling?.fullTank !== false,
     station: fueling?.station || "",
     notes: fueling?.notes || "",
+    gasolinePrice: fueling?.gasolinePrice || "",
+    ethanolPrice: fueling?.ethanolPrice || "",
   });
+
+  const gasParsed = parseFloat(String(form.gasolinePrice));
+  const ethParsed = parseFloat(String(form.ethanolPrice));
+  const pricesReady = gasParsed > 0 && ethParsed > 0;
+  const ratio = pricesReady ? ethParsed / gasParsed : null;
+  const recommendation: "etanol" | "gasolina" | null = ratio !== null ? (ratio <= 0.7 ? "etanol" : "gasolina") : null;
 
   const autoCalcTotal = (liters: string, costPerLiter: string) => {
     const l = parseFloat(liters);
@@ -213,6 +221,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
+      const followed = recommendation ? data.fuelType === recommendation : null;
       const payload = {
         ...data,
         vehicleId: Number(data.vehicleId),
@@ -222,6 +231,10 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
         totalCost: data.totalCost ? String(data.totalCost) : null,
         km: Number(data.km),
         fullTank: data.fullTank,
+        gasolinePrice: data.gasolinePrice ? String(data.gasolinePrice) : null,
+        ethanolPrice: data.ethanolPrice ? String(data.ethanolPrice) : null,
+        fuelRecommendation: recommendation,
+        recommendationFollowed: followed,
       };
       if (fueling) {
         await apiRequest("PATCH", `/api/fueling/${fueling.id}`, payload);
@@ -261,70 +274,124 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
         </div>
       )}
 
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Veículo *</label>
-          <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-fueling-vehicle">
-            <option value={0}>Selecione...</option>
-            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
-          </select>
+      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="space-y-4">
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <DollarSign className="w-3.5 h-3.5" /> Preço no Posto (obrigatório)
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Gasolina (R$/L) *</label>
+              <Input type="number" step="0.001" value={form.gasolinePrice} onChange={(e) => setForm({ ...form, gasolinePrice: e.target.value })} placeholder="Ex: 5.790" className="bg-white" required data-testid="input-gasoline-price" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Álcool (R$/L) *</label>
+              <Input type="number" step="0.001" value={form.ethanolPrice} onChange={(e) => setForm({ ...form, ethanolPrice: e.target.value })} placeholder="Ex: 3.690" className="bg-white" required data-testid="input-ethanol-price" />
+            </div>
+          </div>
         </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motorista</label>
-          <select value={form.driverId || ""} onChange={(e) => setForm({ ...form, driverId: e.target.value ? Number(e.target.value) : null })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-fueling-driver">
-            <option value="">Selecione...</option>
-            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-          </select>
+
+        {pricesReady && recommendation && (
+          <div className={`p-4 rounded-lg border-2 ${recommendation === "etanol" ? "bg-green-50 border-green-400" : "bg-blue-50 border-blue-400"}`} data-testid="fuel-recommendation-banner">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${recommendation === "etanol" ? "bg-green-500" : "bg-blue-500"}`}>
+                <Fuel className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className={`text-sm font-bold ${recommendation === "etanol" ? "text-green-800" : "text-blue-800"}`}>
+                  Recomendação: Abastecer com {recommendation === "etanol" ? "ÁLCOOL" : "GASOLINA"}
+                </p>
+                <p className={`text-xs mt-0.5 ${recommendation === "etanol" ? "text-green-600" : "text-blue-600"}`}>
+                  Relação Álcool/Gasolina: <strong>{(ratio! * 100).toFixed(1)}%</strong> — {ratio! <= 0.7 ? "Álcool compensa (≤ 70%)" : "Gasolina compensa (> 70%)"}
+                </p>
+              </div>
+              <div className={`text-2xl font-black ${recommendation === "etanol" ? "text-green-600" : "text-blue-600"}`}>
+                {(ratio! * 100).toFixed(0)}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Veículo *</label>
+            <select value={form.vehicleId} onChange={(e) => setForm({ ...form, vehicleId: Number(e.target.value) })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" required data-testid="select-fueling-vehicle">
+              <option value={0}>Selecione...</option>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motorista</label>
+            <select value={form.driverId || ""} onChange={(e) => setForm({ ...form, driverId: e.target.value ? Number(e.target.value) : null })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-fueling-driver">
+              <option value="">Selecione...</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
+            <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-fueling-date" />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM no Hodômetro *</label>
+            <Input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: Number(e.target.value) })} required data-testid="input-fueling-km" />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Combustível</label>
+            <select value={form.fuelType} onChange={(e) => {
+              const fuelType = e.target.value;
+              const costPerLiter = fuelType === "etanol" ? String(form.ethanolPrice) : fuelType === "gasolina" ? String(form.gasolinePrice) : form.costPerLiter;
+              const totalCost = autoCalcTotal(String(form.liters), String(costPerLiter));
+              setForm({ ...form, fuelType, costPerLiter, totalCost: totalCost || form.totalCost });
+            }} className={`w-full h-10 border rounded-lg px-3.5 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 ${!pricesReady ? "bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed" : "bg-white border-neutral-300 focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10"}`} disabled={!pricesReady} data-testid="select-fueling-type">
+              <option value="gasolina">Gasolina</option>
+              <option value="etanol">Etanol</option>
+            </select>
+          </div>
+          <div className="flex items-end pb-1">
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="toggle-full-tank">
+              <input type="checkbox" checked={form.fullTank} onChange={(e) => setForm({ ...form, fullTank: e.target.checked })} className="w-4 h-4 rounded border-neutral-300" />
+              <span className="text-sm font-medium text-neutral-700">Tanque Cheio</span>
+            </label>
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Litros *</label>
+            <Input type="number" step="0.01" value={form.liters} onChange={(e) => {
+              const liters = e.target.value;
+              setForm({ ...form, liters, totalCost: autoCalcTotal(liters, String(form.costPerLiter)) });
+            }} required disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-liters" />
+            {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor/Litro (R$)</label>
+            <Input type="number" step="0.001" value={form.costPerLiter} onChange={(e) => {
+              const costPerLiter = e.target.value;
+              setForm({ ...form, costPerLiter, totalCost: autoCalcTotal(String(form.liters), costPerLiter) });
+            }} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-cost-per-liter" />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total (R$)</label>
+            <Input type="number" step="0.01" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
+            {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Posto</label>
+            <Input value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })} placeholder="Nome do posto" data-testid="input-fueling-station" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
+            <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-fueling-notes" />
+          </div>
         </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data *</label>
-          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required data-testid="input-fueling-date" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM no Hodômetro *</label>
-          <Input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: Number(e.target.value) })} required data-testid="input-fueling-km" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Litros *</label>
-          <Input type="number" step="0.01" value={form.liters} onChange={(e) => {
-            const liters = e.target.value;
-            setForm({ ...form, liters, totalCost: autoCalcTotal(liters, String(form.costPerLiter)) });
-          }} required data-testid="input-fueling-liters" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor/Litro (R$)</label>
-          <Input type="number" step="0.001" value={form.costPerLiter} onChange={(e) => {
-            const costPerLiter = e.target.value;
-            setForm({ ...form, costPerLiter, totalCost: autoCalcTotal(String(form.liters), costPerLiter) });
-          }} data-testid="input-fueling-cost-per-liter" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total (R$)</label>
-          <Input type="number" step="0.01" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} data-testid="input-fueling-total" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Combustível</label>
-          <select value={form.fuelType} onChange={(e) => setForm({ ...form, fuelType: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-fueling-type">
-            <option value="gasolina">Gasolina</option>
-            <option value="etanol">Etanol</option>
-          </select>
-        </div>
-        <div className="flex items-end pb-1">
-          <label className="flex items-center gap-2 cursor-pointer" data-testid="toggle-full-tank">
-            <input type="checkbox" checked={form.fullTank} onChange={(e) => setForm({ ...form, fullTank: e.target.checked })} className="w-4 h-4 rounded border-neutral-300" />
-            <span className="text-sm font-medium text-neutral-700">Tanque Cheio</span>
-          </label>
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Posto</label>
-          <Input value={form.station} onChange={(e) => setForm({ ...form, station: e.target.value })} placeholder="Nome do posto" data-testid="input-fueling-station" />
-        </div>
-        <div className="md:col-span-2">
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
-          <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-fueling-notes" />
-        </div>
-        <div className="md:col-span-3 flex gap-3">
-          <Button type="submit" disabled={mutation.isPending} data-testid="button-save-fueling">
+
+        {pricesReady && recommendation && form.fuelType && form.fuelType !== recommendation && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-center gap-2" data-testid="recommendation-warning">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>Você está abastecendo com <strong>{form.fuelType === "etanol" ? "Álcool" : "Gasolina"}</strong>, mas a recomendação é <strong>{recommendation === "etanol" ? "Álcool" : "Gasolina"}</strong>. Essa decisão será registrada.</span>
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <Button type="submit" disabled={mutation.isPending || !pricesReady} data-testid="button-save-fueling">
             {mutation.isPending ? "Salvando..." : "Salvar"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
@@ -747,6 +814,7 @@ export default function FuelingPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Valor Total</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-emerald-600 uppercase tracking-wider bg-emerald-50">Média (km/L)</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Combustível</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Decisão</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Posto</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Autorizado por</th>
@@ -755,9 +823,9 @@ export default function FuelingPage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={12} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
+                  <tr><td colSpan={13} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
                 ) : filteredFuelings.length === 0 ? (
-                  <tr><td colSpan={12} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
+                  <tr><td colSpan={13} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
                   [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
                     const v = getVehicle(f.vehicleId);
@@ -792,6 +860,11 @@ export default function FuelingPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-neutral-600">{fuelTypeLabel[f.fuelType] || f.fuelType}</td>
+                        <td className="px-4 py-3 text-xs" data-testid={`decision-${f.id}`}>{(() => {
+                          if (f.recommendationFollowed === true) return <span className="text-emerald-600 font-semibold">Seguiu</span>;
+                          if (f.recommendationFollowed === false) return <span className="text-red-600 font-semibold">Não seguiu</span>;
+                          return <span className="text-neutral-400">—</span>;
+                        })()}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{f.station || "-"}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{getDriver(f.driverId) || "-"}</td>
                         <td className="px-4 py-3 text-xs" data-testid={`text-autorizado-fuel-${f.id}`}>{(() => {

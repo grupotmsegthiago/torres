@@ -53,6 +53,10 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_excedente NUMERIC DEFAULT 0",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_franquia NUMERIC DEFAULT 0",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_faturado NUMERIC DEFAULT 0",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS gasoline_price DECIMAL(10,3)",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ethanol_price DECIMAL(10,3)",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS fuel_recommendation TEXT",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS recommendation_followed BOOLEAN",
   ];
 
   let ok = false;
