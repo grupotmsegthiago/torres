@@ -67,7 +67,7 @@ export default function MobileHomePage() {
                       const s = mission.missionStatus;
                       if (!s || s === "aguardando" || s === "checkout_armamento" || s === "checkout_viatura" || s === "checkout_km_saida") return "Saída da Base";
                       if (s === "em_transito_origem" || s === "checkin_chegada_km" || s === "checkin_veiculo_escoltado" || s === "checkin_dados_motorista") return "Chegada na Origem";
-                      if (s === "iniciar_missao") return "Início de Missão";
+                      if (s === "iniciar_missao") return "Em Missão";
                       if (s === "em_transito_destino") return "Em Trânsito ao Destino";
                       if (s === "chegada_destino") return "Chegada no Destino";
                       if (s === "checkout_km_final" || s === "checkout_viatura_retorno") return "Término de Missão";

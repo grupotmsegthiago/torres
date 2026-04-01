@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   MapPin, Power, Satellite, Signal, RefreshCw, Radio, ToggleLeft, ToggleRight,
   ExternalLink, Zap, CalendarClock, Recycle, Car, X,
-  Building2, Navigation, Play, Flag, CircleCheckBig,
+  Building2, Navigation, Play, Flag, CircleCheckBig, Siren,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
@@ -368,8 +368,9 @@ function getMissionLabel(status: string | null) {
     case "checkin_dados_motorista":
       return "Chegada na Origem";
     case "iniciar_missao":
+      return "Em Missão";
     case "em_transito_destino":
-      return "Em Trânsito";
+      return "Em Trânsito Destino";
     case "chegada_destino":
       return "Chegada no Destino";
     case "checkout_km_final":
@@ -402,8 +403,9 @@ function getTransitStatus(missionStatus: string | null): string {
     case "checkin_dados_motorista":
       return "CHEGADA NA ORIGEM";
     case "iniciar_missao":
+      return "EM MISSÃO";
     case "em_transito_destino":
-      return "EM TRÂNSITO";
+      return "EM TRÂNSITO DESTINO";
     case "chegada_destino":
     case "checkout_km_final":
     case "checkout_viatura_retorno":
@@ -581,7 +583,10 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
       if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista") {
         return { label: "NA ORIGEM", icon: MapPin, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
       }
-      if (ms === "iniciar_missao" || ms === "em_transito_destino") {
+      if (ms === "iniciar_missao") {
+        return { label: "EM MISSÃO", icon: Siren, className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+      }
+      if (ms === "em_transito_destino") {
         return { label: "EM TRÂNSITO", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
       }
       if (ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno") {
@@ -656,8 +661,9 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     case "checkin_dados_motorista":
       return { label: "Chegada na Origem", icon: Navigation, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
     case "iniciar_missao":
+      return { label: "Em Missão", icon: Siren, className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
     case "em_transito_destino":
-      return { label: "Em Trânsito", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
+      return { label: "Em Trânsito Destino", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
     case "chegada_destino":
       return { label: "Chegada no Destino", icon: Flag, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "checkout_km_final":

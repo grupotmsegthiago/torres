@@ -5177,7 +5177,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const missionLabelMap: Record<string, string> = {
         aguardando: "Saída da Base", checkout_armamento: "Saída da Base", checkout_viatura: "Saída da Base", checkout_km_saida: "Saída da Base",
         em_transito_origem: "Chegada na Origem", checkin_chegada_km: "Chegada na Origem", checkin_veiculo_escoltado: "Chegada na Origem", checkin_dados_motorista: "Chegada na Origem",
-        iniciar_missao: "Início de Missão", em_transito_destino: "Chegada no Destino",
+        iniciar_missao: "Em Missão", em_transito_destino: "Em Trânsito Destino",
         checkout_km_final: "Término de Missão", checkout_viatura_retorno: "Término de Missão",
         finalizada: "Missão Finalizada", retorno_base: "Retorno à Base", chegada_base: "Chegada na Base", encerrada: "Missão Encerrada",
       };
