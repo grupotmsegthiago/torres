@@ -88,18 +88,14 @@ export default function CotacaoGastoPage() {
   const baseNF = custoOperacional / (1 - params.notaFiscalPct / 100);
   const valorNF = baseNF - custoOperacional;
 
-  const CUSTO_MINIMO = 530;
-  const MARGEM_MINIMA = 40;
-  const CUSTO_KM_MINIMO = 5.30;
-  const precoCalculado = baseNF / (1 - params.lucroPct / 100);
+  const VALOR_KM = 5.30;
+  const MARGEM_MINIMA = 35;
+  const precoKm = params.kmPercurso > 0 ? VALOR_KM * params.kmPercurso : 0;
   const precoMargemMinima = baseNF / (1 - MARGEM_MINIMA / 100);
-  const precoKmMinimo = params.kmPercurso > 0 ? CUSTO_KM_MINIMO * params.kmPercurso : 0;
-  const precoFinal = Math.max(precoCalculado, precoMargemMinima, CUSTO_MINIMO, precoKmMinimo);
+  const precoFinal = Math.max(precoKm, precoMargemMinima);
   const lucro = precoFinal - baseNF;
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
-  const usouMinimo = precoFinal === CUSTO_MINIMO;
-  const usouMargemMinima = !usouMinimo && precoFinal === precoMargemMinima;
-  const usouKmMinimo = !usouMinimo && !usouMargemMinima && precoFinal === precoKmMinimo;
+  const usouMargemMinima = precoFinal === precoMargemMinima && precoKm < precoMargemMinima;
 
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
   const custoHoraFinal = params.horasMissao > 0 ? precoFinal / params.horasMissao : 0;
@@ -229,17 +225,15 @@ export default function CotacaoGastoPage() {
 
             <div className="bg-white rounded-xl border border-neutral-200 p-5">
               <h3 className="text-xs font-black text-neutral-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <FileText size={14} /> NF & Margem
+                <FileText size={14} /> Nota Fiscal
               </h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Nota Fiscal (%)</label>
-                  <Input type="number" step="0.1" value={params.notaFiscalPct} onChange={e => set("notaFiscalPct", e.target.value)} data-testid="input-nf-pct" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Lucro (%)</label>
-                  <Input type="number" step="0.1" value={params.lucroPct} onChange={e => set("lucroPct", e.target.value)} data-testid="input-lucro-pct" />
-                </div>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Nota Fiscal (%)</label>
+                <Input type="number" step="0.1" value={params.notaFiscalPct} onChange={e => set("notaFiscalPct", e.target.value)} data-testid="input-nf-pct" />
+              </div>
+              <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">
+                <p className="text-[11px] text-neutral-500">Fórmula: <span className="font-bold text-neutral-900">KM × R$ 5,30</span></p>
+                <p className="text-[11px] text-neutral-500">Margem mínima: <span className="font-bold text-neutral-900">35%</span></p>
               </div>
             </div>
           </div>
@@ -340,7 +334,7 @@ export default function CotacaoGastoPage() {
                       <span className="font-bold font-mono">{fmt(valorNF)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-neutral-300">Lucro ({fmtPct(params.lucroPct)})</span>
+                      <span className="text-neutral-300">Lucro</span>
                       <span className="font-bold font-mono text-emerald-400">{fmt(lucro)}</span>
                     </div>
                   </div>
@@ -350,14 +344,8 @@ export default function CotacaoGastoPage() {
                   <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">Preço Mínimo da Missão</p>
                   <p className="text-3xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                   <p className="text-xs text-emerald-300 mt-1">Margem real: {fmtPct(margemReal)}</p>
-                  {usouMinimo && (
-                    <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Piso mínimo aplicado (R$ {CUSTO_MINIMO.toFixed(2).replace(".", ",")})</p>
-                  )}
                   {usouMargemMinima && (
                     <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Margem mínima de {MARGEM_MINIMA}% aplicada</p>
-                  )}
-                  {usouKmMinimo && (
-                    <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Piso de R$ {CUSTO_KM_MINIMO.toFixed(2).replace(".", ",")}/km aplicado</p>
                   )}
                 </div>
 
