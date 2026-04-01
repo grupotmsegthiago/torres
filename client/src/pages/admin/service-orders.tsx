@@ -888,9 +888,21 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   {kits.map((k) => {
                     const linkedPlate = sv?.plate?.toUpperCase().trim();
                     const isLinked = linkedPlate && (k.description || "").toUpperCase().includes(linkedPlate);
+                    let emUsoLabel = "";
+                    if (k.status === "em_uso" && k.id !== order?.kitId) {
+                      const osHoldingKit = allOrders.find(o => o.kitId === k.id && o.id !== order?.id && (o.status === "em_andamento" || o.status === "agendada") && o.missionStatus !== "encerrada");
+                      if (osHoldingKit) {
+                        const sameTeam = form.assignedEmployeeId && osHoldingKit.assignedEmployeeId &&
+                          form.assignedEmployeeId === osHoldingKit.assignedEmployeeId &&
+                          (form.assignedEmployee2Id || null) === (osHoldingKit.assignedEmployee2Id || null);
+                        emUsoLabel = sameTeam ? " — MESMA EQUIPE" : " — EM USO";
+                      } else {
+                        emUsoLabel = " — EM USO";
+                      }
+                    }
                     return (
                       <option key={k.id} value={k.id}>
-                        {k.name} ({k.items.length} armas){isLinked ? " ★ VTR" : ""}{k.status === "em_uso" && k.id !== order?.kitId ? " — EM USO" : ""}
+                        {k.name} ({k.items.length} armas){isLinked ? " ★ VTR" : ""}{emUsoLabel}
                       </option>
                     );
                   })}

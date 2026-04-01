@@ -1594,11 +1594,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         if (activeWithKit) {
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
-            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+            const sameTeam = parsed.data.assignedEmployeeId && activeWithKit.assignedEmployeeId &&
+              parsed.data.assignedEmployeeId === activeWithKit.assignedEmployeeId &&
+              (parsed.data.assignedEmployee2Id || null) === (activeWithKit.assignedEmployee2Id || null);
+            if (!sameTeam) {
+              return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+            }
           }
-          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
+          if (!isEmAndamento) {
+            await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
+          }
         }
-        await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+        if (!activeWithKit) {
+          await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+        }
       }
     }
     if (!parsed.data.valorEstimado && parsed.data.escortContractId) {
@@ -1717,11 +1726,22 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         if (activeWithKit) {
           const isEmAndamento = activeWithKit.status === "em_andamento" && activeWithKit.missionStatus !== "aguardando";
           if (isEmAndamento) {
-            return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+            const newAgent1 = parsed.data.assignedEmployeeId ?? existing?.assignedEmployeeId;
+            const newAgent2 = parsed.data.assignedEmployee2Id ?? existing?.assignedEmployee2Id;
+            const sameTeam = newAgent1 && activeWithKit.assignedEmployeeId &&
+              newAgent1 === activeWithKit.assignedEmployeeId &&
+              (newAgent2 || null) === (activeWithKit.assignedEmployee2Id || null);
+            if (!sameTeam) {
+              return res.status(400).json({ message: `Kit já está em uso na OS ${activeWithKit.osNumber} (em andamento)` });
+            }
           }
-          await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
+          if (!isEmAndamento) {
+            await storage.updateServiceOrder(activeWithKit.id, { kitId: null });
+          }
         }
-        await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+        if (!activeWithKit) {
+          await storage.updateWeaponKit(parsed.data.kitId, { status: "disponível" });
+        }
       }
     }
     if (parsed.data.escortContractId && parsed.data.escortContractId !== existing?.escortContractId && !parsed.data.valorEstimado) {
