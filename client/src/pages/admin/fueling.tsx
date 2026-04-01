@@ -673,8 +673,12 @@ export default function FuelingPage() {
                                     <td className="px-4 py-2.5 text-neutral-600">{h.liters.toFixed(2)}L</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.totalCost ? `R$ ${Number(orig.totalCost).toFixed(2)}` : "-"}</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.costPerLiter ? `R$ ${Number(orig.costPerLiter).toFixed(3)}` : "-"}</td>
-                                    <td className={`px-4 py-2.5 font-semibold ${h.kmL !== null ? (h.kmL >= 7 ? "text-green-600" : "text-red-600") : "text-neutral-300"}`}>
-                                      {h.kmL !== null ? `${h.kmL.toFixed(2)}` : idx === 0 ? "1º reg." : "-"}
+                                    <td className="px-4 py-2.5">
+                                      {h.kmL !== null ? (
+                                        <span className={`font-semibold ${h.kmL >= 12 ? "text-emerald-600" : h.kmL >= 7 ? "text-green-600" : h.kmL >= 5 ? "text-amber-600" : "text-red-600"}`}>
+                                          {h.kmL.toFixed(2)}
+                                        </span>
+                                      ) : idx === 0 ? <span className="text-xs text-neutral-400 italic">1º reg.</span> : <span className="text-neutral-300">-</span>}
                                     </td>
                                     <td className="px-4 py-2.5 text-neutral-600">
                                       {h.costPerKm !== null ? `R$ ${h.costPerKm.toFixed(2)}` : "-"}
@@ -712,6 +716,7 @@ export default function FuelingPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Litros</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">R$/L</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Valor Total</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-emerald-600 uppercase tracking-wider bg-emerald-50">Média (km/L)</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Combustível</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Posto</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
@@ -720,12 +725,23 @@ export default function FuelingPage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={10} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
+                  <tr><td colSpan={11} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
                 ) : filteredFuelings.length === 0 ? (
-                  <tr><td colSpan={10} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
+                  <tr><td colSpan={11} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
                   [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
                     const v = getVehicle(f.vehicleId);
+                    const vehicleFuels = (fuelings || []).filter(vf => vf.vehicleId === f.vehicleId);
+                    const sortedByKm = [...vehicleFuels].sort((a, b) => a.km - b.km);
+                    const fIdx = sortedByKm.findIndex(vf => vf.id === f.id);
+                    let mediaKmL: number | null = null;
+                    if (fIdx > 0) {
+                      const prev = sortedByKm[fIdx - 1];
+                      const dist = f.km - prev.km;
+                      const liters = Number(f.liters) || 0;
+                      if (dist > 0 && liters > 0) mediaKmL = dist / liters;
+                    }
+                    const isFirst = fIdx === 0;
                     return (
                       <tr key={f.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-fueling-${f.id}`}>
                         <td className="px-4 py-3 text-neutral-900">{new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
@@ -734,6 +750,17 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-neutral-600">{Number(f.liters).toFixed(2)}L</td>
                         <td className="px-4 py-3 text-neutral-600">{f.costPerLiter ? `R$ ${Number(f.costPerLiter).toFixed(3)}` : "-"}</td>
                         <td className="px-4 py-3 text-neutral-600 font-medium">{f.totalCost ? `R$ ${Number(f.totalCost).toFixed(2)}` : "-"}</td>
+                        <td className="px-4 py-3 bg-emerald-50/50" data-testid={`media-kml-${f.id}`}>
+                          {isFirst ? (
+                            <span className="text-xs text-neutral-400 italic">1º reg.</span>
+                          ) : mediaKmL !== null ? (
+                            <span className={`font-semibold ${mediaKmL >= 12 ? "text-emerald-600" : mediaKmL >= 7 ? "text-green-600" : mediaKmL >= 5 ? "text-amber-600" : "text-red-600"}`}>
+                              {mediaKmL.toFixed(2)} km/L
+                            </span>
+                          ) : (
+                            <span className="text-neutral-300">-</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-neutral-600">{fuelTypeLabel[f.fuelType] || f.fuelType}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{f.station || "-"}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{getDriver(f.driverId) || "-"}</td>
