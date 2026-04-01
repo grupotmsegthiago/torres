@@ -1,0 +1,37 @@
+O NOVO MÓDULO DE PONTO (ESTRUTURA)
+Entrada Sem Trava de Data: O agente registra a entrada na base. O ponto fica "Aberto". Se ele viajar por 3 dias, o sistema mantém o cronômetro rodando até que ele clique em "Finalizar Ponto" ao retornar.
+
+Cálculo de Jornada Estendida: Diferente de um RH comum, o sistema calculará o total de horas corridas (Ex: 56h totais), sem quebrar o registro na virada do dia.
+
+Painel do Gestor (Sua Visão): Você verá um dashboard com todos os agentes. Quem estiver com ponto em aberto aparecerá com um ícone de "Em Viagem".
+
+📊 REGRA DAS 220H E HORAS EXTRAS
+Para o Vitor de Macedo França, que tem o salário base de R$ 2.432,50, o sistema aplicará:
+
+Contador Mensal: Soma automática de todas as jornadas finalizadas.
+
+Até 220h: Horas Normais (dentro do custo fixo que já estimamos no Balanço).
+
+Acima de 220h: O sistema muda a cor do valor para Vermelho e classifica como Hora Extra.
+
+Divisão 50/50: Lembra da sua regra? O valor dessas horas extras será dividido automaticamente: 50% para a folha e 50% como bônus.
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, implemente o Módulo de Ponto de Longa Duração para a Torres Vigilância:
+
+Lógica de Registro: Permita que o funcionário abra o ponto e o mantenha aberto por tempo indeterminado. A 'Saída' deve ser vinculada obrigatoriamente à última 'Entrada' em aberto do usuário.
+
+Cálculo de Horas: O sistema deve calcular o Intervalo (Saída - Entrada) em horas decimais, mesmo que o período seja superior a 24h.
+
+Painel do Gestor: Crie uma aba no Financeiro/RH para visualizar o acumulado mensal de cada agente:
+
+Total do Mês: Somar todas as jornadas concluídas.
+
+Regra 220h: Exiba uma barra de progresso. Se < 220h (Verde), se > 220h (Laranja/Vermelho - Hora Extra).
+
+Alertas Visuais: Destaque funcionários que atingiram 190h (Próximos do limite) e aqueles que já estão gerando custo de hora extra para a Torres.
+
+Banco de Dados: Grave cada jornada na tabela 'ponto_operacional' do Supabase com os IDs dos agentes."
+
+🔍 O QUE ISSO MUDA NO SEU CAIXA?
+No seu Balanço Gerencial, a "Provisão de RH" passará a ser exata. O sistema não vai mais apenas "estimar" o custo; ele vai olhar quantas horas o Pedro ou o David já trabalharam no mês e te avisar: "Thiago, o David já bateu 220h, as próximas missões dele custarão 50% a mais".
