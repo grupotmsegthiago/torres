@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, Mail } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, Crown, UserCircle, Copy, Check, KeyRound, Mail, LogIn, Lock } from "lucide-react";
 
 type SafeUser = {
   id: number;
@@ -36,6 +36,17 @@ function getRolesForUser(currentRole: string) {
 function getRoleInfo(role: string) {
   return ALL_ROLES.find((r) => r.value === role) || ALL_ROLES[2];
 }
+
+function getLoginFromEmail(email: string): string {
+  const cpfMatch = email.match(/^cpf_(\d+)@torresseguranca\.local$/);
+  if (cpfMatch) {
+    const cpf = cpfMatch[1].padStart(11, "0");
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+  return email;
+}
+
+const DEFAULT_PASSWORD = "torres@123";
 
 function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -279,18 +290,23 @@ export default function UsersPage() {
                             VOCÊ
                           </span>
                         )}
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-neutral-500">
-                        <span className="flex items-center gap-1" data-testid={`text-user-email-${u.id}`}>
-                          <Mail className="w-3 h-3" />
-                          {u.email}
-                        </span>
                         <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
                           u.role === "diretoria" ? "bg-neutral-900 text-white" :
                           u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
                           "bg-neutral-100 text-neutral-600 border border-neutral-200"
                         }`} data-testid={`text-user-role-${u.id}`}>
                           {roleInfo.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-neutral-500 mt-0.5">
+                        <span className="flex items-center gap-1" data-testid={`text-user-login-${u.id}`}>
+                          <LogIn className="w-3 h-3" />
+                          <span className="text-neutral-400">Login:</span> {getLoginFromEmail(u.email)}
+                        </span>
+                        <span className="flex items-center gap-1" data-testid={`text-user-password-${u.id}`}>
+                          <Lock className="w-3 h-3" />
+                          <span className="text-neutral-400">Senha:</span>
+                          <span className="font-mono">{DEFAULT_PASSWORD}</span>
                         </span>
                       </div>
                     </div>
@@ -374,6 +390,32 @@ export default function UsersPage() {
                 <p className="text-xs text-neutral-400 mt-1">Uma senha temporária será gerada automaticamente</p>
               )}
             </div>
+            {editingUser && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 mb-1.5 block flex items-center gap-1">
+                    <LogIn className="w-3.5 h-3.5" /> Login
+                  </label>
+                  <Input
+                    value={getLoginFromEmail(editingUser.email)}
+                    disabled
+                    className="font-mono bg-neutral-50"
+                    data-testid="input-user-login"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 mb-1.5 block flex items-center gap-1">
+                    <Lock className="w-3.5 h-3.5" /> Senha Atual
+                  </label>
+                  <Input
+                    value={DEFAULT_PASSWORD}
+                    disabled
+                    className="font-mono bg-neutral-50"
+                    data-testid="input-user-password"
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium text-neutral-700 mb-1.5 block">Perfil</label>
               <Select value={formRole} onValueChange={setFormRole}>
