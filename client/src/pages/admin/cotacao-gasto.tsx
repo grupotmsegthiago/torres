@@ -74,9 +74,12 @@ export default function CotacaoGastoPage() {
   const baseNF = custoOperacional / (1 - params.notaFiscalPct / 100);
   const valorNF = baseNF - custoOperacional;
 
-  const precoFinal = baseNF / (1 - params.lucroPct / 100);
+  const CUSTO_MINIMO = 530;
+  const precoCalculado = baseNF / (1 - params.lucroPct / 100);
+  const precoFinal = Math.max(precoCalculado, CUSTO_MINIMO);
   const lucro = precoFinal - baseNF;
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
+  const usouMinimo = precoCalculado < CUSTO_MINIMO;
 
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
   const custoHoraFinal = params.horasMissao > 0 ? precoFinal / params.horasMissao : 0;
@@ -308,6 +311,9 @@ export default function CotacaoGastoPage() {
                   <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">Preço Mínimo da Missão</p>
                   <p className="text-3xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                   <p className="text-xs text-emerald-300 mt-1">Margem real: {fmtPct(margemReal)}</p>
+                  {usouMinimo && (
+                    <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Piso mínimo aplicado (R$ {CUSTO_MINIMO.toFixed(2).replace(".", ",")})</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
