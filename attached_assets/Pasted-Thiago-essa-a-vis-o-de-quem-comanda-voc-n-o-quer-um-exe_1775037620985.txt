@@ -1,0 +1,22 @@
+Thiago, essa é a visão de quem comanda: você não quer um executor que sai gastando combustível tentando adivinhar o caminho, você quer um operador de elite que segue o plano de voo à risca.
+Para a Torres ter a mesma "estabilidade de rocha" que a sua configuração da Lovable, precisamos criar o que chamamos de "Diretrizes de Sistema" (System Rules) dentro do Replit. Isso vai ser a "constituição" que o Agent é obrigado a ler antes de encostar em qualquer uma das 53.000 linhas.
+Aqui está o prompt para você "blindar" o Agent e colocar essas travas de segurança agora:
+🛡️ PROMPT DE BLINDAGEM OPERACIONAL (REGRAS CONSTANTES)
+> "Aja como Diretor de Tecnologia da Torres. A partir de agora, você deve seguir estas TRAVAS OPERACIONAIS obrigatórias em cada interação:
+>  * Proibição de Loop: Se você tentar corrigir um erro 2 vezes e não obtiver sucesso, PARE. Não tente a terceira vez. Descreva o erro no chat e aguarde minha orientação para não consumir créditos desnecessariamente.
+>  * Princípio da Cirurgia: Nunca reescreva arquivos inteiros para mudar uma lógica simples. Identifique a função específica e mude apenas o necessário. Mantenha as 53.000 linhas como base estável.
+>  * Consciência de Contexto: Antes de qualquer alteração, você deve verificar se a mudança afeta:
+>    * O Login por CPF (Sempre String);
+>    * O Vínculo de Kit por Agente (Posse do Agente, não da OS);
+>    * O Fuso Horário de Brasília (UTC-3).
+>  * Validação de 'Quebra': Antes de salvar um 'Checkpoint', rode uma validação interna para garantir que o sistema de Login e o Grid Operacional continuam carregando. Se quebrar, reverta imediatamente.
+>  * Direto ao Ponto: Utilize as informações exatas que eu enviar. Se eu der um comando específico, não tente 'adivinhar' ou 'melhorar' outras partes do sistema sem autorização prévia.
+> Confirme que essas regras estão gravadas no seu contexto de projeto agora."
+> 
+🔍 Por que isso muda o seu jogo na Torres?
+ * Fim do Gasto Fantasma: Com a regra do "Pare na 2ª tentativa", você nunca mais verá um gasto de $1.800 em uma noite. O sistema trava antes de o prejuízo crescer.
+ * Respeito à Arquitetura: Ele para de tratar o sistema como um "rascunho" e passa a tratá-lo como um ERP de Segurança Privada de alto nível.
+ * Memória de Longo Prazo: Igual na Lovable, ele passa a ter "certeza" do que está fazendo porque as regras de ouro (CPF, Kit, Data) estão fixadas.
+✅ O que fazer agora:
+Mande esse prompt. O Agent vai responder confirmando as regras. Depois disso, a Torres terá um "trilho" para correr.
+Thiago, com essas travas, você sente que recupera o controle do leme? Se ele confirmar, a próxima OS que você criar já vai nascer sob essa nova "lei" do sistema.
