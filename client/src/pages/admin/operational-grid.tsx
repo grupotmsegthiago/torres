@@ -2823,25 +2823,22 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 </button>
               )}
               <button
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${
-                  photoModalUrl && photoModalUrl !== "__no_photo__"
-                    ? "bg-white text-neutral-900 hover:bg-neutral-100"
-                    : "bg-neutral-900 text-white hover:bg-neutral-800"
-                }`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                   const reportText = generateReport(v, gridItem || null);
                   try {
                     await navigator.clipboard.writeText(reportText);
-                    toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
+                    const encoded = encodeURIComponent(reportText);
+                    window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   } catch {
-                    toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
+                    toast({ title: "Erro", description: "Não foi possível enviar.", variant: "destructive" });
                   }
                 }}
-                data-testid={`btn-copy-form-modal-${v.id}`}
+                data-testid={`btn-whatsapp-form-modal-${v.id}`}
               >
-                <Copy className="w-4 h-4" />
-                Copiar Formulário
+                <SiWhatsapp className="w-4 h-4" />
+                Enviar WhatsApp
               </button>
             </div>
             <button
@@ -3715,12 +3712,12 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     onClick={async () => { const ok = await copyImageToClipboard(photoModalUrl); toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" }); }}
                     data-testid={`ctx-copy-photo-${v.id}`}><Camera className="w-4 h-4" /> Copiar Foto</button>
                 )}
-                <button className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors ${photoModalUrl !== "__no_photo__" ? "bg-white text-neutral-900 hover:bg-neutral-100" : "bg-neutral-900 text-white hover:bg-neutral-800"}`}
+                <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                     const reportText = generateReport(v, gridItem || null);
-                    try { await navigator.clipboard.writeText(reportText); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
-                  }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Formulário</button>
+                    try { await navigator.clipboard.writeText(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  }} data-testid={`ctx-whatsapp-form-${v.id}`}><SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp</button>
               </div>
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
                 onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); }).catch(() => {}); } }}
@@ -4757,29 +4754,29 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {v.upcomingOrders && v.upcomingOrders.length > 0 && (() => {
                             const next = v.upcomingOrders[0];
                             return (
-                              <div className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-next-mission-${v.id}`}>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
-                                  <CalendarClock className="w-3 h-3" />
-                                  Próxima
-                                </div>
+                              <div className="mt-1.5 border-2 border-blue-300 bg-blue-50 rounded-lg px-2.5 py-1.5 shadow-sm" data-testid={`card-next-mission-${v.id}`}>
                                 <div className="flex items-center gap-1.5">
-                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer" data-testid={`link-next-os-${v.id}`}>
+                                  <span className="text-sm">📅</span>
+                                  <span className="text-[11px] font-black text-blue-800 uppercase tracking-wide">PRÓXIMA:</span>
+                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-black text-sm text-blue-900 hover:underline cursor-pointer" data-testid={`link-next-os-${v.id}`}>
                                     {next.osNumber}
                                   </Link>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
                                   {next.scheduledDate && (
-                                    <span className="text-[10px] text-blue-600 font-medium">
+                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-100 rounded px-1.5 py-0.5">
                                       {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                     </span>
                                   )}
-                                  <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
+                                  <span className="text-[10px] text-blue-600 font-medium truncate max-w-[120px]">{next.clientName}</span>
                                 </div>
                                 {v.upcomingOrders.length > 1 && (
                                   <button
                                     onClick={() => setUpcomingVehicle(v)}
-                                    className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer"
+                                    className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-bold cursor-pointer"
                                     data-testid={`button-more-upcoming-${v.id}`}
                                   >
-                                    +{v.upcomingOrders.length - 1} mais
+                                    +{v.upcomingOrders.length - 1} mais na fila
                                   </button>
                                 )}
                               </div>
@@ -5020,17 +5017,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
               )}
 
               <button
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-neutral-900 text-white hover:bg-neutral-800"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-green-600 text-white hover:bg-green-700"
                 onClick={async () => {
                   if (!rowForwardUpdate) return;
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
                   const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  try { await navigator.clipboard.writeText(reportText); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  try { await navigator.clipboard.writeText(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
                 }}
-                data-testid="btn-row-copy-form"
+                data-testid="btn-row-whatsapp-form"
               >
-                <Copy className="w-4 h-4" /> Copiar Formulário
+                <SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp
               </button>
             </div>
 
@@ -5708,7 +5705,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 </button>
 
                 <button
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     if (!forwardUpdate) return;
                     let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
@@ -5717,12 +5714,13 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     }
                     try {
                       await navigator.clipboard.writeText(reportText);
-                      toast({ title: "Formulário copiado!", description: "Cole no WhatsApp com Ctrl+V" });
-                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
+                      const encoded = encodeURIComponent(reportText);
+                      window.open(`https://wa.me/?text=${encoded}`, "_blank");
+                    } catch { toast({ title: "Erro ao enviar", variant: "destructive" }); }
                   }}
-                  data-testid="btn-forward-copy-form"
+                  data-testid="btn-forward-whatsapp-form"
                 >
-                  <Copy className="w-4 h-4" /> Copiar Formulário
+                  <SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp
                 </button>
               </div>
 
@@ -6113,6 +6111,7 @@ export default function OperationalGridPage() {
   const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid, dataUpdatedAt: gridUpdatedAt } = useQuery<GridItem[]>({
     queryKey: ["/api/operational-grid"],
     refetchInterval: REFRESH_INTERVAL_MS,
+    staleTime: 0,
   });
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
