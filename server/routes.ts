@@ -4449,6 +4449,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
     const orders = await storage.getServiceOrders();
+    const gridVehicles = await storage.getVehicles();
     const activeOrders = orders.filter(
       (o) => (o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada"
     );
@@ -4464,8 +4465,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (allFuelToday) {
         for (const fr of allFuelToday) {
           const desc = (fr.description || "").toUpperCase();
-          for (const v of allVehicles) {
-            const plate = v.plate?.toUpperCase() || "";
+          for (const gv of gridVehicles) {
+            const plate = gv.plate?.toUpperCase() || "";
             if (plate && desc.includes(plate)) {
               vehicleFuelCache.set(plate, (vehicleFuelCache.get(plate) || 0) + Number(fr.amount || 0));
             }
@@ -4477,8 +4478,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const vehicleFuelFirstOS = new Map<string, number>();
     for (const o of activeOrders) {
       if (!o.vehicleId) continue;
-      const v = allVehicles.find(vv => vv.id === o.vehicleId);
-      const vPlate = v?.plate?.toUpperCase() || "";
+      const gv = gridVehicles.find(vv => vv.id === o.vehicleId);
+      const vPlate = gv?.plate?.toUpperCase() || "";
       if (!vPlate) continue;
       const oDate = o.scheduledDate
         ? new Date(o.scheduledDate).toISOString().split("T")[0]
