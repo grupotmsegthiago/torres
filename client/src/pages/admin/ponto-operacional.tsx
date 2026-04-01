@@ -190,16 +190,21 @@ export default function PontoOperacionalPage() {
                                 {reg.observacao && <p className="text-[10px] text-neutral-400 truncate">{reg.observacao}</p>}
                               </div>
                               <div className="text-right shrink-0 flex items-center gap-2">
+                                {reg.origem === "folha_ponto" && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-50 text-violet-600 border border-violet-200">FP</span>
+                                )}
                                 <p className="text-xs font-bold text-neutral-900">
                                   {reg.status === "aberto" ? formatElapsed(reg.entrada) : `${Number(reg.horas_decimal).toFixed(1)}h`}
                                 </p>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); if (confirm("Excluir este registro?")) deleteMutation.mutate(reg.id); }}
-                                  className="p-1 hover:bg-red-50 rounded text-neutral-300 hover:text-red-500 transition-colors"
-                                  data-testid={`button-delete-${reg.id}`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {reg.origem !== "folha_ponto" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); if (confirm("Excluir este registro?")) deleteMutation.mutate(reg.id); }}
+                                    className="p-1 hover:bg-red-50 rounded text-neutral-300 hover:text-red-500 transition-colors"
+                                    data-testid={`button-delete-${reg.id}`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))}

@@ -10802,6 +10802,12 @@ Regras:
       const { data: abertos } = await supabaseAdmin.from("ponto_operacional")
         .select("*").eq("status", "aberto");
 
+      const allTimesheetsRaw = await storage.getTimesheets();
+      const mesTimesheets = allTimesheetsRaw.filter((ts: any) => {
+        const tsDate = ts.date ? new Date(ts.date).toISOString().slice(0, 7) : null;
+        return tsDate === mes;
+      });
+
       const allEmployees = await storage.getEmployees();
       const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
 
@@ -10809,21 +10815,80 @@ Regras:
       const LIMITE_HORAS = 220;
       const VALOR_HORA = +(SALARIO_BASE / LIMITE_HORAS).toFixed(2);
 
+      const parseTimeToHours = (checkIn: string, checkOut: string, checkOutLunch?: string, checkInLunch?: string): number => {
+        if (!checkIn || !checkOut) return 0;
+        const [hi, mi] = checkIn.split(":").map(Number);
+        const [ho, mo] = checkOut.split(":").map(Number);
+        let startMin = hi * 60 + (mi || 0);
+        let endMin = ho * 60 + (mo || 0);
+        if (endMin <= startMin) endMin += 24 * 60;
+        let worked = (endMin - startMin) / 60;
+        if (checkOutLunch && checkInLunch) {
+          const [loh, lom] = checkOutLunch.split(":").map(Number);
+          const [lih, lim] = checkInLunch.split(":").map(Number);
+          const lunchMin = (lih * 60 + (lim || 0)) - (loh * 60 + (lom || 0));
+          if (lunchMin > 0) worked -= lunchMin / 60;
+        }
+        return Math.max(0, worked);
+      };
+
       const resumo = activeEmployees.map((emp: any) => {
         const empPontos = (pontos || []).filter((p: any) => p.employee_id === emp.id);
         const empAberto = (abertos || []).find((p: any) => p.employee_id === emp.id && p.status === "aberto");
-        const totalHoras = empPontos.reduce((acc: number, p: any) => acc + (Number(p.horas_decimal) || 0), 0);
-        const jornadasConcluidas = empPontos.filter((p: any) => p.status === "fechado").length;
+        const horasPontoOp = empPontos.reduce((acc: number, p: any) => acc + (Number(p.horas_decimal) || 0), 0);
+
+        const empTimesheets = mesTimesheets.filter((ts: any) => ts.employeeId === emp.id);
+        const horasTimesheet = empTimesheets.reduce((acc: number, ts: any) => {
+          if (ts.hoursWorked != null && Number(ts.hoursWorked) > 0) return acc + Number(ts.hoursWorked);
+          return acc + parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+        }, 0);
+
+        const totalHoras = horasPontoOp + horasTimesheet;
+        const jornadasPonto = empPontos.filter((p: any) => p.status === "fechado").length;
+        const jornadasTimesheet = empTimesheets.filter((ts: any) => ts.checkOut && ts.checkOut.length > 0).length;
+        const jornadasConcluidas = jornadasPonto + jornadasTimesheet;
         const horasExtras = Math.max(0, totalHoras - LIMITE_HORAS);
         const custoHoraExtra = +(horasExtras * VALOR_HORA * 1.5).toFixed(2);
         const bonusFuncionario = +(custoHoraExtra * 0.5).toFixed(2);
         const custoEmpresa = +(custoHoraExtra * 0.5).toFixed(2);
+
+        const timesheetRegistros = empTimesheets.map((ts: any) => {
+          const hours = ts.hoursWorked != null && Number(ts.hoursWorked) > 0
+            ? Number(ts.hoursWorked)
+            : parseTimeToHours(ts.checkIn, ts.checkOut, ts.checkOutLunch, ts.checkInLunch);
+          const tsDate = new Date(ts.date);
+          tsDate.setHours(
+            ts.checkIn ? Number(ts.checkIn.split(":")[0]) : 8,
+            ts.checkIn ? Number(ts.checkIn.split(":")[1] || 0) : 0
+          );
+          return {
+            id: `ts-${ts.id}`,
+            employee_id: emp.id,
+            entrada: tsDate.toISOString(),
+            saida: ts.checkOut ? (() => { const d = new Date(ts.date); d.setHours(Number(ts.checkOut.split(":")[0]), Number(ts.checkOut.split(":")[1] || 0)); return d.toISOString(); })() : null,
+            horas_decimal: +hours.toFixed(2),
+            status: ts.checkOut ? "fechado" : "aberto",
+            origem: "folha_ponto",
+          };
+        });
+
+        const allRegistros = [...empPontos.map((p: any) => ({ ...p, origem: p.origem || "ponto_operacional" })), ...timesheetRegistros];
+        allRegistros.sort((a: any, b: any) => new Date(a.entrada).getTime() - new Date(b.entrada).getTime());
+
+        const tsAberto = empTimesheets.find((ts: any) => !ts.checkOut || ts.checkOut.length === 0);
+        const pontoAbertoFinal = empAberto
+          ? { id: empAberto.id, entrada: empAberto.entrada }
+          : tsAberto
+            ? { id: `ts-${tsAberto.id}`, entrada: (() => { const d = new Date(tsAberto.date); d.setHours(Number((tsAberto.checkIn || "08:00").split(":")[0]), Number((tsAberto.checkIn || "08:00").split(":")[1] || 0)); return d.toISOString(); })() }
+            : null;
 
         return {
           employeeId: emp.id,
           employeeName: emp.name,
           role: emp.role,
           totalHoras: +totalHoras.toFixed(2),
+          horasPontoOp: +horasPontoOp.toFixed(2),
+          horasTimesheet: +horasTimesheet.toFixed(2),
           jornadasConcluidas,
           limiteHoras: LIMITE_HORAS,
           horasExtras: +horasExtras.toFixed(2),
@@ -10831,9 +10896,9 @@ Regras:
           bonusFuncionario,
           custoEmpresa,
           valorHora: VALOR_HORA,
-          pontoAberto: empAberto ? { id: empAberto.id, entrada: empAberto.entrada } : null,
+          pontoAberto: pontoAbertoFinal,
           status: totalHoras >= LIMITE_HORAS ? "hora_extra" : totalHoras >= 190 ? "alerta" : "normal",
-          registros: empPontos,
+          registros: allRegistros,
         };
       });
 
