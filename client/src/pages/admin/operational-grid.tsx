@@ -5529,7 +5529,22 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   </div>
                 )}
                 {forwardUpdate.photoUrl && (
-                  <img src={forwardUpdate.photoUrl} alt="Foto" className="mt-3 w-full h-32 rounded-lg object-cover border border-white/20" />
+                  <button
+                    className="mt-3 w-full relative group cursor-pointer rounded-lg overflow-hidden border-2 border-white/20 hover:border-white/60 transition-all"
+                    onClick={async () => {
+                      const ok = await copyImageToClipboard(forwardUpdate.photoUrl);
+                      toast(ok ? { title: "Foto copiada para a área de transferência!", description: "Cole no WhatsApp com Ctrl+V" } : { title: "Erro ao copiar foto", variant: "destructive" });
+                    }}
+                    data-testid="btn-forward-photo-click"
+                  >
+                    <img src={forwardUpdate.photoUrl} alt="Foto" className="w-full h-40 object-cover" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 text-neutral-900 rounded-lg px-4 py-2 flex items-center gap-2 shadow-lg">
+                        <Copy className="w-4 h-4" />
+                        <span className="text-xs font-bold uppercase tracking-wide">Clique para copiar foto</span>
+                      </div>
+                    </div>
+                  </button>
                 )}
               </div>
 
@@ -5590,81 +5605,22 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 </button>
 
                 <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
                   onClick={async () => {
                     if (!forwardUpdate) return;
-                    const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    if (mapsLink && !reportText.includes(mapsLink)) {
+                      reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
+                    }
                     try {
                       await navigator.clipboard.writeText(reportText);
-                      toast({ title: "Formulário copiado!" });
-                    } catch { toast({ title: "Erro", variant: "destructive" }); }
+                      toast({ title: "Formulário copiado!", description: "Cole no WhatsApp com Ctrl+V" });
+                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
                   }}
                   data-testid="btn-forward-copy-form"
                 >
                   <Copy className="w-4 h-4" /> Copiar Formulário
                 </button>
-
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
-                  onClick={async () => {
-                    if (!statusCardRef.current) return;
-                    try {
-                      const canvas = await html2canvas(statusCardRef.current, { scale: 2, backgroundColor: null, useCORS: true, logging: false });
-                      canvas.toBlob(async (blob) => {
-                        if (!blob) { toast({ title: "Erro ao gerar imagem", variant: "destructive" }); return; }
-                        try {
-                          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-                          toast({ title: "Card copiado como imagem!" });
-                        } catch { toast({ title: "Erro ao copiar imagem", variant: "destructive" }); }
-                      }, "image/png");
-                    } catch { toast({ title: "Erro ao capturar card", variant: "destructive" }); }
-                  }}
-                  data-testid="btn-forward-copy-print"
-                >
-                  <Camera className="w-4 h-4" /> Copiar Print
-                </button>
-
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!mapsLink}
-                  onClick={async () => {
-                    if (!mapsLink) return;
-                    try {
-                      await navigator.clipboard.writeText(mapsLink);
-                      toast({ title: "Localização copiada!" });
-                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
-                  }}
-                  data-testid="btn-forward-copy-location"
-                >
-                  <MapPin className="w-4 h-4" /> Copiar Localização
-                </button>
-
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-700 text-white hover:bg-neutral-600"
-                  onClick={async () => {
-                    const resumo = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS:* ${forwardUpdate.osNumber}\n*VIATURA:* ${vehiclePlate}\n*AGENTE 01:* ${agent1?.toUpperCase()}\n*AGENTE 02:* ${agent2?.toUpperCase()}\n*STATUS:* ${transitStatus} — ${statusLabel}\n*PROGRESSO:* ${progress}%${forwardUpdate.message ? `\n*OCORRÊNCIA:* ${forwardUpdate.message}` : ""}${mapsLink ? `\n📌 ${mapsLink}` : ""}`;
-                    try {
-                      await navigator.clipboard.writeText(resumo);
-                      toast({ title: "Resumo copiado!" });
-                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
-                  }}
-                  data-testid="btn-forward-copy-summary"
-                >
-                  <FileText className="w-4 h-4" /> Copiar Resumo
-                </button>
-
-                {forwardUpdate?.photoUrl && (
-                  <button
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                    onClick={async () => {
-                      const ok = await copyImageToClipboard(forwardUpdate.photoUrl);
-                      toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" });
-                    }}
-                    data-testid="btn-forward-copy-photo"
-                  >
-                    <Camera className="w-4 h-4" /> Copiar Foto
-                  </button>
-                )}
               </div>
 
               {forwardHistory.length > 0 && (
