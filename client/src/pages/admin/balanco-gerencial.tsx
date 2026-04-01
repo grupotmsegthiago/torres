@@ -29,6 +29,18 @@ const fmtHoras = (val: number) => {
 
 const META_DIARIA_VIATURA = 1800;
 
+const CCT = {
+  salarioBase: 2432.50,
+  periculosidadePct: 30,
+  get periculosidade() { return this.salarioBase * (this.periculosidadePct / 100); },
+  valeRefeicaoDia: 40.00,
+  cestaBasica: 208.45,
+  diasUteisMes: 22,
+  get valeRefeicaoMes() { return this.valeRefeicaoDia * this.diasUteisMes; },
+  get totalBruto() { return this.salarioBase + this.periculosidade + this.valeRefeicaoMes + this.cestaBasica; },
+  get custoDiario() { return this.totalBruto / 30; },
+};
+
 function getMetaColor(pct: number) {
   if (pct >= 100) return { bar: "bg-green-500", text: "text-green-700", bg: "bg-green-100", icon: true };
   if (pct >= 50) return { bar: "bg-amber-500", text: "text-amber-600", bg: "bg-amber-100", icon: false };
@@ -150,6 +162,17 @@ export default function BalancoGerencialPage() {
     queryKey: ["/api/vehicles"],
   });
 
+  const { data: allEmployees } = useQuery<any[]>({
+    queryKey: ["/api/employees"],
+  });
+
+  const activeAgentCount = useMemo(() => {
+    if (!allEmployees) return 0;
+    return allEmployees.filter((e: any) =>
+      e.status !== "inativo" && e.status !== "desligado"
+    ).length;
+  }, [allEmployees]);
+
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
   const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
 
@@ -266,25 +289,35 @@ export default function BalancoGerencialPage() {
     };
   }, [data, range]);
 
+  const provisaoRH = useMemo(() => {
+    return CCT.custoDiario * activeAgentCount * daysInPeriod;
+  }, [activeAgentCount, daysInPeriod]);
+
+  const provisaoDiaria = useMemo(() => {
+    return CCT.custoDiario * activeAgentCount;
+  }, [activeAgentCount]);
+
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
-    const despBilling = filtered.missions.reduce((a, m) => a + m.despesas, 0);
     const despFin = filtered.expenses;
-    const desp = despFin.total;
-    const lucro = fat - pag - desp;
+    const despReais = despFin.total;
+    const custoTotal = pag + despReais + provisaoRH;
+    const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
     const horas = filtered.agents.reduce((a, ag) => a + (ag.horas_trabalhadas || 0), 0);
     return {
-      fat, pag, desp, lucro, margem, km, horas, total: filtered.missions.length,
+      fat, pag, desp: despReais, lucro, margem, km, horas, total: filtered.missions.length,
       desp_combustivel: despFin.fueling,
       desp_pedagio: despFin.mission_cost,
       desp_manutencao: despFin.maintenance,
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
+      provisaoRH,
+      custoTotal,
     };
-  }, [filtered]);
+  }, [filtered, provisaoRH]);
 
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
     { id: "BALANCO", label: "Balanço", icon: BarChart3 },
@@ -385,17 +418,27 @@ export default function BalancoGerencialPage() {
               <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
                 <ArrowDownRight size={16} className="text-red-700" />
               </div>
-              <span className="text-xs font-black text-neutral-400 uppercase">Custos Operacionais</span>
+              <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
             </div>
-            <p className="text-2xl font-black text-red-700 font-mono">{fmt(totals.pag + totals.desp)}</p>
-            <div className="text-xs text-neutral-500 font-bold mt-1 space-y-0.5">
-              {totals.pag > 0 && <p>VRP: {fmt(totals.pag)}</p>}
-              {totals.desp_combustivel > 0 && <p>Combustível: {fmt(totals.desp_combustivel)}</p>}
-              {totals.desp_pedagio > 0 && <p>Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
-              {totals.desp_manutencao > 0 && <p>Manutenção: {fmt(totals.desp_manutencao)}</p>}
-              {totals.desp_folha > 0 && <p>Provisão Salários: {fmt(totals.desp_folha)}</p>}
-              {totals.desp_outras > 0 && <p>Outras: {fmt(totals.desp_outras)}</p>}
-              {totals.pag === 0 && totals.desp === 0 && <p>Sem despesas no período</p>}
+            <p className="text-2xl font-black text-red-700 font-mono">{fmt(totals.custoTotal)}</p>
+            <div className="text-xs font-bold mt-1 space-y-1">
+              {(totals.pag > 0 || totals.desp > 0) && (
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-neutral-400 uppercase tracking-wide">Custos Reais</p>
+                  {totals.pag > 0 && <p className="text-neutral-600">VRP: {fmt(totals.pag)}</p>}
+                  {totals.desp_combustivel > 0 && <p className="text-neutral-600">Combustível: {fmt(totals.desp_combustivel)}</p>}
+                  {totals.desp_pedagio > 0 && <p className="text-neutral-600">Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
+                  {totals.desp_manutencao > 0 && <p className="text-neutral-600">Manutenção: {fmt(totals.desp_manutencao)}</p>}
+                  {totals.desp_outras > 0 && <p className="text-neutral-600">Outras: {fmt(totals.desp_outras)}</p>}
+                </div>
+              )}
+              {totals.provisaoRH > 0 && (
+                <div className="space-y-0.5 border-t border-neutral-100 pt-1">
+                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Provisão RH</p>
+                  <p className="text-amber-700">Folha ({activeAgentCount} ag. × {daysInPeriod}d): {fmt(totals.provisaoRH)}</p>
+                </div>
+              )}
+              {totals.custoTotal === 0 && <p className="text-neutral-500">Sem despesas no período</p>}
             </div>
           </Card>
           <Card className="p-4 border-neutral-200" data-testid="card-lucro">
@@ -406,7 +449,7 @@ export default function BalancoGerencialPage() {
               <span className="text-xs font-black text-neutral-400 uppercase">Lucro Bruto</span>
             </div>
             <p className={`text-2xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">{totals.km.toLocaleString("pt-BR")} km rodados</p>
+            <p className="text-xs text-neutral-500 font-bold mt-1">{totals.km.toLocaleString("pt-BR")} km | c/ provisão RH</p>
           </Card>
           <Card className="p-4 border-neutral-200" data-testid="card-margem">
             <div className="flex items-center gap-2 mb-2">
@@ -440,7 +483,7 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} daysInPeriod={daysInPeriod} allVehicles={allVehicles || []} />}
+        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} daysInPeriod={daysInPeriod} allVehicles={allVehicles || []} provisaoDiaria={provisaoDiaria} />}
         {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
         {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} daysInPeriod={daysInPeriod} period={period} />}
         {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} />}
@@ -450,36 +493,39 @@ export default function BalancoGerencialPage() {
   );
 }
 
-function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles }: {
+function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles, provisaoDiaria }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
     desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
+    provisaoRH: number; custoTotal: number;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
-  daysInPeriod: number; allVehicles: any[];
+  daysInPeriod: number; allVehicles: any[]; provisaoDiaria: number;
 }) {
   const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
   const dailyData = useMemo(() => {
-    const map: Record<string, { date: string; fat: number; custo: number; missions: number }> = {};
+    const map: Record<string, { date: string; fat: number; custoReal: number; custoRH: number; custo: number; missions: number }> = {};
     missions.forEach(m => {
       const d = m.data?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custo: 0, missions: 0 };
+      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };
       map[d].fat += m.fat_total;
+      map[d].custoReal += m.pag_total;
       map[d].custo += m.pag_total;
       map[d].missions += 1;
     });
     (periodExpenses || []).forEach(t => {
       const d = t.date?.split("T")[0];
       if (!d) return;
-      if (!map[d]) map[d] = { date: d, fat: 0, custo: 0, missions: 0 };
+      if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };
+      map[d].custoReal += t.amount;
       map[d].custo += t.amount;
     });
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
-  }, [missions, periodExpenses]);
+  }, [missions, periodExpenses, provisaoDiaria]);
 
   const maxVal = useMemo(() => Math.max(...dailyData.map(d => Math.max(d.fat, d.custo)), 1), [dailyData]);
 
@@ -489,6 +535,11 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
         <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2">
           <Calendar size={16} /> Balanço {period === "DAY" ? "do Dia" : "por Dia"}
         </h4>
+        <div className="flex gap-4 mb-3 text-[10px] font-bold uppercase text-neutral-500">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Faturamento</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Custos Reais</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block" /> Provisão RH</span>
+        </div>
         {dailyData.length === 0 ? (
           <div className="text-center py-12 text-neutral-400">
             <BarChart3 size={40} className="mx-auto mb-3 opacity-30" />
@@ -511,7 +562,10 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
                       <span className="text-xs font-bold text-green-700 font-mono shrink-0">{fmt(d.fat)}</span>
                     </div>
                     <div className="flex gap-1 items-center h-5">
-                      <div className="bg-red-400 rounded h-full transition-all" style={{ width: `${(d.custo / maxVal) * 100}%` }} />
+                      <div className="flex rounded h-full overflow-hidden transition-all" style={{ width: `${(d.custo / maxVal) * 100}%` }}>
+                        <div className="bg-red-400 h-full" style={{ width: d.custo > 0 ? `${(d.custoReal / d.custo) * 100}%` : "0%" }} />
+                        <div className="bg-amber-400 h-full" style={{ width: d.custo > 0 ? `${(d.custoRH / d.custo) * 100}%` : "0%" }} />
+                      </div>
                       <span className="text-xs font-bold text-red-600 font-mono shrink-0">{fmt(d.custo)}</span>
                     </div>
                   </div>

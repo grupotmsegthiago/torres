@@ -1,0 +1,34 @@
+COMO VAMOS ESTRUTURAR ESSA ESTIMATIVA:
+Para o seu Balanço Gerencial ficar preciso, vamos ensinar o sistema a calcular o Custo Fixo Projetado:
+
+Custo de Salários (Estimado): O sistema pega o Total Remuneração de todos os agentes ativos (ex: os R$ 4.250,70 do Vitor) e divide pelo período:
+
+No Diário: Soma de todos os salários ÷ 30.
+
+No Semanal: (Soma de todos os salários ÷ 30) × 7.
+
+No Mensal: Valor total da folha.
+
+Custos Operacionais Reais: Soma de combustível, manutenção e multas que já foram lançados no sistema naquele período específico.
+
+A Visão de Margem: O seu Lucro Bruto deixará de ser "falso". Se no dia 01/04 você faturou R$ 7.167,40, o sistema já deve descontar a "fatia" do salário daquele dia, mostrando o lucro real sobrando no caixa.
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, vamos profissionalizar a projeção de custos no Balanço Gerencial:
+
+Projeção de Folha: Implemente uma lógica que calcule o custo estimado de salários para cada filtro (Diário, Semanal, Mensal). Use a soma dos 'Totais de Remuneração' dos agentes ativos e fracione pelo período selecionado.
+
+Unificação de Custos: No card 'Custos Operacionais', separe visualmente:
+
+Custos Reais: (Combustível e Outros já lançados).
+
+Provisão de RH: (Valor estimado de salários/benefícios para o período).
+
+Cálculo de Margem Real: O Lucro Bruto e a % de Margem devem considerar essa soma (Real + Provisão) para que o Thiago veja o lucro líquido operacional.
+
+Gráfico por Dia: No gráfico 'Balanço por Dia', a barra vermelha de custo deve incluir automaticamente essa fração diária dos salários, mesmo que o pagamento ainda não tenha ocorrido."
+
+🔍 POR QUE ISSO É IMPORTANTE AGORA?
+Olhando seu print, hoje o lucro aparece como R$ 6.454,01 (94% de margem). Isso é maravilhoso, mas sabemos que parte desse dinheiro já está "comprometido" com o salário do Pedro, David, Edivando e Vitor.
+
+Com essa mudança, o custo de R$ 713,39 vai subir para o valor real (considerando a diária dos agentes), e você terá a segurança de saber: "Hoje a Torres realmente colocou X reais de lucro no bolso".
