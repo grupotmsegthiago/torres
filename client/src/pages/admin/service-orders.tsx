@@ -1254,39 +1254,32 @@ export default function ServiceOrdersPage() {
           );
           return (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-orders">
+            <table className="w-full text-sm table-fixed" data-testid="table-orders">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">OS</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cliente</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Prioridade</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Hor. Agendado</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Origem</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Destino</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída Base</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Cliente</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Início Missão</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Destino</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim Missão</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Saída</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Origem</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Destino</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Final</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-900 uppercase tracking-wider whitespace-nowrap bg-neutral-100">KM Total</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Autorizado por</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
+                  <th className="w-[5%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">OS</th>
+                  <th className="w-[12%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cliente</th>
+                  <th className="w-[5%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Prior.</th>
+                  <th className="w-[8%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
+                  <th className="w-[8%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Agendado</th>
+                  <th className="w-[10%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Origem</th>
+                  <th className="w-[10%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Destino</th>
+                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída</th>
+                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Dest.</th>
+                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim</th>
+                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Autoriz.</th>
+                  <th className="w-[8%] text-right px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {displayOrders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
-                    <td className="p-3 font-medium text-neutral-900">{o.osNumber}</td>
-                    <td className="p-3">
-                      <span className="text-neutral-600">{getClientName(o.clientId)}</span>
+                    <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">{o.osNumber}</td>
+                    <td className="p-2 overflow-hidden">
+                      <span className="text-neutral-600 text-xs leading-tight line-clamp-2">{getClientName(o.clientId)}</span>
                       {(() => {
                         const cId = (o as any).escortContractId;
                         const ct = cId ? escortContracts.find(c => c.id === cId) : null;
@@ -1297,15 +1290,15 @@ export default function ServiceOrdersPage() {
                         );
                       })()}
                     </td>
-                    <td className="p-3 text-neutral-600">{o.type}</td>
-                    <td className="p-3">
+                    <td className="p-2 text-neutral-600 text-xs">{o.type}</td>
+                    <td className="p-2">
                       <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
                         o.priority === "imediata" ? "bg-red-50 text-red-700 border border-red-200" :
                         o.priority === "reaproveitamento" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                         "bg-blue-50 text-blue-700 border border-blue-200"
                       }`}>{o.priority === "imediata" ? "IMEDIATA" : o.priority === "reaproveitamento" ? "REAPROV." : "AGENDADA"}</span>
                     </td>
-                    <td className="p-3">
+                    <td className="p-2">
                       <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
                         o.status === "aberta" ? "bg-blue-50 text-blue-700 border border-blue-200" :
                         o.status === "em_andamento" ? "bg-neutral-900 text-white" :
@@ -1324,9 +1317,9 @@ export default function ServiceOrdersPage() {
                         o.status?.toUpperCase()
                       }</span>
                     </td>
-                    <td className="p-3">
+                    <td className="p-2">
                       {o.kitId ? (
-                        <span className="inline-flex items-center gap-1 text-xs bg-neutral-100 text-neutral-700 rounded px-2 py-0.5 font-medium">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-neutral-100 text-neutral-700 rounded px-1.5 py-0.5 font-medium">
                           <Package className="w-3 h-3" />
                           {kits.find(k => k.id === o.kitId)?.name || `Kit #${o.kitId}`}
                         </span>
@@ -1334,7 +1327,7 @@ export default function ServiceOrdersPage() {
                         <span className="text-xs text-neutral-400">—</span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="p-2">
                       {o.missionStatus ? (() => {
                         const displayStatus = o.missionStatus;
                         return (
@@ -1346,21 +1339,18 @@ export default function ServiceOrdersPage() {
                         <span className="text-xs text-neutral-400">-</span>
                       )}
                     </td>
-                    <td className="p-3 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
+                    <td className="p-2 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
                       {o.scheduledDate ? (() => {
                         const d = new Date(o.scheduledDate);
                         if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
                         return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
                       })() : "—"}
                     </td>
-                    <td className="p-3 text-xs text-neutral-600 max-w-[120px] truncate" title={(o as any).origin || ""} data-testid={`text-origem-${o.id}`}>{(o as any).origin || "—"}</td>
-                    <td className="p-3 text-xs text-neutral-600 max-w-[120px] truncate" title={(o as any).destination || ""} data-testid={`text-destino-${o.id}`}>{(o as any).destination || "—"}</td>
+                    <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).origin || ""} data-testid={`text-origem-${o.id}`}>{(o as any).origin || "—"}</td>
+                    <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).destination || ""} data-testid={`text-destino-${o.id}`}>{(o as any).destination || "—"}</td>
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
-                      const mk = (o as any).missionKm as { saida_base: number | null; chegada_origem: number | null; chegada_destino: number | null; fim_missao: number | null } | null;
                       const tSaida = o.missionStartedAt ? new Date(o.missionStartedAt).toISOString() : getStepTime(logs, ["checkout_km_saida", "aguardando"]);
-                      const tChegCliente = getStepTime(logs, ["checkin_chegada_km", "em_transito_origem"]);
-                      const tInicioMissao = getStepTime(logs, ["iniciar_missao"]);
                       const tChegDestino = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
                       const tFim = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
                       const isConcluida = o.status === "concluída" || o.status === "concluida" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada";
@@ -1368,32 +1358,21 @@ export default function ServiceOrdersPage() {
                       const isEditing = editingTimeOs === o.id;
                       return (
                         <>
-                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
-                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegcliente-${o.id}`}>{formatTime(tChegCliente)}</td>
-                          <td className={`p-3 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-iniciomissao-${o.id}`}>
+                          <td className="p-2 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-saida-${o.id}`}>{formatTime(tSaida)}</td>
+                          <td className={`p-2 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-chegdestino-${o.id}`}>
                             {isEditing ? (
-                              <input type="datetime-local" className="text-xs border rounded px-1 py-0.5 w-[140px]" value={editInicioMissao} onChange={e => setEditInicioMissao(e.target.value)} data-testid={`input-inicio-${o.id}`} />
-                            ) : formatTime(tInicioMissao)}
+                              <input type="datetime-local" className="text-xs border rounded px-1 py-0.5 w-[140px]" value={editInicioMissao} onChange={e => setEditInicioMissao(e.target.value)} data-testid={`input-chegdestino-${o.id}`} />
+                            ) : formatTime(tChegDestino)}
                           </td>
-                          <td className="p-3 text-center text-xs text-neutral-600 whitespace-nowrap" data-testid={`time-chegdestino-${o.id}`}>{formatTime(tChegDestino)}</td>
-                          <td className={`p-3 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-fim-${o.id}`}>
+                          <td className={`p-2 text-center text-xs whitespace-nowrap ${isEditing ? "bg-amber-50" : "text-neutral-600"}`} data-testid={`time-fim-${o.id}`}>
                             {isEditing ? (
                               <input type="datetime-local" className="text-xs border rounded px-1 py-0.5 w-[140px]" value={editFimMissao} onChange={e => setEditFimMissao(e.target.value)} data-testid={`input-fim-${o.id}`} />
                             ) : formatTime(tFim)}
                           </td>
-                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-saida-${o.id}`}>{mk?.saida_base != null ? mk.saida_base.toLocaleString("pt-BR") : "—"}</td>
-                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-origem-${o.id}`}>{mk?.chegada_origem != null ? mk.chegada_origem.toLocaleString("pt-BR") : "—"}</td>
-                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-destino-${o.id}`}>{mk?.chegada_destino != null ? mk.chegada_destino.toLocaleString("pt-BR") : "—"}</td>
-                          <td className="p-3 text-center text-xs font-mono text-neutral-600 whitespace-nowrap" data-testid={`km-final-${o.id}`}>{mk?.fim_missao != null ? mk.fim_missao.toLocaleString("pt-BR") : "—"}</td>
-                          <td className="p-3 text-center text-xs font-mono font-bold whitespace-nowrap bg-neutral-50" data-testid={`km-total-${o.id}`}>{
-                            mk?.saida_base != null && mk?.fim_missao != null
-                              ? (mk.fim_missao - mk.saida_base).toLocaleString("pt-BR")
-                              : "—"
-                          }</td>
                         </>
                       );
                     })()}
-                    <td className="p-3 text-left text-xs text-neutral-600 whitespace-nowrap" data-testid={`text-autorizado-${o.id}`}>{(() => {
+                    <td className="p-2 text-left text-xs text-neutral-600 whitespace-nowrap" data-testid={`text-autorizado-${o.id}`}>{(() => {
                       const uid = (o as any).createdByUserId;
                       if (!uid) return <span className="text-neutral-400 italic">—</span>;
                       const u = allUsers.find((u: any) => u.id === uid);
@@ -1490,9 +1469,9 @@ export default function ServiceOrdersPage() {
                             <Button variant="ghost" size="icon" onClick={() => {
                               setEditingTimeOs(o.id);
                               const logs = o.stepLogs as StepLogEntry[] | null;
-                              const tIni = getStepTime(logs, ["iniciar_missao"]);
+                              const tChegDest = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
                               const tFimVal = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
-                              setEditInicioMissao(utcToLocalInput(o.missionStartedAt || tIni));
+                              setEditInicioMissao(utcToLocalInput(tChegDest));
                               setEditFimMissao(utcToLocalInput(tFimVal));
                             }} title="Editar Horários da Missão" data-testid={`button-edit-times-${o.id}`}><Timer className="w-4 h-4 text-amber-500" /></Button>
                           )
