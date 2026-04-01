@@ -5051,11 +5051,24 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             : ms === "aguardando"
                             ? "text-neutral-600 bg-neutral-50 border-neutral-200"
                             : "text-cyan-700 bg-cyan-50 border-cyan-200";
+                          const nextSched = v.upcomingOrders?.find(u => u.id !== v.activeOs?.id && u.scheduledDate);
                           return (
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
-                              <Navigation className="w-3 h-3" />
-                              {transitLabel}
-                            </span>
+                            <div className="space-y-1">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
+                                <Navigation className="w-3 h-3" />
+                                {transitLabel}
+                              </span>
+                              {nextSched && (
+                                <button
+                                  onClick={() => setNextOsDetail({ os: nextSched, vehicle: v })}
+                                  className="flex items-center gap-1 text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-300 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
+                                  data-testid={`btn-next-sched-ref-${v.id}`}
+                                >
+                                  <CalendarClock className="w-3 h-3" />
+                                  PRÓXIMO AGENDAMENTO
+                                </button>
+                              )}
+                            </div>
                           );
                         }
                         return <span className="text-neutral-300 text-xs">—</span>;
