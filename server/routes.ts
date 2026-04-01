@@ -5696,18 +5696,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const currentStep = MISSION_STEPS[currentIdx];
 
-    if (currentStep === "aguardando" && so.scheduledDate) {
-      const now = new Date();
-      const scheduled = new Date(so.scheduledDate);
-      const diffMs = scheduled.getTime() - now.getTime();
-      const diffMinutes = diffMs / (1000 * 60);
-      if (diffMinutes > 30 && !so.earlyStartApproved) {
-        return res.status(403).json({
-          message: "Missão agendada — início antecipado requer autorização do admin.",
-          code: "EARLY_START_BLOCKED",
-        });
-      }
-    }
 
     if (so.status === "agendada" && currentStep === "aguardando") {
       await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
