@@ -4552,6 +4552,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 clientName: cl?.name || "—",
               });
             }
+            results.sort((a, b) => {
+              const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+              const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+              return da - db;
+            });
             return results;
           })(),
         };

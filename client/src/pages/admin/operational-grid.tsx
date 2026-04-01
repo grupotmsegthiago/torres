@@ -3080,7 +3080,11 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
       isCurrent: true,
     }] : []),
     ...(vehicle.upcomingOrders || []).map(u => ({ ...u, isCurrent: false })),
-  ];
+  ].sort((a, b) => {
+    const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
+    const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+    return da - db;
+  });
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
