@@ -4897,39 +4897,6 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
-                          {v.upcomingOrders && v.upcomingOrders.length > 0 && (() => {
-                            const next = v.upcomingOrders[0];
-                            return (
-                              <div
-                                className="mt-1.5 border-2 border-blue-300 bg-blue-50 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
-                                data-testid={`card-next-mission-${v.id}`}
-                                onClick={() => setNextOsDetail({ os: next, vehicle: v })}
-                              >
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-sm">📅</span>
-                                  <span className="text-[11px] font-black text-blue-800 uppercase tracking-wide">PRÓXIMO AGENDAMENTO</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="font-black text-sm text-blue-900">{next.osNumber}</span>
-                                  {next.scheduledDate && (
-                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-100 rounded px-1.5 py-0.5">
-                                      {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-blue-600 font-medium truncate max-w-[120px]">{next.clientName}</span>
-                                </div>
-                                {v.upcomingOrders.length > 1 && (
-                                  <button
-                                    onClick={() => setUpcomingVehicle(v)}
-                                    className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-bold cursor-pointer"
-                                    data-testid={`button-more-upcoming-${v.id}`}
-                                  >
-                                    +{v.upcomingOrders.length - 1} mais na fila
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })()}
                         </div>
                       ) : v.scheduledOs ? (
                         <div className="space-y-0.5">
