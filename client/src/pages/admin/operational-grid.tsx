@@ -4946,38 +4946,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </p>
                           )}
-                          {v.upcomingOrders && (() => {
-                            const extras = v.upcomingOrders.filter(u => u.id !== v.scheduledOs!.id);
-                            if (extras.length === 0) return null;
-                            const next = extras[0];
-                            return (
-                              <button
-                                className="mt-1 inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
-                                data-testid={`card-next-scheduled-${v.id}`}
-                                onClick={() => setNextOsDetail({ os: next, vehicle: v })}
-                              >
-                                <CalendarClock className="w-3 h-3" />
-                                {next.osNumber} {next.scheduledDate && new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                                {extras.length > 1 && <span className="text-[8px] bg-blue-200 rounded-full px-1">{`+${extras.length - 1}`}</span>}
-                              </button>
-                            );
-                          })()}
                         </div>
                       ) : v.upcomingOrders && v.upcomingOrders.length > 0 ? (
-                        (() => {
-                          const next = v.upcomingOrders[0];
-                          return (
-                            <button
-                              className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
-                              data-testid={`card-upcoming-only-${v.id}`}
-                              onClick={() => setNextOsDetail({ os: next, vehicle: v })}
-                            >
-                              <CalendarClock className="w-3 h-3" />
-                              {next.osNumber} {next.scheduledDate && new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                              {v.upcomingOrders.length > 1 && <span className="text-[8px] bg-blue-200 rounded-full px-1">{`+${v.upcomingOrders.length - 1}`}</span>}
-                            </button>
-                          );
-                        })()
+                        <span className="text-neutral-300 text-xs">—</span>
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
                       )}
@@ -5007,6 +4978,20 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             </span>
                           );
                         }
+                        const nextSchedRef = v.upcomingOrders?.find(u => u.id !== v.activeOs?.id && u.scheduledDate)
+                          || (v.upcomingOrders && v.upcomingOrders.length > 0 ? v.upcomingOrders[0] : null);
+                        if (nextSchedRef) {
+                          return (
+                            <button
+                              onClick={() => setNextOsDetail({ os: nextSchedRef, vehicle: v })}
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
+                              data-testid={`btn-next-sched-ref-${v.id}`}
+                            >
+                              <CalendarClock className="w-3 h-3" />
+                              PRÓXIMO AGENDAMENTO
+                            </button>
+                          );
+                        }
                         if (v.activeOs?.missionStatus) {
                           const ms = v.activeOs.missionStatus;
                           const transitLabel = getTransitStatus(ms);
@@ -5021,24 +5006,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             : ms === "aguardando"
                             ? "text-neutral-600 bg-neutral-50 border-neutral-200"
                             : "text-cyan-700 bg-cyan-50 border-cyan-200";
-                          const nextSched = v.upcomingOrders?.find(u => u.id !== v.activeOs?.id && u.scheduledDate);
                           return (
-                            <div className="space-y-1">
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
-                                <Navigation className="w-3 h-3" />
-                                {transitLabel}
-                              </span>
-                              {nextSched && (
-                                <button
-                                  onClick={() => setNextOsDetail({ os: nextSched, vehicle: v })}
-                                  className="flex items-center gap-1 text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-300 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
-                                  data-testid={`btn-next-sched-ref-${v.id}`}
-                                >
-                                  <CalendarClock className="w-3 h-3" />
-                                  PRÓXIMO AGENDAMENTO
-                                </button>
-                              )}
-                            </div>
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
+                              <Navigation className="w-3 h-3" />
+                              {transitLabel}
+                            </span>
                           );
                         }
                         return <span className="text-neutral-300 text-xs">—</span>;
