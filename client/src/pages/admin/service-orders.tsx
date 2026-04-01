@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search, Wrench, Save, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
@@ -1361,6 +1361,10 @@ export default function ServiceOrdersPage() {
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
   const [filterVehicleId, setFilterVehicleId] = useState<number | null>(null);
   const [searchOS, setSearchOS] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
+  const [filterClient, setFilterClient] = useState<number | null>(null);
+  const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
   const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
   const [pdfViewerTitle, setPdfViewerTitle] = useState("");
   const [pdfPages, setPdfPages] = useState<string[]>([]);
@@ -1527,22 +1531,113 @@ export default function ServiceOrdersPage() {
         );
       })()}
 
-      <div className="mb-3 relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-        <input
-          type="text"
-          placeholder="Pesquisar por OS, cliente, agente ou autorizado por..."
-          value={searchOS}
-          onChange={e => setSearchOS(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
-          data-testid="input-search-os"
-        />
-        {searchOS && (
-          <button onClick={() => setSearchOS("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
+      {(() => {
+        const allOrds = orders || [];
+        const getOsStatus = (o: ServiceOrder) => {
+          if (o.status === "cancelada") return "cancelada";
+          if (o.status === "concluida" || o.status === "concluída") return "concluida";
+          if (o.status === "em_andamento") return "em_andamento";
+          return "pendente";
+        };
+        const statusCounts = { pendente: 0, em_andamento: 0, concluida: 0, cancelada: 0, reaproveitada: 0 };
+        allOrds.forEach(o => { statusCounts[getOsStatus(o)]++; if (o.priority === "reaproveitamento") statusCounts.reaproveitada++; });
+        const authorizers = [...new Map(allOrds.filter(o => (o as any).createdByUserId).map(o => {
+          const uid = (o as any).createdByUserId;
+          const u = allUsers.find((u: any) => u.id === uid);
+          return [uid, { id: uid, name: u?.name || `User #${uid}` }];
+        })).values()];
+        const clientsInOrders = [...new Map(allOrds.map(o => [o.clientId, { id: o.clientId, name: getClientName(o.clientId) }])).values()];
+        const hasAnyFilter = filterStatus || filterAuthorizer || filterClient || filterPeriod;
+
+        return (
+          <div className="mb-3 space-y-2" data-testid="section-filters">
+            <div className="flex items-center gap-2 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Pesquisar por OS, cliente, agente ou autorizado por..."
+                value={searchOS}
+                onChange={e => setSearchOS(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                data-testid="input-search-os"
+              />
+              {searchOS && (
+                <button onClick={() => setSearchOS("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mr-1">Status:</span>
+              {([
+                { key: "pendente", label: "Pendentes", color: "bg-amber-100 text-amber-800 border-amber-300", activeColor: "bg-amber-600 text-white border-amber-600" },
+                { key: "em_andamento", label: "Em Andamento", color: "bg-blue-100 text-blue-800 border-blue-300", activeColor: "bg-blue-600 text-white border-blue-600" },
+                { key: "concluida", label: "Concluídas", color: "bg-emerald-100 text-emerald-800 border-emerald-300", activeColor: "bg-emerald-600 text-white border-emerald-600" },
+                { key: "cancelada", label: "Canceladas", color: "bg-red-100 text-red-800 border-red-300", activeColor: "bg-red-600 text-white border-red-600" },
+                { key: "reaproveitada", label: "Reaprov.", color: "bg-violet-100 text-violet-800 border-violet-300", activeColor: "bg-violet-600 text-white border-violet-600" },
+              ] as const).map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilterStatus(filterStatus === f.key ? null : f.key)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${filterStatus === f.key ? f.activeColor : f.color} hover:opacity-80`}
+                  data-testid={`filter-status-${f.key}`}
+                >
+                  {f.label}
+                  <span className={`text-[10px] font-bold ${filterStatus === f.key ? "bg-white/30 text-white" : "bg-black/5"} rounded-full px-1.5 py-0 min-w-[18px] text-center`}>
+                    {statusCounts[f.key]}
+                  </span>
+                </button>
+              ))}
+
+              <div className="w-px h-5 bg-neutral-200 mx-1" />
+
+              <select
+                value={filterClient || ""}
+                onChange={e => setFilterClient(e.target.value ? Number(e.target.value) : null)}
+                className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 max-w-[160px]"
+                data-testid="filter-client"
+              >
+                <option value="">Todos Clientes</option>
+                {clientsInOrders.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+
+              <select
+                value={filterAuthorizer || ""}
+                onChange={e => setFilterAuthorizer(e.target.value ? Number(e.target.value) : null)}
+                className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 max-w-[160px]"
+                data-testid="filter-authorizer"
+              >
+                <option value="">Autorizador</option>
+                {authorizers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+
+              <select
+                value={filterPeriod || ""}
+                onChange={e => setFilterPeriod(e.target.value || null)}
+                className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10"
+                data-testid="filter-period"
+              >
+                <option value="">Período</option>
+                <option value="hoje">Hoje</option>
+                <option value="ontem">Ontem</option>
+                <option value="semana">Esta Semana</option>
+                <option value="mes">Este Mês</option>
+              </select>
+
+              {hasAnyFilter && (
+                <button
+                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(null); }}
+                  className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 ml-1 transition-colors"
+                  data-testid="button-clear-filters"
+                >
+                  <RotateCcw className="w-3 h-3" /> Limpar
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
@@ -1550,8 +1645,53 @@ export default function ServiceOrdersPage() {
         ) : (orders || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
         ) : (() => {
-          const preFiltered = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
-          const displayOrders = searchOS.trim() ? preFiltered.filter(o => {
+          const getOsStatusKey = (o: ServiceOrder) => {
+            if (o.status === "cancelada") return "cancelada";
+            if (o.status === "concluida" || o.status === "concluída") return "concluida";
+            if (o.status === "em_andamento") return "em_andamento";
+            return "pendente";
+          };
+          let filtered = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
+          if (filterStatus) {
+            if (filterStatus === "reaproveitada") {
+              filtered = filtered.filter(o => o.priority === "reaproveitamento");
+            } else {
+              filtered = filtered.filter(o => getOsStatusKey(o) === filterStatus);
+            }
+          }
+          if (filterClient) {
+            filtered = filtered.filter(o => o.clientId === filterClient);
+          }
+          if (filterAuthorizer) {
+            filtered = filtered.filter(o => (o as any).createdByUserId === filterAuthorizer);
+          }
+          if (filterPeriod) {
+            const now = new Date();
+            const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+            const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            let periodStart: Date;
+            let periodEnd: Date;
+            if (filterPeriod === "hoje") {
+              periodStart = startOfDay(brNow);
+              periodEnd = new Date(periodStart.getTime() + 86400000);
+            } else if (filterPeriod === "ontem") {
+              periodEnd = startOfDay(brNow);
+              periodStart = new Date(periodEnd.getTime() - 86400000);
+            } else if (filterPeriod === "semana") {
+              const dayOfWeek = brNow.getDay();
+              const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+              periodStart = new Date(startOfDay(brNow).getTime() - diffToMonday * 86400000);
+              periodEnd = new Date(periodStart.getTime() + 7 * 86400000);
+            } else {
+              periodStart = new Date(brNow.getFullYear(), brNow.getMonth(), 1);
+              periodEnd = new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1);
+            }
+            filtered = filtered.filter(o => {
+              const d = o.scheduledDate ? new Date(o.scheduledDate) : o.createdAt ? new Date(o.createdAt) : null;
+              return d && d >= periodStart && d < periodEnd;
+            });
+          }
+          const displayOrders = searchOS.trim() ? filtered.filter(o => {
             const s = searchOS.toLowerCase();
             const authorizer = (o as any).createdByUserId ? allUsers.find((u: any) => u.id === (o as any).createdByUserId) : null;
             const authName = authorizer?.name?.toLowerCase() || "";
@@ -1559,9 +1699,9 @@ export default function ServiceOrdersPage() {
             const agent1 = getEmployeeName(o.assignedEmployeeId)?.toLowerCase() || "";
             const agent2 = getEmployeeName(o.assignedEmployee2Id)?.toLowerCase() || "";
             return o.osNumber.toLowerCase().includes(s) || authName.includes(s) || client.includes(s) || agent1.includes(s) || agent2.includes(s);
-          }) : preFiltered;
+          }) : filtered;
           if (displayOrders.length === 0) return (
-            <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada para esta viatura</div>
+            <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada com os filtros selecionados</div>
           );
           return (
           <div className="overflow-x-auto">
