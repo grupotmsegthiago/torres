@@ -1088,6 +1088,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="text-xs font-bold text-neutral-500">{m.placa_viatura || "-"}</span>
                       <span className={`text-xs font-black font-mono ${isCancelada ? "text-red-700" : "text-green-700"}`}>{fmt(m.fat_total)}</span>
+                      <span className="text-xs font-black font-mono text-red-600">{fmt(custoTotal)}</span>
                       <span className={`text-xs font-black font-mono ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</span>
                       <Badge className={`text-[10px] font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
                         {fmtPct(m.margem)}

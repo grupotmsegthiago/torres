@@ -6753,11 +6753,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         }
 
         {
+          const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
+          let despPedagio = 0, despCombustivel = 0, despOutras = 0;
+          for (const mc of osMissionCosts) {
+            const amt = Number(mc.amount) || 0;
+            const cat = (mc.category || "").toLowerCase();
+            if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagio += amt;
+            else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivel += amt;
+            else despOutras += amt;
+          }
+          const pedagioEstimado = Number((so as any).pedagioEstimado) || 0;
+          if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
+
           const resultado = calcularEscolta({
             km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
-            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+            despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, contrato,
           });
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
@@ -6788,6 +6800,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
             pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
             pag_reembolsos: nb(resultado.pag_reembolsos), pag_total: nb(resultado.pag_total),
+            despesas_pedagio: nb(despPedagio), despesas_combustivel: nb(despCombustivel), despesas_outras: nb(despOutras),
             resultado_bruto: nb(resultado.resultado.bruto), resultado_liquido: nb(resultado.resultado.liquido),
             margem_percentual: nb(resultado.resultado.margem_pct),
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || user.name,
@@ -6799,6 +6812,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             data_missao: so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
           });
+          console.log(`[auto-billing] OS ${so.osNumber}: despesas pedágio=${despPedagio} combustível=${despCombustivel} outras=${despOutras} pag_total=${resultado.pag_total} fat_total=${resultado.fat_total}`);
         }
       } catch (billingErr: any) {
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
@@ -9772,9 +9786,24 @@ Regras:
           }
 
           const existingBilling = (billings || []).find((b: any) => b.service_order_id === so.id);
-          const despesas_pedagio = nb(existingBilling?.despesas_pedagio);
-          const despesas_combustivel = nb(existingBilling?.despesas_combustivel);
-          const despesas_outras = nb(existingBilling?.despesas_outras);
+          let despesas_pedagio = nb(existingBilling?.despesas_pedagio);
+          let despesas_combustivel = nb(existingBilling?.despesas_combustivel);
+          let despesas_outras = nb(existingBilling?.despesas_outras);
+
+          if (despesas_pedagio === 0 && despesas_combustivel === 0 && despesas_outras === 0) {
+            try {
+              const osMC = await storage.getMissionCostsByOS(so.id);
+              for (const mc of osMC) {
+                const amt = Number(mc.amount) || 0;
+                const cat = (mc.category || "").toLowerCase();
+                if (cat.includes("pedágio") || cat.includes("pedagio")) despesas_pedagio += amt;
+                else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despesas_combustivel += amt;
+                else despesas_outras += amt;
+              }
+              const pedEstimado = Number((so as any).pedagioEstimado) || 0;
+              if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
+            } catch (_e) {}
+          }
 
           const r = (v: number) => Math.round(v * 100) / 100;
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
@@ -9894,6 +9923,26 @@ Regras:
       });
 
       const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
+
+      for (const b of items) {
+        if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
+          try {
+            const osMC = await storage.getMissionCostsByOS(b.service_order_id);
+            for (const mc of osMC) {
+              const amt = Number(mc.amount) || 0;
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + amt;
+              else b.despesas_outras = (Number(b.despesas_outras) || 0) + amt;
+            }
+            if ((Number(b.despesas_pedagio) || 0) === 0) {
+              const soData = osLookup.get(b.service_order_id);
+              const pedEst = Number(soData?.pedagioEstimado) || 0;
+              if (pedEst > 0) b.despesas_pedagio = pedEst;
+            }
+          } catch (_e) {}
+        }
+      }
 
       const byMission = items.map((b: any) => {
         const fat = calcFat(b);
