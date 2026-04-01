@@ -6509,10 +6509,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     if (nextStep === "finalizada") {
       updates.completedDate = new Date();
+      updates.status = "concluida";
+      lastMissionPos.delete(serviceOrderId);
+      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
 
     if (nextStep === "encerrada") {
-      updates.status = "concluida";
+      if (updates.status !== "concluida") updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
       try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
