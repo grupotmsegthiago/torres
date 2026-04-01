@@ -348,12 +348,13 @@ export default function CotacaoGastoPage() {
                   <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">Preço Mínimo da Missão</p>
                   <p className="text-3xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                   <p className="text-xs text-emerald-300 mt-1">Margem real: {fmtPct(margemReal)}</p>
+                  <p className="text-xs text-emerald-300">Ganho: {fmt(lucro)}</p>
                   {usouMargemMinima && (
                     <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Margem mínima de {MARGEM_MINIMA}% aplicada</p>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-3 bg-white/5 rounded-lg text-center">
                     <p className="text-[10px] font-bold text-neutral-400 uppercase">R$/KM</p>
                     <p className="text-lg font-black font-mono mt-1" data-testid="text-custo-km">
@@ -364,6 +365,12 @@ export default function CotacaoGastoPage() {
                     <p className="text-[10px] font-bold text-neutral-400 uppercase">R$/Hora</p>
                     <p className="text-lg font-black font-mono mt-1" data-testid="text-custo-hora">
                       {horasMissaoCalc > 0 ? fmt(custoHoraFinal) : "—"}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-emerald-500/20 rounded-lg text-center">
+                    <p className="text-[10px] font-bold text-emerald-400 uppercase">Ganho/KM</p>
+                    <p className="text-lg font-black font-mono mt-1 text-emerald-400" data-testid="text-ganho-km">
+                      {params.kmPercurso > 0 ? fmt(lucro / params.kmPercurso) : "—"}
                     </p>
                   </div>
                 </div>
