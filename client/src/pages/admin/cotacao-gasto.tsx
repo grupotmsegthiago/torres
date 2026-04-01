@@ -116,13 +116,13 @@ export default function CotacaoGastoPage() {
   const precoFinal = Math.max(precoCalculado, PRECO_MINIMO);
   const lucro = precoFinal - baseNF;
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
-  const precoTabelaKm = params.kmPercurso > 0 ? VALOR_KM * params.kmPercurso : 0;
+  const kmTrecho = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : (params.kmPercurso > 0 ? Math.round(params.kmPercurso / 2) : 0);
+  const precoTabelaKm = kmTrecho > 0 ? VALOR_KM * kmTrecho : 0;
   const lucroTabelaKm = precoTabelaKm - baseNF;
   const margemTabelaKm = precoTabelaKm > 0 ? (lucroTabelaKm / precoTabelaKm) * 100 : 0;
 
-  const kmTrecho = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : (params.kmPercurso > 0 ? Math.round(params.kmPercurso / 2) : 0);
   const horasMissaoCalc = Math.max(HORA_MINIMA, kmTrecho > 0 ? Math.max(kmTrecho / 40, routeInfo ? routeInfo.durationSeconds / 3600 : 0) : params.horasMissao);
-  const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
+  const custoKmFinal = kmTrecho > 0 ? precoFinal / kmTrecho : 0;
   const custoHoraFinal = horasMissaoCalc > 0 ? precoFinal / horasMissaoCalc : 0;
 
   return (
@@ -384,18 +384,18 @@ export default function CotacaoGastoPage() {
                     <p className="text-2xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                     <p className="text-[10px] text-emerald-300 mt-1">Margem: {fmtPct(margemReal)}</p>
                     <p className="text-[10px] text-emerald-300">Ganho: {fmt(lucro)}</p>
-                    {params.kmPercurso > 0 && (
-                      <p className="text-[10px] text-emerald-300">R$/KM: {fmt(precoFinal / params.kmPercurso)}</p>
+                    {kmTrecho > 0 && (
+                      <p className="text-[10px] text-emerald-300">R$/KM: {fmt(precoFinal / kmTrecho)}</p>
                     )}
                   </div>
-                  <div className={`p-4 rounded-xl border ${params.kmPercurso > 0 ? "bg-amber-600/20 border-amber-500/30" : "bg-white/5 border-white/10"}`}>
+                  <div className={`p-4 rounded-xl border ${kmTrecho > 0 ? "bg-amber-600/20 border-amber-500/30" : "bg-white/5 border-white/10"}`}>
                     <p className="text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">Tabela R$ 5,30/KM</p>
-                    <p className="text-2xl font-black font-mono text-white" data-testid="text-preco-tabela">{params.kmPercurso > 0 ? fmt(precoTabelaKm) : "—"}</p>
-                    {params.kmPercurso > 0 && (
+                    <p className="text-2xl font-black font-mono text-white" data-testid="text-preco-tabela">{kmTrecho > 0 ? fmt(precoTabelaKm) : "—"}</p>
+                    {kmTrecho > 0 && (
                       <>
                         <p className="text-[10px] text-amber-300 mt-1">Margem: {fmtPct(margemTabelaKm)}</p>
                         <p className="text-[10px] text-amber-300">Ganho: {fmt(lucroTabelaKm)}</p>
-                        <p className="text-[10px] text-amber-300">R$/KM: {fmt(VALOR_KM)}</p>
+                        <p className="text-[10px] text-amber-300">{kmTrecho} km × R$ 5,30</p>
                       </>
                     )}
                   </div>
@@ -405,7 +405,7 @@ export default function CotacaoGastoPage() {
                   <div className="p-3 bg-white/5 rounded-lg text-center">
                     <p className="text-[10px] font-bold text-neutral-400 uppercase">R$/KM</p>
                     <p className="text-lg font-black font-mono mt-1" data-testid="text-custo-km">
-                      {params.kmPercurso > 0 ? fmt(custoKmFinal) : "—"}
+                      {kmTrecho > 0 ? fmt(custoKmFinal) : "—"}
                     </p>
                   </div>
                   <div className="p-3 bg-white/5 rounded-lg text-center">
@@ -417,7 +417,7 @@ export default function CotacaoGastoPage() {
                   <div className="p-3 bg-emerald-500/20 rounded-lg text-center">
                     <p className="text-[10px] font-bold text-emerald-400 uppercase">Ganho/KM</p>
                     <p className="text-lg font-black font-mono mt-1 text-emerald-400" data-testid="text-ganho-km">
-                      {params.kmPercurso > 0 ? fmt(lucro / params.kmPercurso) : "—"}
+                      {kmTrecho > 0 ? fmt(lucro / kmTrecho) : "—"}
                     </p>
                   </div>
                 </div>
