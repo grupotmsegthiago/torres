@@ -4851,8 +4851,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         {metaBatida && <span className="ml-0.5">🏆</span>}
                                       </span>
                                     </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="text-xs max-w-xs">
-                                      <p className="font-bold">Faturamento VTR (Hoje)</p>
+                                    <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
+                                      <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
                                         const hora = g.scheduledDate ? new Date(g.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
@@ -4863,11 +4863,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                             <p className="flex items-center gap-1">
                                               <span className={st.cls}>{st.icon}</span>
                                               <span className="text-neutral-400">{hora}</span>
-                                              <span>{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
+                                              <span className="font-bold text-neutral-800">{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
                                               <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
                                             </p>
                                             {(he > 0 || ke > 0) && (
-                                              <p className="pl-4 text-[10px] text-amber-300">
+                                              <p className="pl-4 text-[10px] text-amber-600 font-bold">
                                                 {he > 0 && <span>HE: {fmtBRL(he)} </span>}
                                                 {ke > 0 && <span>KM exc: {fmtBRL(ke)}</span>}
                                               </p>
@@ -4875,19 +4875,19 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                           </div>
                                         );
                                       })}
-                                      {vtrWithCost.length > 1 && <p className="font-bold border-t border-neutral-600 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
+                                      {vtrWithCost.length > 1 && <p className="font-black text-neutral-900 border-t border-neutral-200 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
                                       {(() => {
                                         const totHE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
                                         const totKE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_km_extra || 0), 0);
                                         if (totHE <= 0 && totKE <= 0) return null;
                                         return (
-                                          <p className="text-[10px] text-amber-300">
+                                          <p className="text-[10px] text-amber-600 font-bold">
                                             {totHE > 0 && <span>Total HE: {fmtBRL(totHE)} </span>}
                                             {totKE > 0 && <span>Total KM exc: {fmtBRL(totKE)}</span>}
                                           </p>
                                         );
                                       })()}
-                                      <div className={`border-t border-neutral-600 pt-1 mt-1 font-bold ${metaBatida ? "text-emerald-400" : "text-neutral-300"}`}>
+                                      <div className={`border-t border-neutral-200 pt-1 mt-1 font-black ${metaBatida ? "text-green-700" : "text-neutral-500"}`}>
                                         Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ META BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
                                       </div>
                                     </TooltipContent>
@@ -4898,17 +4898,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         <span>▼</span> {fmtBRL(totCusto)}
                                       </span>
                                     </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="text-xs max-w-xs">
-                                      <p className="font-bold">Custo VTR (Hoje)</p>
-                                      <p>VRP/Agentes: {fmtBRL(totPag)}</p>
-                                      {totComb > 0 && <p>Combustível: {fmtBRL(totComb)}</p>}
-                                      {totPed > 0 && <p>Pedágio: {fmtBRL(totPed)}</p>}
-                                      {totOutros > 0 && <p>Outros: {fmtBRL(totOutros)}</p>}
+                                    <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
+                                      <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
+                                      <p className="text-neutral-700">VRP/Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
+                                      {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
+                                      {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
+                                      {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
                                       {vtrWithCost.length > 1 && (
-                                        <div className="border-t border-neutral-600 pt-1 mt-1">
-                                          <p className="font-bold text-[10px]">Por missão:</p>
+                                        <div className="border-t border-neutral-200 pt-1 mt-1">
+                                          <p className="font-black text-[10px] text-neutral-900">Por missão:</p>
                                           {vtrWithCost.map(g => (
-                                            <p key={g.id}>{g.osNumber}: custo {fmtBRL(g.liveCost?.custo_total || 0)}</p>
+                                            <p key={g.id} className="text-neutral-700">{g.osNumber}: custo <span className="font-bold">{fmtBRL(g.liveCost?.custo_total || 0)}</span></p>
                                           ))}
                                         </div>
                                       )}
