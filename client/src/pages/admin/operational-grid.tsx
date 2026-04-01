@@ -4217,6 +4217,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
+  const [nextOsDetail, setNextOsDetail] = useState<{ os: any; vehicle: TrackedVehicle } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const [rowForwardUpdate, setRowForwardUpdate] = useState<any>(null);
   const [rowForwardEmail, setRowForwardEmail] = useState("");
@@ -4837,15 +4838,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           {v.upcomingOrders && v.upcomingOrders.length > 0 && (() => {
                             const next = v.upcomingOrders[0];
                             return (
-                              <div className="mt-1.5 border-2 border-blue-300 bg-blue-50 rounded-lg px-2.5 py-1.5 shadow-sm" data-testid={`card-next-mission-${v.id}`}>
+                              <div
+                                className="mt-1.5 border-2 border-blue-300 bg-blue-50 rounded-lg px-2.5 py-1.5 shadow-sm cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                                data-testid={`card-next-mission-${v.id}`}
+                                onClick={() => setNextOsDetail({ os: next, vehicle: v })}
+                              >
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-sm">📅</span>
-                                  <span className="text-[11px] font-black text-blue-800 uppercase tracking-wide">PRÓXIMA:</span>
-                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-black text-sm text-blue-900 hover:underline cursor-pointer" data-testid={`link-next-os-${v.id}`}>
-                                    {next.osNumber}
-                                  </Link>
+                                  <span className="text-[11px] font-black text-blue-800 uppercase tracking-wide">PRÓXIMO AGENDAMENTO</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="font-black text-sm text-blue-900">{next.osNumber}</span>
                                   {next.scheduledDate && (
                                     <span className="text-[10px] text-blue-700 font-bold bg-blue-100 rounded px-1.5 py-0.5">
                                       {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -4886,15 +4889,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             if (extras.length === 0) return null;
                             const next = extras[0];
                             return (
-                              <div className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-next-scheduled-${v.id}`}>
+                              <div
+                                className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1 cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                                data-testid={`card-next-scheduled-${v.id}`}
+                                onClick={() => setNextOsDetail({ os: next, vehicle: v })}
+                              >
                                 <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
                                   <CalendarClock className="w-3 h-3" />
-                                  Próxima
+                                  Próximo Agendamento
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer">
-                                    {next.osNumber}
-                                  </Link>
+                                  <span className="font-bold text-xs text-blue-800">{next.osNumber}</span>
                                   {next.scheduledDate && (
                                     <span className="text-[10px] text-blue-600 font-medium">
                                       {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -4915,15 +4920,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         (() => {
                           const next = v.upcomingOrders[0];
                           return (
-                            <div className="border border-blue-200 bg-blue-50/60 rounded px-2 py-1" data-testid={`card-upcoming-only-${v.id}`}>
+                            <div
+                              className="border border-blue-200 bg-blue-50/60 rounded px-2 py-1 cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                              data-testid={`card-upcoming-only-${v.id}`}
+                              onClick={() => setNextOsDetail({ os: next, vehicle: v })}
+                            >
                               <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
                                 <CalendarClock className="w-3 h-3" />
-                                Agendada
+                                Próximo Agendamento
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <Link href={`/admin/service-orders?os=${next.id}`} className="font-bold text-xs text-blue-800 hover:underline cursor-pointer" data-testid={`link-upcoming-os-${v.id}`}>
-                                  {next.osNumber}
-                                </Link>
+                                <span className="font-bold text-xs text-blue-800">{next.osNumber}</span>
                                 {next.scheduledDate && (
                                   <span className="text-[10px] text-blue-600 font-medium">
                                     {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -5001,6 +5008,137 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       )}
     </Card>
     <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
+    <Dialog open={!!nextOsDetail} onOpenChange={(v) => { if (!v) setNextOsDetail(null); }}>
+      <DialogContent className="max-w-md">
+        {nextOsDetail && (() => {
+          const { os, vehicle: veh } = nextOsDetail;
+          const scheduledDt = os.scheduledDate ? new Date(os.scheduledDate) : null;
+          const timeUntil = scheduledDt ? (() => {
+            const diff = scheduledDt.getTime() - Date.now();
+            if (diff < 0) return "Já passou";
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            return h > 0 ? `em ${h}h${m > 0 ? `${m}min` : ""}` : `em ${m}min`;
+          })() : null;
+          return (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-lg">
+                  <CalendarClock className="w-5 h-5 text-blue-600" />
+                  Próximo Agendamento
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div>
+                    <p className="font-black text-xl text-blue-900" data-testid="text-next-os-number">{os.osNumber}</p>
+                    <p className="text-xs text-blue-600 font-medium">{os.type === "escolta" ? "Escolta Armada" : os.type || "—"}</p>
+                  </div>
+                  {scheduledDt && (
+                    <div className="text-right">
+                      <p className="text-lg font-black text-blue-800">
+                        {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                      </p>
+                      <p className="text-xs text-blue-600 font-medium">
+                        {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      </p>
+                      {timeUntil && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${timeUntil === "Já passou" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                          {timeUntil}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
+                    <Building2 className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[10px] text-neutral-400 font-bold uppercase">Cliente</p>
+                      <p className="text-sm font-bold text-neutral-800" data-testid="text-next-client">{os.clientName}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
+                    <Car className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[10px] text-neutral-400 font-bold uppercase">Viatura</p>
+                      <p className="text-sm font-bold text-neutral-800" data-testid="text-next-vehicle">{veh.plate} — {veh.model}</p>
+                    </div>
+                  </div>
+
+                  {(os.origin || os.destination) && (
+                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
+                      <Navigation className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Rota</p>
+                        {os.origin && <p className="text-xs text-neutral-700"><span className="font-bold text-green-700">ORIGEM:</span> {os.origin}</p>}
+                        {os.destination && <p className="text-xs text-neutral-700"><span className="font-bold text-red-700">DESTINO:</span> {os.destination}</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {(os.employee1Name || os.employee2Name) && (
+                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
+                      <Users className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Agentes</p>
+                        {os.employee1Name && (
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-neutral-800">{os.employee1Name}</p>
+                            {os.employee1Phone && (
+                              <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
+                                <SiWhatsapp className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {os.employee2Name && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs font-bold text-neutral-800">{os.employee2Name}</p>
+                            {os.employee2Phone && (
+                              <a href={`https://wa.me/55${os.employee2Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
+                                <SiWhatsapp className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {(os.escortedDriverName || os.escortedVehiclePlate) && (
+                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
+                      <Truck className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Escoltado</p>
+                        {os.escortedDriverName && <p className="text-xs font-bold text-neutral-800">{os.escortedDriverName}</p>}
+                        {os.escortedDriverPhone && (
+                          <a href={`tel:${os.escortedDriverPhone}`} className="text-xs text-blue-600 hover:underline">{os.escortedDriverPhone}</a>
+                        )}
+                        {os.escortedVehiclePlate && <p className="text-xs text-neutral-600 font-medium">Placa: {os.escortedVehiclePlate}</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Link href={`/admin/service-orders?os=${os.id}`} className="flex-1">
+                    <Button variant="outline" className="w-full text-xs" data-testid="button-go-to-os">
+                      <ExternalLink className="w-3.5 h-3.5 mr-1" /> Abrir OS
+                    </Button>
+                  </Link>
+                  <Button variant="outline" onClick={() => setNextOsDetail(null)} className="flex-1 text-xs" data-testid="button-close-next-detail">
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+            </>
+          );
+        })()}
+      </DialogContent>
+    </Dialog>
     {ctxMenu && (
       <VehicleContextMenu
         state={ctxMenu}

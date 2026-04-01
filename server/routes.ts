@@ -4489,8 +4489,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
     const orders = await storage.getServiceOrders();
     const gridVehicles = await storage.getVehicles();
+    const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const activeOrders = orders.filter(
-      (o) => (o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada"
+      (o) => {
+        if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") return true;
+        if (o.status === "concluida" || o.missionStatus === "encerrada") {
+          const oDate = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+            : o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          if (oDate === todayBRT) return true;
+        }
+        return false;
+      }
     );
 
     const todayStr = new Date().toISOString().split("T")[0];
@@ -4621,7 +4630,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
 
-        if (o.status === "em_andamento" && o.type === "escolta") {
+        if ((o.status === "em_andamento" || o.status === "concluida" || o.missionStatus === "encerrada") && o.type === "escolta") {
           try {
             const photos = await storage.getMissionPhotosByOS(o.id);
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
@@ -4632,7 +4641,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
             const scheduledTime = o.scheduledDate ? new Date(o.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
             const startTime = o.missionStartedAt ? new Date(o.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
-            const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+            const endTime = o.completedDate ? new Date(o.completedDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : null;
+            const nowTime = endTime || new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
             let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
             let contratoNome: string | null = null;
@@ -5112,7 +5122,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             );
             const results = [];
             for (const u of upcoming) {
-              const cl = await storage.getClient(u.clientId);
+              const [cl, e1, e2] = await Promise.all([
+                storage.getClient(u.clientId),
+                u.assignedEmployeeId ? storage.getEmployee(u.assignedEmployeeId) : null,
+                u.assignedEmployee2Id ? storage.getEmployee(u.assignedEmployee2Id) : null,
+              ]);
               results.push({
                 id: u.id,
                 osNumber: u.osNumber,
@@ -5120,6 +5134,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 priority: u.priority || "agendada",
                 scheduledDate: u.scheduledDate,
                 clientName: cl?.name || "—",
+                origin: u.origin || null,
+                destination: u.destination || null,
+                employee1Name: e1?.name || null,
+                employee1Phone: e1?.phone || null,
+                employee2Name: e2?.name || null,
+                employee2Phone: e2?.phone || null,
+                escortedDriverName: u.escortedDriverName || null,
+                escortedDriverPhone: u.escortedDriverPhone || null,
+                escortedVehiclePlate: u.escortedVehiclePlate || null,
+                type: u.type || null,
               });
             }
             results.sort((a, b) => {
