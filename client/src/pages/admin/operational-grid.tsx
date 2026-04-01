@@ -2804,11 +2804,33 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               </p>
             </div>
           )}
+          {(() => {
+            const alertLat = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+            const alertLng = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+            const alertMapsLink = alertLat && alertLng ? `https://www.google.com/maps?q=${alertLat},${alertLng}&z=17&hl=pt-BR` : null;
+            if (!alertLat || !alertLng) return null;
+            return (
+              <div className="px-4 py-2">
+                <a href={alertMapsLink!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-neutral-200 hover:border-blue-400 transition-colors" data-testid={`alert-map-${v.id}`}>
+                  <img
+                    src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                    alt="Localização do alerta"
+                    className="w-full h-[140px] object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  <div className="px-2 py-1 bg-neutral-50 flex items-center gap-1.5 text-[10px] text-neutral-600">
+                    <MapPin className="w-3 h-3 text-red-500 flex-shrink-0" />
+                    <span className="truncate">{v.tracker?.address || `${Number(alertLat).toFixed(5)}, ${Number(alertLng).toFixed(5)}`}</span>
+                  </div>
+                </a>
+              </div>
+            );
+          })()}
           <div className="px-4 pb-4 flex flex-col items-center gap-3">
-            <div className="flex justify-center gap-3">
+            <div className="flex justify-center gap-2 flex-wrap">
               {photoModalUrl && photoModalUrl !== "__no_photo__" && (
                 <button
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
                   onClick={async () => {
                     const ok = await copyImageToClipboard(photoModalUrl);
                     toast(ok
@@ -2823,13 +2845,38 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 </button>
               )}
               <button
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                   const reportText = generateReport(v, gridItem || null);
+                  const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+                  const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+                  const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
+                  const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
                   try {
-                    await navigator.clipboard.writeText(reportText);
-                    const encoded = encodeURIComponent(reportText);
+                    await navigator.clipboard.writeText(fullReport);
+                    toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
+                  } catch {
+                    toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
+                  }
+                }}
+                data-testid={`btn-copy-form-modal-${v.id}`}
+              >
+                <Copy className="w-4 h-4" />
+                Copiar Formulário
+              </button>
+              <button
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
+                onClick={async () => {
+                  const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                  const reportText = generateReport(v, gridItem || null);
+                  const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+                  const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+                  const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
+                  const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
+                  try {
+                    await navigator.clipboard.writeText(fullReport);
+                    const encoded = encodeURIComponent(fullReport);
                     window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   } catch {
                     toast({ title: "Erro", description: "Não foi possível enviar.", variant: "destructive" });
@@ -3705,18 +3752,54 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}</p>
               </div>
             )}
+            {(() => {
+              const alertLat = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+              const alertLng = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+              const alertMapsLink = alertLat && alertLng ? `https://www.google.com/maps?q=${alertLat},${alertLng}&z=17&hl=pt-BR` : null;
+              if (!alertLat || !alertLng) return null;
+              return (
+                <div className="px-4 py-2">
+                  <a href={alertMapsLink!} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-neutral-200 hover:border-blue-400 transition-colors" data-testid={`ctx-alert-map-${v.id}`}>
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${alertLat},${alertLng}&zoom=15&size=600x200&markers=color:red%7C${alertLat},${alertLng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                      alt="Localização do alerta"
+                      className="w-full h-[140px] object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <div className="px-2 py-1 bg-neutral-50 flex items-center gap-1.5 text-[10px] text-neutral-600">
+                      <MapPin className="w-3 h-3 text-red-500 flex-shrink-0" />
+                      <span className="truncate">{v.tracker?.address || `${Number(alertLat).toFixed(5)}, ${Number(alertLng).toFixed(5)}`}</span>
+                    </div>
+                  </a>
+                </div>
+              );
+            })()}
             <div className="px-4 pb-4 flex flex-col items-center gap-3">
-              <div className="flex justify-center gap-3">
+              <div className="flex justify-center gap-2 flex-wrap">
                 {photoModalUrl !== "__no_photo__" && (
-                  <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                  <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
                     onClick={async () => { const ok = await copyImageToClipboard(photoModalUrl); toast(ok ? { title: "Foto copiada!" } : { title: "Erro", variant: "destructive" }); }}
                     data-testid={`ctx-copy-photo-${v.id}`}><Camera className="w-4 h-4" /> Copiar Foto</button>
                 )}
-                <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
+                <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                     const reportText = generateReport(v, gridItem || null);
-                    try { await navigator.clipboard.writeText(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                    const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+                    const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+                    const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
+                    const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
+                    try { await navigator.clipboard.writeText(fullReport); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Formulário</button>
+                <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
+                  onClick={async () => {
+                    const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                    const reportText = generateReport(v, gridItem || null);
+                    const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
+                    const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
+                    const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
+                    const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
+                    try { await navigator.clipboard.writeText(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
                   }} data-testid={`ctx-whatsapp-form-${v.id}`}><SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp</button>
               </div>
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
@@ -5017,13 +5100,35 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
               )}
 
               <button
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-neutral-800 text-white hover:bg-neutral-900"
+                onClick={async () => {
+                  if (!rowForwardUpdate) return;
+                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
+                  const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
+                  const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                  const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
+                  const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
+                  const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
+                  const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
+                  try { await navigator.clipboard.writeText(fullReport); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                }}
+                data-testid="btn-row-copy-form"
+              >
+                <Copy className="w-4 h-4" /> Copiar Formulário
+              </button>
+
+              <button
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-green-600 text-white hover:bg-green-700"
                 onClick={async () => {
                   if (!rowForwardUpdate) return;
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
                   const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  try { await navigator.clipboard.writeText(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
+                  const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
+                  const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
+                  const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
+                  try { await navigator.clipboard.writeText(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
                 }}
                 data-testid="btn-row-whatsapp-form"
               >
@@ -5628,6 +5733,16 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     <span>{locationAddr}</span>
                   </div>
                 )}
+                {lat && lng && (
+                  <a href={mapsLink!} target="_blank" rel="noopener noreferrer" className="mt-2 block rounded-lg overflow-hidden border border-white/20 hover:border-white/60 transition-colors" data-testid="forward-map">
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=600x150&markers=color:red%7C${lat},${lng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                      alt="Localização"
+                      className="w-full h-[120px] object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                  </a>
+                )}
                 {forwardUpdate.photoUrl && (
                   <button
                     className="mt-3 w-full relative group cursor-pointer rounded-lg overflow-hidden border-2 border-white/20 hover:border-white/60 transition-all"
@@ -5702,6 +5817,24 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                   {sendingEmail ? "Enviando..." : "Enviar por Email"}
+                </button>
+
+                <button
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
+                  onClick={async () => {
+                    if (!forwardUpdate) return;
+                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    if (mapsLink && !reportText.includes(mapsLink)) {
+                      reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
+                    }
+                    try {
+                      await navigator.clipboard.writeText(reportText);
+                      toast({ title: "Formulário copiado!" });
+                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-form"
+                >
+                  <Copy className="w-4 h-4" /> Copiar Formulário
                 </button>
 
                 <button
