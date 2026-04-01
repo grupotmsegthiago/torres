@@ -1629,6 +1629,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     };
     sanitizeDates(parsed.data);
+    parsed.data.createdByUserId = req.user?.id || null;
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
@@ -3631,6 +3632,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         return res.status(400).json({ message: `KM informado (${parsed.data.km}) é menor que o KM atual do veículo (${vehicle.km}). Verifique o hodômetro.` });
       }
     }
+    parsed.data.createdByUserId = req.user?.id || null;
     const data = await storage.createVehicleFueling(parsed.data);
     if (parsed.data.vehicleId) {
       await syncVehicleKmFromFuelings(parsed.data.vehicleId);

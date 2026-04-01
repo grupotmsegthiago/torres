@@ -501,6 +501,7 @@ export default function FuelingPage() {
   const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({ queryKey: ["/api/fueling"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fueling/${id}`); },
@@ -511,12 +512,25 @@ export default function FuelingPage() {
     },
   });
 
+  const [searchFueling, setSearchFueling] = useState("");
   const filteredFuelings = useMemo(() => {
     let list = fuelings || [];
     if (filterVehicle !== "all") list = list.filter(f => f.vehicleId === filterVehicle);
     if (filterMonth) list = list.filter(f => f.date?.startsWith(filterMonth));
+    if (searchFueling.trim()) {
+      const s = searchFueling.toLowerCase();
+      list = list.filter(f => {
+        const v = vehicles.find(vv => vv.id === f.vehicleId);
+        const plate = v?.plate?.toLowerCase() || "";
+        const driver = (f.driverId ? employees.find(e => e.id === f.driverId)?.name?.toLowerCase() : "") || "";
+        const station = f.station?.toLowerCase() || "";
+        const au = (f as any).createdByUserId ? allUsers.find((u: any) => u.id === (f as any).createdByUserId) : null;
+        const authName = au?.name?.toLowerCase() || "";
+        return plate.includes(s) || driver.includes(s) || station.includes(s) || authName.includes(s);
+      });
+    }
     return list;
-  }, [fuelings, filterVehicle, filterMonth]);
+  }, [fuelings, filterVehicle, filterMonth, searchFueling, vehicles, employees, allUsers]);
 
   const stats = useMemo(() => computeStats(filteredFuelings, vehicles), [filteredFuelings, vehicles]);
   const perVehicle = useMemo(() => computePerVehicleData(filteredFuelings, vehicles || []), [filteredFuelings, vehicles]);
@@ -568,6 +582,18 @@ export default function FuelingPage() {
           <option value="">Todo período</option>
           {months.map(m => <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</option>)}
         </select>
+        <div className="relative flex-1 min-w-[200px]">
+          <input
+            type="text"
+            placeholder="Pesquisar placa, motorista, posto ou autorizado por..."
+            value={searchFueling}
+            onChange={e => setSearchFueling(e.target.value)}
+            className="w-full h-9 pl-8 pr-8 border border-neutral-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-black/10"
+            data-testid="input-search-fueling"
+          />
+          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+          {searchFueling && <button onClick={() => setSearchFueling("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"><X className="w-3.5 h-3.5" /></button>}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
@@ -660,12 +686,14 @@ export default function FuelingPage() {
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-500 uppercase">R$/km</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-500 uppercase">Motorista</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-500 uppercase">Posto</th>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-500 uppercase">Autorizado por</th>
                                 <th className="text-right px-4 py-2 text-xs font-semibold text-neutral-500 uppercase">Ações</th>
                               </tr>
                             </thead>
                             <tbody>
                               {history.map((h, idx) => {
                                 const orig = vehicleFuelings.find(f => f.id === h.id)!;
+                                const authUser = (orig as any).createdByUserId ? allUsers.find((u: any) => u.id === (orig as any).createdByUserId) : null;
                                 return (
                                   <tr key={h.id} className="border-b border-neutral-50 hover:bg-neutral-50">
                                     <td className="px-4 py-2.5 text-neutral-900">{new Date(h.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
@@ -685,6 +713,7 @@ export default function FuelingPage() {
                                     </td>
                                     <td className="px-4 py-2.5 text-neutral-500 text-xs">{getDriver(orig.driverId) || "-"}</td>
                                     <td className="px-4 py-2.5 text-neutral-500 text-xs">{orig.station || "-"}</td>
+                                    <td className="px-4 py-2.5 text-xs">{authUser ? <span className={(authUser.role === "admin" || authUser.role === "diretoria") ? "font-semibold text-neutral-800" : "text-neutral-500"}>{authUser.name}</span> : <span className="text-neutral-400 italic">—</span>}</td>
                                     <td className="px-4 py-2.5 text-right">
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setDetailItem(orig); }} data-testid={`button-detail-dash-${h.id}`}><Eye className="w-3.5 h-3.5 text-blue-500" /></Button>
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setEditItem(orig); setShowForm(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
@@ -720,14 +749,15 @@ export default function FuelingPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Combustível</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Posto</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Autorizado por</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={11} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
+                  <tr><td colSpan={12} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
                 ) : filteredFuelings.length === 0 ? (
-                  <tr><td colSpan={11} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
+                  <tr><td colSpan={12} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
                   [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
                     const v = getVehicle(f.vehicleId);
@@ -764,6 +794,10 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-neutral-600">{fuelTypeLabel[f.fuelType] || f.fuelType}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{f.station || "-"}</td>
                         <td className="px-4 py-3 text-neutral-500 text-xs">{getDriver(f.driverId) || "-"}</td>
+                        <td className="px-4 py-3 text-xs" data-testid={`text-autorizado-fuel-${f.id}`}>{(() => {
+                          const au = (f as any).createdByUserId ? allUsers.find((u: any) => u.id === (f as any).createdByUserId) : null;
+                          return au ? <span className={(au.role === "admin" || au.role === "diretoria") ? "font-semibold text-neutral-800" : "text-neutral-500"}>{au.name}</span> : <span className="text-neutral-400 italic">—</span>;
+                        })()}</td>
                         <td className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" onClick={() => setDetailItem(f)} data-testid={`button-detail-${f.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
                           <Button variant="ghost" size="icon" onClick={() => { setEditItem(f); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>

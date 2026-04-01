@@ -215,6 +215,7 @@ export const serviceOrders = pgTable("service_orders", {
   escortContractId: text("escort_contract_id"),
   valorEstimado: real("valor_estimado"),
   stepLogs: jsonb("step_logs").default([]),
+  createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -290,6 +291,7 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   latitude: text("latitude"),
   longitude: text("longitude"),
   address: text("address"),
+  createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

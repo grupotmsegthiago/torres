@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
@@ -1049,6 +1049,7 @@ export default function ServiceOrdersPage() {
   const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
   const [filterVehicleId, setFilterVehicleId] = useState<number | null>(null);
+  const [searchOS, setSearchOS] = useState("");
   const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
   const [pdfViewerTitle, setPdfViewerTitle] = useState("");
   const [pdfPages, setPdfPages] = useState<string[]>([]);
@@ -1092,6 +1093,7 @@ export default function ServiceOrdersPage() {
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const isAdminOrDiretoria = user?.role === "admin" || user?.role === "diretoria";
@@ -1214,13 +1216,39 @@ export default function ServiceOrdersPage() {
         );
       })()}
 
+      <div className="mb-3 relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <input
+          type="text"
+          placeholder="Pesquisar por OS, cliente, agente ou autorizado por..."
+          value={searchOS}
+          onChange={e => setSearchOS(e.target.value)}
+          className="w-full pl-9 pr-4 py-2 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+          data-testid="input-search-os"
+        />
+        {searchOS && (
+          <button onClick={() => setSearchOS("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       <Card className="bg-white border-neutral-200 overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-neutral-400">Carregando...</div>
         ) : (orders || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
         ) : (() => {
-          const displayOrders = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
+          const preFiltered = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
+          const displayOrders = searchOS.trim() ? preFiltered.filter(o => {
+            const s = searchOS.toLowerCase();
+            const authorizer = (o as any).createdByUserId ? allUsers.find((u: any) => u.id === (o as any).createdByUserId) : null;
+            const authName = authorizer?.name?.toLowerCase() || "";
+            const client = getClientName(o.clientId)?.toLowerCase() || "";
+            const agent1 = getEmployeeName(o.assignedEmployeeId)?.toLowerCase() || "";
+            const agent2 = getEmployeeName(o.assignedEmployee2Id)?.toLowerCase() || "";
+            return o.osNumber.toLowerCase().includes(s) || authName.includes(s) || client.includes(s) || agent1.includes(s) || agent2.includes(s);
+          }) : preFiltered;
           if (displayOrders.length === 0) return (
             <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada para esta viatura</div>
           );
@@ -1249,6 +1277,7 @@ export default function ServiceOrdersPage() {
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Destino</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">KM Final</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-900 uppercase tracking-wider whitespace-nowrap bg-neutral-100">KM Total</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Autorizado por</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
@@ -1364,6 +1393,14 @@ export default function ServiceOrdersPage() {
                         </>
                       );
                     })()}
+                    <td className="p-3 text-left text-xs text-neutral-600 whitespace-nowrap" data-testid={`text-autorizado-${o.id}`}>{(() => {
+                      const uid = (o as any).createdByUserId;
+                      if (!uid) return <span className="text-neutral-400 italic">—</span>;
+                      const u = allUsers.find((u: any) => u.id === uid);
+                      if (!u) return <span className="text-neutral-400 italic">—</span>;
+                      const isAdmin = u.role === "admin" || u.role === "diretoria";
+                      return <span className={isAdmin ? "font-semibold text-neutral-800" : "text-neutral-600"}>{u.name}</span>;
+                    })()}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
                         {(o.status === "aberta" || o.status === "agendada") && !o.missionStatus && (
