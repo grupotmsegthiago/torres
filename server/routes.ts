@@ -4493,9 +4493,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const activeOrders = orders.filter(
       (o) => {
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") return true;
-        if (o.status === "concluida" || o.missionStatus === "encerrada") {
+        if (o.status === "concluida" || o.missionStatus === "encerrada" || o.status === "cancelada") {
           const oDate = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
-            : o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+            : o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+            : o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           if (oDate === todayBRT) return true;
         }
         return false;
@@ -4630,7 +4631,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
 
-        if ((o.status === "em_andamento" || o.status === "concluida" || o.missionStatus === "encerrada") && o.type === "escolta") {
+        if ((o.status === "em_andamento" || o.status === "concluida" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta") {
           try {
             const photos = await storage.getMissionPhotosByOS(o.id);
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
