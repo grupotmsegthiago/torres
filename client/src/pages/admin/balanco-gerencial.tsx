@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -932,8 +932,21 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
 }
 
 function MissoesTab({ missions }: { missions: any[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const canceladas = missions.filter(m => m.status === "CANCELADO");
   return (
     <div className="space-y-4" data-testid="panel-missoes">
+      {canceladas.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
+            <ArrowUpRight size={16} className="text-red-600" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-red-800 uppercase">Receita de Cancelamento</p>
+            <p className="text-xs font-bold text-red-600">{canceladas.length} OS cancelada{canceladas.length > 1 ? "s" : ""} gerando ressarcimento de {fmt(canceladas.reduce((a: number, m: any) => a + m.fat_total, 0))}</p>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-neutral-200">
           <h4 className="text-sm font-black text-neutral-900 uppercase flex items-center gap-2">
@@ -954,6 +967,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                 <tr className="bg-neutral-50 border-b border-neutral-200">
                   <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Data</th>
                   <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Boletim</th>
+                  <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Status</th>
                   <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Cliente</th>
                   <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Rota</th>
                   <th className="px-3 py-2 text-left text-xs font-black text-neutral-500 uppercase">Viatura</th>
@@ -963,41 +977,71 @@ function MissoesTab({ missions }: { missions: any[] }) {
                   <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Lucro</th>
                   <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Margem</th>
                   <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">KM</th>
-                  <th className="px-3 py-2 text-right text-xs font-black text-neutral-500 uppercase">Horas</th>
                 </tr>
               </thead>
               <tbody>
                 {missions.map(m => {
                   const custoTotal = m.pag_total + m.despesas;
+                  const isCancelada = m.status === "CANCELADO";
                   return (
-                    <tr key={m.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-colors" data-testid={`row-mission-${m.id}`}>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
-                        {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
-                      </td>
-                      <td className="px-3 py-2.5 text-xs font-black text-neutral-900">{m.boletim || "-"}</td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[120px] truncate">{m.client_name || "-"}</td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
-                        <span className="max-w-[100px] truncate block">{m.origem || "-"} → {m.destino || "-"}</span>
-                      </td>
-                      <td className="px-3 py-2.5 text-xs font-black text-neutral-700">{m.placa_viatura || "-"}</td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[100px] truncate">{m.vigilante || "-"}</td>
-                      <td className="px-3 py-2.5 text-xs font-black text-green-700 font-mono text-right">{fmt(m.fat_total)}</td>
-                      <td className="px-3 py-2.5 text-xs font-black text-red-600 font-mono text-right">{fmt(custoTotal)}</td>
-                      <td className={`px-3 py-2.5 text-xs font-black font-mono text-right ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</td>
-                      <td className="px-3 py-2.5 text-right">
-                        <Badge className={`text-xs font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
-                          {fmtPct(m.margem)}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-500 font-mono text-right">{m.km_total.toLocaleString("pt-BR")}</td>
-                      <td className="px-3 py-2.5 text-xs font-bold text-neutral-500 font-mono text-right">{fmtHoras(m.horas_trabalhadas || 0)}</td>
-                    </tr>
+                    <Fragment key={m.id}>
+                      <tr
+                        className={`border-b transition-colors cursor-pointer ${isCancelada ? "bg-red-50/60 border-red-100 hover:bg-red-50" : "border-neutral-100 hover:bg-neutral-50"}`}
+                        onClick={() => isCancelada ? setExpandedId(expandedId === m.id ? null : m.id) : null}
+                        data-testid={`row-mission-${m.id}`}>
+                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
+                          {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs font-black text-neutral-900">{m.boletim || "-"}</td>
+                        <td className="px-3 py-2.5">
+                          {isCancelada ? (
+                            <Badge className="bg-red-600 text-white text-[10px] font-black px-1.5 py-0 border-0 hover:bg-red-600">CANCELADA</Badge>
+                          ) : (
+                            <Badge className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0 border-0 hover:bg-emerald-100">OK</Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[120px] truncate">{m.client_name || "-"}</td>
+                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600">
+                          <span className="max-w-[100px] truncate block">{m.origem || "-"} → {m.destino || "-"}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs font-black text-neutral-700">{m.placa_viatura || "-"}</td>
+                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-600 max-w-[100px] truncate">{m.vigilante || "-"}</td>
+                        <td className={`px-3 py-2.5 text-xs font-black font-mono text-right ${isCancelada ? "text-red-700" : "text-green-700"}`}>
+                          {fmt(m.fat_total)}
+                          {isCancelada && <span className="block text-[10px] font-bold text-red-500">Ressarcimento</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs font-black text-red-600 font-mono text-right">{fmt(custoTotal)}</td>
+                        <td className={`px-3 py-2.5 text-xs font-black font-mono text-right ${m.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(m.lucro)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Badge className={`text-xs font-black ${m.margem >= 30 ? "bg-green-100 text-green-800 hover:bg-green-100" : m.margem >= 15 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                            {fmtPct(m.margem)}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs font-bold text-neutral-500 font-mono text-right">{m.km_total.toLocaleString("pt-BR")}</td>
+                      </tr>
+                      {isCancelada && expandedId === m.id && (
+                        <tr key={`${m.id}-detail`} className="bg-red-50 border-b border-red-100">
+                          <td colSpan={12} className="px-4 py-3">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-black text-red-800 uppercase">Memória de Cálculo - Cancelamento</p>
+                              {m.observacoes && <p className="text-xs font-bold text-red-700">{m.observacoes}</p>}
+                              <div className="flex gap-4 text-xs font-bold text-red-600">
+                                {m.fat_acionamento > 0 && <span>Acionamento: {fmt(m.fat_acionamento)}</span>}
+                                {m.fat_hora_extra > 0 && <span>HE: {fmt(m.fat_hora_extra)}</span>}
+                                {m.fat_km > 0 && <span>KM Extra: {fmt(m.fat_km)}</span>}
+                              </div>
+                              <p className="text-[10px] font-bold text-red-400 uppercase">Clique na linha para fechar</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr className="bg-neutral-50 border-t-2 border-neutral-300">
-                  <td colSpan={6} className="px-3 py-3 text-xs font-black text-neutral-700 uppercase">Total ({missions.length} missões)</td>
+                  <td colSpan={7} className="px-3 py-3 text-xs font-black text-neutral-700 uppercase">Total ({missions.length} missões{canceladas.length > 0 ? ` | ${canceladas.length} cancelada${canceladas.length > 1 ? "s" : ""}` : ""})</td>
                   <td className="px-3 py-3 text-xs font-black text-green-700 font-mono text-right">
                     {fmt(missions.reduce((a: number, m: any) => a + m.fat_total, 0))}
                   </td>
@@ -1021,9 +1065,6 @@ function MissoesTab({ missions }: { missions: any[] }) {
                   </td>
                   <td className="px-3 py-3 text-xs font-black text-neutral-500 font-mono text-right">
                     {missions.reduce((a: number, m: any) => a + m.km_total, 0).toLocaleString("pt-BR")}
-                  </td>
-                  <td className="px-3 py-3 text-xs font-black text-neutral-500 font-mono text-right">
-                    {fmtHoras(missions.reduce((a: number, m: any) => a + (m.horas_trabalhadas || 0), 0))}
                   </td>
                 </tr>
               </tfoot>

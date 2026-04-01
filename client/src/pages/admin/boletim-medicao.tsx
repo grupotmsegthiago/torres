@@ -193,6 +193,7 @@ export default function BoletimMedicaoPage() {
       case "REJEITADA": return { label: "Rejeitada", color: "bg-red-100 text-red-800" };
       case "CALCULADO": return { label: "Calculado", color: "bg-blue-100 text-blue-800" };
       case "FATURADO": return { label: "Faturado", color: "bg-indigo-100 text-indigo-800" };
+      case "CANCELADO": return { label: "Cancelada", color: "bg-red-600 text-white" };
       default: return { label: os.billing.status, color: "bg-neutral-100 text-neutral-600" };
     }
   };
@@ -296,7 +297,7 @@ export default function BoletimMedicaoPage() {
                               const status = getBillingStatus(os);
                               const b = os.billing;
                               return (
-                                <tr key={os.id} className="border-b border-neutral-50 hover:bg-neutral-50 transition-colors" data-testid={`row-os-${os.id}`}>
+                                <tr key={os.id} className={`border-b hover:bg-neutral-50 transition-colors ${os.status === "cancelada" ? "bg-red-50/50 border-red-100" : "border-neutral-50"}`} data-testid={`row-os-${os.id}`}>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-mono font-black text-neutral-800">{os.osNumber}</span>
@@ -304,6 +305,7 @@ export default function BoletimMedicaoPage() {
                                     </div>
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
                                     {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
+                                    {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{b?.observacoes ? b.observacoes.split("|")[0].trim() : "Serviço cancelado - Taxa Operacional"}</p>}
                                   </td>
                                   <td className="px-4 py-3">
                                     <span className="font-bold text-neutral-600">{fmtDate(os.scheduledDate || os.createdAt)}</span>

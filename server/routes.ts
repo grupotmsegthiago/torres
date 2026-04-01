@@ -1359,7 +1359,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
         o.status === "concluida" || o.missionStatus === "encerrada" ||
-        o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)
+        o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt) ||
+        o.status === "cancelada"
       );
 
       const enriched = await Promise.all(concluidas.map(async (os) => {
@@ -9390,6 +9391,9 @@ Regras:
         vigilante2: b.vigilante2_name || null,
         vigilante2_id: b.vigilante2_id || null,
         fat_total: fat,
+        fat_acionamento: Number(b.fat_acionamento || 0),
+        fat_hora_extra: Number(b.fat_hora_extra || 0),
+        fat_km: Number(b.fat_km || 0),
         pag_total: pag,
         despesas: desp,
         lucro,
@@ -9399,6 +9403,7 @@ Regras:
         boletim: b.boletim_numero,
         status: b.status,
         client_name: b.client_name,
+        observacoes: b.observacoes || null,
       };
       });
 
