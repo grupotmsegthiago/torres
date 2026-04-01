@@ -4782,14 +4782,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const metaBatida = totFat >= META_VTR;
                             const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
                             const statusLabel = (g2: GridItem) => {
-                              const s = g2.status;
+                              const s = g2.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                               const ms = g2.missionStatus;
-                              if (s === "concluida") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
+                              if (s === "concluida" || ms === "encerrada" || ms === "finalizada") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
                               if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
-                              if (s === "agendada") return { icon: "📅", cls: "text-blue-300", label: "Agendada" };
+                              if (s === "agendada" || ms === "aguardando") return { icon: "📅", cls: "text-blue-300", label: "Agendada" };
                               if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista")
                                 return { icon: "📍", cls: "text-orange-400", label: "Na Origem" };
-                              if (ms === "em_transito_origem")
+                              if (ms === "checkout_armamento" || ms === "checkout_viatura" || ms === "checkout_km_saida" || ms === "em_transito_origem")
                                 return { icon: "🚗", cls: "text-sky-400", label: "Em Trânsito Origem" };
                               if (ms === "em_transito_destino" || ms === "iniciar_missao")
                                 return { icon: "🚛", cls: "text-sky-400", label: "Em Trânsito" };
