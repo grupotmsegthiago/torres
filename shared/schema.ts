@@ -8,7 +8,6 @@ export const users = pgTable("users", {
   supabaseUid: text("supabase_uid").unique(),
   email: text("email").unique(),
   username: text("username"),
-  password: text("password"),
   name: text("name").notNull(),
   role: text("role").notNull().default("funcionario"),
   employeeId: integer("employee_id"),
