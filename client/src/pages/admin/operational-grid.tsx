@@ -357,19 +357,19 @@ function getMissionLabel(status: string | null) {
   if (!status) return "—";
   switch (status) {
     case "aguardando":
+      return "Missão Agendada";
     case "checkout_armamento":
     case "checkout_viatura":
     case "checkout_km_saida":
-      return "Saída da Base";
     case "em_transito_origem":
+      return "Saída da Base";
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
       return "Chegada na Origem";
     case "iniciar_missao":
-      return "Início de Missão";
     case "em_transito_destino":
-      return "Em Trânsito ao Destino";
+      return "Em Trânsito";
     case "chegada_destino":
       return "Chegada no Destino";
     case "checkout_km_final":
@@ -391,15 +391,16 @@ function getMissionLabel(status: string | null) {
 function getTransitStatus(missionStatus: string | null): string {
   switch (missionStatus) {
     case "aguardando":
+      return "MISSÃO AGENDADA";
     case "checkout_armamento":
     case "checkout_viatura":
     case "checkout_km_saida":
-      return "EM PREPARAÇÃO";
     case "em_transito_origem":
+      return "SAÍDA DA BASE";
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
-      return "EM TRÂNSITO À ORIGEM";
+      return "CHEGADA NA ORIGEM";
     case "iniciar_missao":
     case "em_transito_destino":
       return "EM TRÂNSITO";
@@ -552,7 +553,7 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
       if (hoursLeft !== null && hoursLeft > 6) {
         return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
       }
-      return { label: "AGENDAMENTO", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
+      return { label: "MISSÃO AGENDADA", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
     }
 
     if (osStatus === "em_andamento") {
@@ -564,7 +565,25 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
         if (hoursLeft !== null && hoursLeft > 6) {
           return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
         }
-        return { label: "AGENDAMENTO", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
+        return { label: "MISSÃO AGENDADA", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
+      }
+      if (ms === "checkout_armamento" || ms === "checkout_viatura" || ms === "checkout_km_saida" || ms === "em_transito_origem") {
+        return { label: "SAÍDA DA BASE", icon: Building2, className: "bg-amber-50 text-amber-700 border-amber-200" };
+      }
+      if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista") {
+        return { label: "NA ORIGEM", icon: MapPin, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
+      }
+      if (ms === "iniciar_missao" || ms === "em_transito_destino") {
+        return { label: "EM TRÂNSITO", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
+      }
+      if (ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno") {
+        return { label: "NO DESTINO", icon: Flag, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+      }
+      if (ms === "finalizada") {
+        return { label: "FINALIZADA", icon: CircleCheckBig, className: "bg-green-50 text-green-700 border-green-200" };
+      }
+      if (ms === "retorno_base" || ms === "chegada_base") {
+        return { label: "EM RETORNO", icon: Navigation, className: "bg-sky-50 text-sky-700 border-sky-200" };
       }
       return { label: "EM SERVIÇO", icon: Navigation, className: "bg-red-50 text-red-700 border-red-200" };
     }
@@ -579,7 +598,7 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
     if (hoursLeft !== null && hoursLeft > 6) {
       return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     }
-    return { label: "AGENDAMENTO", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
+    return { label: "MISSÃO AGENDADA", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
   }
   return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
@@ -616,20 +635,19 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
   }
   switch (missionStatus) {
     case "aguardando":
+      return { label: "Missão Agendada", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
     case "checkout_armamento":
     case "checkout_viatura":
     case "checkout_km_saida":
-      return { label: "Saída da Base", icon: Building2, className: "bg-amber-50 text-amber-700 border-amber-200" };
     case "em_transito_origem":
-      return { label: "Chegada na Origem", icon: Navigation, className: "bg-blue-50 text-blue-700 border-blue-200" };
+      return { label: "Saída da Base", icon: Building2, className: "bg-amber-50 text-amber-700 border-amber-200" };
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
       return { label: "Chegada na Origem", icon: Navigation, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
     case "iniciar_missao":
-      return { label: "Início de Missão", icon: Play, className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
     case "em_transito_destino":
-      return { label: "Em Trânsito ao Destino", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
+      return { label: "Em Trânsito", icon: Navigation, className: "bg-violet-50 text-violet-700 border-violet-200" };
     case "chegada_destino":
       return { label: "Chegada no Destino", icon: Flag, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "checkout_km_final":
