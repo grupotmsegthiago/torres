@@ -4769,8 +4769,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           </p>
                           {(() => {
                             const vtrItems = gridData.filter((g: GridItem) => g.vehicle?.plate === v.plate);
-                            const vtrWithCost = vtrItems.filter(g => g.liveCost && g.liveCost.faturamento != null);
-                            if (vtrWithCost.length === 0) return null;
+                            if (vtrItems.length === 0) return null;
+                            const vtrWithCost = vtrItems;
                             const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
                             const totPag = vtrWithCost.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
                             const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
