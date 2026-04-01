@@ -42,6 +42,7 @@ export default function BoletimMedicaoPage() {
   const [overrideKmFim, setOverrideKmFim] = useState("");
   const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
+  const [periodFilter, setPeriodFilter] = useState<string | null>(null);
 
   const { data: osConcluidas = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/boletim-medicao/os-concluidas"],
@@ -170,12 +171,39 @@ export default function BoletimMedicaoPage() {
     clientGroups[cid].orders.push(os);
   });
 
+  const getPeriodRange = (period: string) => {
+    const now = new Date();
+    const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (period === "hoje") {
+      const s = startOfDay(brNow);
+      return { start: s, end: new Date(s.getTime() + 86400000) };
+    }
+    if (period === "semana") {
+      const dow = brNow.getDay();
+      const diff = dow === 0 ? 6 : dow - 1;
+      const s = new Date(startOfDay(brNow).getTime() - diff * 86400000);
+      return { start: s, end: new Date(s.getTime() + 7 * 86400000) };
+    }
+    if (period === "mes") {
+      return { start: new Date(brNow.getFullYear(), brNow.getMonth(), 1), end: new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1) };
+    }
+    return { start: new Date(brNow.getFullYear(), 0, 1), end: new Date(brNow.getFullYear() + 1, 0, 1) };
+  };
+
   const filteredGroups = Object.entries(clientGroups).map(([cid, group]) => {
     let orders = group.orders;
     if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
+    if (periodFilter) {
+      const { start, end } = getPeriodRange(periodFilter);
+      orders = orders.filter(o => {
+        const d = o.scheduledDate ? new Date(o.scheduledDate) : o.createdAt ? new Date(o.createdAt) : null;
+        return d && d >= start && d < end;
+      });
+    }
     if (orders.length === 0) return null;
     return { clientId: Number(cid), clientName: group.clientName, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; orders: any[] }[];
@@ -220,7 +248,7 @@ export default function BoletimMedicaoPage() {
           </div>
         </div>
 
-        <div className="flex gap-2" data-testid="filter-status">
+        <div className="flex items-center gap-2 flex-wrap" data-testid="filter-status">
           {([["ALL", "Todas"], ["EM_ANDAMENTO", `Em Andamento (${liveCount})`], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"]] as [StatusFilter, string][]).map(([val, label]) => (
             <button
               key={val}
@@ -233,6 +261,28 @@ export default function BoletimMedicaoPage() {
               {label}
             </button>
           ))}
+          <div className="h-6 w-px bg-neutral-200 mx-1" />
+          <select
+            value={periodFilter || ""}
+            onChange={e => setPeriodFilter(e.target.value || null)}
+            className="text-xs font-bold border border-neutral-200 rounded-lg px-3 py-2 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 uppercase tracking-wider"
+            data-testid="filter-period-boletim"
+          >
+            <option value="">Período</option>
+            <option value="hoje">Hoje</option>
+            <option value="semana">Esta Semana</option>
+            <option value="mes">Este Mês</option>
+            <option value="ano">Este Ano</option>
+          </select>
+          {periodFilter && (
+            <button
+              onClick={() => setPeriodFilter(null)}
+              className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 transition-colors"
+              data-testid="button-clear-period"
+            >
+              <RotateCcw className="w-3 h-3" /> Limpar
+            </button>
+          )}
         </div>
 
         {isLoading ? (
