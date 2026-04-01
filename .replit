@@ -86,8 +86,8 @@ TRUCKSCONTROL_SENHA = "211784"
 WDAPI_TOKEN = "df33776079bee01ffff73467880719dd"
 SMTP_HOST = "smtp.office365.com"
 SMTP_PORT = "587"
-SMTP_USER = "adm@grupotmseg.com.br"
-SMTP_FROM = "adm@grupotmseg.com.br"
+SMTP_USER = "escolta@torresseguranca.com.br"
+SMTP_FROM = "escolta@torresseguranca.com.br"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0"]
