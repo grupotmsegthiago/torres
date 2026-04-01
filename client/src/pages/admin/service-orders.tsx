@@ -493,6 +493,21 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     },
   });
 
+  useEffect(() => {
+    if (!form.vehicleId || order) return;
+    const vehicle = vehicles.find(v => v.id === form.vehicleId);
+    if (!vehicle) return;
+    const plate = vehicle.plate?.toUpperCase().trim();
+    if (!plate) return;
+    const matchedKit = kits.find(k => {
+      const desc = (k.description || "").toUpperCase();
+      return desc.includes(plate);
+    });
+    if (matchedKit && matchedKit.id !== form.kitId) {
+      setForm(prev => ({ ...prev, kitId: matchedKit.id }));
+    }
+  }, [form.vehicleId, kits, vehicles]);
+
   const emp1 = form.assignedEmployeeId ? employees.find(e => e.id === form.assignedEmployeeId) : null;
   const emp2 = form.assignedEmployee2Id ? employees.find(e => e.id === form.assignedEmployee2Id) : null;
   const sv = form.vehicleId ? vehicles.find(v => v.id === form.vehicleId) : null;
@@ -870,9 +885,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Kit de Armamento</FieldLabel>
                 <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-kit">
                   <option value="">Sem kit</option>
-                  {kits.map((k) => (
-                    <option key={k.id} value={k.id}>{k.name} ({k.items.length} armas){k.status === "em_uso" && k.id !== order?.kitId ? " — EM USO" : ""}</option>
-                  ))}
+                  {kits.map((k) => {
+                    const linkedPlate = sv?.plate?.toUpperCase().trim();
+                    const isLinked = linkedPlate && (k.description || "").toUpperCase().includes(linkedPlate);
+                    return (
+                      <option key={k.id} value={k.id}>
+                        {k.name} ({k.items.length} armas){isLinked ? " ★ VTR" : ""}{k.status === "em_uso" && k.id !== order?.kitId ? " — EM USO" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
