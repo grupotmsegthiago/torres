@@ -251,8 +251,10 @@ function MissionTimer({ startedAt }: { startedAt: string | null }) {
   useEffect(() => {
     if (!startedAt) return;
     const start = new Date(startedAt).getTime();
+    if (isNaN(start) || new Date(startedAt).getFullYear() <= 1970) return;
     const timer = setInterval(() => {
       const diff = Date.now() - start;
+      if (diff < 0 || diff > 86400000 * 7) { setElapsed("00:00:00"); return; }
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
@@ -276,6 +278,7 @@ function HourlyAlertBanner({ startedAt }: { startedAt: string | null }) {
   useEffect(() => {
     if (!startedAt) return;
     const start = new Date(startedAt).getTime();
+    if (isNaN(start) || new Date(startedAt).getFullYear() <= 1970) return;
 
     const check = () => {
       const diff = Date.now() - start;

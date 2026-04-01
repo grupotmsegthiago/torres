@@ -618,7 +618,9 @@ function getPriorityDisplay(priority: string) {
 
 function formatElapsedTime(dateStr: string | null | undefined): string {
   if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "";
+  const diff = Date.now() - d.getTime();
   if (diff < 0) return "";
   const totalMin = Math.floor(diff / 60000);
   if (totalMin < 1) return "agora";
