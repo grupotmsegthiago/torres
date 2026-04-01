@@ -10109,8 +10109,9 @@ Regras:
       const port = parseInt(process.env.SMTP_PORT || "587");
       const transporter = nodemailer.createTransport({
         host: smtpHost, port, secure: port === 465,
+        requireTLS: port === 587,
         auth: { user: smtpUser, pass: smtpPass },
-        tls: { rejectUnauthorized: false },
+        tls: { ciphers: "SSLv3", rejectUnauthorized: false },
       });
       await transporter.sendMail({
         from: `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || smtpUser}>`,
