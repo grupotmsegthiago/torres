@@ -534,27 +534,27 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 
   const photoUrl = os.lastAgentUpdate?.photoUrl || null;
 
-  return `*TORRES VIGILÂNCIA PATRIMONIAL*
-*OS* ${os.osNumber} | *STATUS:* ${transitStatus}
+  return `TORRES VIGILÂNCIA PATRIMONIAL
+OS ${os.osNumber} | STATUS: ${transitStatus}
 
-🗓 *DATA:* ${date}    *HORA:* ${time}
-🛡 *OPERAÇÃO:* ${statusLabel}
-🏢 *CLIENTE:* ${os.clientName?.toUpperCase() || "—"}
+🗓 DATA: ${date}    HORA: ${time}
+🛡 OPERAÇÃO: ${statusLabel}
+🏢 CLIENTE: ${os.clientName?.toUpperCase() || "—"}
 
-🚔 *VIATURA:* ${vehiclePlate}
-👮 *AGENTE 01:* ${agent1?.toUpperCase()}
-👮 *AGENTE 02:* ${agent2?.toUpperCase()}
+📍 ORIGEM: ${origin?.toUpperCase() || "—"}
+🏁 DESTINO: ${destination?.toUpperCase() || "—"}
 
-📍 *ORIGEM:* ${origin?.toUpperCase() || "—"}
-🏁 *DESTINO:* ${destination?.toUpperCase() || "—"}
+🚛 VEÍCULO: ${driverPlate}
+👤 MOTORISTA: ${driverName?.toUpperCase() || "—"}
+📞 CONTATO: ${driverPhone}
 
-🚛 *VEÍCULO:* ${driverPlate}
-👤 *MOTORISTA:* ${driverName?.toUpperCase() || "—"}
-📞 *CONTATO:* ${driverPhone}
+🚔 VIATURA: ${vehiclePlate}
+👮 AGENTE 01: ${agent1?.toUpperCase()}
+👮 AGENTE 02: ${agent2?.toUpperCase()}
 
-📈 *PROGRESSO DA MISSÃO:* ${progress}%
-📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* ${etapaAvancada?.toUpperCase()}
-🏙️ *LOCALIZAÇÃO:* ${locationAddr}${photoUrl ? `\n\n📷 *FOTO:* ${photoUrl}` : ""}${mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : ""}`;
+📈 PROGRESSO DA MISSÃO: ${progress}%
+📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: ${etapaAvancada?.toUpperCase()}
+🏙️ LOCALIZAÇÃO: ${locationAddr}${mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : ""}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
