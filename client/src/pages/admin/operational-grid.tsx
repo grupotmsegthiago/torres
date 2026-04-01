@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import html2canvas from "html2canvas";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -5241,6 +5242,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   const [forwardCustomMsg, setForwardCustomMsg] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const statusCardRef = useRef<HTMLDivElement>(null);
 
   const { data: updates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -5441,20 +5443,94 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             </button>
           </DialogHeader>
 
-          {forwardUpdate && (
+          {forwardUpdate && (() => {
+            const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
+            const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
+            const os = matchedVehicle?.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
+            const vehiclePlate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
+            const agent1 = getFirstLastName(os?.employee1?.fullName || os?.employee1?.name);
+            const agent2 = getFirstLastName(os?.employee2?.fullName || os?.employee2?.name);
+            const statusLabel = os?.lastAgentUpdate?.missionStep ? getMissionLabel(os.lastAgentUpdate.missionStep) : getMissionLabel(os?.missionStatus);
+            const transitStatus = os ? getTransitStatus(os.missionStatus) : "—";
+            const progress = os ? getMissionProgress(os.missionStatus) : 0;
+            const lat = matchedVehicle?.tracker?.latitude || forwardUpdate.latitude;
+            const lng = matchedVehicle?.tracker?.longitude || forwardUpdate.longitude;
+            const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
+            const locationAddr = matchedVehicle?.tracker?.address || "—";
+            const now = new Date();
+            const dateStr = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+            const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+            return (
             <div className="px-4">
-              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
-                <div className="flex items-start gap-3">
-                  {forwardUpdate.photoUrl && (
-                    <img src={forwardUpdate.photoUrl} alt="Foto" className="w-20 h-20 rounded-lg object-cover border border-neutral-200 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-neutral-800">"{forwardUpdate.message}"</p>
-                    <p className="text-[10px] text-neutral-500 mt-1">
-                      {titleCase(forwardUpdate.employeeName)} · {forwardUpdate.createdAt ? new Date(forwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""} · {forwardUpdate.missionStep ? getMissionLabel(forwardUpdate.missionStep) : ""}
-                    </p>
+              <div ref={statusCardRef} className="bg-emerald-700 rounded-xl p-4 text-white shadow-lg" data-testid="forward-status-card">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                      <Siren className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80">Torres Vigilância Patrimonial</p>
+                      <p className="text-sm font-bold">{forwardUpdate.osNumber}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] opacity-80">{dateStr}</p>
+                    <p className="text-xs font-bold">{timeStr}</p>
                   </div>
                 </div>
+                <div className="bg-white/10 rounded-lg p-3 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase tracking-wide opacity-70">Status</span>
+                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded">{transitStatus}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase tracking-wide opacity-70">Operação</span>
+                    <span className="text-xs font-bold">{statusLabel}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] uppercase tracking-wide opacity-70">Progresso</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-white rounded-full" style={{ width: `${progress}%` }} />
+                      </div>
+                      <span className="text-[10px] font-bold">{progress}%</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wide opacity-60">Viatura</p>
+                    <p className="font-bold">{vehiclePlate}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wide opacity-60">Cliente</p>
+                    <p className="font-bold truncate">{os?.clientName?.toUpperCase() || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wide opacity-60">Agente 01</p>
+                    <p className="font-bold">{agent1?.toUpperCase()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wide opacity-60">Agente 02</p>
+                    <p className="font-bold">{agent2?.toUpperCase()}</p>
+                  </div>
+                </div>
+                {forwardUpdate.message && (
+                  <div className="mt-3 bg-white/10 rounded-lg p-2">
+                    <p className="text-[9px] uppercase tracking-wide opacity-60 mb-0.5">Ocorrência</p>
+                    <p className="text-xs font-semibold">"{forwardUpdate.message}"</p>
+                  </div>
+                )}
+                {locationAddr !== "—" && (
+                  <div className="mt-2 flex items-start gap-1.5 text-[10px] opacity-80">
+                    <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                    <span>{locationAddr}</span>
+                  </div>
+                )}
+                {forwardUpdate.photoUrl && (
+                  <img src={forwardUpdate.photoUrl} alt="Foto" className="mt-3 w-full h-32 rounded-lg object-cover border border-white/20" />
+                )}
               </div>
 
               <div className="mt-3 space-y-2">
@@ -5513,6 +5589,70 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   {sendingEmail ? "Enviando..." : "Enviar por Email"}
                 </button>
 
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
+                  onClick={async () => {
+                    if (!forwardUpdate) return;
+                    const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    try {
+                      await navigator.clipboard.writeText(reportText);
+                      toast({ title: "Formulário copiado!" });
+                    } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-form"
+                >
+                  <Copy className="w-4 h-4" /> Copiar Formulário
+                </button>
+
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+                  onClick={async () => {
+                    if (!statusCardRef.current) return;
+                    try {
+                      const canvas = await html2canvas(statusCardRef.current, { scale: 2, backgroundColor: null, useCORS: true, logging: false });
+                      canvas.toBlob(async (blob) => {
+                        if (!blob) { toast({ title: "Erro ao gerar imagem", variant: "destructive" }); return; }
+                        try {
+                          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+                          toast({ title: "Card copiado como imagem!" });
+                        } catch { toast({ title: "Erro ao copiar imagem", variant: "destructive" }); }
+                      }, "image/png");
+                    } catch { toast({ title: "Erro ao capturar card", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-print"
+                >
+                  <Camera className="w-4 h-4" /> Copiar Print
+                </button>
+
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!mapsLink}
+                  onClick={async () => {
+                    if (!mapsLink) return;
+                    try {
+                      await navigator.clipboard.writeText(mapsLink);
+                      toast({ title: "Localização copiada!" });
+                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-location"
+                >
+                  <MapPin className="w-4 h-4" /> Copiar Localização
+                </button>
+
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-700 text-white hover:bg-neutral-600"
+                  onClick={async () => {
+                    const resumo = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS:* ${forwardUpdate.osNumber}\n*VIATURA:* ${vehiclePlate}\n*AGENTE 01:* ${agent1?.toUpperCase()}\n*AGENTE 02:* ${agent2?.toUpperCase()}\n*STATUS:* ${transitStatus} — ${statusLabel}\n*PROGRESSO:* ${progress}%${forwardUpdate.message ? `\n*OCORRÊNCIA:* ${forwardUpdate.message}` : ""}${mapsLink ? `\n📌 ${mapsLink}` : ""}`;
+                    try {
+                      await navigator.clipboard.writeText(resumo);
+                      toast({ title: "Resumo copiado!" });
+                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
+                  }}
+                  data-testid="btn-forward-copy-summary"
+                >
+                  <FileText className="w-4 h-4" /> Copiar Resumo
+                </button>
+
                 {forwardUpdate?.photoUrl && (
                   <button
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
@@ -5525,23 +5665,6 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     <Camera className="w-4 h-4" /> Copiar Foto
                   </button>
                 )}
-
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-900 text-white hover:bg-neutral-800"
-                  onClick={async () => {
-                    if (!forwardUpdate) return;
-                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
-                    const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
-                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
-                    try {
-                      await navigator.clipboard.writeText(reportText);
-                      toast({ title: "Formulário copiado!" });
-                    } catch { toast({ title: "Erro", variant: "destructive" }); }
-                  }}
-                  data-testid="btn-forward-copy-form"
-                >
-                  <Copy className="w-4 h-4" /> Copiar Formulário
-                </button>
               </div>
 
               {forwardHistory.length > 0 && (
@@ -5576,7 +5699,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           <div className="px-4 pb-4 pt-2 flex justify-end">
             <button
