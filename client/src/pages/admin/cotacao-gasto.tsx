@@ -88,14 +88,10 @@ export default function CotacaoGastoPage() {
   const baseNF = custoOperacional / (1 - params.notaFiscalPct / 100);
   const valorNF = baseNF - custoOperacional;
 
-  const PISO_KM = 5.30;
   const MARGEM = 35;
-  const precoMargem = baseNF / (1 - MARGEM / 100);
-  const pisoKmTotal = params.kmPercurso > 0 ? PISO_KM * params.kmPercurso : 0;
-  const precoFinal = Math.max(precoMargem, pisoKmTotal);
+  const precoFinal = baseNF / (1 - MARGEM / 100);
   const lucro = precoFinal - baseNF;
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
-  const usouPisoKm = precoFinal === pisoKmTotal && pisoKmTotal > precoMargem;
 
   const horasMissaoCalc = params.kmPercurso > 0 ? params.kmPercurso / 40 : params.horasMissao;
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
@@ -229,8 +225,7 @@ export default function CotacaoGastoPage() {
                 <Input type="number" step="0.1" value={params.notaFiscalPct} onChange={e => set("notaFiscalPct", e.target.value)} data-testid="input-nf-pct" />
               </div>
               <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">
-                <p className="text-[11px] text-neutral-500">Fórmula: <span className="font-bold text-neutral-900">Custo ÷ (1 - 35%)</span></p>
-                <p className="text-[11px] text-neutral-500">Piso: <span className="font-bold text-neutral-900">R$ 5,30/km (mín. R$ 530)</span></p>
+                <p className="text-[11px] text-neutral-500">Fórmula: <span className="font-bold text-neutral-900">Custo Total ÷ 0,65 (margem 35%)</span></p>
               </div>
             </div>
           </div>
@@ -349,9 +344,6 @@ export default function CotacaoGastoPage() {
                   <p className="text-3xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                   <p className="text-xs text-emerald-300 mt-1">Margem real: {fmtPct(margemReal)}</p>
                   <p className="text-xs text-emerald-300">Ganho: {fmt(lucro)}</p>
-                  {usouPisoKm && (
-                    <p className="text-[10px] text-amber-300 mt-1 font-bold">⚠ Piso de R$ {PISO_KM.toFixed(2).replace(".",",")}/km aplicado (margem acima de {MARGEM}%)</p>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
