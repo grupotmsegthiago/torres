@@ -53,6 +53,8 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_excedente NUMERIC DEFAULT 0",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_franquia NUMERIC DEFAULT 0",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS km_faturado NUMERIC DEFAULT 0",
+    "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS observacoes TEXT",
+    "ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS tabela_cancelamento NUMERIC DEFAULT 0",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS gasoline_price DECIMAL(10,3)",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ethanol_price DECIMAL(10,3)",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS fuel_recommendation TEXT",
@@ -5916,6 +5918,140 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       } catch (_e) {}
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
+
+      if (so.type === "escolta") {
+        try {
+          await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+
+          const n = (v: any) => Number(v) || 0;
+
+          let contrato: any = { valor_acionamento: 0, valor_cancelamento: 0, tabela_cancelamento: 0, valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 0, franquia_km: 50, franquia_minima_km: 50, franquia_horas: 0, valor_hora_extra: 50, valor_hora_estadia: 50, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
+          if (so.escortContractId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
+            if (cc?.length) contrato = cc[0];
+          } else if (so.clientId) {
+            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.clientId).eq("status", "Ativo").limit(1);
+            if (cc?.length) contrato = cc[0];
+          }
+
+          const stepsDeslocamento = ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"];
+          const stepsChegouOrigem = ["checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista", "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno", "finalizada", "retorno_base", "chegada_base", "encerrada"];
+          const missionStatus = so.missionStatus as string || "aguardando";
+
+          const cenario = stepsChegouOrigem.includes(missionStatus) ? "B" :
+                          stepsDeslocamento.includes(missionStatus) ? "A" : null;
+
+          if (cenario) {
+            let fatCancelamento = 0;
+            let fatHoraExtra = 0;
+            let fatKmExcedente = 0;
+            let cenarioDesc = "";
+
+            if (cenario === "A") {
+              fatCancelamento = n(contrato.tabela_cancelamento) || n(contrato.valor_cancelamento) || 0;
+              cenarioDesc = "CANCELADA EM DESLOCAMENTO (Tabela Cancelamento)";
+            } else {
+              fatCancelamento = n(contrato.valor_acionamento) || 0;
+              cenarioDesc = "CANCELADA NA ORIGEM (Acionamento)";
+
+              const logChegada = existingLogs.find((l: any) => l.step === "checkin_chegada_km");
+              if (logChegada) {
+                const chegadaTime = new Date(logChegada.completedAt || logChegada.timestamp);
+                const cancelTime = new Date();
+                const horasEspera = (cancelTime.getTime() - chegadaTime.getTime()) / (1000 * 60 * 60);
+                if (horasEspera > 3) {
+                  const horasExcedentes = horasEspera - (n(contrato.franquia_horas) || 3);
+                  if (horasExcedentes > 0) {
+                    const valorHoraExtra = n(contrato.valor_hora_extra) || n(contrato.valor_hora_estadia) || 50;
+                    fatHoraExtra = Math.round(horasExcedentes * valorHoraExtra * 100) / 100;
+                    cenarioDesc += ` + HE ${horasExcedentes.toFixed(1)}h`;
+                  }
+                }
+              }
+
+              const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+              const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+              const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
+              if (kmSaidaPhoto?.kmValue && kmChegadaPhoto?.kmValue) {
+                const distanciaBaseOrigem = Math.abs(n(kmChegadaPhoto.kmValue) - n(kmSaidaPhoto.kmValue));
+                if (distanciaBaseOrigem > 100) {
+                  const kmExcedente = distanciaBaseOrigem - (n(contrato.franquia_km) || n(contrato.franquia_minima_km) || 100);
+                  if (kmExcedente > 0) {
+                    const valorKmExtra = n(contrato.valor_km_extra) || n(contrato.valor_km_carregado) || 2.80;
+                    fatKmExcedente = Math.round(kmExcedente * valorKmExtra * 100) / 100;
+                    cenarioDesc += ` + KM Exc. ${kmExcedente.toFixed(0)}km`;
+                  }
+                }
+              }
+            }
+
+            const fatTotal = fatCancelamento + fatHoraExtra + fatKmExcedente;
+
+            if (fatTotal > 0) {
+              const client = so.clientId ? await storage.getClient(so.clientId) : null;
+              const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+              const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+
+              const photos = await storage.getMissionPhotosByOS(serviceOrderId);
+              const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
+              const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
+              const kmInicial = n(kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0);
+              const kmFinal = kmInicial;
+
+              const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+
+              await supabaseAdmin.from("escort_billings").insert({
+                service_order_id: serviceOrderId,
+                client_id: so.clientId, client_name: client?.name || "--",
+                contract_id: contrato.id || null,
+                km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
+                km_carregado: 0, km_total: 0, km_faturado: 0, km_franquia: 0, km_excedente: 0,
+                horario_agendado: so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : null,
+                horario_inicio: so.missionStartedAt ? toBRT(new Date(so.missionStartedAt as string)) : null,
+                horario_fim: toBRT(new Date()),
+                horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0,
+                teve_pernoite: false, is_noturno: false,
+                fat_acionamento: cenario === "B" ? fatCancelamento : 0,
+                fat_hora_extra: fatHoraExtra,
+                fat_km: fatKmExcedente, fat_km_carregado: 0, fat_km_vazio: 0,
+                fat_estadia: 0, fat_pernoite: 0, fat_diaria: 0, fat_adicional_noturno: 0,
+                fat_total: fatTotal,
+                valor_franquia: 0, valor_km_extra: fatKmExcedente,
+                pag_vrp: 0, pag_periculosidade: 0, pag_adicional_noturno: 0,
+                pag_reembolsos: 0, pag_total: 0,
+                resultado_bruto: fatTotal, resultado_liquido: fatTotal, margem_percentual: 100,
+                vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
+                origem: so.origin || null, destino: so.destination || null,
+                placa_viatura: vehicle?.plate || null,
+                data_missao: so.scheduledDate || new Date().toISOString(),
+                status: "CANCELADO", created_by: user.name,
+                observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
+              });
+
+              await createAutoTransaction({
+                description: `CANCELAMENTO OS ${so.osNumber} - ${client?.name || "--"} ${vehicle?.plate || ""}`.toUpperCase().trim(),
+                amount: fatTotal,
+                type: "INCOME",
+                due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+                origin_type: "service_order",
+                origin_id: String(serviceOrderId),
+                category_name: "Receita de Escolta",
+                entity_name: client?.name || "--",
+                created_by: user.name,
+              });
+
+              console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: Cenário ${cenario} — Total R$ ${fatTotal.toFixed(2)} (cancelamento=${fatCancelamento}, HE=${fatHoraExtra}, KM=${fatKmExcedente})`);
+            } else {
+              console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: Cenário ${cenario} mas sem valores no contrato — nenhum faturamento gerado`);
+            }
+          } else {
+            console.log(`[OS-Cancel-Billing] OS ${so.osNumber}: Missão em status '${missionStatus}' — sem faturamento de cancelamento (viatura não saiu)`);
+          }
+        } catch (billingErr: any) {
+          console.error(`[OS-Cancel-Billing] Erro ao gerar billing de cancelamento para OS ${so.osNumber}:`, billingErr.message);
+        }
+      }
+
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

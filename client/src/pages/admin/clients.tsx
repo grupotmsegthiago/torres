@@ -742,6 +742,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
     valor_hora_extra: editing?.valor_hora_extra?.toString() || "0",
     valor_km_extra: editing?.valor_km_extra?.toString() || "0",
     valor_cancelamento: editing?.valor_cancelamento?.toString() || "0",
+    tabela_cancelamento: (editing as any)?.tabela_cancelamento?.toString() || "0",
     custo_deslocamento_100km: editing?.custo_deslocamento_100km?.toString() || "0",
   });
   const sf = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
@@ -761,6 +762,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
         valor_hora_extra: parseFloat(form.valor_hora_extra) || 0,
         valor_km_extra: parseFloat(form.valor_km_extra) || 0,
         valor_cancelamento: parseFloat(form.valor_cancelamento) || 0,
+        tabela_cancelamento: parseFloat(form.tabela_cancelamento) || 0,
         custo_deslocamento_100km: parseFloat(form.custo_deslocamento_100km) || 0,
         status: "Ativo",
       };
@@ -791,7 +793,8 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
             <p className="text-[10px] font-black text-emerald-700 uppercase mb-3 tracking-widest">Valores de Acionamento</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Acionamento</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_acionamento} onChange={e => sf("valor_acionamento", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancelamento (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_cancelamento} onChange={e => sf("valor_cancelamento", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. na Origem (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_cancelamento} onChange={e => sf("valor_cancelamento", e.target.value)} data-testid="input-valor-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Agente chegou no local</p></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. em Desloc. (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.tabela_cancelamento} onChange={e => sf("tabela_cancelamento", e.target.value)} data-testid="input-tabela-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Viatura saiu, não chegou</p></div>
             </div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">

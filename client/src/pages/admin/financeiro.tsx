@@ -1192,6 +1192,7 @@ export default function FinanceiroPage() {
                           {b.status === "A_VERIFICAR" && <Badge className="bg-amber-100 text-amber-800 text-[9px] font-black border-0">Pendente</Badge>}
                           {b.status === "APROVADA" && <Badge className="bg-green-100 text-green-800 text-[9px] font-black border-0">Aprovada</Badge>}
                           {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Rejeitada</Badge>}
+                          {b.status === "CANCELADO" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Cancelada</Badge>}
                         </div>
                         <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                       </div>
@@ -1218,6 +1219,12 @@ export default function FinanceiroPage() {
                 <button onClick={() => setViewBoletim(null)}><X size={20} className="text-neutral-400" /></button>
               </div>
               <div className="space-y-3">
+                {viewBoletim.status === "CANCELADO" && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-[10px] font-black text-red-700 uppercase mb-1">Missão Cancelada</p>
+                    {viewBoletim.observacoes && <p className="text-[10px] text-red-600">{viewBoletim.observacoes}</p>}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Cliente</p><p className="text-xs font-bold">{viewBoletim.client_name || "—"}</p></div>
                   <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigilante</p><p className="text-xs font-bold">{viewBoletim.vigilante_name || "—"}</p></div>

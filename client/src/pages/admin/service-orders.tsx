@@ -1474,17 +1474,15 @@ export default function ServiceOrdersPage() {
                     </td>
                     <td className="p-2">
                       <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
-                        o.status === "aberta" ? "bg-blue-50 text-blue-700 border border-blue-200" :
-                        o.status === "em_andamento" ? "bg-neutral-900 text-white" :
+                        o.status === "em_andamento" ? "bg-blue-600 text-white" :
                         o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                         o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
-                        o.status === "agendada" && o.priority === "imediata" ? "bg-red-50 text-red-700 border border-red-200" :
-                        o.status === "agendada" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                        o.status === "agendada" && o.priority === "imediata" ? "bg-blue-600 text-white" :
+                        o.status === "agendada" || o.status === "aberta" ? "bg-amber-50 text-amber-700 border border-amber-200" :
                         "bg-neutral-100 text-neutral-600 border border-neutral-200"
                       }`}>{
-                        o.status === "agendada" && o.priority === "imediata" ? "EM SERVIÇO" :
-                        o.status === "agendada" ? "AGENDAMENTO" :
-                        o.status === "aberta" ? "ABERTA" :
+                        o.status === "agendada" && o.priority === "imediata" ? "EM ANDAMENTO" :
+                        o.status === "agendada" || o.status === "aberta" ? "PENDENTE" :
                         o.status === "em_andamento" ? "EM ANDAMENTO" :
                         o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" :
                         o.status === "cancelada" ? "CANCELADA" :

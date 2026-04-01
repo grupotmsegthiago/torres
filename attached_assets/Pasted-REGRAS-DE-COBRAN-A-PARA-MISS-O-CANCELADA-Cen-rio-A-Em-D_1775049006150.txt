@@ -1,0 +1,43 @@
+REGRAS DE COBRANÇA PARA MISSÃO CANCELADA:
+Cenário A: Em Deslocamento (Viatura saiu, mas não chegou)
+
+Cobrança: Valor fixo da "Tabela de Cancelamento".
+
+Cenário B: Já chegou na Origem (O agente está no local)
+
+Cobrança: Valor total do "Acionamento".
+
+Adicional de Tempo: Se o agente ficou esperando mais de 3 horas antes do cancelamento, soma-se o valor das Horas Extras.
+
+Adicional de Distância: Se a origem for a mais de 100km da base da Torres, cobra-se o KM Excedente.
+
+🚥 PADRONIZAÇÃO DE STATUS (ORDENS DE SERVIÇO):
+Atualmente, apenas o "Em Andamento" está claro. Vamos padronizar as cores e nomes para o Grid:
+
+🔵 Em Andamento (Em execução)
+
+✅ Concluída (Finalizada com sucesso)
+
+🔴 Cancelada (Com a aplicação automática das regras de custo acima)
+
+🟡 Pendente/Aguardando (Criada, mas viatura ainda na base)
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, precisamos implementar a Lógica de Faturamento para Missões Canceladas e padronizar os status das OS:
+
+Cálculo de Cancelamento: Crie uma função que, ao mudar o status da OS para 'Cancelada', verifique a última etapa concluída pelo agente:
+
+Se 'Saída Base' concluída: Aplique o custo da 'Tabela de Cancelamento'.
+
+Se 'Chegada Origem' concluída: Aplique o custo de 'Acionamento'.
+
+Condicionais Extras: Se o tempo entre 'Chegada Origem' e o cancelamento for > 3h, some as Horas Extras. Se a distância Base-Origem for > 100km, some o KM excedente.
+
+Boletim de Medição: Garanta que esses valores apareçam detalhados no Boletim e na visualização da OS, justificando o custo do cancelamento para o cliente.
+
+Padronização de Status: No Grid de Ordens de Serviço, utilize os status: 'Em Andamento', 'Concluída', 'Cancelada' e 'Pendente', cada um com sua cor identificadora.
+
+Persistência: Salve esses cálculos no Supabase para que o faturamento mensal feche corretamente."
+
+🔍 O QUE ISSO MUDA NO SEU DIA A DIA?
+Quando você abrir a TOR-0010 e o cliente cancelar, você não precisa mais fazer conta manual. O sistema olha o GPS e o relógio do agente, calcula os adicionais e já joga o valor no "Contas a Receber" da Torres.
