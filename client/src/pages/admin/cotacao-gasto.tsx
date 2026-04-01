@@ -109,7 +109,7 @@ export default function CotacaoGastoPage() {
   const valorNF = baseNF - custoOperacional;
 
   const MARGEM = 35;
-  const VALOR_KM = 5.30;
+  const VALOR_KM = 5.00;
   const PRECO_MINIMO = 530;
   const HORA_MINIMA = 3;
   const precoCalculado = baseNF / (1 - MARGEM / 100);
@@ -389,7 +389,7 @@ export default function CotacaoGastoPage() {
                     )}
                   </div>
                   <div className={`p-4 rounded-xl border ${kmTrecho > 0 ? "bg-amber-600/20 border-amber-500/30" : "bg-white/5 border-white/10"}`}>
-                    <p className="text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">Tabela R$ 5,30/KM</p>
+                    <p className="text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">Tabela R$ 5,00/KM</p>
                     <p className="text-2xl font-black font-mono text-white" data-testid="text-preco-tabela">{kmTrecho > 0 ? fmt(precoTabelaKm) : "—"}</p>
                     {kmTrecho > 0 && (
                       <>
