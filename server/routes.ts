@@ -19,7 +19,7 @@ import {
   companyDocuments, homologationLogs, missionUpdates,
   referencePoints, insertReferencePointSchema,
   missionPositions, missionPhotos,
-  agentLocationHistory,
+  agentLocationHistory, systemSettings,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
 import * as apibrasil from "./apibrasil";
@@ -367,10 +367,82 @@ function toSafeUser(user: any) {
   };
 }
 
+const DEFAULT_REPORT_TEMPLATE = `TORRES VIGILÂNCIA PATRIMONIAL
+OS {{osNumber}} | STATUS: {{transitStatus}}
+
+🗓 DATA: {{date}}    HORA: {{time}}
+🛡 OPERAÇÃO: {{statusLabel}}
+🏢 CLIENTE: {{clientName}}
+
+📍 ORIGEM: {{origin}}
+🏁 DESTINO: {{destination}}
+
+🚛 VEÍCULO: {{driverPlate}}
+👤 MOTORISTA: {{driverName}}
+📞 CONTATO: {{driverPhone}}
+
+🚔 VIATURA: {{vehiclePlate}}
+👮 AGENTE 01: {{agent1}}
+👮 AGENTE 02: {{agent2}}
+
+📈 PROGRESSO DA MISSÃO: {{progress}}%
+📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: {{etapaAvancada}}
+🏙️ LOCALIZAÇÃO: {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+
+async function ensureSystemSettingsTable() {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, "report_template"));
+    if (existing.length === 0) {
+      await db.insert(systemSettings).values({ key: "report_template", value: DEFAULT_REPORT_TEMPLATE });
+    }
+  } catch (e) {
+    console.error("[system_settings] init error:", e);
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  await ensureSystemSettingsTable();
+
+  app.get("/api/system-settings/:key", requireAuth, async (req, res) => {
+    try {
+      const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));
+      if (rows.length === 0) return res.status(404).json({ message: "Setting not found" });
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/system-settings/:key", requireAdminRole, async (req, res) => {
+    try {
+      const { value } = req.body;
+      if (typeof value !== "string") return res.status(400).json({ message: "value must be a string" });
+      const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));
+      if (existing.length === 0) {
+        const result = await db.insert(systemSettings).values({ key: req.params.key, value }).returning();
+        return res.json(result[0]);
+      }
+      const result = await db.update(systemSettings)
+        .set({ value, updatedAt: new Date() })
+        .where(eq(systemSettings.key, req.params.key))
+        .returning();
+      res.json(result[0]);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
 
   app.get("/api/auth/setup-check", async (_req, res) => {
     const hasUsers = await storage.hasAnyUsers();

@@ -807,3 +807,14 @@ export const missionCosts = pgTable("mission_costs", {
 export const insertMissionCostSchema = createInsertSchema(missionCosts).omit({ id: true, createdAt: true });
 export type InsertMissionCost = z.infer<typeof insertMissionCostSchema>;
 export type MissionCost = typeof missionCosts.$inferSelect;
+
+export const systemSettings = pgTable("system_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({ id: true, updatedAt: true });
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+export type SystemSetting = typeof systemSettings.$inferSelect;

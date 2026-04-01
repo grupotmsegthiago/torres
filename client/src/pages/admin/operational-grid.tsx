@@ -518,9 +518,53 @@ function getFirstLastName(fullName: string | null | undefined): string {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
-function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
+const FALLBACK_REPORT_TEMPLATE = `TORRES VIGILÂNCIA PATRIMONIAL
+OS {{osNumber}} | STATUS: {{transitStatus}}
+
+🗓 DATA: {{date}}    HORA: {{time}}
+🛡 OPERAÇÃO: {{statusLabel}}
+🏢 CLIENTE: {{clientName}}
+
+📍 ORIGEM: {{origin}}
+🏁 DESTINO: {{destination}}
+
+🚛 VEÍCULO: {{driverPlate}}
+👤 MOTORISTA: {{driverName}}
+📞 CONTATO: {{driverPhone}}
+
+🚔 VIATURA: {{vehiclePlate}}
+👮 AGENTE 01: {{agent1}}
+👮 AGENTE 02: {{agent2}}
+
+📈 PROGRESSO DA MISSÃO: {{progress}}%
+📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: {{etapaAvancada}}
+🏙️ LOCALIZAÇÃO: {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+
+let _cachedReportTemplate: string | null = null;
+let _templateFetchedAt = 0;
+
+async function getReportTemplate(): Promise<string> {
+  const now = Date.now();
+  if (_cachedReportTemplate && now - _templateFetchedAt < 60000) return _cachedReportTemplate;
+  try {
+    const res = await authFetch("/api/system-settings/report_template");
+    if (res.ok) {
+      const data = await res.json();
+      _cachedReportTemplate = data.value;
+      _templateFetchedAt = now;
+      return data.value;
+    }
+  } catch {}
+  return _cachedReportTemplate || FALLBACK_REPORT_TEMPLATE;
+}
+
+function applyTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "—");
+}
+
+function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<string, string> | null {
   const os = v.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, scheduledDate: gridItem.scheduledDate, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
-  if (!os) return "";
+  if (!os) return null;
 
   const now = new Date();
   const date = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -539,10 +583,8 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
   const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
   const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
-  const progress = getMissionProgress(os.missionStatus);
-  const occurrence = os.lastAgentUpdate?.message || "Sem ocorrência";
+  const progress = String(getMissionProgress(os.missionStatus));
   const locationAddr = v.tracker?.address || "—";
-
   const transitStatus = getTransitStatus(os.missionStatus);
 
   const lat = v.tracker?.latitude;
@@ -555,8 +597,6 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
     ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
     : getMissionLabel(currentMs);
 
-  const photoUrl = os.lastAgentUpdate?.photoUrl || null;
-
   const destLat = os.destinationLat;
   const destLng = os.destinationLng;
   let etaLine = "";
@@ -567,27 +607,43 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
     etaLine = `\n\n🛣️ DISTÂNCIA ATÉ DESTINO: ${roadDist} km\n⏱️ PREVISÃO DE CHEGADA: ${eta}`;
   }
 
-  return `TORRES VIGILÂNCIA PATRIMONIAL
-OS ${os.osNumber} | STATUS: ${transitStatus}
+  const mapsBlock = mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : "";
 
-🗓 DATA: ${date}    HORA: ${time}
-🛡 OPERAÇÃO: ${statusLabel}
-🏢 CLIENTE: ${os.clientName?.toUpperCase() || "—"}
+  return {
+    osNumber: os.osNumber || "—",
+    transitStatus: transitStatus?.toUpperCase() || "—",
+    date,
+    time,
+    statusLabel: statusLabel || "—",
+    clientName: os.clientName?.toUpperCase() || "—",
+    origin: origin?.toUpperCase() || "—",
+    destination: destination?.toUpperCase() || "—",
+    driverPlate: driverPlate || "—",
+    driverName: driverName?.toUpperCase() || "—",
+    driverPhone: driverPhone || "—",
+    vehiclePlate: vehiclePlate || "—",
+    agent1: agent1?.toUpperCase() || "—",
+    agent2: agent2?.toUpperCase() || "—",
+    progress,
+    etapaAvancada: etapaAvancada?.toUpperCase() || "—",
+    locationAddr,
+    etaLine,
+    mapsBlock,
+  };
+}
 
-📍 ORIGEM: ${origin?.toUpperCase() || "—"}
-🏁 DESTINO: ${destination?.toUpperCase() || "—"}
+async function generateReportAsync(v: TrackedVehicle, gridItem?: GridItem | null): Promise<string> {
+  const vars = buildReportVars(v, gridItem);
+  if (!vars) return "";
+  const template = await getReportTemplate();
+  return applyTemplate(template, vars);
+}
 
-🚛 VEÍCULO: ${driverPlate}
-👤 MOTORISTA: ${driverName?.toUpperCase() || "—"}
-📞 CONTATO: ${driverPhone}
-
-🚔 VIATURA: ${vehiclePlate}
-👮 AGENTE 01: ${agent1?.toUpperCase()}
-👮 AGENTE 02: ${agent2?.toUpperCase()}
-
-📈 PROGRESSO DA MISSÃO: ${progress}%
-📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: ${etapaAvancada?.toUpperCase()}
-🏙️ LOCALIZAÇÃO: ${locationAddr}${etaLine}${mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : ""}`;
+function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
+  const vars = buildReportVars(v, gridItem);
+  if (!vars) return "";
+  const template = _cachedReportTemplate || FALLBACK_REPORT_TEMPLATE;
+  return applyTemplate(template, vars);
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
@@ -2891,7 +2947,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                  const reportText = generateReport(v, gridItem || null);
+                  const reportText = await generateReportAsync(v, gridItem || null);
                   const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
                   const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                   const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
@@ -2912,7 +2968,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                  const reportText = generateReport(v, gridItem || null);
+                  const reportText = await generateReportAsync(v, gridItem || null);
                   const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
                   const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                   const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
@@ -3827,7 +3883,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                    const reportText = generateReport(v, gridItem || null);
+                    const reportText = await generateReportAsync(v, gridItem || null);
                     const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
                     const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                     const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
@@ -3837,7 +3893,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                    const reportText = generateReport(v, gridItem || null);
+                    const reportText = await generateReportAsync(v, gridItem || null);
                     const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
                     const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                     const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
@@ -5502,7 +5558,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   if (!rowForwardUpdate) return;
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                  const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                  const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
                   const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
                   const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
                   const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
@@ -5520,7 +5576,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   if (!rowForwardUpdate) return;
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                  const reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                  const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
                   const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
                   const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
                   const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
@@ -6246,7 +6302,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                   onClick={async () => {
                     if (!forwardUpdate) return;
-                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    let reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                     if (mapsLink && !reportText.includes(mapsLink)) {
                       reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
                     }
@@ -6264,7 +6320,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     if (!forwardUpdate) return;
-                    let reportText = matchedVehicle ? generateReport(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                    let reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                     if (mapsLink && !reportText.includes(mapsLink)) {
                       reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
                     }
@@ -6658,6 +6714,8 @@ export default function OperationalGridPage() {
   const [proximityResult, setProximityResult] = useState<ProximityResult | null>(null);
   const [mirrorVehicle, setMirrorVehicle] = useState<TrackedVehicle | null>(null);
   const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
+
+  useEffect(() => { getReportTemplate(); }, []);
 
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
