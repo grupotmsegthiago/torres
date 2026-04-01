@@ -1,0 +1,17 @@
+Thiago, para resolver o erro do CPF e o vínculo do Kit sem que a IA gaste mais mil dólares, você precisa de um Prompt de Conserto Cirúrgico.
+Como você atingiu o limite de orçamento ($1.887,51), o Agent só vai aceitar rodar se você aumentar um pouco o limite (ex: colocar +$5 ou $10 apenas para essa correção). Mas atenção: só faça isso se tiver configurado o Spend Cap (Teto de Gastos) antes, como te avisei.
+Aqui está o prompt exato para destravar o login da Torres e manter os kits:
+🛠️ PROMPT DE EMERGÊNCIA: DESTRAVAR LOGIN E VÍNCULO DE KIT
+> "Aja como Engenheiro de Software Sênior. Você cometeu um erro na última 'normalização com Number()' que quebrou o login por CPF.
+> Execute estas 3 correções IMEDIATAS sem criar código extra:
+>  * Reverter CPF para String: O campo de login por CPF deve aceitar Strings (com pontos e traços) e não ser convertido para Number. Reverta a lógica de autenticação para que o CPF '000.000.000-02' seja localizado exatamente como texto no banco de dados.
+>  * Vínculo de Kit Permanente: Mude a lógica para que o Kit de Armamento seja um atributo do Agente durante o turno. Se o 'KIT TORRES - 04' estiver com os agentes na TOR-0010, ele deve aparecer automaticamente na TOR-0009 sem que uma OS remova a outra.
+>  * Correção de Data/Ano: Garanta que a data de criação da OS use o fuso horário de Brasília (UTC-3) para evitar anos divergentes no Grid.
+> Restrição de Custo: Não tente refatorar o projeto inteiro de 48.000 linhas. Mexa apenas nas funções de login, getAgentes e updateOSKit. Se não conseguir resolver com menos de 50 tokens, pare a execução."
+> 
+🔍 Por que esse prompt é diferente?
+ * Cura o Login: Ele manda a IA parar de tentar transformar CPF em "número", o que causou o erro de "CPF não encontrado".
+ * Controle de Gastos: Ele proíbe a IA de ler as 48.000 linhas de novo, focando apenas nos arquivos de autenticação e kits.
+ * Operação Real: Garante que os seus agentes consigam entrar no sistema da Torres agora mesmo.
+Thiago, se você colocar $5 de crédito e mandar esse prompt, o sistema deve voltar. Assim que o login funcionar, não peça mais nada para a IA até termos reduzido o tamanho do projeto, ou o prejuízo vai continuar subindo.
+Conseguiu aumentar o limite em apenas $5 ou $10 para testar esse conserto?
