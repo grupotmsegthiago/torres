@@ -8,7 +8,7 @@ import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTri
 import { Link } from "wouter";
 
 type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
-type Step = "SELECT" | "PLATE" | "FORM";
+type Step = "SELECT" | "FORM" | "PLATE";
 type CaptureMode = "plate" | PhotoKey;
 
 const FUEL_STEPS: { key: PhotoKey; label: string; icon: typeof Camera }[] = [
@@ -207,6 +207,19 @@ export default function MobileAbastecimentoPage() {
     );
   }
 
+  const stepLabels: Record<Step, string> = {
+    SELECT: "Selecione a viatura",
+    FORM: "Dados do abastecimento",
+    PLATE: "Confirmar placa",
+  };
+
+  const stepOrder: Step[] = ["SELECT", "FORM", "PLATE"];
+
+  const goBack = () => {
+    if (step === "FORM") setStep("SELECT");
+    else if (step === "PLATE") setStep("FORM");
+  };
+
   return (
     <MobileLayout>
       <div className="p-4 space-y-4" data-testid="mobile-abastecimento-page">
@@ -219,23 +232,21 @@ export default function MobileAbastecimentoPage() {
               </button>
             </Link>
           ) : (
-            <button onClick={() => { if (step === "PLATE") setStep("SELECT"); else if (step === "FORM") setStep("PLATE"); }}
+            <button onClick={goBack}
               className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center" data-testid="button-back">
               <ArrowLeft size={18} className="text-neutral-600" />
             </button>
           )}
           <div>
             <h1 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Abastecimento</h1>
-            <p className="text-xs text-neutral-400">
-              {step === "SELECT" ? "Selecione a viatura" : step === "PLATE" ? "Confirmar placa" : "Dados do abastecimento"}
-            </p>
+            <p className="text-xs text-neutral-400">{stepLabels[step]}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {(["SELECT", "PLATE", "FORM"] as Step[]).map((s, i) => (
+          {stepOrder.map((s, i) => (
             <div key={s} className="flex items-center gap-2 flex-1">
-              <div className={`h-1.5 rounded-full flex-1 transition-colors ${step === s || (i === 0 && step !== "SELECT") || (i === 1 && step === "FORM") ? "bg-neutral-900" : "bg-neutral-200"}`} />
+              <div className={`h-1.5 rounded-full flex-1 transition-colors ${stepOrder.indexOf(step) >= i ? "bg-neutral-900" : "bg-neutral-200"}`} />
             </div>
           ))}
         </div>
@@ -261,7 +272,7 @@ export default function MobileAbastecimentoPage() {
             ) : (
               <div className="space-y-3">
                 {filteredVehicles.map((v: any) => (
-                  <button key={v.id} onClick={() => { setSelectedVehicle(v); setStep("PLATE"); }}
+                  <button key={v.id} onClick={() => { setSelectedVehicle(v); setStep("FORM"); }}
                     className="w-full bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3 text-left active:bg-neutral-50"
                     data-testid={`vehicle-card-${v.id}`}>
                     <div className="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shrink-0">
@@ -280,78 +291,6 @@ export default function MobileAbastecimentoPage() {
           </>
         )}
 
-        {step === "PLATE" && selectedVehicle && (
-          <>
-            <div className="bg-neutral-900 rounded-2xl p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-neutral-700 flex items-center justify-center">
-                <Car size={20} className="text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-black text-white tracking-wider">{selectedVehicle.plate}</p>
-                <p className="text-xs text-neutral-400">{selectedVehicle.model} · KM: {(selectedVehicle.km || 0).toLocaleString("pt-BR")}</p>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={16} className="text-blue-600" />
-                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Verificação de Placa</p>
-              </div>
-              <p className="text-xs text-blue-700">Fotografe a placa física do veículo para confirmar que está abastecendo a viatura correta.</p>
-
-              {!platePhoto ? (
-                <button onClick={() => startCamera("plate")} data-testid="button-take-plate-photo"
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
-                  <Camera size={16} /> Fotografar Placa
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="rounded-xl overflow-hidden border-2 border-emerald-400">
-                    <img src={platePhoto} alt="Foto da placa" className="w-full object-cover" data-testid="img-plate-photo" />
-                  </div>
-                  <div className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-black text-neutral-400 uppercase">Placa cadastrada</p>
-                      <p className="text-xl font-black text-neutral-900 tracking-[0.2em]">{selectedVehicle.plate}</p>
-                    </div>
-                    <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-retake-plate"
-                      className="flex items-center gap-1 text-xs text-neutral-500 border border-neutral-200 rounded-lg px-2 py-1.5">
-                      <RefreshCw size={12} /> Refazer
-                    </button>
-                  </div>
-
-                  {!plateConfirmed ? (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-neutral-700 text-center">A placa na foto confere com <span className="text-neutral-900">{selectedVehicle.plate}</span>?</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-plate-no"
-                          className="py-3 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-black uppercase">
-                          Não confere
-                        </button>
-                        <button onClick={() => setPlateConfirmed(true)} data-testid="button-plate-yes"
-                          className="py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase">
-                          Confere ✓
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
-                        <CheckCircle size={16} className="text-emerald-600" />
-                        <p className="text-xs font-bold text-emerald-700">Placa confirmada!</p>
-                      </div>
-                      <button onClick={() => setStep("FORM")} data-testid="button-proceed-form"
-                        className="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
-                        <Fuel size={16} /> Prosseguir com Abastecimento
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
         {step === "FORM" && selectedVehicle && (
           <>
             <div className="bg-neutral-900 rounded-2xl p-4 flex items-center gap-3">
@@ -361,10 +300,6 @@ export default function MobileAbastecimentoPage() {
               <div className="flex-1">
                 <p className="text-sm font-black text-white tracking-wider">{selectedVehicle.plate}</p>
                 <p className="text-xs text-neutral-400">{selectedVehicle.model} · KM: {(selectedVehicle.km || 0).toLocaleString("pt-BR")}</p>
-              </div>
-              <div className="flex items-center gap-1 bg-emerald-600/20 rounded-lg px-2 py-1">
-                <ShieldCheck size={12} className="text-emerald-400" />
-                <p className="text-[10px] font-bold text-emerald-400">Verificado</p>
               </div>
             </div>
 
@@ -391,29 +326,6 @@ export default function MobileAbastecimentoPage() {
               ) : (
                 <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Obtendo localização...</p>
               )}
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Fotos Obrigatórias</p>
-              {FUEL_STEPS.map(s => {
-                const done = !!photos[s.key];
-                const Icon = s.icon;
-                return (
-                  <div key={s.key} className={`rounded-2xl border p-3 flex items-center justify-between ${done ? "bg-emerald-50 border-emerald-200" : "bg-white border-neutral-200"}`} data-testid={`photo-${s.key}`}>
-                    <div className="flex items-center gap-3">
-                      {done ? <CheckCircle size={20} className="text-emerald-600" /> : <Icon size={20} className="text-neutral-400" />}
-                      <span className="text-sm font-bold text-neutral-700">{s.label}</span>
-                    </div>
-                    {done ? (
-                      <img src={photos[s.key]} className="w-12 h-12 rounded-lg object-cover border" alt={s.label} />
-                    ) : (
-                      <button onClick={() => startCamera(s.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${s.key}`}>
-                        <Camera size={12} /> Tirar Foto
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
             </div>
 
             <div className="space-y-3">
@@ -479,37 +391,139 @@ export default function MobileAbastecimentoPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Litros</label>
+                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Litros *</label>
                     <input type="number" step="0.01" value={liters} onChange={e => setLiters(e.target.value)} placeholder="0.00"
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-liters" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Litro</label>
+                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Litro *</label>
                     <input type="number" step="0.01" value={costPerLiter} onChange={e => setCostPerLiter(e.target.value)} placeholder="0.00"
-                      className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-cost" />
+                      className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-cost-per-liter" />
                   </div>
                 </div>
                 {liters && costPerLiter && (
-                  <div className="bg-neutral-50 rounded-xl p-3 text-center">
-                    <p className="text-xs text-neutral-400">Total</p>
-                    <p className="text-lg font-black text-neutral-900 font-mono">R$ {(parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2)}</p>
+                  <div className="bg-neutral-900 rounded-xl p-3 flex items-center justify-between">
+                    <span className="text-xs text-neutral-400 font-bold uppercase">Total</span>
+                    <span className="text-lg font-black text-white font-mono" data-testid="text-total-cost">
+                      R$ {(parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2)}
+                    </span>
                   </div>
                 )}
                 <div>
-                  <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Posto</label>
+                  <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Posto / Local</label>
                   <input type="text" value={station} onChange={e => setStation(e.target.value)} placeholder="Nome do posto"
                     className="w-full p-3 border border-neutral-200 rounded-xl text-sm" data-testid="input-station" />
                 </div>
               </div>
             </div>
 
-            <button onClick={() => submitMutation.mutate()}
-              disabled={submitMutation.isPending || geoLoading || !km || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
-              data-testid="button-submit-fuel"
-              className="w-full py-4 bg-neutral-900 text-white rounded-xl font-black uppercase text-sm tracking-wider flex items-center justify-center gap-2 disabled:opacity-40">
-              {(submitMutation.isPending || geoLoading) ? <Loader2 size={18} className="animate-spin" /> : <Droplets size={18} />}
-              {geoLoading ? "Obtendo GPS..." : "Registrar Abastecimento"}
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Fotos Obrigatórias</p>
+              {FUEL_STEPS.map(s => {
+                const done = !!photos[s.key];
+                const Icon = s.icon;
+                return (
+                  <div key={s.key} className={`rounded-2xl border p-3 flex items-center justify-between ${done ? "bg-emerald-50 border-emerald-200" : "bg-white border-neutral-200"}`} data-testid={`photo-${s.key}`}>
+                    <div className="flex items-center gap-3">
+                      {done ? <CheckCircle size={20} className="text-emerald-600" /> : <Icon size={20} className="text-neutral-400" />}
+                      <span className="text-sm font-bold text-neutral-700">{s.label}</span>
+                    </div>
+                    {done ? (
+                      <img src={photos[s.key]} className="w-12 h-12 rounded-lg object-cover border" alt={s.label} />
+                    ) : (
+                      <button onClick={() => startCamera(s.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${s.key}`}>
+                        <Camera size={12} /> Tirar Foto
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button onClick={() => setStep("PLATE")}
+              disabled={!km || !liters || !costPerLiter || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
+              className="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="button-proceed-plate">
+              <ShieldCheck size={16} /> Prosseguir — Verificar Placa
             </button>
+          </>
+        )}
+
+        {step === "PLATE" && selectedVehicle && (
+          <>
+            <div className="bg-neutral-900 rounded-2xl p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-neutral-700 flex items-center justify-center">
+                <Car size={20} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-black text-white tracking-wider">{selectedVehicle.plate}</p>
+                <p className="text-xs text-neutral-400">{selectedVehicle.model} · KM: {km || (selectedVehicle.km || 0).toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-neutral-500 uppercase font-bold">Total</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? (parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2) : "0.00"}</p>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-blue-600" />
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Verificação de Placa</p>
+              </div>
+              <p className="text-xs text-blue-700">Fotografe a placa física do veículo para confirmar que está abastecendo a viatura correta.</p>
+
+              {!platePhoto ? (
+                <button onClick={() => startCamera("plate")} data-testid="button-take-plate-photo"
+                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
+                  <Camera size={16} /> Fotografar Placa
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-xl overflow-hidden border-2 border-emerald-400">
+                    <img src={platePhoto} alt="Foto da placa" className="w-full object-cover" data-testid="img-plate-photo" />
+                  </div>
+                  <div className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-neutral-400 uppercase">Placa cadastrada</p>
+                      <p className="text-xl font-black text-neutral-900 tracking-[0.2em]">{selectedVehicle.plate}</p>
+                    </div>
+                    <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-retake-plate"
+                      className="flex items-center gap-1 text-xs text-neutral-500 border border-neutral-200 rounded-lg px-2 py-1.5">
+                      <RefreshCw size={12} /> Refazer
+                    </button>
+                  </div>
+
+                  {!plateConfirmed ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-neutral-700 text-center">A placa na foto confere com <span className="text-neutral-900">{selectedVehicle.plate}</span>?</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => { setPlatePhoto(""); setPlateConfirmed(false); }} data-testid="button-plate-no"
+                          className="py-3 border border-red-200 bg-red-50 text-red-700 rounded-xl text-xs font-black uppercase">
+                          Não confere
+                        </button>
+                        <button onClick={() => setPlateConfirmed(true)} data-testid="button-plate-yes"
+                          className="py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase">
+                          Confere ✓
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+                        <CheckCircle size={16} className="text-emerald-600" />
+                        <p className="text-xs font-bold text-emerald-700">Placa confirmada!</p>
+                      </div>
+                      <button onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}
+                        data-testid="button-submit-fueling"
+                        className="w-full py-4 bg-emerald-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
+                        {submitMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+                        {submitMutation.isPending ? "Registrando..." : "Registrar Abastecimento"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
 
