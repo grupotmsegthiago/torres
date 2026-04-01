@@ -97,8 +97,9 @@ export default function CotacaoGastoPage() {
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
   const usouMargemMinima = precoFinal === precoMargemMinima && precoKm < precoMargemMinima;
 
+  const horasMissaoCalc = params.kmPercurso > 0 ? params.kmPercurso / 40 : params.horasMissao;
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
-  const custoHoraFinal = params.horasMissao > 0 ? precoFinal / params.horasMissao : 0;
+  const custoHoraFinal = horasMissaoCalc > 0 ? precoFinal / horasMissaoCalc : 0;
 
   return (
     <AdminLayout>
@@ -182,10 +183,6 @@ export default function CotacaoGastoPage() {
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Pedágios (R$)</label>
                   <Input type="number" step="0.01" value={params.pedagios} onChange={e => set("pedagios", e.target.value)} data-testid="input-pedagios" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Horas Missão</label>
-                  <Input type="number" step="0.5" value={params.horasMissao} onChange={e => set("horasMissao", e.target.value)} data-testid="input-horas-missao" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Qtd Vigilantes</label>
@@ -280,9 +277,16 @@ export default function CotacaoGastoPage() {
                         <p className="text-lg font-black text-neutral-900">{Math.round(routeInfo.distanceMeters / 1000 * 2)} km</p>
                       </div>
                     </div>
-                    <div className="bg-neutral-50 rounded-lg p-3 text-center">
-                      <p className="text-[10px] font-bold text-neutral-400 uppercase">Tempo Estimado (trecho)</p>
-                      <p className="text-lg font-black text-neutral-900">{routeInfo.durationText}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-neutral-50 rounded-lg p-3 text-center">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">Tempo Google</p>
+                        <p className="text-lg font-black text-neutral-900">{routeInfo.durationText}</p>
+                      </div>
+                      <div className="bg-neutral-900 rounded-lg p-3 text-center">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase">Horas Missão</p>
+                        <p className="text-lg font-black text-white">{horasMissaoCalc.toFixed(1)}h</p>
+                        <p className="text-[9px] text-neutral-500">KM ÷ 40</p>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
@@ -359,7 +363,7 @@ export default function CotacaoGastoPage() {
                   <div className="p-3 bg-white/5 rounded-lg text-center">
                     <p className="text-[10px] font-bold text-neutral-400 uppercase">R$/Hora</p>
                     <p className="text-lg font-black font-mono mt-1" data-testid="text-custo-hora">
-                      {params.horasMissao > 0 ? fmt(custoHoraFinal) : "—"}
+                      {horasMissaoCalc > 0 ? fmt(custoHoraFinal) : "—"}
                     </p>
                   </div>
                 </div>
