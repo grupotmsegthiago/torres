@@ -1817,191 +1817,248 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
     if (w) { w.document.write(`<pre style="font-family:monospace;font-size:13px;padding:40px;max-width:700px;margin:auto;">${lines.filter(l=>l!==undefined).join("\n")}</pre>`); w.document.close(); w.print(); }
   };
 
+  const propTag = summary?.proporcional ? ` (${summary.diasTrabalhados}/30d)` : "";
+
   return (
-    <div className="space-y-4" data-testid="section-salarios">
-      <div className="flex items-center gap-2 mb-2">
-        <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="border border-neutral-200 rounded px-2 py-1.5 text-xs font-medium" data-testid="select-salary-month">
-          {MESES.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-        </select>
-        <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="border border-neutral-200 rounded px-2 py-1.5 text-xs font-medium" data-testid="select-salary-year">
-          {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
+    <div className="space-y-5" data-testid="section-salarios">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="border border-neutral-200 rounded-lg px-3 py-2 text-xs font-semibold bg-white" data-testid="select-salary-month">
+            {MESES.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+          </select>
+          <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="border border-neutral-200 rounded-lg px-3 py-2 text-xs font-semibold bg-white" data-testid="select-salary-year">
+            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
+            <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={() => { const today = new Date().toISOString().slice(0, 10); setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026` }); setShowSalForm(true); }} data-testid="button-apply-cct-kit">
+              <ShieldCheck className="w-3 h-3" /> Kit CCT
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowDiscountForm(!showDiscountForm)} data-testid="button-launch-discount">
+            <Ban className="w-3 h-3" /> Desconto
+          </Button>
+          {summary && (
+            <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={printHolerite} data-testid="button-print-holerite">
+              <Download className="w-3 h-3" /> Holerite
+            </Button>
+          )}
+        </div>
       </div>
 
-      {loadingSummary ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : summary && (
+      {loadingSummary ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div> : summary && (
         <>
-          <div className="border border-neutral-200 rounded-lg overflow-hidden" data-testid="card-holerite">
-            <div className="bg-neutral-900 px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-white" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">{CCT_SP_2025.label} — {MESES[selMonth-1]} {selYear}</h3>
-              </div>
-              <Button variant="ghost" size="sm" onClick={printHolerite} className="text-white/70 hover:text-white hover:bg-white/10 text-[10px] gap-1 h-6" data-testid="button-print-holerite">
-                <Download className="w-3 h-3" /> Holerite
-              </Button>
+          <div className="bg-neutral-900 rounded-xl p-4 md:p-5" data-testid="card-salary-hero">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Remuneração Líquida Estimada</span>
+              <span className="text-[10px] text-neutral-500">{MESES[selMonth-1]} {selYear}</span>
             </div>
-
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
+              {summary.totalDescontos > 0 && <span className="text-xs text-red-400 font-medium">(-{fmtR(summary.totalDescontos)} desc.)</span>}
+            </div>
             {summary.proporcional && (
-              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="text-[11px] text-amber-800 font-medium">
-                  Proporcional: Admissão em {summary.employee.hireDate} — {summary.diasTrabalhados} dias trabalhados ({(summary.fatorProporcional * 100).toFixed(1)}%)
+              <div className="flex items-center gap-1.5 mt-2">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span className="text-[11px] text-amber-300 font-medium">
+                  Proporcional — Admissão {summary.employee.hireDate} — {summary.diasTrabalhados} dias ({(summary.fatorProporcional * 100).toFixed(0)}%)
                 </span>
               </div>
             )}
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-[10px] text-neutral-400">Ganhos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total)}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-red-400" />
+                <span className="text-[10px] text-neutral-400">Descontos: <span className="text-red-400 font-semibold">{fmtR(summary.totalDescontos)}</span></span>
+              </div>
+            </div>
+          </div>
 
-            <div className="p-3 space-y-1.5">
-              <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-1">Vencimentos</div>
-              <div className="grid grid-cols-1 gap-1">
-                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
-                  <span className="text-neutral-600">Salário Base{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
-                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.salarioBase)}</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border border-neutral-200 rounded-xl overflow-hidden" data-testid="card-vencimentos">
+              <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-700" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wider text-emerald-800 font-bold">Vencimentos</span>
                 </div>
-                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
-                  <span className="text-neutral-600">Periculosidade (30%){summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
-                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.periculosidade)}</span>
+                <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total)}</span>
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">Salário Base</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">{CCT_SP_2025.label}{propTag}</div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.salarioBase)}</span>
                 </div>
-                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
-                  <span className="text-neutral-600">Vale Refeição{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
-                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.valeRefeicao)}</span>
+                <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">Periculosidade</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">30% sobre base{propTag}</div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.periculosidade)}</span>
                 </div>
-                <div className="flex justify-between bg-white border border-neutral-100 rounded px-3 py-2 text-xs">
-                  <span className="text-neutral-600">Cesta Básica{summary.proporcional ? ` (${summary.diasTrabalhados}/30d)` : ""}</span>
-                  <span className="font-semibold text-emerald-700">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
+                <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">Vale Refeição</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">R$ {CCT_SP_2025.valeRefeicaoDia}/dia x {CCT_SP_2025.diasUteisMes}d{propTag}</div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.valeRefeicao)}</span>
                 </div>
-                <div className="flex justify-between bg-emerald-50 border border-emerald-200 rounded px-3 py-2 text-xs font-bold">
-                  <span className="text-emerald-800">Total Vencimentos</span>
-                  <span className="text-emerald-800">{fmtR(summary.vencimentos.total)}</span>
+                <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-neutral-800">Cesta Básica</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">Conforme CCT{propTag}</div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
                 </div>
               </div>
+            </div>
 
-              {summary.descontos.length > 0 && (
-                <>
-                  <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mt-3 mb-1">Descontos</div>
-                  <div className="grid grid-cols-1 gap-1">
+            <div className="border border-neutral-200 rounded-xl overflow-hidden" data-testid="card-descontos">
+              <div className="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
+                    <Ban className="w-3.5 h-3.5 text-red-700" />
+                  </div>
+                  <span className="text-xs uppercase tracking-wider text-red-800 font-bold">Descontos / Retenções</span>
+                </div>
+                <span className="text-xs font-bold text-red-700">{summary.totalDescontos > 0 ? `- ${fmtR(summary.totalDescontos)}` : "R$ 0,00"}</span>
+              </div>
+              <div className="p-3">
+                {summary.descontos.length === 0 ? (
+                  <div className="text-center py-6">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-300 mx-auto mb-2" />
+                    <p className="text-xs text-neutral-400 font-medium">Nenhum desconto em {MESES[selMonth-1]}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
                     {summary.descontos.map((d: any) => (
-                      <div key={d.id} className="flex items-center justify-between bg-white border border-red-100 rounded px-3 py-2 text-xs">
-                        <div className="flex-1 min-w-0">
-                          <span className="text-neutral-700 font-medium">{d.type}</span>
-                          <span className="text-neutral-400 ml-1.5">— {d.description}</span>
-                          {d.createdBy && <span className="text-neutral-300 ml-1 text-[10px]">({d.createdBy})</span>}
+                      <div key={d.id} className="bg-white border border-red-100 rounded-lg p-3 flex items-center justify-between">
+                        <div className="flex-1 min-w-0 mr-2">
+                          <div className="text-xs font-semibold text-neutral-800">{d.type}</div>
+                          <div className="text-[10px] text-neutral-400 mt-0.5 truncate">{d.description}{d.createdBy ? ` — por ${d.createdBy}` : ""}</div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="font-semibold text-red-600">- {fmtR(d.amount)}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-bold text-red-600 tabular-nums">- {fmtR(d.amount)}</span>
                           {isDiretoria && (
-                            <button onClick={() => deleteDiscountMut.mutate(d.id)} className="text-red-400 hover:text-red-600 p-0.5" data-testid={`button-delete-discount-${d.id}`}>
-                              <Trash2 className="w-3 h-3" />
+                            <button onClick={() => deleteDiscountMut.mutate(d.id)} className="text-red-300 hover:text-red-600 transition-colors" data-testid={`button-delete-discount-${d.id}`}>
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
                       </div>
                     ))}
-                    <div className="flex justify-between bg-red-50 border border-red-200 rounded px-3 py-2 text-xs font-bold">
-                      <span className="text-red-800">Total Descontos</span>
-                      <span className="text-red-800">- {fmtR(summary.totalDescontos)}</span>
-                    </div>
                   </div>
-                </>
-              )}
-
-              <div className="flex justify-between items-center bg-neutral-900 text-white rounded px-4 py-3 text-sm mt-2">
-                <span className="font-semibold">Líquido a Receber</span>
-                <span className="font-bold text-xl" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
+                )}
               </div>
-              <p className="text-[10px] text-neutral-400 italic">Pagamento todo 5º dia útil do mês</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowDiscountForm(!showDiscountForm)}
-              className="text-red-600 border-red-200 hover:bg-red-50 gap-1.5"
-              data-testid="button-launch-discount"
-            >
-              <Ban className="w-3.5 h-3.5" /> Lançar Desconto
-            </Button>
-            {(employee.role?.toLowerCase().includes("vigilante") || employee.role?.toLowerCase().includes("escolta")) && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const today = new Date().toISOString().slice(0, 10);
-                  setSalForm({ baseSalary: String(CCT_SP_2025.salarioBase), effectiveDate: today, reason: `Kit CCT SP 2025/2026 (Base R$${CCT_SP_2025.salarioBase.toFixed(2)} + Periculosidade ${CCT_SP_2025.periculosidadePct}% R$${CCT_SP_2025.periculosidade.toFixed(2)} + VR R$${CCT_SP_2025.valeRefeicaoDia}/dia + Cesta R$${CCT_SP_2025.cestaBasica})` });
-                  setShowSalForm(true);
-                }}
-                data-testid="button-apply-cct-kit"
-              >
-                <DollarSign className="w-3.5 h-3.5 mr-0.5" /> Kit CCT
-              </Button>
-            )}
-          </div>
-
           {showDiscountForm && (
-            <div className="bg-red-50/50 border border-red-200 rounded-lg p-3 space-y-2" data-testid="form-discount">
-              <div className="text-[10px] uppercase tracking-wider text-red-600 font-bold">Novo Desconto — {MESES[selMonth-1]} {selYear}</div>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="border border-red-200 rounded-xl p-4 bg-red-50/30" data-testid="form-discount">
+              <div className="flex items-center gap-2 mb-3">
+                <Ban className="w-4 h-4 text-red-600" />
+                <span className="text-xs uppercase tracking-wider text-red-700 font-bold">Novo Desconto — {MESES[selMonth-1]} {selYear}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Tipo *</label>
-                  <select value={discountForm.type} onChange={(e) => setDiscountForm({ ...discountForm, type: e.target.value })} className="w-full border border-neutral-200 rounded px-2 py-1.5 text-xs" data-testid="select-discount-type">
+                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Tipo</label>
+                  <select value={discountForm.type} onChange={(e) => setDiscountForm({ ...discountForm, type: e.target.value })} className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-xs bg-white" data-testid="select-discount-type">
                     {DISCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Valor (R$) *</label>
-                  <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="50.00" className="text-xs" data-testid="input-discount-amount" />
+                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Descrição</label>
+                  <Input value={discountForm.description} onChange={(e) => setDiscountForm({ ...discountForm, description: e.target.value })} placeholder="Ex: Abastecimento dia 15/03" className="text-xs h-9" data-testid="input-discount-description" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor (R$)</label>
+                  <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="50.00" className="text-xs h-9" data-testid="input-discount-amount" />
                 </div>
               </div>
-              <div>
-                <label className="text-[10px] font-semibold text-neutral-400 block mb-1">Descrição *</label>
-                <Input value={discountForm.description} onChange={(e) => setDiscountForm({ ...discountForm, description: e.target.value })} placeholder="Ex: Abastecimento não autorizado dia 15/03" className="text-xs" data-testid="input-discount-description" />
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => addDiscountMut.mutate()} disabled={!discountForm.amount || !discountForm.description || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white" data-testid="button-save-discount">
+              <div className="flex gap-2 mt-3">
+                <Button size="sm" onClick={() => addDiscountMut.mutate()} disabled={!discountForm.amount || !discountForm.description || addDiscountMut.isPending} className="bg-red-600 hover:bg-red-700 text-white text-xs h-8 gap-1.5" data-testid="button-save-discount">
+                  {addDiscountMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
                   {addDiscountMut.isPending ? "Salvando..." : "Lançar Desconto"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowDiscountForm(false)}>Cancelar</Button>
+                <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setShowDiscountForm(false)}>Cancelar</Button>
               </div>
             </div>
           )}
         </>
       )}
 
-      <div className="flex justify-between items-center mt-2">
-        <h3 className="text-sm font-bold text-neutral-700">Histórico Salarial</h3>
-        <Button size="sm" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta"><Plus className="w-4 h-4 mr-1" />Novo</Button>
-      </div>
-      {showSalForm && (
-        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Salário Base (R$) *</label><Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="Ex: 2500.00" data-testid="input-salary-value-pasta" /></div>
-            <div><label className="text-[10px] font-semibold text-neutral-400 block mb-1">Data Vigência *</label><Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} data-testid="input-salary-date-pasta" /></div>
+      <div className="border-t border-neutral-100 pt-4">
+        <div className="flex justify-between items-center mb-3">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-neutral-400" />
+            <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Histórico Salarial</h3>
           </div>
-          <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Motivo (Ex: Promoção, Reajuste CCT)" data-testid="input-salary-reason-pasta" />
-          <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} data-testid="button-save-salary-pasta">
-            {addSalary.isPending ? "Salvando..." : "Adicionar"}
+          <Button size="sm" variant="outline" className="text-xs h-8 gap-1" onClick={() => setShowSalForm(!showSalForm)} data-testid="button-add-salary-pasta">
+            <Plus className="w-3 h-3" /> Novo Registro
           </Button>
         </div>
-      )}
-      {loadingSal ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : salaries.length === 0 ? (
-        <p className="text-sm text-neutral-400 text-center py-4">Nenhum salário registrado</p>
-      ) : (
-        <div className="space-y-2">
-          {salaries.map((s: any) => (
-            <div key={s.id} className="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2" data-testid={`row-salary-pasta-${s.id}`}>
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-semibold text-neutral-900">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                <span className="text-xs text-neutral-500 ml-2">{s.effectiveDate}</span>
-                {s.reason && <p className="text-[10px] text-neutral-400 truncate mt-0.5">{s.reason}</p>}
+        {showSalForm && (
+          <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 mb-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Salário Base (R$)</label>
+                <Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="2432.50" className="text-xs h-9" data-testid="input-salary-value-pasta" />
               </div>
-              <Button variant="ghost" size="icon" onClick={() => deleteSalary.mutate(s.id)} data-testid={`button-delete-salary-pasta-${s.id}`}>
-                <Trash2 className="w-3 h-3 text-red-500" />
-              </Button>
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data Vigência</label>
+                <Input type="date" value={salForm.effectiveDate} onChange={(e) => setSalForm({ ...salForm, effectiveDate: e.target.value })} className="text-xs h-9" data-testid="input-salary-date-pasta" />
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Motivo</label>
+              <Input value={salForm.reason} onChange={(e) => setSalForm({ ...salForm, reason: e.target.value })} placeholder="Ex: Promoção, Reajuste CCT" className="text-xs h-9" data-testid="input-salary-reason-pasta" />
+            </div>
+            <Button size="sm" onClick={() => addSalary.mutate()} disabled={!salForm.baseSalary || !salForm.effectiveDate || addSalary.isPending} className="text-xs h-8" data-testid="button-save-salary-pasta">
+              {addSalary.isPending ? "Salvando..." : "Adicionar Registro"}
+            </Button>
+          </div>
+        )}
+        {loadingSal ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : salaries.length === 0 ? (
+          <p className="text-xs text-neutral-400 text-center py-6">Nenhum registro salarial</p>
+        ) : (
+          <div className="border border-neutral-200 rounded-xl overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-neutral-50 border-b border-neutral-200">
+                  <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Data Vigência</th>
+                  <th className="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Salário Base</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Motivo</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {salaries.map((s: any) => (
+                  <tr key={s.id} className="hover:bg-neutral-50 transition-colors" data-testid={`row-salary-pasta-${s.id}`}>
+                    <td className="px-4 py-2.5 font-mono text-neutral-600">{s.effectiveDate}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-neutral-900 tabular-nums">R$ {Number(s.baseSalary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-2.5 text-neutral-500 max-w-[200px] truncate">{s.reason || "—"}</td>
+                    <td className="px-2 py-2.5">
+                      <button onClick={() => deleteSalary.mutate(s.id)} className="text-neutral-300 hover:text-red-500 transition-colors" data-testid={`button-delete-salary-pasta-${s.id}`}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[10px] text-neutral-400 text-center italic">Pagamento todo 5º dia útil do mês · {CCT_SP_2025.label}</p>
     </div>
   );
 }

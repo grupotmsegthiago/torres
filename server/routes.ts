@@ -1488,19 +1488,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         await storage.updateServiceOrder(osId, updates);
       }
 
-      if (km_chegada_origem !== undefined) {
+      if (km_chegada_origem !== undefined && km_chegada_origem !== null) {
         const photos = await storage.getMissionPhotosByOS(osId);
         const existing = [...photos].reverse().find(p => p.step === "km_chegada");
         if (existing) {
           await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_chegada_origem)} WHERE id = ${existing.id}`);
+        } else {
+          await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${"km_chegada"}, ${"[ajuste-manual]"}, ${Number(km_chegada_origem)}, ${"Ajuste Manual"})`);
         }
       }
 
-      if (km_fim_missao !== undefined) {
+      if (km_fim_missao !== undefined && km_fim_missao !== null) {
         const photos = await storage.getMissionPhotosByOS(osId);
         const existing = [...photos].reverse().find(p => p.step === "km_final");
         if (existing) {
           await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_fim_missao)} WHERE id = ${existing.id}`);
+        } else {
+          await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${"km_final"}, ${"[ajuste-manual]"}, ${Number(km_fim_missao)}, ${"Ajuste Manual"})`);
         }
       }
 
@@ -1669,6 +1673,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const oldKm = existing.kmValue;
             await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(adj.km)} WHERE id = ${existing.id}`);
             auditEntries.push(`KM "${adj.kmStep}" alterado de ${oldKm ?? 'vazio'} para ${adj.km}`);
+          } else if (!existing && adj.km !== null) {
+            await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${adj.kmStep}, ${'[ajuste-manual]'}, ${Number(adj.km)}, ${`Ajuste manual por ${adminName}`})`);
+            auditEntries.push(`KM "${adj.kmStep}" inserido manualmente: ${adj.km}`);
           }
         }
       }
