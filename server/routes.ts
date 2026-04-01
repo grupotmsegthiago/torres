@@ -1755,17 +1755,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       if (auditEntries.length > 0) {
         const auditMessage = `AJUSTE MANUAL por ${adminName}:\n${auditEntries.join("\n")}`;
-        await storage.createMissionUpdate({
-          serviceOrderId: osId,
-          osNumber: os.osNumber,
-          employeeId: null,
-          employeeName: adminName,
+        await supabaseAdmin.from("mission_updates").insert({
+          service_order_id: osId,
+          os_number: os.osNumber,
+          employee_id: null,
+          employee_name: adminName,
           message: auditMessage,
-          missionStep: "ajuste_manual",
+          mission_step: "ajuste_manual",
           latitude: null,
           longitude: null,
-          photoUrl: null,
-          readByAdmin: 1,
+          photo_url: null,
+          read_by_admin: 1,
         });
         console.log(`[Audit] Step adjustment on OS #${os.osNumber} by ${adminName}: ${auditEntries.length} changes`);
       }
