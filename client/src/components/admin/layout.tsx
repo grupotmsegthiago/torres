@@ -21,6 +21,7 @@ const menuItems: MenuItem[] = [
   { path: "/admin/clients", label: "Clientes", icon: Building2 },
   { path: "/admin/service-orders", label: "Ordens de Serviço", icon: FileText },
   { path: "/admin/boletim-medicao", label: "Boletim de Medição", icon: Calculator },
+  { path: "/admin/relatorio-faturamento", label: "Relatório Faturamento", icon: FileText },
   {
     label: "Funcionários",
     icon: Users,

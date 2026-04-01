@@ -1,0 +1,2273 @@
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock } from 'lucide-react';
+import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import { generateContent } from '../lib/gemini';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
+} from 'recharts';
+import * as XLSX from 'xlsx';
+
+interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOpenMission?: (missionId: string) => void; }
+const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
+    const [clients, setClients] = useState<Client[]>([]);
+    const [selectedClient, setSelectedClient] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [selectedMonth, setSelectedMonth] = useState('');
+    const [missions, setMissions] = useState<any[]>([]);
+    const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
+    const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [reportGenerated, setReportGenerated] = useState(false);
+    const [allPeriodMissions, setAllPeriodMissions] = useState<any[]>([]);
+    const [allClientTables, setAllClientTables] = useState<ClientPriceTable[]>([]);
+    const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
+    const [billingAdjustments, setBillingAdjustments] = useState<Record<string, any>>({});
+    const [chartsLoading, setChartsLoading] = useState(false);
+    const [chartsGenerated, setChartsGenerated] = useState(false);
+
+    const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+    const [invoiceForm, setInvoiceForm] = useState({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
+    const [invoiceMedicaoEmail, setInvoiceMedicaoEmail] = useState('');
+    const [showMedicaoEmailInput, setShowMedicaoEmailInput] = useState(false);
+    const [nfFile, setNfFile] = useState<File | null>(null);
+    const [boletoFile, setBoletoFile] = useState<File | null>(null);
+    const [nfPreview, setNfPreview] = useState('');
+    const [boletoPreview, setBoletoPreview] = useState('');
+    const [aiAnalyzing, setAiAnalyzing] = useState(false);
+    const [aiStatus, setAiStatus] = useState('');
+    const [invoiceSaving, setInvoiceSaving] = useState(false);
+
+    const [asaasLoading, setAsaasLoading] = useState(false);
+    const [asaasResult, setAsaasResult] = useState<any>(null);
+    const [asaasConfigured, setAsaasConfigured] = useState(false);
+    const [asaasDescription, setAsaasDescription] = useState('');
+    const [asaasPeriod, setAsaasPeriod] = useState('');
+    const [asaasSplitMode, setAsaasSplitMode] = useState(false);
+    const [asaasSplitCharges, setAsaasSplitCharges] = useState<{name: string; cpfCnpj: string; email: string; value: string}[]>([]);
+
+    useEffect(() => {
+        fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (asaasResult) setAsaasResult(null);
+    }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client, invoiceForm.number]);
+
+    useEffect(() => {
+        if (showInvoiceModal) {
+            const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+            if (startDate) {
+                const sDate = new Date(startDate + 'T12:00:00');
+                const month = monthNames[sDate.getMonth()];
+                const year = sDate.getFullYear();
+                const sDay = sDate.getDate();
+                const eDate = endDate ? new Date(endDate + 'T12:00:00') : sDate;
+                const eDay = eDate.getDate();
+                const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+                if (sDay === 1 && eDay === lastDayOfMonth) {
+                    setAsaasPeriod(`Mês Completo de ${month}/${year}`);
+                } else if (sDay === 1 && eDay === 15) {
+                    setAsaasPeriod(`1ª Quinzena de ${month}/${year}`);
+                } else if (sDay === 16) {
+                    setAsaasPeriod(`2ª Quinzena de ${month}/${year}`);
+                } else {
+                    setAsaasPeriod(`${month}/${year}`);
+                }
+            } else {
+                const now = new Date();
+                const day = now.getDate();
+                const monthLabel = monthNames[now.getMonth()];
+                const yearLabel = now.getFullYear();
+                const quinzena = day <= 15 ? '1ª Quinzena' : '2ª Quinzena';
+                setAsaasPeriod(`${quinzena} de ${monthLabel}/${yearLabel}`);
+            }
+        }
+    }, [showInvoiceModal, startDate, endDate]);
+
+    useEffect(() => {
+        const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
+        const clientNameUpper = `${selectedClient?.name || ''} ${selectedClient?.trading_name || ''}`.toUpperCase();
+        let base: string;
+        if (clientNameUpper.includes('CEVA')) {
+            base = 'CNAE 07930 — Intermediação / Agenciamento de Contrato';
+        } else if (clientNameUpper.includes('AMAZON')) {
+            base = 'CNAE 06298 — Rastreamento e Monitoramento de Carga';
+        } else {
+            base = 'CNAE 03115 — Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
+        }
+        setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
+    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
+
+    const asaasSplitTotal = useMemo(() => {
+        return asaasSplitCharges.reduce((sum, c) => sum + (parseFloat(c.value) || 0), 0);
+    }, [asaasSplitCharges]);
+
+    const asaasSplitDiff = useMemo(() => {
+        const total = parseFloat(invoiceForm.amount) || 0;
+        return Math.round((total - asaasSplitTotal) * 100) / 100;
+    }, [asaasSplitTotal, invoiceForm.amount]);
+
+    useEffect(() => {
+        fetchClients();
+        const date = new Date();
+        const y = date.getFullYear();
+        const m = date.getMonth();
+        const firstDay = new Date(y, m, 1).toISOString().split('T')[0];
+        const lastDay = new Date(y, m + 1, 0).toISOString().split('T')[0];
+        setStartDate(firstDay);
+        setEndDate(lastDay);
+        setSelectedMonth(`${y}-${(m + 1).toString().padStart(2, '0')}`);
+    }, []);
+
+    const fetchClients = async () => {
+        const { data } = await supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
+        if (data) setClients(data as any);
+    };
+
+    const handleSetFortnight = (period: 1 | 2) => {
+        const refDate = startDate ? new Date(startDate + 'T12:00:00') : new Date();
+        const year = refDate.getFullYear();
+        const month = refDate.getMonth();
+        const mm = (month + 1).toString().padStart(2, '0');
+        if (period === 1) {
+            setStartDate(`${year}-${mm}-01`);
+            setEndDate(`${year}-${mm}-15`);
+        } else {
+            const lastDay = new Date(year, month + 1, 0).getDate();
+            setStartDate(`${year}-${mm}-16`);
+            setEndDate(`${year}-${mm}-${lastDay}`);
+        }
+    };
+
+    const handleSetMonth = (value: string) => {
+        setSelectedMonth(value);
+        if (!value) return;
+        const [y, m] = value.split('-').map(Number);
+        const first = `${y}-${m.toString().padStart(2, '0')}-01`;
+        const last = new Date(y, m, 0).getDate();
+        const lastStr = `${y}-${m.toString().padStart(2, '0')}-${last.toString().padStart(2, '0')}`;
+        setStartDate(first);
+        setEndDate(lastStr);
+    };
+
+    const handleGenerate = async () => {
+        if (!selectedClient) { alert("Selecione um cliente."); return; }
+        setIsLoading(true);
+        setReportGenerated(false);
+        try {
+            const clientObj = clients.find(c => c.id.toString() === selectedClient);
+            const clientName = clientObj?.name;
+            const { data: missionData, error } = await supabase
+                .from('missions')
+                .select('*, company_vehicle:vehicles(*)')
+                .eq('client', clientName)
+                .or('billing_approved.eq.true,billing_verified_by.not.is.null')
+                .gte('created_at', `${startDate}T00:00:00`)
+                .lte('created_at', `${endDate}T23:59:59`)
+                .neq('status', 'Recusada')
+                .order('created_at', { ascending: true });
+            if (error) throw error;
+
+            const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
+            let clientVehiclesMap: Record<string, any> = {};
+            if (clientVehicleIds.length > 0) {
+                const { data: cvData } = await supabase.from('client_vehicles').select('id, plate, model, brand, color').in('id', clientVehicleIds);
+                if (cvData) {
+                    cvData.forEach((v: any) => { clientVehiclesMap[v.id.toString()] = v; });
+                }
+            }
+
+            const enrichedMissions = (missionData || []).map((m: any) => ({
+                ...m,
+                _clientVehicle: m.client_vehicle ? clientVehiclesMap[m.client_vehicle.toString()] : null
+            }));
+
+            const missionIds = (missionData || []).map((m: any) => m.id).filter(Boolean);
+
+            const [ptRes, pctRes, adjRes, snapRes] = await Promise.all([
+                supabase.from('client_price_tables').select('*').eq('client', clientName),
+                supabase.from('provider_cost_tables').select('*'),
+                missionIds.length > 0
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] }),
+                missionIds.length > 0
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] })
+            ]);
+            setPriceTables(ptRes.data as ClientPriceTable[] || []);
+            setProviderTables(pctRes.data as any || []);
+
+            const adjMap: Record<string, any> = {};
+            if (adjRes.data) {
+                for (const row of adjRes.data) {
+                    if (!adjMap[row.entity_id]) {
+                        try { adjMap[row.entity_id] = JSON.parse(row.details); } catch {}
+                    }
+                }
+            }
+            setBillingAdjustments(adjMap);
+
+            if (snapRes.data) {
+                const snapMap: Record<string, any> = {};
+                for (const row of snapRes.data) {
+                    if (!snapMap[row.entity_id]) {
+                        try { snapMap[row.entity_id] = JSON.parse(row.details); } catch {}
+                    }
+                }
+                const updated = enrichedMissions.map((m: any) => {
+                    const snap = snapMap[m.id];
+                    if (snap && !m.snapshot_approved_by) {
+                        return { ...m, snapshot_data: snap, snapshot_approved_by: snap.approved_by || 'Sistema', snapshot_approved_at: snap.approved_at };
+                    }
+                    return m;
+                });
+                setMissions(updated);
+            } else {
+                setMissions(enrichedMissions);
+            }
+
+            setReportGenerated(true);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao gerar relatório.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleFetchCharts = async () => {
+        if (!startDate || !endDate) { alert("Selecione o período."); return; }
+        setChartsLoading(true);
+        setChartsGenerated(false);
+        try {
+            const rangeStart = `${startDate}T00:00:00`;
+            const rangeEnd = `${endDate}T23:59:59`;
+            const [byCreated, byStart] = await Promise.all([
+                supabase.from('missions').select('*').neq('status', 'Recusada')
+                    .gte('created_at', rangeStart).lte('created_at', rangeEnd),
+                supabase.from('missions').select('*').neq('status', 'Recusada')
+                    .not('start_time', 'is', null)
+                    .gte('start_time', rangeStart).lte('start_time', rangeEnd)
+            ]);
+            const error = byCreated.error || byStart.error;
+            if (error) throw error;
+            const seen = new Set<string>();
+            const missionData: any[] = [];
+            [...(byCreated.data || []), ...(byStart.data || [])].forEach(m => {
+                if (!seen.has(m.id)) { seen.add(m.id); missionData.push(m); }
+            });
+            missionData.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            const [ptRes, pctRes] = await Promise.all([
+                supabase.from('client_price_tables').select('*'),
+                supabase.from('provider_cost_tables').select('*')
+            ]);
+            setAllClientTables(ptRes.data as ClientPriceTable[] || []);
+            setAllProviderTables(pctRes.data as any || []);
+            setAllPeriodMissions(missionData || []);
+            setChartsGenerated(true);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao carregar dados dos gráficos.");
+        } finally {
+            setChartsLoading(false);
+        }
+    };
+
+    interface MissionDetail { id: string; route: string; revenue: number; cost: number; lucro: number; pct: number; date: string; provider: string; client: string; km: number; }
+    type ChartItem = { nome: string; valor: number; custo: number; lucro: number; pct: number; count: number; fullName: string; missions: MissionDetail[]; receita?: number; };
+
+    const [expandedClient, setExpandedClient] = useState<string | null>(null);
+    const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+    const [sortMode, setSortMode] = useState<'valor' | 'pct'>('valor');
+    const [chartTab, setChartTab] = useState<'clientes' | 'fornecedores' | 'geral'>('clientes');
+    const handleOpenOS = (missionId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onOpenMission) onOpenMission(missionId);
+    };
+
+    const chartComputedData = useMemo(() => {
+        if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [] as ChartItem[], providerData: [] as ChartItem[] };
+        const clientTotals: Record<string, { revenue: number; cost: number; count: number; missions: MissionDetail[] }> = {};
+        const providerTotals: Record<string, { cost: number; revenue: number; count: number; missions: MissionDetail[] }> = {};
+
+        allPeriodMissions.forEach(m => {
+            const clientName = m.client || 'Sem Cliente';
+            const providerName = m.provider || 'Sem Fornecedor';
+            const clientObj = clients.find(c => c.name === clientName);
+            const displayClient = clientObj?.trading_name || clientName;
+
+            const hasStoredRevenue = m.revenue_value != null && m.revenue_value > 0;
+            const hasStoredCost = m.cost_value != null && m.cost_value > 0;
+
+            let revenue: number;
+            let cost: number;
+
+            if (hasStoredRevenue && hasStoredCost) {
+                revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                cost = (m.cost_value || 0) + tollProv;
+            } else {
+                const clientTablesForM = allClientTables.filter(t => t.client === clientName);
+                const fin = calculateMissionFinancials(m, clientTablesForM, allProviderTables, clientObj);
+                revenue = hasStoredRevenue ? (m.revenue_value || 0) + Math.max(0, m.toll_value || 0) : (fin.client.total || 0);
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                cost = hasStoredCost ? (m.cost_value || 0) + tollProv : (fin.provider.total || 0);
+            }
+            const mLucro = revenue - cost;
+            const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
+
+            const cidadeO = extractCityFromAddress(m.origin || '');
+            const cidadeD = extractCityFromAddress(m.destination || '');
+            const route = cidadeO && cidadeD ? `${cidadeO} → ${cidadeD}` : m.region || '-';
+
+            const detail: MissionDetail = {
+                id: m.id || '',
+                route,
+                revenue: Math.round(revenue * 100) / 100,
+                cost: Math.round(cost * 100) / 100,
+                lucro: Math.round(mLucro * 100) / 100,
+                pct: mPct,
+                date: m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-',
+                provider: providerName,
+                client: displayClient,
+                km: m.total_distance || m.traveled_distance || 0
+            };
+
+            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, cost: 0, count: 0, missions: [] };
+            clientTotals[displayClient].revenue += revenue;
+            clientTotals[displayClient].cost += cost;
+            clientTotals[displayClient].count++;
+            clientTotals[displayClient].missions.push(detail);
+
+            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, revenue: 0, count: 0, missions: [] };
+            providerTotals[providerName].cost += cost;
+            providerTotals[providerName].revenue += revenue;
+            providerTotals[providerName].count++;
+            providerTotals[providerName].missions.push(detail);
+        });
+
+        const clientData: ChartItem[] = Object.entries(clientTotals)
+            .sort((a, b) => b[1].revenue - a[1].revenue)
+            .map(([nome, d]) => {
+                const lucro = d.revenue - d.cost;
+                const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
+                const sortedMissions = d.missions.sort((a, b) => a.lucro - b.lucro);
+                return { nome, valor: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome, missions: sortedMissions };
+            });
+
+        const providerData: ChartItem[] = Object.entries(providerTotals)
+            .sort((a, b) => b[1].cost - a[1].cost)
+            .map(([nome, d]) => {
+                const lucro = d.revenue - d.cost;
+                const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
+                const sortedMissions = d.missions.sort((a, b) => a.lucro - b.lucro);
+                return { nome, valor: Math.round(d.cost * 100) / 100, receita: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome, missions: sortedMissions };
+            });
+
+        const allMissions: MissionDetail[] = [];
+        Object.values(clientTotals).forEach(ct => allMissions.push(...ct.missions));
+
+        return { clientData, providerData, allMissions };
+    }, [chartsGenerated, allPeriodMissions, clients, allClientTables, allProviderTables]);
+
+    const clientChartData = chartComputedData.clientData;
+    const providerChartData = chartComputedData.providerData;
+    const allMissionsGeneral = chartComputedData.allMissions || [];
+
+    const CHART_COLORS_CLIENT = ['#1e40af', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#1e3a5f', '#0c4a6e', '#0369a1', '#0284c7'];
+    const CHART_COLORS_PROVIDER = ['#991b1b', '#b91c1c', '#dc2626', '#ef4444', '#f87171', '#fca5a5', '#7f1d1d', '#9a3412', '#c2410c', '#ea580c'];
+
+    const ChartTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload?.[0]) return null;
+        const data = payload[0].payload;
+        const isProvider = data.receita !== undefined;
+        return (
+            <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 min-w-[200px]">
+                <p className="font-black text-gray-300 uppercase tracking-wider mb-2 text-[11px] border-b border-gray-700 pb-2">{data.fullName || label}</p>
+                {isProvider ? (
+                    <>
+                        <p className="text-[12px] font-bold text-gray-300">Custo: <span className="text-red-400 font-black">{fmtBRL(data.valor)}</span></p>
+                        <p className="text-[12px] font-bold text-gray-300">Receita vinculada: <span className="text-blue-400 font-black">{fmtBRL(data.receita)}</span></p>
+                    </>
+                ) : (
+                    <>
+                        <p className="text-[12px] font-bold text-gray-300">Receita: <span className="text-blue-400 font-black">{fmtBRL(data.valor)}</span></p>
+                        <p className="text-[12px] font-bold text-gray-300">Custo: <span className="text-red-400 font-black">{fmtBRL(data.custo)}</span></p>
+                    </>
+                )}
+                <div className="mt-2 pt-2 border-t border-gray-700 flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-gray-300">Lucro: <span className={`font-black ${data.lucro >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtBRL(data.lucro)}</span></span>
+                    <span className={`text-[13px] font-black px-2 py-0.5 rounded-md ${data.pct >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>{data.pct}%</span>
+                </div>
+                <p className="text-[10px] text-gray-500 font-bold mt-1.5">{data.count} missões</p>
+            </div>
+        );
+    };
+
+    const handlePrint = () => {
+        const printArea = document.getElementById('print-area');
+        if (!printArea) return;
+        const printWindow = window.open('', '_blank', 'width=1400,height=900');
+        if (!printWindow) { window.print(); return; }
+
+        const cloned = printArea.cloneNode(true) as HTMLElement;
+
+        cloned.style.cssText = 'width:100%;padding:0;margin:0;overflow:visible;border:none;box-shadow:none;border-radius:0;position:relative;';
+        const scrollDiv = cloned.querySelector('.report-table-scroll') as HTMLElement;
+        if (scrollDiv) {
+            scrollDiv.style.cssText = 'overflow:visible;max-height:none;max-width:none;width:100%;border:none;border-radius:0;';
+        }
+        const table = cloned.querySelector('table') as HTMLElement;
+        if (table) {
+            table.style.cssText = 'table-layout:auto;width:100%;border-collapse:collapse;';
+        }
+        const colgroup = cloned.querySelector('colgroup');
+        if (colgroup) colgroup.remove();
+
+        cloned.querySelectorAll('thead th').forEach((th: any) => {
+            const bg = th.style.backgroundColor;
+            const fw = th.style.fontWeight;
+            const tt = th.style.textTransform;
+            const ta = th.style.textAlign;
+            th.style.cssText = '';
+            if (bg) th.style.backgroundColor = bg;
+            if (fw) th.style.fontWeight = fw;
+            if (tt) th.style.textTransform = tt;
+            if (ta) th.style.textAlign = ta;
+        });
+        cloned.querySelectorAll('tbody td, tfoot td').forEach((td: any) => {
+            const isRoute = td.classList.contains('route-cell');
+            const bg = td.style.backgroundColor;
+            const fw = td.style.fontWeight;
+            const color = td.style.color;
+            const ff = td.style.fontFamily;
+            td.style.cssText = '';
+            if (bg) td.style.backgroundColor = bg;
+            if (fw) td.style.fontWeight = fw;
+            if (color) td.style.color = color;
+            if (ff && ff.includes('monospace')) td.style.fontFamily = 'monospace';
+            if (isRoute) td.style.textAlign = 'left';
+        });
+
+        const headerEl = cloned.querySelector('.boletim-header') as HTMLElement;
+        if (headerEl) headerEl.style.cssText = '';
+        const h1El = cloned.querySelector('.boletim-header h1') as HTMLElement;
+        if (h1El) h1El.style.cssText = 'font-weight:900;text-transform:uppercase;letter-spacing:1px;';
+        const subEl = cloned.querySelector('.subtitle-line') as HTMLElement;
+        if (subEl) subEl.style.cssText = 'font-weight:700;text-transform:uppercase;color:#374151;';
+        const refEl = cloned.querySelector('.ref-line') as HTMLElement;
+        if (refEl) refEl.style.cssText = 'font-weight:600;text-transform:uppercase;color:#6b7280;';
+
+        const signSection = cloned.querySelector('.sign-section') as HTMLElement;
+        if (signSection) signSection.style.cssText = '';
+        cloned.querySelectorAll('.sign-box').forEach((el: any) => { el.style.cssText = 'text-align:center;'; });
+        ['.digital-signature', '.sign-role', '.sign-cargo', '.sign-cnpj', '.sign-system', '.sign-cliente', '.sign-data'].forEach(sel => {
+            const el = cloned.querySelector(sel) as HTMLElement;
+            if (el) { const tt = el.style.textTransform; const c = el.style.color; el.style.cssText = ''; if (tt) el.style.textTransform = tt; if (c) el.style.color = c; }
+        });
+
+        const printCSS = `
+            @page { size: A4 landscape; margin: 4mm 5mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 7pt; color: #1f2937; }
+            #print-content { width: 100%; }
+            table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1.5px solid #991b1b; }
+            td, th {
+                padding: 2px 4px;
+                font-size: 7pt;
+                border: 0.5px solid #e5c4c4;
+                line-height: 1.3;
+                white-space: nowrap;
+                text-align: center;
+                vertical-align: middle;
+            }
+            td.route-cell {
+                white-space: normal;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+                line-height: 1.25;
+                font-size: 7pt;
+                text-align: left;
+                min-width: 110px;
+                max-width: 200px;
+                font-weight: 600;
+            }
+            thead { display: table-header-group; }
+            tbody { display: table-row-group; }
+            tfoot { display: table-footer-group; }
+            tr { page-break-inside: avoid; break-inside: avoid; }
+            tbody tr:nth-child(odd) { background-color: #ffffff; }
+            tbody tr:nth-child(even) { background-color: #fef2f2; }
+            .group-hdr th {
+                font-size: 7.5pt;
+                padding: 3px 4px;
+                font-weight: 900;
+                letter-spacing: 0.5px;
+                border-bottom: 1.5px solid #7f1d1d;
+                border-top: 1.5px solid #7f1d1d;
+            }
+            .sub-hdr th {
+                font-size: 6.5pt;
+                padding: 2.5px 3px;
+                font-weight: 800;
+                border-bottom: 1px solid #b91c1c;
+                text-transform: uppercase;
+            }
+            .boletim-header {
+                margin-bottom: 4mm;
+                text-align: center;
+                padding-bottom: 2mm;
+                border-bottom: 1px solid #dc2626;
+            }
+            .boletim-header h1 { font-size: 14pt; margin: 0; color: #7f1d1d; }
+            .subtitle-line { font-size: 9.5pt; margin: 1.5mm 0 0.5mm; color: #991b1b; }
+            .ref-line { font-size: 7.5pt; margin: 0; color: #b91c1c; letter-spacing: 0.3px; }
+            .watermark-logo { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.04; width: 120mm; height: 120mm; z-index: 0; pointer-events: none; }
+            .watermark-logo img { width: 100%; height: 100%; object-fit: contain; }
+            .sign-section {
+                margin-top: 10mm;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                padding: 0 10mm;
+                border-top: 1px solid #dc2626;
+                padding-top: 4mm;
+            }
+            .sign-box { width: 65mm; text-align: center; }
+            .sign-logo { width: 10mm; height: 10mm; }
+            .digital-signature { font-size: 14pt; font-family: 'Brush Script MT', 'Segoe Script', 'Dancing Script', cursive; font-weight: 700; color: #7f1d1d; line-height: 1; font-style: italic; letter-spacing: 0.5px; border-bottom: 1.5px solid #b91c1c; padding-bottom: 1px; display: inline-block; }
+            .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; margin-top: 1mm; }
+            .sign-cnpj { font-size: 6.5pt; color: #b91c1c; }
+            .sign-system { font-size: 6.5pt; color: #dc2626; letter-spacing: 0.3px; }
+            .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; }
+            .sign-data { font-size: 7pt; color: #991b1b; margin-top: 1mm; }
+            tfoot tr {
+                break-inside: avoid;
+                page-break-inside: avoid;
+                border-top: 2px solid #7f1d1d;
+            }
+            tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 5px; }
+        `;
+
+        const wrapper = printWindow.document.createElement('div');
+        wrapper.id = 'print-content';
+        wrapper.appendChild(cloned);
+
+        printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
+        printWindow.document.body.appendChild(wrapper);
+        printWindow.document.close();
+
+        setTimeout(() => {
+            const pageWidthPx = 1045;
+            const tbl = printWindow.document.querySelector('table');
+            if (tbl) {
+                const naturalWidth = tbl.scrollWidth;
+                if (naturalWidth > pageWidthPx) {
+                    const scale = pageWidthPx / naturalWidth;
+                    const zoomVal = Math.max(scale, 0.45);
+                    wrapper.style.zoom = String(zoomVal);
+                }
+            }
+            setTimeout(() => {
+                printWindow.focus();
+                printWindow.print();
+                setTimeout(() => { printWindow.close(); }, 2000);
+            }, 300);
+        }, 600);
+    };
+
+    const fmtBRL = (val: number | null | undefined) => {
+        const v = val ?? 0;
+        return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
+    const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+    const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
+    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+    const fmtHHMM = (h: number) => {
+        if (isNaN(h) || h <= 0) return '00:00';
+        const hrs = Math.floor(h);
+        const mins = Math.round((h - hrs) * 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+    const fmtFranchiseHr = (h: number) => {
+        if (!h || h <= 0) return '00:00';
+        const hrs = Math.floor(h);
+        const mins = Math.round((h - hrs) * 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+
+    const clientData = clients.find(c => c.id.toString() === selectedClient);
+    const displayClientName = clientData ? (clientData.trading_name || clientData.name) : '';
+
+    const getPeriodLabel = () => {
+        if (!startDate || !endDate) return '';
+        const sDate = new Date(startDate + 'T12:00:00');
+        const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+        const month = months[sDate.getMonth()];
+        const year = sDate.getFullYear();
+        const sDay = sDate.getDate();
+        const eDate = new Date(endDate + 'T12:00:00');
+        const eDay = eDate.getDate();
+        const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+        if (sDay === 1 && eDay === lastDayOfMonth) return `GERAL - ${month} /${year} - MÊS COMPLETO`;
+        if (sDay === 1 && eDay === 15) return `GERAL - ${month} /${year} - 1ª QUINZENA DE ${month}`;
+        if (sDay === 16) return `GERAL - ${month} /${year} - 2ª QUINZENA DE ${month}`;
+        return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
+    };
+
+    const hasFrozenMissions = useMemo(() => missions.some(m => m.snapshot_approved_by), [missions]);
+
+    const rowsData = useMemo(() => {
+        return missions.map(m => {
+            const snap = m.snapshot_data;
+            const isFrozen = !!(m.snapshot_approved_by && snap);
+
+            if (isFrozen) {
+                const refCidades = snap.route || (() => {
+                    const cidadeOrigem = extractCityFromAddress(m.origin || '');
+                    const cidadeDestino = extractCityFromAddress(m.destination || '');
+                    return cidadeOrigem && cidadeDestino
+                        ? `${cidadeOrigem} X ${cidadeDestino}`
+                        : cidadeOrigem || cidadeDestino || m.region || '-';
+                })();
+                return {
+                    id: (m.id || '').replace('GTM-', ''),
+                    route: refCidades,
+                    client: displayClientName,
+                    activationFee: snap.activationFee ?? 0,
+                    franchiseHours: snap.franchiseHours ?? 0,
+                    franchiseKm: snap.franchiseKm ?? 0,
+                    unitHr: snap.unitHr ?? 0,
+                    unitKm: snap.unitKm ?? 0,
+                    tollLabel: 'À PARTE',
+                    status: 'CONCLUÍDO',
+                    startDate: fmtDate(m.start_time),
+                    startTime: fmtTime(m.start_time),
+                    viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
+                    cargoPlate: m._clientVehicle?.plate || '-',
+                    endDate: fmtDate(m.end_time),
+                    endTime: fmtTime(m.end_time),
+                    kmStart: m.start_km ?? 0,
+                    kmEnd: m.end_km ?? 0,
+                    kmTotal: snap.kmTotal ?? 0,
+                    timeStart: fmtTime(m.start_time),
+                    timeEnd: fmtTime(m.end_time),
+                    timeTotal: fmtHHMM(snap.durationHours ?? 0),
+                    kmExtraQtd: snap.kmExtraQtd ?? 0,
+                    kmExtraUnit: snap.unitKm ?? 0,
+                    kmExtraTotal: snap.kmExtraTotal ?? 0,
+                    hrExtraQtd: snap.hrExtraQtd ?? 0,
+                    hrExtraUnit: snap.unitHr ?? 0,
+                    hrExtraTotal: snap.hrExtraTotal ?? 0,
+                    escoltaVal: snap.activationFee ?? 0,
+                    tollVal: snap.tollVal ?? 0,
+                    totalGeral: snap.totalGeral ?? ((snap.revenueServiceOnly ?? 0) + (snap.tollVal ?? 0)),
+                    franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
+                    frozen: true,
+                    frozenBy: m.snapshot_approved_by
+                };
+            }
+
+            const adj = billingAdjustments[m.id];
+            const overrides = adj ? {
+                clientTableId: adj.clientTableId || undefined,
+                providerTableId: adj.providerTableId || undefined,
+                customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
+                customClientUnitKm: adj.customClientKm ? Number(adj.customClientKm) : undefined,
+                customClientUnitHour: adj.customClientHour ? Number(adj.customClientHour) : undefined,
+                customProviderBase: adj.customProviderBase ? Number(adj.customProviderBase) : undefined,
+                customProviderUnitKm: adj.customProviderKm ? Number(adj.customProviderKm) : undefined,
+                customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
+            } : undefined;
+            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
+            const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
+            const franchiseKm = usedTable?.franchise_km ?? 0;
+            const franchiseHours = usedTable?.franchise_hours ?? 0;
+            const activationFee = usedTable?.activation_fee ?? 0;
+            const unitKm = usedTable?.price_per_extra_km ?? 0;
+            const unitHr = usedTable?.price_per_extra_hour ?? 0;
+
+            const kmTotal = fin.realTraveledKm;
+            const kmExtraQtd = fin.client.excessKm;
+            const kmExtraTotal = fin.client.extraKmVal;
+            const hrExtraQtd = fin.client.excessHours;
+            const hrExtraTotal = fin.client.extraHrVal;
+            const durationHours = fin.durationHours;
+            const tollVal = Math.max(0, m.toll_value || 0);
+            const totalGeral = (m.revenue_value || 0) + tollVal;
+
+            const cargoPlate = m._clientVehicle?.plate || '-';
+
+            const cidadeOrigem = extractCityFromAddress(m.origin || '');
+            const cidadeDestino = extractCityFromAddress(m.destination || '');
+            const refCidades = cidadeOrigem && cidadeDestino
+                ? `${cidadeOrigem} X ${cidadeDestino}`
+                : cidadeOrigem || cidadeDestino || m.region || '-';
+
+            return {
+                id: (m.id || '').replace('GTM-', ''),
+                route: refCidades,
+                client: displayClientName,
+                activationFee,
+                franchiseHours,
+                franchiseKm,
+                unitHr,
+                unitKm,
+                tollLabel: 'À PARTE',
+                status: 'CONCLUÍDO',
+                startDate: fmtDate(m.start_time),
+                startTime: fmtTime(m.start_time),
+                viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
+                cargoPlate,
+                endDate: fmtDate(m.end_time),
+                endTime: fmtTime(m.end_time),
+                kmStart: m.start_km ?? 0,
+                kmEnd: m.end_km ?? 0,
+                kmTotal,
+                timeStart: fmtTime(m.start_time),
+                timeEnd: fmtTime(m.end_time),
+                timeTotal: fmtHHMM(durationHours),
+                kmExtraQtd,
+                kmExtraUnit: unitKm,
+                kmExtraTotal,
+                hrExtraQtd,
+                hrExtraUnit: unitHr,
+                hrExtraTotal,
+                escoltaVal: activationFee,
+                tollVal,
+                totalGeral,
+                franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
+                frozen: false,
+                frozenBy: null as string | null
+            };
+        });
+    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
+
+    const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+
+    const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const handleExportExcel = useCallback(() => {
+        if (rowsData.length === 0) return;
+
+        const wb = XLSX.utils.book_new();
+
+        const headerGroup = [
+            'TABELA ACORDADA', '', '', '', '', '', '',
+            'INFORMAÇÕES DA VIAGEM', '', '', '', '', '',
+            'KILOMETRAGEM', '', '',
+            'HORÁRIOS', '', '',
+            'KM EXCEDENTE', '', '',
+            'HORA EXCEDENTE', '', '',
+            'VALORES', ''
+        ];
+        const headerSub = [
+            'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
+            'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'KM', 'VALOR', 'TOTAL',
+            'HORA', 'VALOR', 'TOTAL',
+            'PEDÁGIO', 'TOTAL'
+        ];
+
+        const titleRow = ['BOLETIM DE MEDIÇÃO'];
+        const periodRow = [getPeriodLabel()];
+        const subtitleRow = ['REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS'];
+
+        const dataRows = rowsData.map(r => [
+            r.id,
+            r.route,
+            fmtBRLExcel(r.activationFee),
+            r.franchiseHoursFmt,
+            r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
+            fmtBRLExcel(r.unitHr),
+            fmtBRLExcel(r.unitKm),
+            r.startDate,
+            r.startTime,
+            r.viatura,
+            r.cargoPlate,
+            r.endDate,
+            r.endTime,
+            r.kmStart > 0 ? fmtNum(r.kmStart) : '-',
+            r.kmEnd > 0 ? fmtNum(r.kmEnd) : '-',
+            r.kmTotal > 0 ? fmtNum(r.kmTotal) : '-',
+            r.timeStart,
+            r.timeEnd,
+            r.timeTotal,
+            r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-',
+            r.kmExtraQtd > 0 ? fmtBRLExcel(r.kmExtraUnit) : '-',
+            r.kmExtraTotal > 0 ? fmtBRLExcel(r.kmExtraTotal) : 'R$ 0,00',
+            r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
+            r.hrExtraQtd > 0 ? fmtBRLExcel(r.hrExtraUnit) : '-',
+            r.hrExtraTotal > 0 ? fmtBRLExcel(r.hrExtraTotal) : 'R$ 0,00',
+            r.tollVal > 0 ? fmtBRLExcel(r.tollVal) : 'R$ 0,00',
+            fmtBRLExcel(r.totalGeral)
+        ]);
+
+        const totalRow = Array(27).fill('');
+        totalRow[0] = 'TOTAL';
+        totalRow[26] = fmtBRLExcel(grandTotal);
+
+        const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
+        const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+        ws['!cols'] = [
+            { wch: 6 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 },
+            { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
+            { wch: 9 }, { wch: 9 }, { wch: 8 },
+            { wch: 7 }, { wch: 7 }, { wch: 7 },
+            { wch: 6 }, { wch: 12 }, { wch: 12 },
+            { wch: 7 }, { wch: 12 }, { wch: 12 },
+            { wch: 12 }, { wch: 12 }, { wch: 14 }
+        ];
+
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 27 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 27 } },
+            { s: { r: 2, c: 0 }, e: { r: 2, c: 27 } },
+            { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } },
+            { s: { r: 4, c: 7 }, e: { r: 4, c: 12 } },
+            { s: { r: 4, c: 13 }, e: { r: 4, c: 15 } },
+            { s: { r: 4, c: 16 }, e: { r: 4, c: 18 } },
+            { s: { r: 4, c: 19 }, e: { r: 4, c: 21 } },
+            { s: { r: 4, c: 22 }, e: { r: 4, c: 24 } },
+            { s: { r: 4, c: 25 }, e: { r: 4, c: 27 } },
+        ];
+
+        const clientLabel = displayClientName || 'CLIENTE';
+        const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
+        const fileName = `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`;
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Boletim');
+        XLSX.writeFile(wb, fileName, { compression: true });
+    }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
+
+    const cellStyle: React.CSSProperties = {
+        border: '1px solid #e5c4c4',
+        padding: '5px 7px',
+        fontSize: '13px',
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        color: '#1f2937',
+        lineHeight: '1.35',
+        WebkitPrintColorAdjust: 'exact' as any,
+        printColorAdjust: 'exact' as any,
+    };
+    const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
+    const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: '#111827' };
+    const headerStyle: React.CSSProperties = {
+        ...cellStyle,
+        backgroundColor: '#fecaca',
+        fontWeight: 900,
+        fontSize: '11px',
+        textTransform: 'uppercase' as const,
+        color: '#7f1d1d',
+        padding: '5px 5px',
+    };
+    const groupHeaderStyle: React.CSSProperties = {
+        ...headerStyle,
+        backgroundColor: '#b91c1c',
+        color: '#ffffff',
+        fontSize: '12px',
+        letterSpacing: '0.3px',
+        padding: '6px 5px',
+    };
+
+    const bgKm = '#fff5f5';
+    const bgHr = '#fef2f2';
+    const bgKmExc = '#fff1f2';
+    const bgHrExc = '#ffe4e6';
+    const bgVal = '#fce7e7';
+
+    const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: '#fca5a5' };
+    const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: '#fecdd3' };
+    const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fda4af' };
+    const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fb7185' };
+    const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: '#f87171', color: '#fff' };
+
+    const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#dc2626' };
+    const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#c53030' };
+    const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#b91c1c' };
+    const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#991b1b' };
+    const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#7f1d1d' };
+
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => { resolve((reader.result as string).split(',')[1]); };
+            reader.onerror = error => reject(error);
+        });
+    };
+
+    const compressImage = async (file: File, maxWidth = 1200): Promise<{ blob: Blob; base64: string }> => {
+        return new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ratio = Math.min(maxWidth / img.width, 1);
+                canvas.width = img.width * ratio;
+                canvas.height = img.height * ratio;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob((blob) => {
+                    if (!blob) { reject('Erro ao comprimir'); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => resolve({ blob, base64: (reader.result as string).split(',')[1] });
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+            };
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    };
+
+    const handleNfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setNfFile(file);
+        setNfPreview(URL.createObjectURL(file));
+    };
+
+    const handleBoletoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setBoletoFile(file);
+        setBoletoPreview(URL.createObjectURL(file));
+    };
+
+    const analyzeDocumentsWithAI = async () => {
+        if (!nfFile && !boletoFile) { alert('Anexe pelo menos a foto da NF ou do Boleto.'); return; }
+        setAiAnalyzing(true);
+        setAiStatus('Preparando documentos para análise...');
+        try {
+            const parts: any[] = [];
+            if (nfFile) {
+                setAiStatus('Processando imagem da NF...');
+                const nfB64 = nfFile.type === 'application/pdf' ? await fileToBase64(nfFile) : (await compressImage(nfFile)).base64;
+                parts.push({ inlineData: { mimeType: nfFile.type || 'image/jpeg', data: nfB64 } });
+            }
+            if (boletoFile) {
+                setAiStatus('Processando imagem do Boleto...');
+                const bolB64 = boletoFile.type === 'application/pdf' ? await fileToBase64(boletoFile) : (await compressImage(boletoFile)).base64;
+                parts.push({ inlineData: { mimeType: boletoFile.type || 'image/jpeg', data: bolB64 } });
+            }
+
+            const clientNames = clients.map(c => c.trading_name || c.name).join(', ');
+
+            parts.push({ text: `Analise os documentos fiscais brasileiros anexados (Nota Fiscal e/ou Boleto Bancário).
+Extraia as seguintes informações:
+
+1. "nf_number": Número da Nota Fiscal (ex: "001234", "NF-e 12345"). Se não encontrar, retorne "".
+2. "client_name": Nome do CLIENTE / TOMADOR / DESTINATÁRIO da NF. O cliente é quem RECEBE o serviço. Compare com a lista de clientes cadastrados: [${clientNames}]. Se encontrar correspondência, use o nome exato da lista. Se não encontrar, retorne o nome encontrado na NF.
+3. "provider_name": Nome do FORNECEDOR / PRESTADOR que emitiu a NF (quem prestou o serviço).
+4. "issuer_company": Nome/Razão Social da EMPRESA EMISSORA (a empresa que gerou a Nota Fiscal).
+5. "amount": Valor total da NF em número decimal (ex: 15000.50). Se não encontrar, retorne 0.
+6. "nf_date": Data de emissão da NF no formato YYYY-MM-DD. Se não encontrar, retorne "".
+7. "boleto_due_date": Data de VENCIMENTO do boleto no formato YYYY-MM-DD. Se não encontrar, retorne "".
+8. "boleto_amount": Valor do boleto em número decimal. Se não encontrar, use o valor da NF.
+
+Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
+
+            setAiStatus('IA analisando documentos...');
+
+            const rawText = await generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            nf_number: { type: "STRING" },
+                            client_name: { type: "STRING" },
+                            provider_name: { type: "STRING" },
+                            issuer_company: { type: "STRING" },
+                            amount: { type: "NUMBER" },
+                            nf_date: { type: "STRING" },
+                            boleto_due_date: { type: "STRING" },
+                            boleto_amount: { type: "NUMBER" },
+                        },
+                        required: ["nf_number", "client_name", "provider_name", "issuer_company", "amount", "nf_date", "boleto_due_date", "boleto_amount"]
+                    }
+                }
+            });
+
+            if (!rawText) throw new Error('IA não retornou dados.');
+            const parsed = JSON.parse(rawText);
+            setAiStatus('Dados extraídos! Preenchendo formulário...');
+
+            const matchedClient = clients.find(c =>
+                (c.trading_name || c.name).toLowerCase().includes(parsed.client_name?.toLowerCase() || '') ||
+                (parsed.client_name || '').toLowerCase().includes((c.trading_name || c.name).toLowerCase())
+            );
+
+            setInvoiceForm(prev => ({
+                ...prev,
+                number: parsed.nf_number || prev.number,
+                client: matchedClient?.id?.toString() || prev.client,
+                amount: parsed.amount ? parsed.amount.toString() : (parsed.boleto_amount ? parsed.boleto_amount.toString() : prev.amount),
+                date: parsed.nf_date || prev.date,
+                provider: parsed.provider_name || prev.provider,
+                issuer_company: parsed.issuer_company || prev.issuer_company,
+                boleto_due_date: parsed.boleto_due_date || prev.boleto_due_date,
+            }));
+            setTimeout(() => setAiStatus(''), 3000);
+        } catch (err: any) {
+            console.error('[AI Doc Analysis]', err);
+            setAiStatus(`Erro na análise: ${err.message}`);
+            setTimeout(() => setAiStatus(''), 5000);
+        } finally {
+            setAiAnalyzing(false);
+        }
+    };
+
+    const uploadDocImage = async (file: File, prefix: string): Promise<string> => {
+        const ts = Date.now();
+        const ext = file.name.split('.').pop() || 'jpg';
+        const path = `invoices/${prefix}_${ts}.${ext}`;
+        let uploadFile: Blob = file;
+        if (file.type.startsWith('image/')) {
+            const compressed = await compressImage(file);
+            uploadFile = compressed.blob;
+        }
+        const { error } = await supabase.storage.from('mission-evidence').upload(path, uploadFile, { upsert: true });
+        if (error) { console.error('[Upload]', error); return ''; }
+        const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+        return urlData.publicUrl || '';
+    };
+
+    const getQuinzenaRef = (dateStr: string, clientName: string): string => {
+        const d = new Date(dateStr + 'T12:00:00');
+        const day = d.getDate();
+        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        const quinzena = day <= 15 ? 'Primeira' : 'Segunda';
+        return `Ref. ${quinzena} Quinzena de ${month}/${year} - ${clientName}`;
+    };
+
+    const resetInvoiceForm = () => {
+        setInvoiceForm({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
+        setNfFile(null);
+        setBoletoFile(null);
+        setNfPreview('');
+        setBoletoPreview('');
+        setAiStatus('');
+        setAsaasResult(null);
+    };
+
+    const saveMedicaoEmailToClient = async (clientId: string, email: string) => {
+        try {
+            const clientObj = clients.find(c => c.id.toString() === clientId);
+            const existing = (clientObj as any)?.medicao_email || '';
+            const emailList = existing ? existing.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+            if (!emailList.includes(email.trim().toLowerCase())) {
+                emailList.push(email.trim().toLowerCase());
+            }
+            const newVal = emailList.join(', ');
+            await supabase.from('clients').update({ medicao_email: newVal }).eq('id', parseInt(clientId));
+        } catch (err) {
+            console.error('Erro ao salvar e-mail medição:', err);
+        }
+    };
+
+    const autoSaveInvoiceAfterAsaas = async (asaasData: any, nfNumber: string) => {
+        try {
+            const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+            const clientName = clientObj?.name || clientObj?.trading_name || invoiceForm.client;
+            const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+            const parsedAmt = parseFloat(invoiceForm.amount);
+
+            const invoicePayload: any = {
+                client: clientName,
+                number: nfNumber || `TMSEG-${Date.now()}`,
+                amount: parsedAmt,
+                date: invoiceForm.date,
+                status: 'EMITIDA',
+                notes: invoiceForm.notes || '',
+                created_by: userName,
+            };
+
+            if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
+            if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
+            if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+
+            const payment = asaasData?.payment || asaasData?.charges?.[0]?.payment;
+            if (payment) {
+                invoicePayload.asaas_payment_id = payment.id;
+                invoicePayload.asaas_status = payment.status;
+                invoicePayload.asaas_invoice_url = payment.invoiceUrl || '';
+                invoicePayload.asaas_bankslip_url = payment.bankSlipUrl || '';
+            }
+            if (asaasData?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.pix.copyPaste;
+            if (asaasData?.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasData.bankSlip.digitableLine;
+            if (asaasData?.charges?.[0]?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.charges[0].pix.copyPaste;
+
+            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            if (error && error.code === '42703') {
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                error = retry.error;
+            }
+            if (error) {
+                console.error('[AutoSave Invoice]', error);
+                setAiStatus('Cobrança Asaas gerada, mas erro ao salvar fatura: ' + error.message);
+                return;
+            }
+
+            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
+            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
+            try {
+                await supabase.from('financial_transactions').insert({
+                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
+                    amount: parsedAmt,
+                    type: 'INCOME',
+                    status: 'PENDING',
+                    due_date: dueDate,
+                    entity_type: 'Client',
+                    entity_id: invoiceForm.client,
+                    entity_name: clientName,
+                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    created_by: userName,
+                });
+            } catch (e) {
+                console.error('[Auto Contas a Receber]', e);
+            }
+
+            setAiStatus('Cobrança Asaas gerada + Fatura salva + Contas a Receber criado!');
+            setTimeout(() => {
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+            }, 3000);
+        } catch (e: any) {
+            console.error('[AutoSave]', e);
+            setAiStatus('Cobrança gerada no Asaas, mas erro ao salvar fatura localmente: ' + e.message);
+        }
+    };
+
+    const handleGenerateAsaasCharge = async () => {
+        if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
+            alert('Preencha o Valor e o Vencimento do Boleto antes de gerar a cobrança.');
+            return;
+        }
+
+        if (!invoiceMedicaoEmail || !invoiceMedicaoEmail.includes('@')) {
+            alert('Informe um E-mail Medição válido antes de gerar a cobrança. Este e-mail será salvo no cadastro do cliente.');
+            setShowMedicaoEmailInput(true);
+            return;
+        }
+
+        const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+
+        if (showMedicaoEmailInput && invoiceMedicaoEmail) {
+            await saveMedicaoEmailToClient(invoiceForm.client, invoiceMedicaoEmail);
+            setShowMedicaoEmailInput(false);
+        }
+
+        if (asaasSplitMode && asaasSplitCharges.length > 0) {
+            const validCharges = asaasSplitCharges.filter(c => c.cpfCnpj && parseFloat(c.value) > 0);
+            if (validCharges.length === 0) {
+                alert('Adicione pelo menos uma subconta com CNPJ e valor.');
+                return;
+            }
+            if (Math.abs(asaasSplitDiff) > 0.01) {
+                alert(`A soma das subcontas (R$ ${asaasSplitTotal.toFixed(2)}) não confere com o total da fatura (R$ ${parseFloat(invoiceForm.amount).toFixed(2)}). Diferença: R$ ${asaasSplitDiff.toFixed(2)}`);
+                return;
+            }
+            setAsaasLoading(true);
+            try {
+                const res = await fetch('/api/asaas/create-charge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
+                        clientEmail: invoiceMedicaoEmail,
+                        dueDate: invoiceForm.boleto_due_date,
+                        description: asaasDescription,
+                        invoiceNumber: invoiceForm.number,
+                        issuerCompany: invoiceForm.issuer_company,
+                        charges: validCharges.map(c => ({ name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente', cpfCnpj: c.cpfCnpj.replace(/\D/g, ''), email: c.email || invoiceMedicaoEmail, value: parseFloat(c.value) })),
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao criar cobranças');
+                setAsaasResult(data);
+                const firstNf = data.charges?.[0]?.payment?.id ? `ASAAS-${data.charges[0].payment.id}` : '';
+                if (firstNf) {
+                    setInvoiceForm(prev => ({ ...prev, number: firstNf }));
+                }
+                setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
+                await autoSaveInvoiceAfterAsaas(data, firstNf);
+            } catch (err: any) {
+                alert('Erro ao gerar cobranças no Asaas: ' + err.message);
+                setAiStatus('Erro: ' + err.message);
+            } finally {
+                setAsaasLoading(false);
+            }
+            return;
+        }
+
+        if (!clientObj?.cnpj) {
+            alert('O cliente selecionado não possui CNPJ cadastrado. Cadastre o CNPJ no módulo de Clientes.');
+            return;
+        }
+
+        setAsaasLoading(true);
+        try {
+            const res = await fetch('/api/asaas/create-charge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientName: clientObj.trading_name || clientObj.name,
+                    clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),
+                    clientEmail: invoiceMedicaoEmail,
+                    value: parseFloat(invoiceForm.amount),
+                    dueDate: invoiceForm.boleto_due_date,
+                    description: asaasDescription,
+                    invoiceNumber: invoiceForm.number || `TMSEG-${Date.now()}`,
+                    issuerCompany: invoiceForm.issuer_company,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança');
+            setAsaasResult(data);
+            const nfNum = data.payment?.id ? `ASAAS-${data.payment.id}` : '';
+            if (nfNum) {
+                setInvoiceForm(prev => ({ ...prev, number: nfNum }));
+            }
+            setAiStatus('Cobrança Asaas gerada! Salvando fatura e contas a receber...');
+
+            await autoSaveInvoiceAfterAsaas(data, nfNum);
+        } catch (err: any) {
+            alert('Erro ao gerar cobrança no Asaas: ' + err.message);
+            setAiStatus('Erro: ' + err.message);
+        } finally {
+            setAsaasLoading(false);
+        }
+    };
+
+    const buildPeriodRef = (): string => {
+        if (!startDate) return '';
+        const sDate = new Date(startDate + 'T12:00:00');
+        const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const month = monthNames[sDate.getMonth()];
+        const year = sDate.getFullYear();
+        const sDay = sDate.getDate();
+        const eDate = endDate ? new Date(endDate + 'T12:00:00') : sDate;
+        const eDay = eDate.getDate();
+        const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+        if (sDay === 1 && eDay === lastDayOfMonth) return `Mês Completo de ${month}/${year}`;
+        if (sDay === 1 && eDay === 15) return `1ª Quinzena de ${month}/${year}`;
+        if (sDay === 16) return `2ª Quinzena de ${month}/${year}`;
+        return `${month}/${year}`;
+    };
+
+    const openInvoiceModal = () => {
+        const clientObj = clients.find(c => c.id.toString() === selectedClient);
+        const razaoSocial = clientObj?.name || clientObj?.trading_name || '';
+        const tomador = razaoSocial;
+        const issuer = (clientObj as any)?.issuer_company || '';
+        const periodRef = buildPeriodRef();
+        const notesText = `Referente aos serviços de Intermediação de Escolta Armada - Referente ao ${periodRef}`;
+
+        const existingMedicaoEmail = (clientObj as any)?.medicao_email || '';
+        const emailList = existingMedicaoEmail ? existingMedicaoEmail.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+        setInvoiceMedicaoEmail(emailList.length > 0 ? emailList[0] : '');
+        setShowMedicaoEmailInput(emailList.length === 0);
+
+        setInvoiceForm(prev => ({
+            ...prev,
+            client: selectedClient,
+            amount: reportGenerated && grandTotal > 0 ? grandTotal.toFixed(2) : prev.amount,
+            provider: tomador,
+            issuer_company: issuer,
+            notes: notesText,
+            number: '',
+        }));
+        setAsaasPeriod(periodRef);
+        setShowInvoiceModal(true);
+    };
+
+    const handleSaveInvoice = async () => {
+        const nfNumber = invoiceForm.number || (asaasResult?.payment?.id ? `ASAAS-${asaasResult.payment.id}` : '');
+        if (!invoiceForm.client || !nfNumber || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios (Cliente, Valor). Gere a cobrança Asaas primeiro para obter o Nº NF.'); return; }
+        if (!nfNumber) { alert('Gere a cobrança no Asaas primeiro para obter o número da fatura.'); return; }
+        const parsedAmt = parseFloat(invoiceForm.amount);
+        if (isNaN(parsedAmt) || parsedAmt <= 0) { alert('Valor inválido.'); return; }
+        const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+        const clientName = clientObj?.trading_name || clientObj?.name || invoiceForm.client;
+        const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+
+        setInvoiceSaving(true);
+        try {
+            let nfImageUrl = '';
+            let boletoImageUrl = '';
+            if (nfFile) {
+                setAiStatus('Salvando imagem da NF...');
+                nfImageUrl = await uploadDocImage(nfFile, `nf_${nfNumber}`);
+            }
+            if (boletoFile) {
+                setAiStatus('Salvando imagem do Boleto...');
+                boletoImageUrl = await uploadDocImage(boletoFile, `boleto_${nfNumber}`);
+            }
+
+            const invoicePayload: any = {
+                client: clientName, number: nfNumber,
+                amount: parsedAmt, date: invoiceForm.date,
+                status: 'EMITIDA', notes: invoiceForm.notes || '',
+                created_by: userName,
+            };
+            if (nfImageUrl) invoicePayload.nf_image_url = nfImageUrl;
+            if (boletoImageUrl) invoicePayload.boleto_image_url = boletoImageUrl;
+            if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
+            if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
+            if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+            if (asaasResult?.payment?.invoiceUrl) invoicePayload.nf_image_url = invoicePayload.nf_image_url || asaasResult.payment.invoiceUrl;
+            if (asaasResult?.payment?.bankSlipUrl) invoicePayload.boleto_image_url = invoicePayload.boleto_image_url || asaasResult.payment.bankSlipUrl;
+            if (asaasResult?.payment) {
+                invoicePayload.asaas_payment_id = asaasResult.payment.id;
+                invoicePayload.asaas_status = asaasResult.payment.status;
+                invoicePayload.asaas_invoice_url = asaasResult.payment.invoiceUrl || '';
+                invoicePayload.asaas_bankslip_url = asaasResult.payment.bankSlipUrl || '';
+                if (asaasResult.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasResult.pix.copyPaste;
+                if (asaasResult.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasResult.bankSlip.digitableLine;
+            }
+
+            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            if (error && error.code === '42703') {
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                error = retry.error;
+            }
+            if (error) { alert('Erro ao salvar fatura: ' + (error.message || 'Erro desconhecido')); return; }
+
+            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
+            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
+            try {
+                await supabase.from('financial_transactions').insert({
+                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
+                    amount: parsedAmt,
+                    type: 'INCOME',
+                    status: 'PENDING',
+                    due_date: dueDate,
+                    entity_type: 'Client',
+                    entity_id: invoiceForm.client,
+                    entity_name: clientName,
+                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    created_by: userName,
+                });
+            } catch (e) {
+                console.error('[Auto Contas a Receber] Erro:', e);
+            }
+
+            alert(`Fatura NF ${nfNumber} emitida com sucesso!\nContas a Receber criado automaticamente.`);
+            setShowInvoiceModal(false);
+            resetInvoiceForm();
+        } catch (e: any) {
+            console.error('[Invoice]', e);
+            alert('Erro ao salvar: ' + e.message);
+        } finally {
+            setInvoiceSaving(false);
+            setAiStatus('');
+        }
+    };
+
+    const formatCurrency = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const renderInvoiceModal = () => {
+        if (!showInvoiceModal) return null;
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in my-4">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-800">
+                        <div className="flex items-center gap-2">
+                            <ScanLine size={18} className="text-red-400"/>
+                            <h3 className="font-black text-white uppercase text-xs tracking-widest">Gerar Fatura — Boletim de Medição</h3>
+                        </div>
+                        <button onClick={() => { setShowInvoiceModal(false); resetInvoiceForm(); }} data-testid="btn-close-invoice-modal"><X size={20} className="text-gray-400 hover:text-white"/></button>
+                    </div>
+                    <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                        {aiStatus && (
+                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') ? 'bg-red-50 text-red-600' : aiStatus.includes('sucesso') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
+                                {aiStatus}
+                            </div>
+                        )}
+
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                            <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-3">Dados da Fatura (Preenchidos Automaticamente)</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente (Razão Social)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={clients.find(c => c.id.toString() === invoiceForm.client)?.name || ''} data-testid="display-billing-invoice-client" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor Total</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.amount ? `R$ ${parseFloat(invoiceForm.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''} data-testid="display-billing-invoice-amount" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora (NF)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.issuer_company} data-testid="display-billing-invoice-issuer" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Tomador do Serviço</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.provider} data-testid="display-billing-invoice-provider" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº NF (Gerado pelo Asaas)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.number || 'Será gerado automaticamente ao criar cobrança'} placeholder="Será gerado automaticamente" data-testid="display-billing-invoice-number" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-4">
+                            <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-1"><Receipt size={10}/> Dados Manuais</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                    <label className={`text-[10px] font-black uppercase mb-1 block flex items-center gap-1 ${showMedicaoEmailInput ? 'text-red-500' : 'text-gray-400'}`}>
+                                        {showMedicaoEmailInput ? <AlertCircle size={10}/> : null} E-mail Medição *
+                                        {showMedicaoEmailInput && <span className="text-[8px] text-red-400 font-bold ml-1">(Obrigatório — será salvo no cadastro do cliente)</span>}
+                                    </label>
+                                    {showMedicaoEmailInput ? (
+                                        <input type="email" className="w-full p-2.5 border-2 border-red-300 rounded-lg text-sm font-bold bg-red-50 focus:ring-2 focus:ring-red-400 lowercase" placeholder="Digite o e-mail de medição do cliente..." value={invoiceMedicaoEmail} onChange={e => setInvoiceMedicaoEmail(e.target.value.toLowerCase())} data-testid="input-billing-medicao-email" />
+                                    ) : (
+                                        <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold bg-white cursor-not-allowed lowercase" readOnly value={invoiceMedicaoEmail} data-testid="display-billing-medicao-email" />
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1"><Calendar size={10}/> Vencimento do Boleto *</label>
+                                    <input type="date" className="w-full p-2.5 border-2 border-orange-300 rounded-lg text-sm font-bold bg-orange-50 focus:ring-2 focus:ring-orange-400" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
+                                </div>
+                                <div className="flex items-end">
+                                    <div className="w-full p-2.5 bg-gray-50 rounded-lg border text-[10px] text-gray-400 font-bold">
+                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : 'Defina o vencimento para gerar a cobrança'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações (Auto-preenchida)</label>
+                            <textarea className="w-full p-2.5 border rounded-lg text-sm bg-gray-50" rows={2} value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
+                        </div>
+
+                        {asaasConfigured && (
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                    <DollarSign size={10} className="text-green-500"/> Cobrança Asaas (Boleto + PIX)
+                                </p>
+                                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3 space-y-2">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 2% a.m. | Multa: 1%</p>
+                                    </div>
+                                    {(() => {
+                                        const cl = clients.find(c => c.id.toString() === invoiceForm.client);
+                                        const nm = `${cl?.name || ''} ${cl?.trading_name || ''}`.toUpperCase();
+                                        let cnaeCode = '03115';
+                                        let cnaeName = 'Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
+                                        if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Intermediação / Agenciamento de Contrato'; }
+                                        else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Rastreamento e Monitoramento de Carga'; }
+                                        return (
+                                            <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">
+                                                <p className="text-[8px] font-black text-green-700 uppercase mb-0.5">CNAE Fixado Automaticamente</p>
+                                                <p className="text-[11px] font-bold text-green-800">CNAE {cnaeCode} — {cnaeName}</p>
+                                            </div>
+                                        );
+                                    })()}
+                                    <div>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Período / Referência</label>
+                                        <input type="text" readOnly value={asaasPeriod}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white cursor-not-allowed"
+                                            data-testid="display-asaas-period"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança (Automática)</label>
+                                        <textarea readOnly value={asaasDescription} rows={2}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white cursor-not-allowed resize-none"
+                                            data-testid="display-asaas-description"/>
+                                    </div>
+                                </div>
+
+                                <div className="mb-3">
+                                    <button type="button" onClick={() => { setAsaasSplitMode(!asaasSplitMode); if (!asaasSplitMode && asaasSplitCharges.length === 0) { const clientObj = clients.find(c => c.id.toString() === invoiceForm.client); setAsaasSplitCharges([{ name: clientObj?.trading_name || clientObj?.name || '', cpfCnpj: clientObj?.cnpj || '', email: '', value: invoiceForm.amount || '' }]); } }}
+                                        className={`w-full text-[9px] font-black uppercase tracking-wider py-2 rounded-lg border flex items-center justify-center gap-1.5 transition-colors ${asaasSplitMode ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                                        data-testid="btn-asaas-split-toggle">
+                                        <GitBranch size={12}/> {asaasSplitMode ? 'Dividir por CNPJ (ativo)' : 'Dividir por CNPJ (subcontas)'}
+                                    </button>
+
+                                    {asaasSplitMode && (
+                                        <div className="mt-2 space-y-2">
+                                            {asaasSplitCharges.map((charge, idx) => (
+                                                <div key={idx} className="bg-purple-50 border border-purple-200 rounded-lg p-2 space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[8px] font-black text-purple-600 uppercase">Subconta {idx + 1}</span>
+                                                        {asaasSplitCharges.length > 1 && (
+                                                            <button type="button" onClick={() => setAsaasSplitCharges(prev => prev.filter((_, i) => i !== idx))}
+                                                                className="text-red-400 hover:text-red-600" data-testid={`btn-asaas-split-remove-${idx}`}><Trash2 size={12}/></button>
+                                                        )}
+                                                    </div>
+                                                    <input type="text" placeholder="Nome / Razão Social" value={charge.name} onChange={e => { const u = [...asaasSplitCharges]; u[idx].name = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white" data-testid={`input-asaas-split-name-${idx}`}/>
+                                                    <input type="text" placeholder="CNPJ (somente números)" value={charge.cpfCnpj} onChange={e => { const u = [...asaasSplitCharges]; u[idx].cpfCnpj = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white font-mono" data-testid={`input-asaas-split-cnpj-${idx}`}/>
+                                                    <input type="email" placeholder="E-mail (opcional)" value={charge.email} onChange={e => { const u = [...asaasSplitCharges]; u[idx].email = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white" data-testid={`input-asaas-split-email-${idx}`}/>
+                                                    <input type="number" step="0.01" placeholder="Valor R$" value={charge.value} onChange={e => { const u = [...asaasSplitCharges]; u[idx].value = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white font-mono font-bold" data-testid={`input-asaas-split-value-${idx}`}/>
+                                                </div>
+                                            ))}
+
+                                            <button type="button" onClick={() => setAsaasSplitCharges(prev => [...prev, { name: '', cpfCnpj: '', email: '', value: '' }])}
+                                                className="w-full text-[9px] font-black uppercase text-purple-600 hover:text-purple-800 py-1.5 border border-dashed border-purple-300 rounded-lg flex items-center justify-center gap-1"
+                                                data-testid="btn-asaas-split-add">
+                                                <Plus size={12}/> Adicionar Subconta
+                                            </button>
+
+                                            <div className={`rounded-lg p-2 text-[9px] font-black text-center ${Math.abs(asaasSplitDiff) < 0.01 ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}
+                                                data-testid="text-asaas-split-total">
+                                                Soma: R$ {asaasSplitTotal.toFixed(2)} / Total NF: R$ {(parseFloat(invoiceForm.amount) || 0).toFixed(2)}
+                                                {Math.abs(asaasSplitDiff) >= 0.01 && ` — Diferença: R$ ${asaasSplitDiff.toFixed(2)}`}
+                                                {Math.abs(asaasSplitDiff) < 0.01 && ' ✓'}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {!asaasResult ? (
+                                    <button
+                                        onClick={handleGenerateAsaasCharge}
+                                        disabled={asaasLoading || !invoiceForm.amount || !invoiceForm.boleto_due_date || (asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01)}
+                                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50"
+                                        data-testid="btn-asaas-generate-charge"
+                                    >
+                                        {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
+                                        {asaasLoading ? 'Gerando cobrança...' : asaasSplitMode ? `Gerar ${asaasSplitCharges.length} Cobranças (Asaas)` : 'Gerar Boleto + PIX (Asaas)'}
+                                    </button>
+                                ) : asaasResult.split ? (
+                                    <div className="space-y-3">
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                                            <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black text-green-700 uppercase">{asaasResult.charges?.length} Cobranças Geradas</p>
+                                                <p className="text-[9px] text-green-600">Total: R$ {asaasResult.totalValue?.toFixed(2)}</p>
+                                            </div>
+                                        </div>
+                                        {asaasResult.charges?.map((ch: any, idx: number) => (
+                                            <div key={idx} className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[9px] font-black text-gray-700">{ch.customer?.name} — {ch.customer?.cpfCnpj}</span>
+                                                    <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{ch.payment?.statusBr}</span>
+                                                </div>
+                                                <p className="text-[10px] font-mono font-bold text-gray-900">R$ {ch.payment?.value?.toFixed(2)} — ID: {ch.payment?.id}</p>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {ch.bankSlip && (
+                                                        <div className="bg-orange-50 rounded-lg p-2">
+                                                            <p className="text-[8px] font-mono text-orange-800 break-all select-all cursor-text">{ch.bankSlip.digitableLine}</p>
+                                                            <button onClick={() => { navigator.clipboard.writeText(ch.bankSlip.digitableLine); alert('Código de barras copiado!'); }}
+                                                                className="mt-1 text-[8px] font-black text-orange-600 uppercase">Copiar Barras</button>
+                                                        </div>
+                                                    )}
+                                                    {ch.pix && (
+                                                        <div className="bg-indigo-50 rounded-lg p-2">
+                                                            {ch.pix.qrCodeBase64 && <img src={`data:image/png;base64,${ch.pix.qrCodeBase64}`} alt="QR" className="w-20 h-20 mx-auto mb-1"/>}
+                                                            <button onClick={() => { navigator.clipboard.writeText(ch.pix.copyPaste); alert('PIX copiado!'); }}
+                                                                className="text-[8px] font-black text-indigo-600 uppercase w-full text-center">Copiar PIX</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {ch.payment?.bankSlipUrl && <a href={ch.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-orange-200">Boleto PDF</a>}
+                                                    {ch.payment?.invoiceUrl && <a href={ch.payment.invoiceUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-blue-200">Fatura</a>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                                            <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black text-green-700 uppercase">Cobrança Gerada</p>
+                                                <p className="text-[9px] text-green-600 font-mono truncate">ID: {asaasResult.payment.id}</p>
+                                            </div>
+                                            <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full border border-green-300">{asaasResult.payment.statusBr}</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {asaasResult.bankSlip && (
+                                                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                                                    <p className="text-[9px] font-black text-orange-600 uppercase mb-1.5 flex items-center gap-1"><Receipt size={10}/> Código de Barras</p>
+                                                    <p className="text-[8px] font-mono text-orange-800 break-all select-all cursor-text leading-relaxed" data-testid="text-asaas-barcode">{asaasResult.bankSlip.digitableLine}</p>
+                                                    <button onClick={() => { navigator.clipboard.writeText(asaasResult.bankSlip.digitableLine); alert('Código de barras copiado!'); }}
+                                                        className="mt-2 text-[8px] font-black text-orange-600 hover:text-orange-800 uppercase">Copiar</button>
+                                                </div>
+                                            )}
+
+                                            {asaasResult.pix && (
+                                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                                    <p className="text-[9px] font-black text-indigo-600 uppercase mb-1.5 flex items-center gap-1"><ScanLine size={10}/> PIX QR Code</p>
+                                                    {asaasResult.pix.qrCodeBase64 && (
+                                                        <img src={`data:image/png;base64,${asaasResult.pix.qrCodeBase64}`} alt="QR Code PIX" className="w-24 h-24 mx-auto border-2 border-indigo-200 rounded-lg mb-1.5" data-testid="img-asaas-pix-qr"/>
+                                                    )}
+                                                    <button onClick={() => { navigator.clipboard.writeText(asaasResult.pix.copyPaste); alert('PIX Copia e Cola copiado!'); }}
+                                                        className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 uppercase w-full text-center">Copiar PIX</button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            {asaasResult.payment.bankSlipUrl && (
+                                                <a href={asaasResult.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-orange-200 transition-colors border border-orange-200"
+                                                    data-testid="link-asaas-boleto-pdf">
+                                                    Abrir Boleto PDF
+                                                </a>
+                                            )}
+                                            {asaasResult.payment.invoiceUrl && (
+                                                <a href={asaasResult.payment.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-blue-200 transition-colors border border-blue-200"
+                                                    data-testid="link-asaas-invoice">
+                                                    Fatura Online
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in pb-20 relative">
+            <style>{`
+                /* ====== SCREEN STYLES ====== */
+                @media screen {
+                    #print-area .report-table-scroll thead tr.group-hdr th {
+                        position: sticky;
+                        top: 0;
+                        z-index: 4;
+                    }
+                    #print-area .report-table-scroll thead tr.sub-hdr th {
+                        position: sticky;
+                        top: 30px;
+                        z-index: 3;
+                    }
+                    #print-area .report-table-scroll tbody tr:nth-child(odd) { background-color: #ffffff; }
+                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #fef2f2; }
+                    #print-area .report-table-scroll tbody tr:hover { background-color: #fee2e2 !important; }
+                }
+
+                /* ====== PRINT STYLES ====== */
+                @media print {
+                    @page {
+                        size: A4 landscape;
+                        margin: 5mm 6mm;
+                    }
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                    }
+                    body * { visibility: hidden !important; }
+                    #print-area, #print-area * {
+                        visibility: visible !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    #print-area {
+                        position: absolute;
+                        left: 0; top: 0;
+                        width: 100% !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        overflow: visible !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        border-radius: 0 !important;
+                    }
+                    #print-area .report-table-scroll {
+                        overflow: visible !important;
+                        max-height: none !important;
+                        max-width: none !important;
+                        width: 100% !important;
+                        border: none !important;
+                        border-radius: 0 !important;
+                    }
+                    #print-area table {
+                        table-layout: fixed !important;
+                        width: 100% !important;
+                        border-collapse: collapse !important;
+                    }
+                    #print-area colgroup col {
+                        min-width: 0 !important;
+                        width: auto !important;
+                    }
+                    #print-area thead {
+                        display: table-header-group !important;
+                    }
+                    #print-area thead th {
+                        position: static !important;
+                    }
+                    #print-area tbody {
+                        display: table-row-group !important;
+                    }
+                    #print-area tfoot {
+                        display: table-footer-group !important;
+                    }
+                    #print-area tr {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                    }
+                    #print-area td, #print-area th {
+                        padding: 1.5px 2.5px !important;
+                        font-size: 6.5pt !important;
+                        overflow: hidden !important;
+                        text-overflow: ellipsis !important;
+                        border: 0.5px solid #aaa !important;
+                        line-height: 1.2 !important;
+                        white-space: nowrap !important;
+                        max-width: none !important;
+                    }
+                    #print-area td.route-cell {
+                        white-space: normal !important;
+                        word-wrap: break-word !important;
+                        word-break: break-word !important;
+                        overflow-wrap: break-word !important;
+                        line-height: 1.15 !important;
+                        font-size: 6pt !important;
+                        max-width: none !important;
+                    }
+                    #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
+                    #print-area tbody tr:nth-child(even) { background-color: #f3f4f6 !important; }
+                    #print-area .group-hdr th {
+                        font-size: 7pt !important;
+                        padding: 2px 2px !important;
+                        font-weight: 900 !important;
+                    }
+                    #print-area .sub-hdr th {
+                        font-size: 6pt !important;
+                        padding: 1.5px 2px !important;
+                        font-weight: 900 !important;
+                    }
+                    #print-area .boletim-header { margin-bottom: 2mm !important; }
+                    #print-area .boletim-header h1 { font-size: 12pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 9pt !important; margin: 1px 0 !important; }
+                    #print-area .ref-line { font-size: 7pt !important; margin: 0 !important; }
+                    .no-print { display: none !important; }
+                    #print-area .watermark-logo {
+                        position: fixed !important;
+                        top: 50% !important;
+                        left: 50% !important;
+                        transform: translate(-50%, -50%) !important;
+                        opacity: 0.04 !important;
+                        width: 120mm !important;
+                        height: 120mm !important;
+                        z-index: 0 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    #print-area .sign-section {
+                        margin-top: 6mm !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                        page-break-before: auto !important;
+                    }
+                    #print-area .sign-box { font-size: 7pt !important; width: 55mm !important; }
+                    #print-area .sign-logo { width: 8mm !important; height: 8mm !important; }
+                    #print-area .digital-signature { font-size: 12pt !important; }
+                    #print-area .sign-role { font-size: 7pt !important; }
+                    #print-area .sign-cargo { font-size: 6pt !important; }
+                    #print-area .sign-cnpj { font-size: 5.5pt !important; }
+                    #print-area .sign-system { font-size: 5.5pt !important; }
+                    #print-area .sign-cliente { font-size: 7pt !important; }
+                    #print-area .sign-data { font-size: 5.5pt !important; }
+                    #print-area tfoot tr {
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
+                    #print-area tfoot td {
+                        font-size: 7pt !important;
+                        font-weight: 900 !important;
+                        padding: 2px 3px !important;
+                    }
+                }
+            `}</style>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 no-print">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                            <FileText className="text-blue-700" /> Boletim de Medição
+                        </h2>
+                        <p className="text-sm text-gray-500 mt-1">Relatório detalhado para conferência e faturamento.</p>
+                    </div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Cliente</label>
+                            <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 bg-white uppercase font-bold" value={selectedClient} onChange={e => setSelectedClient(e.target.value)}>
+                                <option value="">Selecione...</option>
+                                {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="md:col-span-2">
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="text-xs font-bold text-gray-500 uppercase block">Período</label>
+                                <div className="flex gap-2 items-center">
+                                    <input type="month" className="text-[11px] font-bold uppercase px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-700 outline-none focus:border-red-500 cursor-pointer" value={selectedMonth} onChange={e => handleSetMonth(e.target.value)} data-testid="input-month-selector" />
+                                    <button onClick={() => handleSetFortnight(1)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">1ª Quinzena</button>
+                                    <button onClick={() => handleSetFortnight(2)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">2ª Quinzena</button>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={startDate} onChange={e => setStartDate(e.target.value)} data-testid="input-start-date" />
+                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} data-testid="input-end-date" />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                            <button onClick={handleGenerate} disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
+                                {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Gerar
+                            </button>
+                            <button onClick={handleFetchCharts} disabled={chartsLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="button-generate-charts">
+                                {chartsLoading ? <Loader2 size={18} className="animate-spin" /> : <BarChart3 size={18} />} Gráficos
+                            </button>
+                            {reportGenerated && (
+                                <>
+                                    <button onClick={openInvoiceModal} className="bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-generate-invoice">
+                                        <Receipt size={18} /> Gerar Fatura
+                                    </button>
+                                    <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
+                                        <FileSpreadsheet size={18} /> Excel
+                                    </button>
+                                    <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
+                                        <Printer size={18} /> PDF
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {chartsGenerated && (clientChartData.length > 0 || providerChartData.length > 0) && (
+                <div className="no-print" data-testid="billing-charts-section">
+                    <div className="flex items-center gap-2 mb-4 flex-wrap">
+                        <button onClick={() => setChartTab('clientes')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'clientes' ? 'bg-blue-700 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-clientes"><Users size={12} />Clientes</button>
+                        <button onClick={() => setChartTab('fornecedores')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'fornecedores' ? 'bg-red-700 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-fornecedores"><Building2 size={12} />Fornecedores</button>
+                        <button onClick={() => setChartTab('geral')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'geral' ? 'bg-gray-800 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-geral"><List size={12} />Geral</button>
+                        <div className="flex-1" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-bold text-gray-500 mr-1">Ordenar:</span>
+                            <button onClick={() => setSortMode('valor')} className={`text-[9px] font-black px-2 py-1 rounded transition-all ${sortMode === 'valor' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-valor-global">R$ Valor</button>
+                            <button onClick={() => setSortMode('pct')} className={`text-[9px] font-black px-2 py-1 rounded transition-all ${sortMode === 'pct' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-pct-global">% Margem</button>
+                        </div>
+                    </div>
+
+                    {chartTab === 'clientes' && (
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-blue-700 text-white rounded-lg"><Users size={14} /></div>
+                            <div>
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Faturamento por Cliente</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            {clientChartData.map((item, i) => {
+                                const maxVal = clientChartData[0]?.valor || 1;
+                                const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                const isExpanded = expandedClient === item.nome;
+                                return (
+                                    <div key={i}>
+                                        <div className={`cursor-pointer rounded-lg p-2 transition-all hover:bg-gray-50 ${isExpanded ? 'bg-blue-50/50 ring-1 ring-blue-200' : ''}`} onClick={() => setExpandedClient(isExpanded ? null : item.nome)} data-testid={`chart-client-row-${i}`}>
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <div className="flex items-center gap-1.5 min-w-0 max-w-[55%]">
+                                                    {isExpanded ? <ChevronDown size={12} className="text-blue-600 shrink-0" /> : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+                                                    <span className="text-[12px] font-black text-gray-800 truncate" title={item.fullName}>{item.nome}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length] }} />
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-0.5">
+                                                <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                                <span className="text-[9px] text-gray-400 font-bold">Custo: {fmtBRL(item.custo)}</span>
+                                                <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
+                                            </div>
+                                        </div>
+                                        {isExpanded && (
+                                            <div className="ml-4 mr-1 mt-1 mb-2 border border-blue-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <table className="w-full text-[10px]">
+                                                    <thead>
+                                                        <tr className="bg-blue-50">
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">OS</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Data</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Rota</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Fornecedor</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">KM</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Receita</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Custo</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Lucro</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">%</th>
+                                                            <th className="px-1 py-1.5 w-6"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {[...item.missions].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
+                                                            <tr key={mi} className={`border-t border-blue-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
+                                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                                <td className="px-1 py-1 text-center">
+                                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência"><ExternalLink size={12} /></button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    )}
+
+                    {chartTab === 'fornecedores' && (
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-red-700 text-white rounded-lg"><Building2 size={14} /></div>
+                            <div>
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Custo por Fornecedor</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            {providerChartData.map((item, i) => {
+                                const maxVal = providerChartData[0]?.valor || 1;
+                                const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                const isExpanded = expandedProvider === item.nome;
+                                return (
+                                    <div key={i}>
+                                        <div className={`cursor-pointer rounded-lg p-2 transition-all hover:bg-gray-50 ${isExpanded ? 'bg-red-50/50 ring-1 ring-red-200' : ''}`} onClick={() => setExpandedProvider(isExpanded ? null : item.nome)} data-testid={`chart-provider-row-${i}`}>
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <div className="flex items-center gap-1.5 min-w-0 max-w-[55%]">
+                                                    {isExpanded ? <ChevronDown size={12} className="text-red-600 shrink-0" /> : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+                                                    <span className="text-[12px] font-black text-gray-800 truncate" title={item.fullName}>{item.nome}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length] }} />
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-0.5">
+                                                <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                                <span className="text-[9px] text-gray-400 font-bold">Receita: {fmtBRL(item.receita)}</span>
+                                                <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
+                                            </div>
+                                        </div>
+                                        {isExpanded && (
+                                            <div className="ml-4 mr-1 mt-1 mb-2 border border-red-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <div className="flex items-center gap-1 px-2 py-1.5 bg-red-50/80 border-b border-red-100">
+                                                    <span className="text-[9px] font-bold text-red-600 mr-1">Ordenar:</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('valor'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-red-600 text-white' : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'}`} data-testid="sort-valor-provider">R$ Valor</button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('pct'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-red-600 text-white' : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'}`} data-testid="sort-pct-provider">% Margem</button>
+                                                </div>
+                                                <table className="w-full text-[10px]">
+                                                    <thead>
+                                                        <tr className="bg-red-50">
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">OS</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Data</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Rota</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Cliente</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">KM</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Receita</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Custo</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Lucro</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">%</th>
+                                                            <th className="px-1 py-1.5 w-6"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {[...item.missions].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
+                                                            <tr key={mi} className={`border-t border-red-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
+                                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                                <td className="px-1 py-1 text-center">
+                                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência"><ExternalLink size={12} /></button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    )}
+
+                    {chartTab === 'geral' && (
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-gray-800 text-white rounded-lg"><List size={14} /></div>
+                            <div className="flex-1">
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Todas as OS do Período</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allMissionsGeneral.length} missões &middot; Receita: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.revenue, 0))} &middot; Custo: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.cost, 0))} &middot; Lucro: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.lucro, 0))}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[9px] font-bold text-gray-500 mr-1">Ordenar:</span>
+                                <button onClick={() => setSortMode('valor')} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-valor-geral">R$ Valor</button>
+                                <button onClick={() => setSortMode('pct')} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-pct-geral">% Margem</button>
+                            </div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div style={{ maxHeight: '600px', overflowY: 'auto' }} className="scrollbar-thin">
+                                <table className="w-full text-[10px]">
+                                    <thead className="sticky top-0 z-10">
+                                        <tr className="bg-gray-100">
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">OS</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Data</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Cliente</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Fornecedor</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Rota</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">KM</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Receita</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Custo</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Lucro</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">%</th>
+                                            <th className="px-1 py-1.5 w-6"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[...allMissionsGeneral].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
+                                            <tr key={mi} className={`border-t border-gray-100 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                <td className="px-1 py-1 text-center">
+                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência" data-testid={`open-os-${m.id}`}><ExternalLink size={12} /></button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    )}
+                </div>
+            )}
+
+            {reportGenerated && (
+                <div id="print-area" className="bg-white p-4 w-full border border-gray-200 rounded-lg" style={{ position: 'relative', overflow: 'hidden' }}>
+                    <div className="watermark-logo" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.04, pointerEvents: 'none', zIndex: 0, width: '400px', height: '400px' }}>
+                        <img src="/logo.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                    <div className="boletim-header mb-4 text-center" style={{ borderBottom: '2px solid #dc2626', paddingBottom: '8px' }}>
+                        <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0, color: '#7f1d1d' }}>BOLETIM DE MEDIÇÃO</h1>
+                        <p className="subtitle-line" style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: '#991b1b', margin: '4px 0' }}>{getPeriodLabel()}</p>
+                        <p className="ref-line" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#b91c1c', margin: '2px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                        {hasFrozenMissions && (
+                            <div data-testid="boletim-frozen-header" style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '4px 12px' }}>
+                                <Lock size={12} style={{ color: '#92400e' }} />
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Dados Congelados — Documento Mestre para Faturamento</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1.5px solid #b91c1c', borderRadius: '8px' }}>
+                        <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                            <colgroup>
+                                <col style={{ minWidth: '45px' }} />
+                                <col style={{ minWidth: '250px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '55px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '55px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '80px' }} />
+                                <col style={{ minWidth: '95px' }} />
+                            </colgroup>
+                            <thead>
+                                <tr className="group-hdr">
+                                    <th style={groupHeaderStyle} colSpan={7}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
+                                    <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
+                                    <th style={grpHr} colSpan={3}>HORÁRIOS</th>
+                                    <th style={grpKmExc} colSpan={3}>KM EXCEDENTE</th>
+                                    <th style={grpHrExc} colSpan={3}>HORA EXCEDENTE</th>
+                                    <th style={grpVal} colSpan={2}>VALORES</th>
+                                </tr>
+                                <tr className="sub-hdr">
+                                    <th style={headerStyle}>Nº</th>
+                                    <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
+                                    <th style={headerStyle}>VALOR</th>
+                                    <th style={headerStyle}>HR FRANQ</th>
+                                    <th style={headerStyle}>KM FRANQ</th>
+                                    <th style={headerStyle}>HR EXTRA</th>
+                                    <th style={headerStyle}>KM EXTRA</th>
+                                    <th style={headerStyle}>DATA INÍCIO</th>
+                                    <th style={headerStyle}>HORA INI</th>
+                                    <th style={headerStyle}>VIATURA</th>
+                                    <th style={headerStyle}>VEÍC. ESCOLT.</th>
+                                    <th style={headerStyle}>DATA FIM</th>
+                                    <th style={headerStyle}>HORA FIM</th>
+                                    <th style={hdrKm}>INICIAL</th>
+                                    <th style={hdrKm}>FINAL</th>
+                                    <th style={hdrKm}>TOTAL</th>
+                                    <th style={hdrHr}>INICIAL</th>
+                                    <th style={hdrHr}>FINAL</th>
+                                    <th style={hdrHr}>TOTAL</th>
+                                    <th style={hdrKmExc}>KM</th>
+                                    <th style={hdrKmExc}>VALOR</th>
+                                    <th style={hdrKmExc}>TOTAL</th>
+                                    <th style={hdrHrExc}>HORA</th>
+                                    <th style={hdrHrExc}>VALOR</th>
+                                    <th style={hdrHrExc}>TOTAL</th>
+                                    <th style={hdrVal}>PEDÁGIO</th>
+                                    <th style={hdrVal}>TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rowsData.length === 0 ? (
+                                    <tr><td colSpan={27} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                ) : (
+                                    rowsData.map((r, i) => (
+                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : ''}>
+                                            <td style={cellBold}>{r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}{r.id}</td>
+                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
+                                            <td style={cellStyle}>{r.franchiseHoursFmt}</td>
+                                            <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
+                                            <td style={cellStyle}>{r.startDate}</td>
+                                            <td style={cellStyle}>{r.startTime}</td>
+                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
+                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
+                                            <td style={cellStyle}>{r.endDate}</td>
+                                            <td style={cellStyle}>{r.endTime}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmStart)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmEnd)}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgKm }}>{fmtNum(r.kmTotal)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeStart}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeEnd}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                            {rowsData.length > 0 && (
+                                <tfoot>
+                                    <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
+                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
+                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
+
+                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '16px 24px 0', alignItems: 'flex-end', borderTop: '2px solid #dc2626' }}>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
+                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
+                                <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>GRUPO TM SEG</div>
+                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#b91c1c', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
+                            </div>
+                        </div>
+                        <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
+                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo GRUPO TM SEG</div>
+                        </div>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
+                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
+                                <div className="sign-cliente" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
+                                <div className="sign-data" style={{ fontSize: '10px', fontWeight: 600, color: '#991b1b', marginTop: '2px' }}>Data: ____/____/________</div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            )}
+            {renderInvoiceModal()}
+        </div>
+    );
+};
+
+export default ClientBillingReport;
