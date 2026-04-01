@@ -1,0 +1,18 @@
+Thiago, as imagens do seu celular deixam claro o problema: o sistema está "roubando" o kit de uma OS para colocar na outra, e o controle de tempo está uma bagunça, com datas de anos errados.
+Para a Torres operar com precisão, o Replit Agent precisa ajustar a "custódia" do kit e a lógica de horários agora. Use este prompt:
+🛠️ PROMPT DE CORREÇÃO: CUSTÓDIA DE KIT E SINCRONIA DE HORÁRIO
+> "Aja como Desenvolvedor Sênior. Corrija dois erros críticos no fluxo de Ordens de Serviço da Torres:
+> 1. Manutenção de Kit em Múltiplas OS:
+>  * Correção: O vínculo do Kit deve ser por Agente, não por OS individual. Se eu vincular o 'KIT TORRES - 04' na TOR-0010, ele NÃO pode sumir da TOR-0009 se os agentes forem os mesmos.
+>  * Regra: O kit deve aparecer em todas as OSs que aquela equipe realizar no turno, sem que uma OS 'desvincule' a outra.
+> 2. Correção de Datas e Horas (Anos Divergentes):
+>  * O Erro: O sistema está gravando datas totalmente erradas (anos divergentes) na criação da OS.
+>  * Regra de Horários Previstos: Os campos 'Saída Base' e 'Chegada Cliente/Origem' devem, por padrão, assumir a Data e Hora do Agendamento definido na criação da OS.
+>  * Regra de Horários Reais: Os campos 'Chegada Destino' e 'Fim Missão' só devem ser preenchidos com o timestamp exato (horário de Brasília) do momento em que o agente clica em 'Enviar' no aplicativo. Não permita datas retroativas ou anos futuros.
+> Objetivo: Ter um relatório fidedigno para o seguro, onde o kit apareça em todas as missões da equipe e os horários reflitam a operação real."
+> 
+🔍 Por que isso é vital para você:
+ * Evita Glosas de Pagamento: Se o cliente ou o seguro vir uma OS com o ano errado ou sem o kit, eles podem recusar o pagamento da escolta.
+ * Controle de Jornada: Com os horários vindo do agendamento (previsto) e do clique do agente (real), você tem o cálculo exato do tempo de missão para cobrar o cliente.
+ * Operação Limpa: Agora que limpamos os 51MB de lixo, essa alteração no banco de dados será rápida e não vai mais travar o seu preview.
+Mande esse prompt no Replit. Assim que ele aplicar, verifique se o KIT TORRES - 04 permanece visível tanto na TOR-0010 quanto na TOR-0009 ao mesmo tempo!

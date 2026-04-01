@@ -21,6 +21,7 @@ type StepLogEntry = { step: string; completedAt: string; agentName?: string; age
 function utcToLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
+  if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "";
   const sp = d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" });
   return sp.replace(" ", "T").slice(0, 16);
 }
@@ -52,6 +53,7 @@ function formatTime(iso: string | null): string {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
     return d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
   } catch { return "—"; }
 }
@@ -60,21 +62,22 @@ function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
     return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
   } catch { return "—"; }
 }
 
 const MISSION_STATUS_LABELS: Record<string, string> = {
-  aguardando: "Saída da Base",
+  aguardando: "Missão Agendada",
   checkout_armamento: "Saída da Base",
   checkout_viatura: "Saída da Base",
   checkout_km_saida: "Saída da Base",
-  em_transito_origem: "Chegada na Origem",
+  em_transito_origem: "Saída da Base",
   checkin_chegada_km: "Chegada na Origem",
   checkin_veiculo_escoltado: "Chegada na Origem",
   checkin_dados_motorista: "Chegada na Origem",
-  iniciar_missao: "Início de Missão",
-  em_transito_destino: "Em Trânsito ao Destino",
+  iniciar_missao: "Em Trânsito",
+  em_transito_destino: "Em Trânsito",
   chegada_destino: "Chegada no Destino",
   checkout_km_final: "Término de Missão",
   checkout_viatura_retorno: "Término de Missão",

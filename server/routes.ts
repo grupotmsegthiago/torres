@@ -1618,6 +1618,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       } catch (_e) {}
     }
 
+    const sanitizeDates = (d: any) => {
+      for (const field of ["missionStartedAt", "completedDate", "scheduledDate"]) {
+        if (d[field]) {
+          const dt = new Date(d[field]);
+          if (isNaN(dt.getTime()) || dt.getFullYear() <= 1970) d[field] = null;
+        }
+      }
+    };
+    sanitizeDates(parsed.data);
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
@@ -1747,6 +1756,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           if (est > 0) (parsed.data as any).valorEstimado = est;
         }
       } catch (_e) {}
+    }
+
+    for (const field of ["missionStartedAt", "completedDate", "scheduledDate"]) {
+      if ((parsed.data as any)[field]) {
+        const dt = new Date((parsed.data as any)[field]);
+        if (isNaN(dt.getTime()) || dt.getFullYear() <= 1970) (parsed.data as any)[field] = null;
+      }
     }
 
     const wasFinished = existing && (existing.status === "concluída" || existing.status === "concluida" || existing.status === "cancelada");
