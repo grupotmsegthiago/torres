@@ -402,6 +402,11 @@ async function ensureSystemSettingsTable() {
     const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, "report_template"));
     if (existing.length === 0) {
       await db.insert(systemSettings).values({ key: "report_template", value: DEFAULT_REPORT_TEMPLATE });
+    } else if (existing[0].value !== DEFAULT_REPORT_TEMPLATE) {
+      await db.update(systemSettings)
+        .set({ value: DEFAULT_REPORT_TEMPLATE, updatedAt: new Date() })
+        .where(eq(systemSettings.key, "report_template"));
+      console.log("[system_settings] report_template atualizado para versão mais recente");
     }
   } catch (e) {
     console.error("[system_settings] init error:", e);
