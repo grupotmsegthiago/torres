@@ -4542,15 +4542,44 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               if (clientContracts?.length) { contrato = clientContracts[0]; contratoNome = clientContracts[0].contract_name || clientContracts[0].client_name || null; }
             }
 
-            const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
-            const resultado = calcularEscolta({
-              km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
-              horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-              horario_inicio: startTime, horario_fim: nowTime, horario_agendado: scheduledTime,
-              despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
-            });
+            const n2 = (v: any) => Number(v) || 0;
+            const franquiaHoras = n2(contrato.franquia_horas);
+            const horasCalcRaw = startTime ? calcularHorasTrabalhadas(startTime, nowTime) : 0;
 
-            const horasCalc = startTime ? calcularHorasTrabalhadas(startTime, nowTime) : 0;
+            const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
+            const kmTotal = kmFinalNorm - kmInicial;
+            const franquiaKm = n2(contrato.franquia_km) || n2(contrato.franquia_minima_km);
+            const kmExcedente = Math.max(0, kmTotal - franquiaKm);
+            const valorAcionamento = n2(contrato.valor_acionamento);
+            const hasAcionamento = valorAcionamento > 0;
+            const valorKmExtra = n2(contrato.valor_km_extra) || n2(contrato.valor_km_carregado);
+            const valorHoraExtra = n2(contrato.valor_hora_extra) || n2(contrato.valor_hora_estadia);
+
+            let fatProvisorio: number;
+            let fatHoraExtra = 0;
+            let fatKmExtra = 0;
+            if (hasAcionamento) {
+              fatProvisorio = valorAcionamento;
+              if (kmExcedente > 0) {
+                fatKmExtra = kmExcedente * valorKmExtra;
+                fatProvisorio += fatKmExtra;
+              }
+              if (franquiaHoras > 0 && horasCalcRaw > franquiaHoras) {
+                fatHoraExtra = (horasCalcRaw - franquiaHoras) * valorHoraExtra;
+                fatProvisorio += fatHoraExtra;
+              }
+            } else {
+              const kmFaturado = Math.max(kmTotal, franquiaKm);
+              fatProvisorio = kmFaturado * n2(contrato.valor_km_carregado);
+            }
+
+            const resultado = {
+              faturamento: { total: Math.round(fatProvisorio * 100) / 100 },
+              pagamento: { total: n2(contrato.vrp_base) },
+              km_total: kmTotal,
+            };
+
+            const horasCalc = horasCalcRaw;
 
             let custoCombustivel = 0;
             let custoPedagio = 0;
@@ -4674,7 +4703,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       (o) => !FINISHED_MISSION.includes(o.missionStatus || "")
     );
     const scheduledOrders = orders.filter(
-      (o) => (o.status === "aberta" || o.status === "agendada") && !o.missionStatus
+      (o) => (o.status === "aberta" || o.status === "agendada") && (!o.missionStatus || o.missionStatus === "aguardando")
     );
 
     const tcPositions = await truckscontrol.getCachedPositions();

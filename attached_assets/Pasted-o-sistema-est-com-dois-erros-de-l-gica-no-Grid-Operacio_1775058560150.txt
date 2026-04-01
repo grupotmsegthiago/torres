@@ -1,0 +1,31 @@
+o sistema está com dois erros de lógica no Grid Operacional que estão bagunçando o seu faturamento e a sua visão de escala.
+
+🛠️ 1. O ERRO DE CÁLCULO DA VTR 02 (UER7D08)
+O valor de R$ 2.759,20 está explodindo porque o sistema está "chutando" uma hora de término muito distante para criar o faturamento provisório.
+
+A Nova Regra de Cálculo:
+
+O sistema deve usar a Franquia de Horas da tabela de preços (ex: 15h) como base para o cálculo inicial.
+
+Hora Extra: Só deve ser somada ao valor total após a missão ultrapassar essas 15h na vida real (baseado no ponto do agente).
+
+Enquanto a missão não termina, o valor exibido deve ser apenas o Valor de Acionamento + Franquia.
+
+🛠️ 2. AGENDAMENTOS "INVISÍVEIS" NO GRID
+As viaturas UEB7H08 e UER7D08 já têm missões agendadas (TOR-0011 e TOR-0012), mas o contador de agendamentos (aquele ícone azul que deveria aparecer) sumiu ou não está somando.
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, corrija urgentemente o Grid Operacional:
+
+Blindagem Financeira: O cálculo automático de missões em andamento (VTR 02) está errado. Altere a lógica: o valor provisório deve ser baseado estritamente na Franquia da Tabela de Preços (ex: 15h). NÃO estipule horários de fim fictícios para calcular horas extras antecipadas.
+
+Gatilho de Hora Extra: A hora extra só deve impactar o valor do grid se o tempo decorrido desde o 'Início da Missão' ultrapassar a franquia contratada.
+
+Fix de Agendamentos: As missões TOR-0011 e TOR-0012 estão ativas, mas o indicador de 'X Agendamentos' não está aparecendo nas linhas das viaturas. Verifique se a query que conta os agendamentos está filtrando corretamente pelo ID da viatura e data de hoje.
+
+Status de Referência: Garanta que quando houver um agendamento futuro, o botão azul de 'Agendamentos' apareça ao lado do status 'NA ORIGEM' ou 'LIVRE'."
+
+🔍 O QUE CONFERIR DEPOIS:
+O valor da TOR-0012 deve cair imediatamente para o preço padrão da franquia (ex: algo em torno de R$ 480,00 a R$ 800,00, dependendo da sua tabela).
+
+Deve aparecer o ícone azul de "1 agendamento" na linha da VTR 01 e VTR 02.
