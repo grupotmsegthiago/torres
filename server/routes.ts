@@ -1741,6 +1741,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${adj.kmStep}, ${'[ajuste-manual]'}, ${Number(adj.km)}, ${`Ajuste manual por ${adminName}`})`);
             auditEntries.push(`KM "${adj.kmStep}" inserido manualmente: ${adj.km}`);
           }
+          if (adj.km !== null && os.vehicleId && ["km_saida", "km_chegada", "km_final", "base_hodometro"].includes(adj.kmStep)) {
+            const veh = await storage.getVehicle(os.vehicleId);
+            if (veh && Number(adj.km) >= (veh.km || 0)) {
+              await storage.updateVehicle(os.vehicleId, { km: Number(adj.km), lastKmUpdate: new Date() });
+              auditEntries.push(`Último KM da viatura ${veh.plate} atualizado para ${adj.km}`);
+            }
+          }
         }
       }
 

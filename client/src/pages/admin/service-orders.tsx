@@ -337,10 +337,16 @@ type StepDataEntry = {
   timestamp: string | null; km: number | null; agentName: string | null;
 };
 
-function StepAdjustmentSection({ orderId, osNumber }: { orderId: number; osNumber: string }) {
+type StepAdjustmentHandle = {
+  hasPendingChanges: () => boolean;
+  savePending: () => Promise<{ ok: boolean; changes: number }>;
+};
+
+function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderId: number; osNumber: string; onRegisterHandle?: (h: StepAdjustmentHandle) => void }) {
   const { toast } = useToast();
   const [editedSteps, setEditedSteps] = useState<Record<string, { timestamp?: string; km?: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const { data: stepData, isLoading, refetch } = useQuery<{ steps: StepDataEntry[] }>({
     queryKey: ["/api/service-orders", orderId, "step-data"],
@@ -349,34 +355,60 @@ function StepAdjustmentSection({ orderId, osNumber }: { orderId: number; osNumbe
 
   const hasChanges = Object.keys(editedSteps).length > 0;
 
-  const handleSave = async () => {
-    if (!stepData?.steps) return;
+  const buildAdjustments = () => {
+    if (!stepData?.steps) return [];
+    const adjustments: any[] = [];
+    for (const [stepKey, edits] of Object.entries(editedSteps)) {
+      const original = stepData.steps.find(s => s.key === stepKey);
+      if (!original) continue;
+      const adj: any = { stepKey };
+      if (edits.timestamp !== undefined) {
+        adj.timestamp = edits.timestamp ? new Date(edits.timestamp).toISOString() : null;
+      }
+      if (edits.km !== undefined && original.hasKm && original.kmStep) {
+        adj.km = edits.km ? Number(edits.km) : null;
+        adj.kmStep = original.kmStep;
+      }
+      adjustments.push(adj);
+    }
+    return adjustments;
+  };
+
+  const doSave = async (): Promise<{ ok: boolean; changes: number }> => {
+    const adjustments = buildAdjustments();
+    if (adjustments.length === 0) return { ok: true, changes: 0 };
     setSaving(true);
     try {
-      const adjustments: any[] = [];
-      for (const [stepKey, edits] of Object.entries(editedSteps)) {
-        const original = stepData.steps.find(s => s.key === stepKey);
-        if (!original) continue;
-        const adj: any = { stepKey };
-        if (edits.timestamp !== undefined) {
-          adj.timestamp = edits.timestamp ? new Date(edits.timestamp).toISOString() : null;
-        }
-        if (edits.km !== undefined && original.hasKm && original.kmStep) {
-          adj.km = edits.km ? Number(edits.km) : null;
-          adj.kmStep = original.kmStep;
-        }
-        adjustments.push(adj);
-      }
-      if (adjustments.length === 0) { setSaving(false); return; }
       await apiRequest("PATCH", `/api/service-orders/${orderId}/step-adjustments`, { adjustments });
-      toast({ title: "Ajustes salvos", description: `${adjustments.length} alteração(ões) registrada(s) com auditoria` });
       setEditedSteps({});
       refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      setSaving(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+      return { ok: true, changes: adjustments.length };
+    } catch (err: any) {
+      setSaving(false);
+      throw err;
+    }
+  };
+
+  useEffect(() => {
+    if (onRegisterHandle) {
+      onRegisterHandle({ hasPendingChanges: () => Object.keys(editedSteps).length > 0, savePending: doSave });
+    }
+  });
+
+  const handleSave = async () => {
+    try {
+      const result = await doSave();
+      if (result.changes > 0) {
+        toast({ title: "Ajustes salvos", description: `${result.changes} alteração(ões) registrada(s) com auditoria` });
+      }
     } catch (err: any) {
       toast({ title: "Erro ao salvar ajustes", description: err.message, variant: "destructive" });
     }
-    setSaving(false);
   };
 
   const getVal = (stepKey: string, field: "timestamp" | "km", original: string | number | null) => {
@@ -419,17 +451,17 @@ function StepAdjustmentSection({ orderId, osNumber }: { orderId: number; osNumbe
           <span className="text-xs uppercase tracking-wide text-neutral-600 font-bold">Ajuste de Etapas e KMs</span>
           <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">Admin</Badge>
         </div>
-        {hasChanges && (
+        {(hasChanges || saveSuccess) && (
           <Button
             type="button"
             size="sm"
-            disabled={saving}
+            disabled={saving || saveSuccess}
             onClick={handleSave}
-            className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 text-xs h-7"
+            className={`gap-1.5 text-xs h-7 ${saveSuccess ? "bg-green-600 hover:bg-green-600 text-white" : "bg-amber-600 hover:bg-amber-700 text-white"}`}
             data-testid="button-save-step-adjustments"
           >
-            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-            {saving ? "Salvando..." : "Salvar Ajustes"}
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : saveSuccess ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+            {saving ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar Ajustes"}
           </Button>
         )}
       </div>
@@ -511,6 +543,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const formIsAdmin = formUser?.role === "admin" || formUser?.role === "diretoria";
   const [step, setStep] = useState(order ? 3 : 1);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const stepAdjHandleRef = useRef<StepAdjustmentHandle | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [calculatingRoute, setCalculatingRoute] = useState(false);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -631,6 +665,13 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
+      if (order && stepAdjHandleRef.current?.hasPendingChanges()) {
+        try {
+          await stepAdjHandleRef.current.savePending();
+        } catch (err: any) {
+          throw new Error(`Erro ao sincronizar etapas com Supabase: ${err.message}`);
+        }
+      }
       const payload = {
         ...data,
         clientId: Number(data.clientId),
@@ -661,11 +702,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
-      toast({ title: order ? "OS atualizada" : "OS criada" });
-      onClose();
+      setSaveSuccess(true);
+      toast({ title: order ? "OS atualizada com sucesso" : "OS criada com sucesso", description: order && stepAdjHandleRef.current ? "Dados de etapas e KMs sincronizados" : undefined });
+      setTimeout(() => { setSaveSuccess(false); onClose(); }, 1200);
     },
     onError: (err: any) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao sincronizar com Supabase", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1155,7 +1197,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             )}
 
             {order && <MissionCostsSection orderId={order.id} />}
-            {order && formIsAdmin && <StepAdjustmentSection orderId={order.id} osNumber={order.osNumber} />}
+            {order && formIsAdmin && <StepAdjustmentSection orderId={order.id} osNumber={order.osNumber} onRegisterHandle={(h) => { stepAdjHandleRef.current = h; }} />}
           </div>
         )}
 
@@ -1206,8 +1248,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate(form)} className="bg-neutral-900 hover:bg-neutral-800" data-testid="button-save-order">
-                {mutation.isPending ? "Salvando..." : "Salvar OS"}
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => mutation.mutate(form)} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+                {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
+                {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>
             )}
           </div>
