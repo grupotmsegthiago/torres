@@ -4951,30 +4951,15 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             if (extras.length === 0) return null;
                             const next = extras[0];
                             return (
-                              <div
-                                className="mt-1.5 border border-blue-200 bg-blue-50/60 rounded px-2 py-1 cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                              <button
+                                className="mt-1 inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
                                 data-testid={`card-next-scheduled-${v.id}`}
                                 onClick={() => setNextOsDetail({ os: next, vehicle: v })}
                               >
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
-                                  <CalendarClock className="w-3 h-3" />
-                                  Próximo Agendamento
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-xs text-blue-800">{next.osNumber}</span>
-                                  {next.scheduledDate && (
-                                    <span className="text-[10px] text-blue-600 font-medium">
-                                      {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
-                                </div>
-                                {extras.length > 1 && (
-                                  <button onClick={() => setUpcomingVehicle(v)} className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer">
-                                    +{extras.length - 1} mais
-                                  </button>
-                                )}
-                              </div>
+                                <CalendarClock className="w-3 h-3" />
+                                {next.osNumber} {next.scheduledDate && new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                                {extras.length > 1 && <span className="text-[8px] bg-blue-200 rounded-full px-1">{`+${extras.length - 1}`}</span>}
+                              </button>
                             );
                           })()}
                         </div>
@@ -4982,30 +4967,15 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         (() => {
                           const next = v.upcomingOrders[0];
                           return (
-                            <div
-                              className="border border-blue-200 bg-blue-50/60 rounded px-2 py-1 cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                            <button
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
                               data-testid={`card-upcoming-only-${v.id}`}
                               onClick={() => setNextOsDetail({ os: next, vehicle: v })}
                             >
-                              <div className="flex items-center gap-1 text-[10px] font-bold text-blue-700 uppercase tracking-wide mb-0.5">
-                                <CalendarClock className="w-3 h-3" />
-                                Próximo Agendamento
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-blue-800">{next.osNumber}</span>
-                                {next.scheduledDate && (
-                                  <span className="text-[10px] text-blue-600 font-medium">
-                                    {new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                                  </span>
-                                )}
-                                <span className="text-[10px] text-blue-600 truncate max-w-[80px]">{next.clientName}</span>
-                              </div>
-                              {v.upcomingOrders.length > 1 && (
-                                <button onClick={() => setUpcomingVehicle(v)} className="mt-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-semibold cursor-pointer" data-testid={`button-upcoming-only-${v.id}`}>
-                                  +{v.upcomingOrders.length - 1} mais
-                                </button>
-                              )}
-                            </div>
+                              <CalendarClock className="w-3 h-3" />
+                              {next.osNumber} {next.scheduledDate && new Date(next.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                              {v.upcomingOrders.length > 1 && <span className="text-[8px] bg-blue-200 rounded-full px-1">{`+${v.upcomingOrders.length - 1}`}</span>}
+                            </button>
                           );
                         })()
                       ) : (
