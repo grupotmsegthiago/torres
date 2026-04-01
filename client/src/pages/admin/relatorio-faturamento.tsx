@@ -121,8 +121,8 @@ export default function RelatorioFaturamentoPage() {
       const kmExcedente = n(b.km_excedente) || Math.max(0, kmTotal - franquiaKm);
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
-      const fatHoraExtra = n(b.fat_hora_extra);
-      const fatKmExtra = kmExcedente * valorKmExtra;
+      const fatHoraExtra = n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100;
+      const fatKmExtra = Math.round(kmExcedente * valorKmExtra * 100) / 100;
       const fatPedagio = n(b.despesas_pedagio);
       const fatTotal = n(b.fat_total);
 
@@ -179,31 +179,31 @@ export default function RelatorioFaturamentoPage() {
     const printCSS = `
       @page { size: A4 landscape; margin: 4mm 5mm; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      html, body { margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', sans-serif; font-size: 7pt; color: #1f2937; }
+      html, body { margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', sans-serif; font-size: 6.5pt; color: #1f2937; }
       table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1.5px solid #111; }
-      td, th { padding: 2px 4px; font-size: 7pt; border: 0.5px solid #d1d5db; line-height: 1.3; white-space: nowrap; text-align: center; vertical-align: middle; }
-      td.route-cell { white-space: normal; word-wrap: break-word; text-align: left; min-width: 110px; max-width: 200px; font-weight: 600; }
+      td, th { padding: 2px 5px; font-size: 6.5pt; border: 0.5px solid #d1d5db; line-height: 1.35; white-space: nowrap; text-align: center; vertical-align: middle; }
+      td.route-cell { white-space: normal; word-wrap: break-word; text-align: left; min-width: 90px; max-width: 180px; font-weight: 600; font-size: 6pt; }
       thead { display: table-header-group; }
       tfoot { display: table-footer-group; }
       tr { page-break-inside: avoid; }
       tbody tr:nth-child(odd) { background-color: #ffffff; }
       tbody tr:nth-child(even) { background-color: #f9fafb; }
-      .group-hdr th { font-size: 7.5pt; padding: 3px 4px; font-weight: 900; letter-spacing: 0.5px; border-bottom: 1.5px solid #111; border-top: 1.5px solid #111; }
-      .sub-hdr th { font-size: 6.5pt; padding: 2.5px 3px; font-weight: 800; border-bottom: 1px solid #374151; text-transform: uppercase; }
+      .group-hdr th { font-size: 7pt; padding: 3px 3px; font-weight: 900; letter-spacing: 0.4px; border-bottom: 1.5px solid #111; border-top: 1.5px solid #111; }
+      .sub-hdr th { font-size: 5.5pt; padding: 2px 3px; font-weight: 800; border-bottom: 1px solid #374151; text-transform: uppercase; letter-spacing: 0.2px; }
       .boletim-header { margin-bottom: 4mm; text-align: center; padding-bottom: 2mm; border-bottom: 1px solid #111; }
-      .boletim-header h1 { font-size: 14pt; margin: 0; color: #111; }
-      .subtitle-line { font-size: 9.5pt; margin: 1.5mm 0 0.5mm; color: #374151; }
-      .ref-line { font-size: 7.5pt; margin: 0; color: #6b7280; }
+      .boletim-header h1 { font-size: 13pt; margin: 0; color: #111; }
+      .subtitle-line { font-size: 9pt; margin: 1.5mm 0 0.5mm; color: #374151; }
+      .ref-line { font-size: 7pt; margin: 0; color: #6b7280; }
       .sign-section { margin-top: 10mm; break-inside: avoid; display: flex; justify-content: space-between; padding: 0 10mm; border-top: 1px solid #111; padding-top: 4mm; }
-      .sign-box { width: 65mm; text-align: center; }
-      .digital-signature { font-size: 14pt; font-family: 'Brush Script MT', cursive; font-weight: 700; color: #111; border-bottom: 1.5px solid #374151; padding-bottom: 1px; display: inline-block; }
-      .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111; letter-spacing: 0.8px; margin-top: 1mm; }
-      .sign-cnpj { font-size: 6.5pt; color: #6b7280; }
-      .sign-system { font-size: 6.5pt; color: #9ca3af; }
-      .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111; }
-      .sign-data { font-size: 7pt; color: #6b7280; margin-top: 1mm; }
+      .sign-box { width: 60mm; text-align: center; }
+      .digital-signature { font-size: 13pt; font-family: 'Brush Script MT', cursive; font-weight: 700; color: #111; border-bottom: 1.5px solid #374151; padding-bottom: 1px; display: inline-block; }
+      .sign-role { font-size: 7pt; font-weight: 900; text-transform: uppercase; color: #111; letter-spacing: 0.8px; margin-top: 1mm; }
+      .sign-cnpj { font-size: 6pt; color: #6b7280; }
+      .sign-system { font-size: 6pt; color: #9ca3af; }
+      .sign-cliente { font-size: 7pt; font-weight: 900; text-transform: uppercase; color: #111; }
+      .sign-data { font-size: 6pt; color: #6b7280; margin-top: 1mm; }
       tfoot tr { break-inside: avoid; border-top: 2px solid #111; }
-      tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 5px; }
+      tfoot td { font-size: 7pt; font-weight: 900; padding: 3px 5px; }
     `;
 
     pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição — Torres</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
@@ -252,10 +252,10 @@ export default function RelatorioFaturamentoPage() {
     XLSX.writeFile(wb, fileName, { compression: true });
   }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
-  const cellStyle: React.CSSProperties = { border: "1px solid #d1d5db", padding: "5px 7px", fontSize: "13px", fontFamily: "'Inter', sans-serif", textAlign: "center", whiteSpace: "nowrap", color: "#1f2937", lineHeight: "1.35" };
+  const cellStyle: React.CSSProperties = { border: "1px solid #d1d5db", padding: "4px 6px", fontSize: "10px", fontFamily: "'Inter', sans-serif", textAlign: "center", whiteSpace: "nowrap", color: "#1f2937", lineHeight: "1.4" };
   const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: "#111827" };
-  const headerStyle: React.CSSProperties = { ...cellStyle, backgroundColor: "#f3f4f6", fontWeight: 900, fontSize: "11px", textTransform: "uppercase" as const, color: "#111", padding: "5px 5px" };
-  const groupHeaderStyle: React.CSSProperties = { ...headerStyle, backgroundColor: "#111", color: "#fff", fontSize: "12px", letterSpacing: "0.3px", padding: "6px 5px" };
+  const headerStyle: React.CSSProperties = { ...cellStyle, backgroundColor: "#f3f4f6", fontWeight: 900, fontSize: "9px", textTransform: "uppercase" as const, color: "#111", padding: "5px 4px", letterSpacing: "0.2px" };
+  const groupHeaderStyle: React.CSSProperties = { ...headerStyle, backgroundColor: "#111", color: "#fff", fontSize: "10px", letterSpacing: "0.5px", padding: "6px 4px" };
 
   const bgKm = "#f9fafb";
   const bgHr = "#f3f4f6";
@@ -397,36 +397,7 @@ export default function RelatorioFaturamentoPage() {
           </div>
 
           <div className="report-table-scroll" style={{ overflow: "auto", maxHeight: "70vh" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", border: "1.5px solid #111", tableLayout: "fixed", minWidth: "1200px" }}>
-              <colgroup>
-                <col style={{ width: "60px" }} />
-                <col style={{ width: "160px" }} />
-                <col style={{ width: "80px" }} />
-                <col style={{ width: "55px" }} />
-                <col style={{ width: "55px" }} />
-                <col style={{ width: "70px" }} />
-                <col style={{ width: "70px" }} />
-                <col style={{ width: "75px" }} />
-                <col style={{ width: "55px" }} />
-                <col style={{ width: "70px" }} />
-                <col style={{ width: "75px" }} />
-                <col style={{ width: "75px" }} />
-                <col style={{ width: "55px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "55px" }} />
-                <col style={{ width: "50px" }} />
-                <col style={{ width: "50px" }} />
-                <col style={{ width: "50px" }} />
-                <col style={{ width: "50px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "50px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "65px" }} />
-                <col style={{ width: "70px" }} />
-                <col style={{ width: "80px" }} />
-              </colgroup>
+            <table style={{ borderCollapse: "collapse", border: "1.5px solid #111", tableLayout: "auto", width: "100%", minWidth: "1500px" }}>
               <thead>
                 <tr className="group-hdr">
                   <th colSpan={7} style={groupHeaderStyle}>TABELA ACORDADA</th>
@@ -472,11 +443,11 @@ export default function RelatorioFaturamentoPage() {
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
                     <td style={cellBold}>{r.id}</td>
                     <td className="route-cell" style={{ ...cellStyle, textAlign: "left", whiteSpace: "normal", wordWrap: "break-word", fontWeight: 600 }}>{r.route}</td>
-                    <td style={{ ...cellStyle, fontWeight: 700, fontFamily: "monospace" }}>{fmt(r.activationFee)}</td>
+                    <td style={{ ...cellStyle, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.activationFee)}</td>
                     <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                     <td style={cellStyle}>{r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "—"}</td>
-                    <td style={{ ...cellStyle, fontFamily: "monospace" }}>{fmt(r.unitHr)}</td>
-                    <td style={{ ...cellStyle, fontFamily: "monospace" }}>{fmt(r.unitKm)}</td>
+                    <td style={{ ...cellStyle, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.unitHr)}</td>
+                    <td style={{ ...cellStyle, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{fmt(r.unitKm)}</td>
                     <td style={cellStyle}>{r.startDate}</td>
                     <td style={cellStyle}>{r.startTime}</td>
                     <td style={{ ...cellStyle, fontWeight: 700 }}>{r.viatura}</td>
@@ -490,20 +461,20 @@ export default function RelatorioFaturamentoPage() {
                     <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.endTime}</td>
                     <td style={{ ...cellStyle, backgroundColor: bgHr, fontWeight: 700 }}>{r.timeTotal}</td>
                     <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontFamily: "monospace" }}>{r.kmExtraQtd > 0 ? fmt(r.kmExtraUnit) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontWeight: 700, fontFamily: "monospace" }}>{r.kmExtraTotal > 0 ? fmt(r.kmExtraTotal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.kmExtraQtd > 0 ? fmt(r.kmExtraUnit) : "—"}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgKmExc, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.kmExtraTotal > 0 ? fmt(r.kmExtraTotal) : "R$ 0,00"}</td>
                     <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontFamily: "monospace" }}>{r.hrExtraQtd > 0 ? fmt(r.hrExtraUnit) : "—"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontWeight: 700, fontFamily: "monospace" }}>{r.hrExtraTotal > 0 ? fmt(r.hrExtraTotal) : "R$ 0,00"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontFamily: "monospace" }}>{r.tollVal > 0 ? fmt(r.tollVal) : "R$ 0,00"}</td>
-                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontWeight: 900, fontFamily: "monospace", color: "#111" }}>{fmt(r.totalGeral)}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.hrExtraQtd > 0 ? fmt(r.hrExtraUnit) : "—"}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgHrExc, fontWeight: 700, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.hrExtraTotal > 0 ? fmt(r.hrExtraTotal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontFamily: "'Roboto Mono', monospace", fontSize: "9px" }}>{r.tollVal > 0 ? fmt(r.tollVal) : "R$ 0,00"}</td>
+                    <td style={{ ...cellStyle, backgroundColor: bgVal, fontWeight: 900, fontFamily: "'Roboto Mono', monospace", fontSize: "10px", color: "#111" }}>{fmt(r.totalGeral)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: "2px solid #111" }}>
-                  <td colSpan={26} style={{ ...cellBold, textAlign: "right", fontSize: "14px", padding: "8px" }}>TOTAL GERAL</td>
-                  <td style={{ ...cellBold, fontSize: "14px", fontFamily: "monospace", backgroundColor: "#111", color: "#fff", padding: "8px" }}>{fmt(grandTotal)}</td>
+                  <td colSpan={26} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "6px 8px" }}>TOTAL GERAL</td>
+                  <td style={{ ...cellBold, fontSize: "11px", fontFamily: "'Roboto Mono', monospace", backgroundColor: "#111", color: "#fff", padding: "6px 8px" }}>{fmt(grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
