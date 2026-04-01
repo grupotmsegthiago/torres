@@ -663,6 +663,35 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const googleMapsUrl = form.route ? `https://www.google.com/maps/dir/${encodeURIComponent(form.route.replace(" → ", "/"))}` : null;
 
+  const buildPayload = (data: any, forceReassign = false) => ({
+    ...data,
+    clientId: Number(data.clientId),
+    assignedEmployeeId: data.assignedEmployeeId ? Number(data.assignedEmployeeId) : null,
+    assignedEmployee2Id: data.assignedEmployee2Id ? Number(data.assignedEmployee2Id) : null,
+    vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
+    kitId: data.kitId ? Number(data.kitId) : null,
+    escortContractId: data.escortContractId || null,
+    scheduledDate: localInputToUtc(data.scheduledDate),
+    ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
+    ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
+    valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
+    ...(forceReassign ? { _forceReassign: true } : {}),
+  });
+
+  const [pendingReassignData, setPendingReassignData] = useState<any>(null);
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+  };
+
   const mutation = useMutation({
     mutationFn: async (data: any) => {
       if (order && stepAdjHandleRef.current?.hasPendingChanges()) {
@@ -672,42 +701,69 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           throw new Error(`Erro ao sincronizar etapas com Supabase: ${err.message}`);
         }
       }
-      const payload = {
-        ...data,
-        clientId: Number(data.clientId),
-        assignedEmployeeId: data.assignedEmployeeId ? Number(data.assignedEmployeeId) : null,
-        assignedEmployee2Id: data.assignedEmployee2Id ? Number(data.assignedEmployee2Id) : null,
-        vehicleId: data.vehicleId ? Number(data.vehicleId) : null,
-        kitId: data.kitId ? Number(data.kitId) : null,
-        escortContractId: data.escortContractId || null,
-        scheduledDate: localInputToUtc(data.scheduledDate),
-        ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
-        ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
-        valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
-      };
+      const forceReassign = data._forceReassign === true;
+      const payload = buildPayload(data, forceReassign);
       if (order) {
-        await apiRequest("PATCH", `/api/service-orders/${order.id}`, payload);
+        const res = await fetch(`/api/service-orders/${order.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        if (res.status === 409) {
+          const body = await res.json();
+          if (body.code === "REASSIGN_IN_PROGRESS") {
+            throw { reassignConflict: true, message: body.message, data };
+          }
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || "Erro ao salvar OS");
+        }
       } else {
         payload.missionStatus = "aguardando";
         await apiRequest("POST", "/api/service-orders", payload);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateAll();
       setSaveSuccess(true);
       toast({ title: order ? "OS atualizada com sucesso" : "OS criada com sucesso", description: order && stepAdjHandleRef.current ? "Dados de etapas e KMs sincronizados" : undefined });
       setTimeout(() => { setSaveSuccess(false); onClose(); }, 1200);
     },
     onError: (err: any) => {
-      toast({ title: "Erro ao sincronizar com Supabase", description: err.message, variant: "destructive" });
+      if (err.reassignConflict) {
+        setPendingReassignData(err.data);
+        return;
+      }
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const forceReassignMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const payload = buildPayload(data, true);
+      if (!order) return;
+      const res = await fetch(`/api/service-orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Erro ao salvar OS");
+      }
+    },
+    onSuccess: () => {
+      invalidateAll();
+      setPendingReassignData(null);
+      setSaveSuccess(true);
+      toast({ title: "Equipe reatribuída", description: "Registros de missão migrados para a nova equipe." });
+      setTimeout(() => { setSaveSuccess(false); onClose(); }, 1200);
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro ao reatribuir", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1256,6 +1312,44 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           </div>
         </div>
       </div>
+
+      {pendingReassignData && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4" data-testid="dialog-reassign-confirm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-neutral-900">Troca de Equipe em Missão Ativa</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Esta ação migra todos os registros para a nova equipe</p>
+              </div>
+            </div>
+            <p className="text-sm text-neutral-700 leading-relaxed">
+              Esta OS já possui registros de etapas, fotos e KM feitos pela equipe atual. 
+              Ao trocar a equipe, todos esses registros serão automaticamente reatribuídos para o novo agente principal.
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs text-amber-800 font-medium">Os dados de GPS, horários e fotos serão mantidos, apenas a autoria será alterada.</p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setPendingReassignData(null)} data-testid="button-cancel-reassign">
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={forceReassignMutation.isPending}
+                onClick={() => forceReassignMutation.mutate(pendingReassignData)}
+                data-testid="button-confirm-reassign"
+              >
+                {forceReassignMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Confirmar Troca
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

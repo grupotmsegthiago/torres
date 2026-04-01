@@ -18,7 +18,7 @@ import {
   auditLogs, users, loginSelfies, employeeSalaryDiscounts,
   companyDocuments, homologationLogs, missionUpdates,
   referencePoints, insertReferencePointSchema,
-  missionPositions,
+  missionPositions, missionPhotos,
   agentLocationHistory,
 } from "@shared/schema";
 import nodemailer from "nodemailer";
@@ -2057,6 +2057,53 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
 
     const existing = await storage.getServiceOrder(Number(req.params.id));
+
+    if (existing && existing.status === "em_andamento" && existing.missionStatus !== "aguardando") {
+      const changedA1 = parsed.data.assignedEmployeeId !== undefined && parsed.data.assignedEmployeeId !== existing.assignedEmployeeId;
+      const changedA2 = parsed.data.assignedEmployee2Id !== undefined && parsed.data.assignedEmployee2Id !== existing.assignedEmployee2Id;
+      if (changedA1 || changedA2) {
+        const stepLogs: any[] = existing.stepLogs ? (typeof existing.stepLogs === "string" ? JSON.parse(existing.stepLogs as string) : existing.stepLogs as any[]) : [];
+        if (stepLogs.length > 0) {
+          const forceReassign = req.body._forceReassign === true;
+          if (!forceReassign) {
+            return res.status(409).json({
+              message: "Esta OS já possui registros de missão com a equipe atual. Trocar a equipe pode causar inconsistência nos dados de auditoria. Confirme a troca para prosseguir.",
+              code: "REASSIGN_IN_PROGRESS",
+              existingSteps: stepLogs.length,
+            });
+          }
+          const oldA1 = existing.assignedEmployeeId;
+          const oldA2 = existing.assignedEmployee2Id;
+          const newA1 = changedA1 ? parsed.data.assignedEmployeeId : existing.assignedEmployeeId;
+          const newA2 = changedA2 ? parsed.data.assignedEmployee2Id : existing.assignedEmployee2Id;
+          const newEmp1 = newA1 ? await storage.getEmployee(newA1) : null;
+          const removedIds = [oldA1, oldA2].filter(id => id && id !== newA1 && id !== newA2) as number[];
+          if (removedIds.length > 0) {
+            const photos = await storage.getMissionPhotosByOS(existing.id);
+            const photosToReassign = photos.filter(p => removedIds.includes(p.employeeId));
+            if (photosToReassign.length > 0 && newA1) {
+              for (const photo of photosToReassign) {
+                await db.update(missionPhotos).set({ employeeId: newA1 }).where(eq(missionPhotos.id, photo.id));
+              }
+            }
+            const fixedLogs = stepLogs.map((l: any) => {
+              if (removedIds.includes(l.agentId) && newA1) {
+                return { ...l, agentId: newA1, agentName: newEmp1?.name || "—", _reassigned: true };
+              }
+              return l;
+            });
+            (parsed.data as any).stepLogs = fixedLogs;
+            try {
+              await supabaseAdmin.from("mission_updates")
+                .update({ employee_id: newA1, employee_name: newEmp1?.name || "—" })
+                .eq("service_order_id", existing.id)
+                .in("employee_id", removedIds);
+            } catch (_e) {}
+          }
+          console.log(`[security] OS #${existing.osNumber}: equipe reassigned by admin (force). Old: [${oldA1},${oldA2}] -> New: [${newA1},${newA2}]. ${stepLogs.length} step logs migrated.`);
+        }
+      }
+    }
 
     if (parsed.data.kitId && parsed.data.kitId !== existing?.kitId) {
       const kit = await storage.getWeaponKit(parsed.data.kitId);
