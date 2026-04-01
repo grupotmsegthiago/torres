@@ -24,7 +24,7 @@ const DEFAULTS = {
   diasMes: 31,
   notaFiscalPct: 16,
   lucroPct: 30,
-  qtdVigilantes: 1,
+  qtdVigilantes: 2,
   horasMissao: 8,
 };
 
