@@ -210,13 +210,14 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      const n = (v: string) => parseFloat(v.replace(",", ".")) || 0;
       const payload = {
         client_id: clientId, client_name: clientName,
-        valor_km_carregado: parseFloat(form.valor_km_carregado), valor_km_vazio: parseFloat(form.valor_km_vazio),
-        franquia_minima_km: parseInt(form.franquia_minima_km), valor_hora_estadia: parseFloat(form.valor_hora_estadia),
-        valor_diaria: parseFloat(form.valor_diaria), vrp_base: parseFloat(form.vrp_base),
-        adicional_noturno_vrp_pct: parseFloat(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: parseFloat(form.adicional_noturno_km_pct),
-        adicional_periculosidade_pct: parseFloat(form.adicional_periculosidade_pct), periculosidade_horas_limite: parseInt(form.periculosidade_horas_limite),
+        valor_km_carregado: n(form.valor_km_carregado), valor_km_vazio: n(form.valor_km_vazio),
+        franquia_minima_km: n(form.franquia_minima_km), valor_hora_estadia: n(form.valor_hora_estadia),
+        valor_diaria: n(form.valor_diaria), vrp_base: n(form.vrp_base),
+        adicional_noturno_vrp_pct: n(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: n(form.adicional_noturno_km_pct),
+        adicional_periculosidade_pct: n(form.adicional_periculosidade_pct), periculosidade_horas_limite: n(form.periculosidade_horas_limite),
         status: "Ativo",
       };
       if (editing) return apiRequest("PUT", `/api/escort/contracts/${editing.id}`, payload);

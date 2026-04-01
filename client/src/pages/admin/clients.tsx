@@ -749,21 +749,22 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      const n = (v: string) => parseFloat(v.replace(",", ".")) || 0;
       const payload = {
         client_id: clientId, client_name: clientName, name: form.name || null,
-        valor_km_carregado: parseFloat(form.valor_km_carregado), valor_km_vazio: parseFloat(form.valor_km_vazio),
-        franquia_minima_km: parseInt(form.franquia_minima_km), valor_hora_estadia: parseFloat(form.valor_hora_estadia),
-        valor_diaria: parseFloat(form.valor_diaria), vrp_base: parseFloat(form.vrp_base),
-        adicional_noturno_vrp_pct: parseFloat(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: parseFloat(form.adicional_noturno_km_pct),
-        adicional_periculosidade_pct: parseFloat(form.adicional_periculosidade_pct), periculosidade_horas_limite: parseInt(form.periculosidade_horas_limite),
-        valor_acionamento: parseFloat(form.valor_acionamento) || 0,
-        franquia_horas: parseFloat(form.franquia_horas) || 0,
-        franquia_km: parseFloat(form.franquia_km) || 0,
-        valor_hora_extra: parseFloat(form.valor_hora_extra) || 0,
-        valor_km_extra: parseFloat(form.valor_km_extra) || 0,
-        valor_cancelamento: parseFloat(form.valor_cancelamento) || 0,
-        tabela_cancelamento: parseFloat(form.tabela_cancelamento) || 0,
-        custo_deslocamento_100km: parseFloat(form.custo_deslocamento_100km) || 0,
+        valor_km_carregado: n(form.valor_km_carregado), valor_km_vazio: n(form.valor_km_vazio),
+        franquia_minima_km: n(form.franquia_minima_km), valor_hora_estadia: n(form.valor_hora_estadia),
+        valor_diaria: n(form.valor_diaria), vrp_base: n(form.vrp_base),
+        adicional_noturno_vrp_pct: n(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: n(form.adicional_noturno_km_pct),
+        adicional_periculosidade_pct: n(form.adicional_periculosidade_pct), periculosidade_horas_limite: n(form.periculosidade_horas_limite),
+        valor_acionamento: n(form.valor_acionamento),
+        franquia_horas: n(form.franquia_horas),
+        franquia_km: n(form.franquia_km),
+        valor_hora_extra: n(form.valor_hora_extra),
+        valor_km_extra: n(form.valor_km_extra),
+        valor_cancelamento: n(form.valor_cancelamento),
+        tabela_cancelamento: n(form.tabela_cancelamento),
+        custo_deslocamento_100km: n(form.custo_deslocamento_100km),
         status: "Ativo",
       };
       if (editing) return apiRequest("PUT", `/api/escort/contracts/${editing.id}`, payload);
@@ -801,7 +802,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
             <p className="text-[10px] font-black text-purple-700 uppercase mb-3 tracking-widest">Franquias e Extras</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia Horas</label><input type="number" step="0.5" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_horas} onChange={e => sf("franquia_horas", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Hora Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_extra} onChange={e => sf("valor_hora_extra", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ KM Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_extra} onChange={e => sf("valor_km_extra", e.target.value)} /></div>
             </div>
