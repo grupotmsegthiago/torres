@@ -1842,17 +1842,6 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
           <Button size="sm" variant="outline" className="text-xs gap-1 h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={() => { setShowDiscountForm(!showDiscountForm); setDiscountCategory(null); }} data-testid="button-launch-discount">
             <Ban className="w-3 h-3" /> Lançar Ocorrência
           </Button>
-          {isDiretoria && summary && (
-            <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={async () => {
-              try {
-                const res = await apiRequest("POST", "/api/payroll/sync-financial", { month: selMonth, year: selYear });
-                const data = await res.json();
-                toast({ title: "Folha sincronizada", description: data.message });
-              } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
-            }} data-testid="button-sync-payroll">
-              <DollarSign className="w-3 h-3" /> Lançar no Caixa
-            </Button>
-          )}
           {summary && (
             <Button size="sm" variant="outline" className="text-xs gap-1 h-8 border-neutral-300" onClick={printHolerite} data-testid="button-print-holerite">
               <Download className="w-3 h-3" /> Holerite
@@ -1868,10 +1857,16 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
               <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Remuneração Líquida Estimada</span>
               <span className="text-[10px] text-neutral-500">{MESES[selMonth-1]} {selYear}</span>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido)}</span>
-              {summary.totalDescontos > 0 && <span className="text-xs text-red-400 font-medium">(-{fmtR(summary.totalDescontos)} desc.)</span>}
-            </div>
+            {(() => {
+              const heTotal = heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0;
+              return (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl md:text-3xl font-bold text-white tracking-tight" data-testid="text-salary-liquido">{fmtR(summary.liquido + heTotal)}</span>
+                  {heTotal > 0 && <span className="text-xs text-indigo-300 font-medium">(+{fmtR(heTotal)} HE)</span>}
+                  {summary.totalDescontos > 0 && <span className="text-xs text-red-400 font-medium">(-{fmtR(summary.totalDescontos)} desc.)</span>}
+                </div>
+              );
+            })()}
             {summary.proporcional && (
               <div className="flex items-center gap-1.5 mt-2">
                 <AlertTriangle className="w-3 h-3 text-amber-400" />
@@ -1883,7 +1878,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-neutral-400">Ganhos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total)}</span></span>
+                <span className="text-[10px] text-neutral-400">Ganhos: <span className="text-emerald-400 font-semibold">{fmtR(summary.vencimentos.total + (heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0))}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-400" />
@@ -1901,7 +1896,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <span className="text-xs uppercase tracking-wider text-emerald-800 font-bold">Vencimentos</span>
                 </div>
-                <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total)}</span>
+                <span className="text-xs font-bold text-emerald-700">{fmtR(summary.vencimentos.total + (heHours && Number(heHours) > 0 ? +(Number(heHours) * CCT_SP_2025.horaExtraValor * 1.5).toFixed(2) : 0))}</span>
               </div>
               <div className="p-3 space-y-2">
                 <div className="bg-white border border-neutral-100 rounded-lg p-3 flex items-center justify-between">
@@ -1931,6 +1926,39 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                     <div className="text-[10px] text-neutral-400 mt-0.5">Conforme CCT{propTag}</div>
                   </div>
                   <span className="text-sm font-bold text-emerald-700 tabular-nums">+ {fmtR(summary.vencimentos.cestaBasica)}</span>
+                </div>
+                {(() => {
+                  const heVal = CCT_SP_2025.horaExtraValor;
+                  const totalHE = heHours && Number(heHours) > 0 ? +(Number(heHours) * heVal * 1.5).toFixed(2) : 0;
+                  const folhaHE = +(totalHE / 2).toFixed(2);
+                  const bonusHE = +(totalHE - folhaHE).toFixed(2);
+                  return totalHE > 0 ? (
+                    <>
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-semibold text-indigo-800">Hora Extra (50% Folha)</div>
+                          <div className="text-[10px] text-indigo-400 mt-0.5">{heHours}h × R$ {heVal.toFixed(2)} × 1.5 ÷ 2</div>
+                        </div>
+                        <span className="text-sm font-bold text-indigo-700 tabular-nums">+ {fmtR(folhaHE)}</span>
+                      </div>
+                      <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-semibold text-amber-800">Bônus HE (50% Extra)</div>
+                          <div className="text-[10px] text-amber-400 mt-0.5">Pago extra-folha</div>
+                        </div>
+                        <span className="text-sm font-bold text-amber-700 tabular-nums">+ {fmtR(bonusHE)}</span>
+                      </div>
+                    </>
+                  ) : null;
+                })()}
+                <div className="border-t border-neutral-100 pt-2 mt-1">
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Horas Extras no Mês</label>
+                      <Input type="number" min="0" step="0.5" value={heHours} onChange={(e) => setHeHours(e.target.value)} placeholder="0" className="text-xs h-8" data-testid="input-he-hours" />
+                    </div>
+                    <p className="text-[9px] text-neutral-400 pb-2">50% folha + 50% bônus</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2129,54 +2157,6 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             </div>
           )}
 
-          {summary && (
-            <div className="border border-indigo-200 rounded-xl overflow-hidden" data-testid="card-horas-extras">
-              <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
-                    <Clock className="w-3.5 h-3.5 text-indigo-700" />
-                  </div>
-                  <span className="text-xs uppercase tracking-wider text-indigo-800 font-bold">Horas Extras (HE)</span>
-                </div>
-                <span className="text-[10px] text-indigo-600 font-medium">50% Folha + 50% Bônus</span>
-              </div>
-              <div className="p-3 space-y-3">
-                <div className="flex items-end gap-3">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Total de Horas Extras no Mês</label>
-                    <Input type="number" min="0" step="0.5" value={heHours} onChange={(e) => setHeHours(e.target.value)} placeholder="Ex: 12" className="text-xs h-9" data-testid="input-he-hours" />
-                  </div>
-                  {heHours && Number(heHours) > 0 && (() => {
-                    const heVal = CCT_SP_2025.horaExtraValor;
-                    const totalHE = +(Number(heHours) * heVal * 1.5).toFixed(2);
-                    const folha = +(totalHE / 2).toFixed(2);
-                    const bonus = +(totalHE - folha).toFixed(2);
-                    return (
-                      <div className="flex-1 bg-indigo-50/50 border border-indigo-100 rounded-lg p-3">
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wide text-neutral-500 font-bold">Total HE</p>
-                            <p className="text-sm font-bold text-indigo-700 tabular-nums">{fmtR(totalHE)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wide text-emerald-600 font-bold">Folha (50%)</p>
-                            <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtR(folha)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wide text-amber-600 font-bold">Bônus (50%)</p>
-                            <p className="text-sm font-bold text-amber-700 tabular-nums">{fmtR(bonus)}</p>
-                          </div>
-                        </div>
-                        <p className="text-[9px] text-neutral-400 text-center mt-1.5">
-                          {heHours}h × R$ {heVal.toFixed(2)} × 1.5 = {fmtR(totalHE)} → Metade folha, metade extra-folha
-                        </p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
 

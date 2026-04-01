@@ -1,0 +1,41 @@
+REGRAS DAS METAS (INTELIGÊNCIA DO DASHBOARD):
+Meta de Viatura (Individual): Cada viatura tem sua meta (ex: R$ 1.800,00). Se a UEB7H08 bater esse valor, aparece o ícone "Meta Batida" ao lado dela no Top Viaturas.
+
+Meta do Dia (Coletiva): É a soma das metas de todas as viaturas cadastradas.
+
+Exemplo: 2 viaturas x R$ 1.800,00 = R$ 3.600,00/dia.
+
+Se o faturamento total do dia (hoje está em R$ 4.193,70) for maior que R$ 3.600,00, o gráfico do dia ganha o selo de "Meta do Dia Batida".
+
+Meta de Agentes: Baseada na produtividade ou faturamento das missões que eles realizaram.
+
+Filtros Inteligentes: O sistema vai multiplicar a meta diária pelo período selecionado.
+
+Mensal: R$ 3.600,00 x 30 dias = R$ 108.000,00. O sistema compara o faturamento do mês contra esse valor.
+
+📡 COPIE E COLE ESTE COMANDO PARA O AGENT:
+"Agent, vamos implementar o Sistema de Metas e auditar os filtros do Balanço Gerencial:
+
+Cálculo de Meta Diária: Defina a meta diária global como a soma das metas individuais de cada viatura ativa (atualmente R$ 1.800,00 por viatura).
+
+Indicadores Visuais: Quando o faturamento atingir ou superar a meta (diária, semanal ou mensal), exiba um ícone de 'Troféu' ou selo 'Meta Batida' nos seguintes locais:
+
+Ao lado do valor total no Dashboard.
+
+Na lista de 'Top Viaturas' e 'Top Agentes'.
+
+Auditoria de Filtros (URGENTE): Verifique por que o filtro Semanal estava maior que o Mensal. Refaça a lógica de datas (BETWEEN start_date AND end_date) para garantir que:
+
+Diário: Apenas o dia selecionado.
+
+Semanal: Últimos 7 dias.
+
+Mensal: Do dia 01 até o último dia do mês atual.
+
+Inclusão da TOR-0010: Garanta que o valor de cancelamento da TOR-0010 (ressarcimento) conte para a meta do dia, pois é receita faturada."
+
+🔍 O QUE VOCÊ VAI VER AGORA:
+Olhando o seu print de hoje, você faturou R$ 4.193,70 com 4 missões.
+Como a sua meta das duas viaturas é R$ 3.600,00, assim que o Agent rodar o comando, o seu Dashboard de hoje (01/04) já deve brilhar com o selo de META BATIDA! 🚀
+
+Thiago, peça para ele auditar os filtros agora. Se o valor Mensal continuar menor que o Semanal, peça para ele te mostrar o código da Query SQL para a gente conferir onde ele está errando a data.

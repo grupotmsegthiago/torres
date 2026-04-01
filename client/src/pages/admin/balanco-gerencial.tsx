@@ -8,6 +8,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
   Calendar, ChevronLeft, ChevronRight, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
+  Trophy,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +27,7 @@ const fmtHoras = (val: number) => {
   return `${h}h${m.toString().padStart(2, "0")}`;
 };
 
-const META_MENSAL_VIATURA = 40000;
+const META_DIARIA_VIATURA = 1800;
 
 type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR";
 
@@ -48,9 +49,8 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
     case "DAY":
       return { start: new Date(y, m, d), end: new Date(y, m, d, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) };
     case "WEEK": {
-      const dow = refDate.getDay();
-      const start = new Date(y, m, d - dow);
-      const end = new Date(y, m, d + (6 - dow), 23, 59, 59);
+      const start = new Date(y, m, d - 6);
+      const end = new Date(y, m, d, 23, 59, 59);
       return { start, end, label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}` };
     }
     case "MONTH":
@@ -68,9 +68,9 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
   }
 }
 
-function getMonthsInRange(range: { start: Date; end: Date }): number {
-  const diff = (range.end.getFullYear() - range.start.getFullYear()) * 12 + (range.end.getMonth() - range.start.getMonth()) + 1;
-  return Math.max(1, diff);
+function getDaysInRange(range: { start: Date; end: Date }): number {
+  const diffMs = range.end.getTime() - range.start.getTime();
+  return Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 }
 
 function navigatePeriod(period: Period, refDate: Date, direction: number): Date {
@@ -134,7 +134,6 @@ export default function BalancoGerencialPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
-  const [syncingPayroll, setSyncingPayroll] = useState(false);
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ["/api/financial/dashboard"],
@@ -146,7 +145,7 @@ export default function BalancoGerencialPage() {
   });
 
   const range = useMemo(() => getDateRange(period, refDate), [period, refDate]);
-  const monthsInPeriod = useMemo(() => getMonthsInRange(range), [range]);
+  const daysInPeriod = useMemo(() => getDaysInRange(range), [range]);
 
   const filtered = useMemo(() => {
     if (!data) return {
@@ -308,22 +307,6 @@ export default function BalancoGerencialPage() {
             <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
           </div>
           <div className="flex items-center gap-2">
-            {isDiretoria && (
-              <Button variant="outline" size="sm" className="text-xs gap-1.5 font-bold" disabled={syncingPayroll} onClick={async () => {
-                setSyncingPayroll(true);
-                try {
-                  const now = new Date();
-                  const res = await apiRequest("POST", "/api/payroll/sync-financial", { month: now.getMonth() + 1, year: now.getFullYear() });
-                  const result = await res.json();
-                  toast({ title: "Folha sincronizada", description: result.message });
-                  queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-                } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
-                setSyncingPayroll(false);
-              }} data-testid="button-sync-payroll-dashboard">
-                {syncingPayroll ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
-                Folha → Caixa
-              </Button>
-            )}
             <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] })} data-testid="button-refresh-dashboard">
               <RefreshCw size={14} />
             </Button>
@@ -360,16 +343,24 @@ export default function BalancoGerencialPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="p-4 border-neutral-200" data-testid="card-faturamento">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                <ArrowUpRight size={16} className="text-green-700" />
-              </div>
-              <span className="text-xs font-black text-neutral-400 uppercase">Faturamento</span>
-            </div>
-            <p className="text-2xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões</p>
-          </Card>
+          {(() => {
+            const totalViaturas = Math.max((allVehicles || []).length, filtered.vehicles.length);
+            const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * totalViaturas;
+            const metaBatida = totalViaturas > 0 && totals.fat >= metaPeriodo;
+            return (
+              <Card className={`p-4 border-neutral-200 ${metaBatida ? "ring-2 ring-amber-400" : ""}`} data-testid="card-faturamento">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${metaBatida ? "bg-amber-100" : "bg-green-100"}`}>
+                    {metaBatida ? <Trophy size={16} className="text-amber-600" /> : <ArrowUpRight size={16} className="text-green-700" />}
+                  </div>
+                  <span className="text-xs font-black text-neutral-400 uppercase">Faturamento</span>
+                  {metaBatida && <Badge className="bg-amber-500 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                </div>
+                <p className="text-2xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
+                <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões{metaPeriodo > 0 ? ` | Meta: ${fmt(metaPeriodo)}` : ""}</p>
+              </Card>
+            );
+          })()}
           <Card className="p-4 border-neutral-200" data-testid="card-custos">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
@@ -383,7 +374,7 @@ export default function BalancoGerencialPage() {
               {totals.desp_combustivel > 0 && <p>Combustível: {fmt(totals.desp_combustivel)}</p>}
               {totals.desp_pedagio > 0 && <p>Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
               {totals.desp_manutencao > 0 && <p>Manutenção: {fmt(totals.desp_manutencao)}</p>}
-              {totals.desp_folha > 0 && <p>Folha (RH): {fmt(totals.desp_folha)}</p>}
+              {totals.desp_folha > 0 && <p>Provisão Salários: {fmt(totals.desp_folha)}</p>}
               {totals.desp_outras > 0 && <p>Outras: {fmt(totals.desp_outras)}</p>}
               {totals.pag === 0 && totals.desp === 0 && <p>Sem despesas no período</p>}
             </div>
@@ -430,17 +421,17 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} />}
-        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
-        {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} monthsInPeriod={monthsInPeriod} period={period} />}
-        {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} monthsInPeriod={monthsInPeriod} period={period} />}
+        {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} daysInPeriod={daysInPeriod} allVehicles={allVehicles || []} />}
+        {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
+        {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} daysInPeriod={daysInPeriod} period={period} />}
+        {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} />}
         {activeTab === "MISSOES" && <MissoesTab missions={filtered.missionDetails} />}
       </div>
     </AdminLayout>
   );
 }
 
-function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses }: {
+function BalancoTab({ missions, vehicles, agents, totals, range, period, expenses, periodExpenses, daysInPeriod, allVehicles }: {
   missions: any[]; vehicles: any[]; agents: any[];
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
@@ -449,7 +440,9 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
   periodExpenses: ExpenseTransaction[];
   range: { start: Date; end: Date; label: string }; period: Period;
+  daysInPeriod: number; allVehicles: any[];
 }) {
+  const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
   const dailyData = useMemo(() => {
     const map: Record<string, { date: string; fat: number; custo: number; missions: number }> = {};
     missions.forEach(m => {
@@ -526,11 +519,15 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
               {vehicles.slice(0, 5).map((v, i) => {
                 const lucro = v.fat_total - v.pag_total - v.despesas;
                 const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
+                const metaAtingida = v.fat_total >= metaPeriodoViatura;
                 return (
                   <div key={v.plate} className="flex items-center gap-3" data-testid={`top-vehicle-${i}`}>
                     <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
                     <div className="flex-1">
-                      <p className="text-sm font-black text-neutral-900">{v.plate} <span className="text-neutral-400 font-bold">{v.model}</span></p>
+                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                        {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
+                        {metaAtingida && <Trophy size={14} className="text-amber-500" />}
+                      </p>
                       <p className="text-xs font-bold text-neutral-500">{v.missions} missões | {fmt(v.fat_total)} fat.</p>
                     </div>
                     <div className="text-right">
@@ -555,11 +552,15 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
               {agents.slice(0, 5).map((a: any, i: number) => {
                 const lucro = a.fat_total - a.pag_total;
                 const pct = a.fat_total > 0 ? (lucro / a.fat_total) * 100 : 0;
+                const metaAtingida = a.fat_total >= metaPeriodoViatura;
                 return (
                   <div key={a.name} className="flex items-center gap-3" data-testid={`top-agent-${i}`}>
                     <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
                     <div className="flex-1">
-                      <p className="text-sm font-black text-neutral-900">{a.name}</p>
+                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                        {a.name}
+                        {metaAtingida && <Trophy size={14} className="text-amber-500" />}
+                      </p>
                       <p className="text-xs font-bold text-neutral-500">{a.missions} missões | {fmtHoras(a.horas_trabalhadas || 0)}</p>
                     </div>
                     <div className="text-right">
@@ -577,12 +578,12 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
   );
 }
 
-function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicles }: {
-  vehicles: any[]; agents: any[]; monthsInPeriod: number; period: Period;
+function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles }: {
+  vehicles: any[]; agents: any[]; daysInPeriod: number; period: Period;
   totals: { fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number };
   allVehicles: any[];
 }) {
-  const metaPeriodoViatura = META_MENSAL_VIATURA * monthsInPeriod;
+  const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
   const totalViaturas = Math.max(allVehicles.length, vehicles.length);
 
   const mergedVehicles = useMemo(() => {
@@ -622,7 +623,7 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicle
         <h4 className="text-sm font-black text-neutral-900 uppercase mb-2 flex items-center gap-2">
           <Target size={16} /> Resumo de Metas
         </h4>
-        <p className="text-xs text-neutral-500 font-bold mb-4">Meta mensal por viatura: {fmt(META_MENSAL_VIATURA)} | Meta do período ({monthsInPeriod} {monthsInPeriod === 1 ? "mês" : "meses"}): {fmt(metaPeriodoViatura)}/viatura</p>
+        <p className="text-xs text-neutral-500 font-bold mb-4">Meta diária por viatura: {fmt(META_DIARIA_VIATURA)} | Meta do período ({daysInPeriod} {daysInPeriod === 1 ? "dia" : "dias"}): {fmt(metaPeriodoViatura)}/viatura</p>
 
         {totalViaturas === 0 ? (
           <div className="text-center py-8 text-neutral-400">
@@ -632,11 +633,20 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicle
           </div>
         ) : (
           <>
+            {metaGlobalPct >= 100 && (
+              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4" data-testid="badge-meta-batida">
+                <Trophy size={28} className="text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-black text-amber-800 uppercase">Meta do Período Batida!</p>
+                  <p className="text-xs font-bold text-amber-600">Faturamento de {fmt(totals.fat)} superou a meta de {fmt(metaGlobal)}</p>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <Card className="p-4 bg-neutral-50 border-neutral-200">
+              <Card className={`p-4 border-neutral-200 ${metaGlobalPct >= 100 ? "bg-amber-50 ring-1 ring-amber-300" : "bg-neutral-50"}`}>
                 <p className="text-xs font-black text-neutral-500 uppercase mb-1">Meta Global</p>
                 <p className="text-xl font-black text-neutral-900 font-mono">{fmt(metaGlobal)}</p>
-                <p className="text-xs text-neutral-400 font-bold">{totalViaturas} viaturas</p>
+                <p className="text-xs text-neutral-400 font-bold">{totalViaturas} viaturas × {daysInPeriod}d</p>
               </Card>
               <Card className="p-4 bg-neutral-50 border-neutral-200">
                 <p className="text-xs font-black text-neutral-500 uppercase mb-1">Realizado</p>
@@ -646,7 +656,7 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicle
               <Card className="p-4 bg-neutral-50 border-neutral-200">
                 <p className="text-xs font-black text-neutral-500 uppercase mb-1">% da Meta</p>
                 <p className={`text-xl font-black font-mono ${metaGlobalPct >= 100 ? "text-green-700" : metaGlobalPct >= 70 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(metaGlobalPct)}</p>
-                <p className="text-xs text-neutral-400 font-bold">Falta {fmt(Math.max(0, metaGlobal - totals.fat))}</p>
+                <p className="text-xs text-neutral-400 font-bold">{metaGlobalPct >= 100 ? "Meta superada!" : `Falta ${fmt(Math.max(0, metaGlobal - totals.fat))}`}</p>
               </Card>
               <Card className="p-4 bg-neutral-50 border-neutral-200">
                 <p className="text-xs font-black text-neutral-500 uppercase mb-1">Horas Totais</p>
@@ -680,11 +690,14 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicle
               <div key={v.plate} className="p-4 rounded-xl border border-neutral-200" data-testid={`meta-vehicle-${v.plate}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${atingiu ? "bg-green-100" : "bg-neutral-100"}`}>
-                      <Car size={20} className={atingiu ? "text-green-700" : "text-neutral-400"} />
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${atingiu ? "bg-amber-100" : "bg-neutral-100"}`}>
+                      {atingiu ? <Trophy size={20} className="text-amber-500" /> : <Car size={20} className="text-neutral-400" />}
                     </div>
                     <div>
-                      <p className="text-sm font-black text-neutral-900">{v.plate} <span className="text-neutral-400 font-bold">{v.model}</span></p>
+                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                        {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
+                        {atingiu && <Badge className="bg-amber-500 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                      </p>
                       <p className="text-xs font-bold text-neutral-500">{v.missions} missões</p>
                     </div>
                   </div>
@@ -743,8 +756,8 @@ function MetasTab({ vehicles, agents, monthsInPeriod, period, totals, allVehicle
   );
 }
 
-function VeiculosTab({ vehicles, monthsInPeriod, period }: { vehicles: any[]; monthsInPeriod: number; period: Period }) {
-  const metaPeriodo = META_MENSAL_VIATURA * monthsInPeriod;
+function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; daysInPeriod: number; period: Period }) {
+  const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod;
 
   return (
     <div className="space-y-4" data-testid="panel-veiculos">
@@ -836,8 +849,8 @@ function VeiculosTab({ vehicles, monthsInPeriod, period }: { vehicles: any[]; mo
   );
 }
 
-function AgentesTab({ agents, monthsInPeriod, period }: { agents: any[]; monthsInPeriod: number; period: Period }) {
-  const metaPeriodo = META_MENSAL_VIATURA * monthsInPeriod;
+function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPeriod: number; period: Period }) {
+  const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod;
 
   return (
     <div className="space-y-4" data-testid="panel-agentes">

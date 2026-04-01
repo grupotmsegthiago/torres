@@ -4,6 +4,9 @@ import * as apibrasil from "./apibrasil";
 import { log } from "./index";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
+import { db } from "./db";
+import { employeeSalaryDiscounts } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -274,5 +277,67 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min)", "cron");
+  cron.schedule("59 2 * * *", async () => {
+    log("CRON Provisão: Iniciando provisão diária de salários", "cron");
+    try {
+      const now = new Date();
+      const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
+      const [yearStr, monthStr, dayStr] = brDate.split("-");
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      const day = Number(dayStr);
+
+      const CCT = { salarioBase: 2432.50, periculosidadePct: 30, valeRefeicaoDia: 40.00, cestaBasica: 208.45, diasUteisMes: 22, horaExtraValor: 22.99 };
+      const periculosidade = CCT.salarioBase * (CCT.periculosidadePct / 100);
+      const valeRefeicaoMes = CCT.valeRefeicaoDia * CCT.diasUteisMes;
+      const totalBrutoMensal = CCT.salarioBase + periculosidade + valeRefeicaoMes + CCT.cestaBasica;
+      const custoDiario = +(totalBrutoMensal / 30).toFixed(2);
+
+      const allEmployees = await storage.getEmployees();
+      const activeEmployees = allEmployees.filter((e: any) => e.status === "ativo" && (e.role?.toLowerCase().includes("vigilante") || e.role?.toLowerCase().includes("escolta")));
+
+      let created = 0;
+      let skipped = 0;
+
+      for (const emp of activeEmployees) {
+        const originId = `payroll-diario-${emp.id}-${brDate}`;
+
+        const { data: existing } = await supabaseAdmin.from("financial_transactions")
+          .select("id").eq("origin_type", "payroll").eq("origin_id", originId).limit(1);
+        if (existing && existing.length > 0) { skipped++; continue; }
+
+        let fator = 1;
+        if (emp.hireDate) {
+          const hire = new Date(emp.hireDate);
+          if (hire > now) { skipped++; continue; }
+          if (hire.getFullYear() === year && hire.getMonth() + 1 === month && hire.getDate() > day) { skipped++; continue; }
+        }
+
+        const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
+          description: `PROVISÃO DIÁRIA ${dayStr}/${monthStr} - ${emp.name?.toUpperCase()}`,
+          amount: custoDiario,
+          type: "EXPENSE",
+          status: "PENDING",
+          due_date: brDate,
+          origin_type: "payroll",
+          origin_id: originId,
+          category_name: "Recursos Humanos",
+          entity_name: emp.name || "",
+          created_by: "CRON",
+        }).select().single();
+
+        if (error) {
+          log(`CRON Provisão: Erro ao criar provisão para ${emp.name}: ${error.message}`, "cron");
+        } else {
+          created++;
+        }
+      }
+
+      log(`CRON Provisão: ${brDate} — ${created} provisão(ões) criada(s), ${skipped} ignorada(s) (${activeEmployees.length} agentes ativos)`, "cron");
+    } catch (err: any) {
+      log(`CRON Provisão: Erro geral: ${err.message}`, "cron");
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | Provisão Salário (diário 23:59 BRT)", "cron");
 }
