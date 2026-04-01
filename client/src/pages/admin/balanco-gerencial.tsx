@@ -29,6 +29,12 @@ const fmtHoras = (val: number) => {
 
 const META_DIARIA_VIATURA = 1800;
 
+function getMetaColor(pct: number) {
+  if (pct >= 100) return { bar: "bg-green-500", text: "text-green-700", bg: "bg-green-100", icon: true };
+  if (pct >= 50) return { bar: "bg-amber-500", text: "text-amber-600", bg: "bg-amber-100", icon: false };
+  return { bar: "bg-red-400", text: "text-red-600", bg: "bg-red-100", icon: false };
+}
+
 type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "SEMESTER" | "YEAR";
 
 const PERIOD_LABELS: Record<Period, string> = {
@@ -344,20 +350,33 @@ export default function BalancoGerencialPage() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {(() => {
-            const totalViaturas = Math.max((allVehicles || []).length, filtered.vehicles.length);
+            const activeVehicles = (allVehicles || []).filter((v: any) => v.trackerId);
+            const totalViaturas = activeVehicles.length;
             const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * totalViaturas;
-            const metaBatida = totalViaturas > 0 && totals.fat >= metaPeriodo;
+            const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
+            const mc = getMetaColor(metaPct);
             return (
-              <Card className={`p-4 border-neutral-200 ${metaBatida ? "ring-2 ring-amber-400" : ""}`} data-testid="card-faturamento">
+              <Card className={`p-4 border-neutral-200 ${mc.icon ? "ring-2 ring-green-400" : ""}`} data-testid="card-faturamento">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${metaBatida ? "bg-amber-100" : "bg-green-100"}`}>
-                    {metaBatida ? <Trophy size={16} className="text-amber-600" /> : <ArrowUpRight size={16} className="text-green-700" />}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mc.bg}`}>
+                    {mc.icon ? <Trophy size={16} className="text-green-600" /> : <ArrowUpRight size={16} className="text-green-700" />}
                   </div>
                   <span className="text-xs font-black text-neutral-400 uppercase">Faturamento</span>
-                  {metaBatida && <Badge className="bg-amber-500 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                  {mc.icon && <Badge className="bg-green-600 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
                 </div>
                 <p className="text-2xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
-                <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões{metaPeriodo > 0 ? ` | Meta: ${fmt(metaPeriodo)}` : ""}</p>
+                <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
+                {metaPeriodo > 0 && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-neutral-400">Meta: {fmt(metaPeriodo)}</span>
+                      <span className={`text-[10px] font-black ${mc.text}`}>{fmtPct(metaPct)}</span>
+                    </div>
+                    <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
+                    </div>
+                  </div>
+                )}
               </Card>
             );
           })()}
@@ -519,20 +538,26 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
               {vehicles.slice(0, 5).map((v, i) => {
                 const lucro = v.fat_total - v.pag_total - v.despesas;
                 const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
-                const metaAtingida = v.fat_total >= metaPeriodoViatura;
+                const metaPct = metaPeriodoViatura > 0 ? (v.fat_total / metaPeriodoViatura) * 100 : 0;
+                const mc = getMetaColor(metaPct);
                 return (
-                  <div key={v.plate} className="flex items-center gap-3" data-testid={`top-vehicle-${i}`}>
-                    <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
-                        {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
-                        {metaAtingida && <Trophy size={14} className="text-amber-500" />}
-                      </p>
-                      <p className="text-xs font-bold text-neutral-500">{v.missions} missões | {fmt(v.fat_total)} fat.</p>
+                  <div key={v.plate} className="space-y-1" data-testid={`top-vehicle-${i}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                          {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
+                          {mc.icon && <Trophy size={14} className="text-green-600" />}
+                        </p>
+                        <p className="text-xs font-bold text-neutral-500">{v.missions} missões | {fmt(v.fat_total)} fat.</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
+                        <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(lucro)}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
-                      <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(lucro)}</p>
+                    <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
                     </div>
                   </div>
                 );
@@ -551,21 +576,26 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
             <div className="space-y-3">
               {agents.slice(0, 5).map((a: any, i: number) => {
                 const lucro = a.fat_total - a.pag_total;
-                const pct = a.fat_total > 0 ? (lucro / a.fat_total) * 100 : 0;
-                const metaAtingida = a.fat_total >= metaPeriodoViatura;
+                const metaPct = metaPeriodoViatura > 0 ? (a.fat_total / metaPeriodoViatura) * 100 : 0;
+                const mc = getMetaColor(metaPct);
                 return (
-                  <div key={a.name} className="flex items-center gap-3" data-testid={`top-agent-${i}`}>
-                    <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
-                        {a.name}
-                        {metaAtingida && <Trophy size={14} className="text-amber-500" />}
-                      </p>
-                      <p className="text-xs font-bold text-neutral-500">{a.missions} missões | {fmtHoras(a.horas_trabalhadas || 0)}</p>
+                  <div key={a.name} className="space-y-1" data-testid={`top-agent-${i}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-neutral-300 w-6">{i + 1}</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                          {a.name}
+                          {mc.icon && <Trophy size={14} className="text-green-600" />}
+                        </p>
+                        <p className="text-xs font-bold text-neutral-500">{a.missions} missões | {fmtHoras(a.horas_trabalhadas || 0)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
+                        <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(a.fat_total)}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-black font-mono ${pct >= 30 ? "text-green-700" : pct >= 15 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(pct)}</p>
-                      <p className="text-xs font-bold text-neutral-400 font-mono">{fmt(a.fat_total)}</p>
+                    <div className="ml-9 w-auto bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
                     </div>
                   </div>
                 );
@@ -584,7 +614,8 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
   allVehicles: any[];
 }) {
   const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
-  const totalViaturas = Math.max(allVehicles.length, vehicles.length);
+  const activeVehicles = useMemo(() => allVehicles.filter((v: any) => v.trackerId), [allVehicles]);
+  const totalViaturas = activeVehicles.length;
 
   const mergedVehicles = useMemo(() => {
     const periodMap: Record<string, any> = {};
@@ -593,7 +624,7 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
     const result: any[] = [];
     const seen = new Set<string>();
 
-    allVehicles.forEach(v => {
+    activeVehicles.forEach(v => {
       const plate = v.plate;
       seen.add(plate);
       const periodData = periodMap[plate];
@@ -612,7 +643,7 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
     });
 
     return result.sort((a, b) => b.fat_total - a.fat_total);
-  }, [vehicles, allVehicles]);
+  }, [vehicles, activeVehicles]);
 
   const metaGlobal = metaPeriodoViatura * totalViaturas;
   const metaGlobalPct = metaGlobal > 0 ? (totals.fat / metaGlobal) * 100 : 0;
@@ -623,7 +654,7 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
         <h4 className="text-sm font-black text-neutral-900 uppercase mb-2 flex items-center gap-2">
           <Target size={16} /> Resumo de Metas
         </h4>
-        <p className="text-xs text-neutral-500 font-bold mb-4">Meta diária por viatura: {fmt(META_DIARIA_VIATURA)} | Meta do período ({daysInPeriod} {daysInPeriod === 1 ? "dia" : "dias"}): {fmt(metaPeriodoViatura)}/viatura</p>
+        <p className="text-xs text-neutral-500 font-bold mb-4">Meta diária por viatura: {fmt(META_DIARIA_VIATURA)} | {totalViaturas} viatura{totalViaturas !== 1 ? "s" : ""} com rastreador | Meta do período ({daysInPeriod}d): {fmt(metaPeriodoViatura)}/viat.</p>
 
         {totalViaturas === 0 ? (
           <div className="text-center py-8 text-neutral-400">
@@ -633,45 +664,52 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
           </div>
         ) : (
           <>
-            {metaGlobalPct >= 100 && (
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4" data-testid="badge-meta-batida">
-                <Trophy size={28} className="text-amber-500 shrink-0" />
-                <div>
-                  <p className="text-sm font-black text-amber-800 uppercase">Meta do Período Batida!</p>
-                  <p className="text-xs font-bold text-amber-600">Faturamento de {fmt(totals.fat)} superou a meta de {fmt(metaGlobal)}</p>
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-              <Card className={`p-4 border-neutral-200 ${metaGlobalPct >= 100 ? "bg-amber-50 ring-1 ring-amber-300" : "bg-neutral-50"}`}>
-                <p className="text-xs font-black text-neutral-500 uppercase mb-1">Meta Global</p>
-                <p className="text-xl font-black text-neutral-900 font-mono">{fmt(metaGlobal)}</p>
-                <p className="text-xs text-neutral-400 font-bold">{totalViaturas} viaturas × {daysInPeriod}d</p>
-              </Card>
-              <Card className="p-4 bg-neutral-50 border-neutral-200">
-                <p className="text-xs font-black text-neutral-500 uppercase mb-1">Realizado</p>
-                <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
-                <p className="text-xs text-neutral-400 font-bold">{totals.total} missões</p>
-              </Card>
-              <Card className="p-4 bg-neutral-50 border-neutral-200">
-                <p className="text-xs font-black text-neutral-500 uppercase mb-1">% da Meta</p>
-                <p className={`text-xl font-black font-mono ${metaGlobalPct >= 100 ? "text-green-700" : metaGlobalPct >= 70 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(metaGlobalPct)}</p>
-                <p className="text-xs text-neutral-400 font-bold">{metaGlobalPct >= 100 ? "Meta superada!" : `Falta ${fmt(Math.max(0, metaGlobal - totals.fat))}`}</p>
-              </Card>
-              <Card className="p-4 bg-neutral-50 border-neutral-200">
-                <p className="text-xs font-black text-neutral-500 uppercase mb-1">Horas Totais</p>
-                <p className="text-xl font-black text-neutral-900 font-mono">{fmtHoras(totals.horas)}</p>
-                <p className="text-xs text-neutral-400 font-bold">{totals.total} missões</p>
-              </Card>
-            </div>
+            {(() => {
+              const mc = getMetaColor(metaGlobalPct);
+              return (
+                <>
+                  {metaGlobalPct >= 100 && (
+                    <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4 mb-4" data-testid="badge-meta-batida">
+                      <Trophy size={28} className="text-green-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-green-800 uppercase">Meta do Período Batida! {fmtPct(metaGlobalPct)}</p>
+                        <p className="text-xs font-bold text-green-600">Faturamento de {fmt(totals.fat)} superou a meta de {fmt(metaGlobal)}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <Card className={`p-4 border-neutral-200 ${mc.icon ? "bg-green-50 ring-1 ring-green-300" : "bg-neutral-50"}`}>
+                      <p className="text-xs font-black text-neutral-500 uppercase mb-1">Meta Global</p>
+                      <p className="text-xl font-black text-neutral-900 font-mono">{fmt(metaGlobal)}</p>
+                      <p className="text-xs text-neutral-400 font-bold">{totalViaturas} viat. ativas × {daysInPeriod}d</p>
+                    </Card>
+                    <Card className="p-4 bg-neutral-50 border-neutral-200">
+                      <p className="text-xs font-black text-neutral-500 uppercase mb-1">Realizado</p>
+                      <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
+                      <p className="text-xs text-neutral-400 font-bold">{totals.total} missões</p>
+                    </Card>
+                    <Card className="p-4 bg-neutral-50 border-neutral-200">
+                      <p className="text-xs font-black text-neutral-500 uppercase mb-1">% da Meta</p>
+                      <p className={`text-xl font-black font-mono ${mc.text}`}>{fmtPct(metaGlobalPct)}</p>
+                      <p className="text-xs text-neutral-400 font-bold">{mc.icon ? "Meta superada!" : `Falta ${fmt(Math.max(0, metaGlobal - totals.fat))}`}</p>
+                    </Card>
+                    <Card className="p-4 bg-neutral-50 border-neutral-200">
+                      <p className="text-xs font-black text-neutral-500 uppercase mb-1">Horas Totais</p>
+                      <p className="text-xl font-black text-neutral-900 font-mono">{fmtHoras(totals.horas)}</p>
+                      <p className="text-xs text-neutral-400 font-bold">{totals.total} missões</p>
+                    </Card>
+                  </div>
 
-            <div className="w-full bg-neutral-100 rounded-full h-5 mb-2 overflow-hidden">
-              <div className={`h-full rounded-full transition-all flex items-center justify-center ${metaGlobalPct >= 100 ? "bg-green-500" : metaGlobalPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
-                style={{ width: `${Math.min(metaGlobalPct, 100)}%` }}>
-                {metaGlobalPct >= 20 && <span className="text-xs font-black text-white">{fmtPct(metaGlobalPct)}</span>}
-              </div>
-            </div>
-            <p className="text-xs text-neutral-400 font-bold text-center">Progresso geral da frota no período</p>
+                  <div className="w-full bg-neutral-100 rounded-full h-5 mb-2 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all flex items-center justify-center ${mc.bar}`}
+                      style={{ width: `${Math.min(metaGlobalPct, 100)}%` }}>
+                      {metaGlobalPct >= 20 && <span className="text-xs font-black text-white">{fmtPct(metaGlobalPct)}</span>}
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-400 font-bold text-center">Progresso geral da frota no período</p>
+                </>
+              );
+            })()}
           </>
         )}
       </div>
@@ -684,30 +722,30 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
           {mergedVehicles.length === 0 ? (
             <p className="text-sm text-neutral-400 font-bold text-center py-8">Sem dados de viaturas no período</p>
           ) : mergedVehicles.map(v => {
-            const metaPct = (v.fat_total / metaPeriodoViatura) * 100;
-            const atingiu = v.fat_total >= metaPeriodoViatura;
+            const metaPct = metaPeriodoViatura > 0 ? (v.fat_total / metaPeriodoViatura) * 100 : 0;
+            const mc = getMetaColor(metaPct);
             return (
               <div key={v.plate} className="p-4 rounded-xl border border-neutral-200" data-testid={`meta-vehicle-${v.plate}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${atingiu ? "bg-amber-100" : "bg-neutral-100"}`}>
-                      {atingiu ? <Trophy size={20} className="text-amber-500" /> : <Car size={20} className="text-neutral-400" />}
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${mc.bg}`}>
+                      {mc.icon ? <Trophy size={20} className="text-green-600" /> : <Car size={20} className="text-neutral-400" />}
                     </div>
                     <div>
                       <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
                         {v.plate} <span className="text-neutral-400 font-bold">{v.model}</span>
-                        {atingiu && <Badge className="bg-amber-500 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                        {mc.icon && <Badge className="bg-green-600 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
                       </p>
                       <p className="text-xs font-bold text-neutral-500">{v.missions} missões</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`text-lg font-black font-mono ${atingiu ? "text-green-700" : "text-neutral-700"}`}>{fmtPct(metaPct)}</p>
+                    <p className={`text-lg font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
                     <p className="text-xs font-bold text-neutral-400">{fmt(v.fat_total)} / {fmt(metaPeriodoViatura)}</p>
                   </div>
                 </div>
                 <div className="w-full bg-neutral-100 rounded-full h-3 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${atingiu ? "bg-green-500" : metaPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
+                  <div className={`h-full rounded-full transition-all ${mc.bar}`}
                     style={{ width: `${Math.min(metaPct, 100)}%` }} />
                 </div>
               </div>
@@ -724,27 +762,30 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
           {agents.length === 0 ? (
             <p className="text-sm text-neutral-400 font-bold text-center py-8">Sem dados de agentes no período</p>
           ) : agents.map((a: any) => {
-            const metaPct = (a.fat_total / metaPeriodoViatura) * 100;
-            const atingiu = a.fat_total >= metaPeriodoViatura;
+            const metaPct = metaPeriodoViatura > 0 ? (a.fat_total / metaPeriodoViatura) * 100 : 0;
+            const mc = getMetaColor(metaPct);
             return (
               <div key={a.name} className="p-4 rounded-xl border border-neutral-200" data-testid={`meta-agent-${a.name}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${atingiu ? "bg-green-100 text-green-700" : "bg-neutral-100 text-neutral-400"}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${mc.bg} ${mc.text}`}>
                       {a.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-sm font-black text-neutral-900">{a.name}</p>
+                      <p className="text-sm font-black text-neutral-900 flex items-center gap-1.5">
+                        {a.name}
+                        {mc.icon && <Badge className="bg-green-600 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
+                      </p>
                       <p className="text-xs font-bold text-neutral-500">{a.missions} missões | {fmtHoras(a.horas_trabalhadas || 0)} trabalhadas</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`text-lg font-black font-mono ${atingiu ? "text-green-700" : "text-neutral-700"}`}>{fmtPct(metaPct)}</p>
+                    <p className={`text-lg font-black font-mono ${mc.text}`}>{fmtPct(metaPct)}</p>
                     <p className="text-xs font-bold text-neutral-400">{fmt(a.fat_total)} / {fmt(metaPeriodoViatura)}</p>
                   </div>
                 </div>
                 <div className="w-full bg-neutral-100 rounded-full h-3 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${atingiu ? "bg-green-500" : metaPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
+                  <div className={`h-full rounded-full transition-all ${mc.bar}`}
                     style={{ width: `${Math.min(metaPct, 100)}%` }} />
                 </div>
               </div>
@@ -781,15 +822,15 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
             {vehicles.map(v => {
               const lucro = v.fat_total - v.pag_total - v.despesas;
               const pct = v.fat_total > 0 ? (lucro / v.fat_total) * 100 : 0;
-              const metaPct = (v.fat_total / metaPeriodo) * 100;
-              const atingiuMeta = v.fat_total >= metaPeriodo;
+              const metaPct = metaPeriodo > 0 ? (v.fat_total / metaPeriodo) * 100 : 0;
+              const mc = getMetaColor(metaPct);
 
               return (
                 <div key={v.plate} className="p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-all" data-testid={`vehicle-card-${v.plate}`}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${atingiuMeta ? "bg-green-100" : "bg-neutral-100"}`}>
-                        <Car size={20} className={atingiuMeta ? "text-green-700" : "text-neutral-400"} />
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${mc.bg}`}>
+                        {mc.icon ? <Trophy size={20} className="text-green-600" /> : <Car size={20} className="text-neutral-400" />}
                       </div>
                       <div>
                         <p className="text-sm font-black text-neutral-900">{v.plate}</p>
@@ -797,14 +838,14 @@ function VeiculosTab({ vehicles, daysInPeriod, period }: { vehicles: any[]; days
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge className={`text-xs font-black uppercase ${atingiuMeta ? "bg-green-100 text-green-800 hover:bg-green-100" : "bg-amber-100 text-amber-800 hover:bg-amber-100"}`}>
-                        {atingiuMeta ? "META ATINGIDA" : `${fmtPct(metaPct)} da meta`}
+                      <Badge className={`text-xs font-black uppercase ${mc.icon ? "bg-green-100 text-green-800 hover:bg-green-100" : metaPct >= 50 ? "bg-amber-100 text-amber-800 hover:bg-amber-100" : "bg-red-100 text-red-800 hover:bg-red-100"}`}>
+                        {mc.icon ? "META ATINGIDA" : `${fmtPct(metaPct)} da meta`}
                       </Badge>
                     </div>
                   </div>
 
                   <div className="w-full bg-neutral-100 rounded-full h-3 mb-3 relative overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${atingiuMeta ? "bg-green-500" : metaPct >= 70 ? "bg-amber-500" : "bg-red-400"}`}
+                    <div className={`h-full rounded-full transition-all ${mc.bar}`}
                       style={{ width: `${Math.min(metaPct, 100)}%` }} />
                   </div>
 
