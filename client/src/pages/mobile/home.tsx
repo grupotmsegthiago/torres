@@ -2,7 +2,7 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle } from "lucide-react";
+import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer } from "lucide-react";
 
 export default function MobileHomePage() {
   const { user } = useAuth();
@@ -93,14 +93,24 @@ export default function MobileHomePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Link href="/mobile/ponto">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-ponto">
               <Fingerprint className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
-              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Ponto</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Bater ponto</p>
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Ponto RH</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Entrada/Saída base</p>
             </div>
           </Link>
+          <Link href="/mobile/ponto-operacional">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-ponto-operacional">
+              <Timer className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Ponto Oper.</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Jornada viagem</p>
+            </div>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
           <Link href="/mobile/abastecimento">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-abastecimento">
               <Fuel className="w-6 h-6 text-blue-600 mx-auto mb-2" />
@@ -113,6 +123,13 @@ export default function MobileHomePage() {
               <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" />
               <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Ocorrência</p>
               <p className="text-[10px] text-neutral-400 mt-0.5">Reportar</p>
+            </div>
+          </Link>
+          <Link href="/mobile/meu-rh">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-meu-rh-shortcut">
+              <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Meu RH</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Holerite e faltas</p>
             </div>
           </Link>
         </div>

@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { Clock, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Trash2, Timer, Plane } from "lucide-react";
@@ -40,7 +40,7 @@ export default function PontoOperacionalPage() {
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/ponto-operacional/resumo-mensal", mes],
-    queryFn: () => fetch(`/api/ponto-operacional/resumo-mensal?mes=${mes}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => authFetch(`/api/ponto-operacional/resumo-mensal?mes=${mes}`).then(r => r.json()),
   });
 
   const deleteMutation = useMutation({

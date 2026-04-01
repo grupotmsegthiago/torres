@@ -27,6 +27,7 @@ const menuItems: MenuItem[] = [
     children: [
       { path: "/admin/employees", label: "Cadastro", icon: Users },
       { path: "/admin/timesheets", label: "Folha de Ponto", icon: Clock },
+      { path: "/admin/ponto-operacional", label: "Ponto Operacional", icon: Play },
       { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
     ],
   },

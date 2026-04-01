@@ -40,6 +40,8 @@ import MobileSelfiePage from "@/pages/mobile/selfie";
 import MobilePontoPage from "@/pages/mobile/ponto";
 import MobileAbastecimentoPage from "@/pages/mobile/abastecimento";
 import MobileOcorrenciaPage from "@/pages/mobile/ocorrencia";
+import MobilePontoOperacionalPage from "@/pages/mobile/ponto-operacional";
+import PontoOperacionalPage from "@/pages/admin/ponto-operacional";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -159,6 +161,8 @@ function Router() {
       <Route path="/mobile/ponto">{() => <MobileProtectedRoute component={MobilePontoPage} />}</Route>
       <Route path="/mobile/abastecimento">{() => <MobileProtectedRoute component={MobileAbastecimentoPage} />}</Route>
       <Route path="/mobile/ocorrencia">{() => <MobileProtectedRoute component={MobileOcorrenciaPage} />}</Route>
+      <Route path="/mobile/ponto-operacional">{() => <MobileProtectedRoute component={MobilePontoOperacionalPage} />}</Route>
+      <Route path="/admin/ponto-operacional">{() => <ProtectedRoute component={PontoOperacionalPage} />}</Route>
       <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
       <Route component={NotFound} />
     </Switch>
