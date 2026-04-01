@@ -1,25 +1,24 @@
 import { useState } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Input } from "@/components/ui/input";
-import { Calculator, Fuel, User, FileText, TrendingUp, DollarSign, Truck } from "lucide-react";
+import { Calculator, Fuel, User, FileText, MapPin } from "lucide-react";
 
 const DEFAULTS = {
+  origem: "",
+  destino: "",
   kmPorLitro: 13,
   valorLitro: 5.0,
   kmPercurso: 0,
   pedagios: 0,
   salarioBase: 2432.50,
-  inss: 20,
+  periculosidade: 729.75,
   fgts: 8,
   provisao13: 8.33,
   provisaoFerias: 11.11,
+  inss: 20,
   vale_transporte: 0,
-  vale_refeicao: 0,
-  seguro_vida: 0,
-  uniforme_epi: 0,
-  treinamento: 0,
-  encargos_outros: 0,
-  diasMes: 30,
+  vale_refeicao: 30.0,
+  diasMes: 31,
   notaFiscalPct: 21,
   lucroPct: 20,
   qtdVigilantes: 1,
@@ -38,17 +37,22 @@ export default function CotacaoGastoPage() {
   const [params, setParams] = useState(DEFAULTS);
 
   const set = (key: keyof typeof DEFAULTS, val: string) => {
-    setParams(prev => ({ ...prev, [key]: Number(val) || 0 }));
+    if (key === "origem" || key === "destino") {
+      setParams(prev => ({ ...prev, [key]: val }));
+    } else {
+      setParams(prev => ({ ...prev, [key]: Number(val) || 0 }));
+    }
   };
 
-  const custoCombustivelKm = params.valorLitro / params.kmPorLitro;
+  const custoCombustivelKm = params.kmPorLitro > 0 ? params.valorLitro / params.kmPorLitro : 0;
   const custoCombustivelMissao = custoCombustivelKm * params.kmPercurso;
 
+  const baseSalarial = params.salarioBase + params.periculosidade;
   const encargoPct = (params.inss + params.fgts + params.provisao13 + params.provisaoFerias) / 100;
-  const custoEncargos = params.salarioBase * encargoPct;
-  const beneficios = params.vale_transporte + params.vale_refeicao + params.seguro_vida + params.uniforme_epi + params.treinamento + params.encargos_outros;
-  const custoMensalVigilante = params.salarioBase + custoEncargos + beneficios;
-  const custoDiarioVigilante = custoMensalVigilante / params.diasMes;
+  const custoEncargos = baseSalarial * encargoPct;
+  const beneficios = params.vale_transporte + params.vale_refeicao;
+  const custoMensalVigilante = baseSalarial + custoEncargos + beneficios;
+  const custoDiarioVigilante = params.diasMes > 0 ? custoMensalVigilante / params.diasMes : 0;
 
   const custoOperacional = custoDiarioVigilante * params.qtdVigilantes + custoCombustivelMissao + params.pedagios;
 
@@ -74,6 +78,22 @@ export default function CotacaoGastoPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-neutral-200 p-5">
+              <h3 className="text-xs font-black text-neutral-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <MapPin size={14} /> Missão
+              </h3>
+              <div className="grid grid-cols-1 gap-3 mb-3">
+                <div>
+                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Origem</label>
+                  <Input type="text" placeholder="Ex: TECON SANTOS - GUARUJÁ/SP" value={params.origem} onChange={e => set("origem", e.target.value)} data-testid="input-origem" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Destino</label>
+                  <Input type="text" placeholder="Ex: DHL EXTREMA - EXTREMA/MG" value={params.destino} onChange={e => set("destino", e.target.value)} data-testid="input-destino" />
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white rounded-xl border border-neutral-200 p-5">
               <h3 className="text-xs font-black text-neutral-900 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Fuel size={14} /> Combustível & Percurso
@@ -120,8 +140,8 @@ export default function CotacaoGastoPage() {
                   <Input type="number" step="0.01" value={params.salarioBase} onChange={e => set("salarioBase", e.target.value)} data-testid="input-salario" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Dias/Mês</label>
-                  <Input type="number" value={params.diasMes} onChange={e => set("diasMes", e.target.value)} data-testid="input-dias-mes" />
+                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Periculosidade (30%)</label>
+                  <Input type="number" step="0.01" value={params.periculosidade} onChange={e => set("periculosidade", e.target.value)} data-testid="input-periculosidade" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">INSS (%)</label>
@@ -147,27 +167,13 @@ export default function CotacaoGastoPage() {
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Vale Refeição</label>
                   <Input type="number" step="0.01" value={params.vale_refeicao} onChange={e => set("vale_refeicao", e.target.value)} data-testid="input-vr" />
                 </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Seguro de Vida</label>
-                  <Input type="number" step="0.01" value={params.seguro_vida} onChange={e => set("seguro_vida", e.target.value)} data-testid="input-seguro" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Uniforme/EPI</label>
-                  <Input type="number" step="0.01" value={params.uniforme_epi} onChange={e => set("uniforme_epi", e.target.value)} data-testid="input-epi" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Treinamento</label>
-                  <Input type="number" step="0.01" value={params.treinamento} onChange={e => set("treinamento", e.target.value)} data-testid="input-treinamento" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Outros Encargos</label>
-                  <Input type="number" step="0.01" value={params.encargos_outros} onChange={e => set("encargos_outros", e.target.value)} data-testid="input-outros" />
-                </div>
               </div>
               <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">
-                <p className="text-[11px] text-neutral-500">Salário: <span className="font-bold text-neutral-900">{fmt(params.salarioBase)}</span></p>
+                <p className="text-[11px] text-neutral-500">Salário Base: <span className="font-bold text-neutral-900">{fmt(params.salarioBase)}</span></p>
+                <p className="text-[11px] text-neutral-500">Periculosidade: <span className="font-bold text-neutral-900">{fmt(params.periculosidade)}</span></p>
+                <p className="text-[11px] text-neutral-500">Base Salarial: <span className="font-bold text-neutral-900">{fmt(baseSalarial)}</span></p>
                 <p className="text-[11px] text-neutral-500">Encargos ({fmtPct(encargoPct * 100)}): <span className="font-bold text-neutral-900">{fmt(custoEncargos)}</span></p>
-                <p className="text-[11px] text-neutral-500">Benefícios: <span className="font-bold text-neutral-900">{fmt(beneficios)}</span></p>
+                <p className="text-[11px] text-neutral-500">Benefícios (VT + VR): <span className="font-bold text-neutral-900">{fmt(beneficios)}</span></p>
                 <div className="border-t border-neutral-200 pt-1 mt-1">
                   <p className="text-[11px] text-neutral-500">Custo Mensal: <span className="font-black text-neutral-900">{fmt(custoMensalVigilante)}</span></p>
                   <p className="text-[11px] text-neutral-500">Custo Diário (÷{params.diasMes}): <span className="font-black text-neutral-900">{fmt(custoDiarioVigilante)}</span></p>
@@ -193,6 +199,20 @@ export default function CotacaoGastoPage() {
           </div>
 
           <div className="space-y-4">
+            {(params.origem || params.destino) && (
+              <div className="bg-white rounded-xl border border-neutral-200 p-5">
+                <h3 className="text-xs font-black text-neutral-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <MapPin size={14} /> Rota da Missão
+                </h3>
+                {params.origem && (
+                  <p className="text-sm text-neutral-700"><span className="text-[10px] font-bold text-neutral-400 uppercase">Origem:</span> {params.origem}</p>
+                )}
+                {params.destino && (
+                  <p className="text-sm text-neutral-700 mt-1"><span className="text-[10px] font-bold text-neutral-400 uppercase">Destino:</span> {params.destino}</p>
+                )}
+              </div>
+            )}
+
             <div className="bg-neutral-900 rounded-xl p-6 text-white">
               <h3 className="text-xs font-black uppercase tracking-wider text-neutral-400 mb-5 flex items-center gap-2">
                 <Calculator size={14} /> Resultado da Cotação
