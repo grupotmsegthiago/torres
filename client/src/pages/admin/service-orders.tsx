@@ -704,10 +704,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       const forceReassign = data._forceReassign === true;
       const payload = buildPayload(data, forceReassign);
       if (order) {
-        const res = await fetch(`/api/service-orders/${order.id}`, {
+        const res = await authFetch(`/api/service-orders/${order.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify(payload),
         });
         if (res.status === 409) {
@@ -744,10 +743,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     mutationFn: async (data: any) => {
       const payload = buildPayload(data, true);
       if (!order) return;
-      const res = await fetch(`/api/service-orders/${order.id}`, {
+      const res = await authFetch(`/api/service-orders/${order.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
