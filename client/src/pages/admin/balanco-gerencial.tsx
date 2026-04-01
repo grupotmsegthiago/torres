@@ -88,8 +88,9 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
 }
 
 function getDaysInRange(range: { start: Date; end: Date }): number {
-  const diffMs = range.end.getTime() - range.start.getTime();
-  return Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+  const s = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
+  const e = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
+  return Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 }
 
 function navigatePeriod(period: Period, refDate: Date, direction: number): Date {
