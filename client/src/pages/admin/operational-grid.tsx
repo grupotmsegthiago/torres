@@ -488,6 +488,27 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
 
 const seenUpdateIds = new Set<number>();
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calcEta(distKm: number, speedKmh: number | null | undefined): string {
+  const avgSpeed = speedKmh && speedKmh > 5 ? speedKmh : 60;
+  const roadDist = distKm * 1.3;
+  const hours = roadDist / avgSpeed;
+  if (hours < 1) {
+    const mins = Math.round(hours * 60);
+    return `~${mins} min`;
+  }
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return `~${h}h${m.toString().padStart(2, "0")}`;
+}
+
 function getFirstLastName(fullName: string | null | undefined): string {
   if (!fullName) return "—";
   const parts = fullName.trim().split(/\s+/);
@@ -534,6 +555,16 @@ function generateReport(v: TrackedVehicle, gridItem?: GridItem | null): string {
 
   const photoUrl = os.lastAgentUpdate?.photoUrl || null;
 
+  const destLat = os.destinationLat;
+  const destLng = os.destinationLng;
+  let etaLine = "";
+  if (lat && lng && destLat && destLng) {
+    const dist = haversineKm(lat, lng, destLat, destLng);
+    const roadDist = Math.round(dist * 1.3);
+    const eta = calcEta(dist, v.tracker?.speed);
+    etaLine = `\n\n🛣️ DISTÂNCIA ATÉ DESTINO: ${roadDist} km\n⏱️ PREVISÃO DE CHEGADA: ${eta}`;
+  }
+
   return `TORRES VIGILÂNCIA PATRIMONIAL
 OS ${os.osNumber} | STATUS: ${transitStatus}
 
@@ -554,7 +585,7 @@ OS ${os.osNumber} | STATUS: ${transitStatus}
 
 📈 PROGRESSO DA MISSÃO: ${progress}%
 📣 OCORRÊNCIA: 🔲 ETAPA AVANÇADA: ${etapaAvancada?.toUpperCase()}
-🏙️ LOCALIZAÇÃO: ${locationAddr}${mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : ""}`;
+🏙️ LOCALIZAÇÃO: ${locationAddr}${etaLine}${mapsLink ? `\n\n📌 LOCALIZAÇÃO FIXA:\n${mapsLink}` : ""}`;
 }
 
 function getViaturaStatus(v: TrackedVehicle): { label: string; className: string; icon: typeof Truck } {
@@ -6074,6 +6105,32 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     <span>{locationAddr}</span>
                   </div>
                 )}
+                {(() => {
+                  const dLat = matchedVehicle?.activeOs?.destinationLat;
+                  const dLng = matchedVehicle?.activeOs?.destinationLng;
+                  if (!lat || !lng || !dLat || !dLng) return null;
+                  const dist = haversineKm(Number(lat), Number(lng), Number(dLat), Number(dLng));
+                  const roadDist = Math.round(dist * 1.3);
+                  const eta = calcEta(dist, matchedVehicle?.tracker?.speed);
+                  return (
+                    <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">🛣️</span>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide opacity-60">Dist. ao Destino</p>
+                          <p className="text-xs font-bold">{roadDist} km</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">⏱️</span>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wide opacity-60">Previsão</p>
+                          <p className="text-xs font-bold">{eta}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {lat && lng && (
                   <a href={mapsLink!} target="_blank" rel="noopener noreferrer" className="mt-2 block rounded-lg overflow-hidden border border-white/20 hover:border-white/60 transition-colors" data-testid="forward-map">
                     <img
