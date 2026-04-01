@@ -110,7 +110,10 @@ export default function CotacaoGastoPage() {
 
   const MARGEM = 35;
   const VALOR_KM = 5.30;
-  const precoFinal = baseNF / (1 - MARGEM / 100);
+  const PRECO_MINIMO = 530;
+  const HORA_MINIMA = 3;
+  const precoCalculado = baseNF / (1 - MARGEM / 100);
+  const precoFinal = Math.max(precoCalculado, PRECO_MINIMO);
   const lucro = precoFinal - baseNF;
   const margemReal = precoFinal > 0 ? (lucro / precoFinal) * 100 : 0;
   const precoTabelaKm = params.kmPercurso > 0 ? VALOR_KM * params.kmPercurso : 0;
@@ -118,7 +121,7 @@ export default function CotacaoGastoPage() {
   const margemTabelaKm = precoTabelaKm > 0 ? (lucroTabelaKm / precoTabelaKm) * 100 : 0;
 
   const kmTrecho = routeInfo ? Math.round(routeInfo.distanceMeters / 1000) : (params.kmPercurso > 0 ? Math.round(params.kmPercurso / 2) : 0);
-  const horasMissaoCalc = kmTrecho > 0 ? Math.max(kmTrecho / 40, routeInfo ? routeInfo.durationSeconds / 3600 : 0) : params.horasMissao;
+  const horasMissaoCalc = Math.max(HORA_MINIMA, kmTrecho > 0 ? Math.max(kmTrecho / 40, routeInfo ? routeInfo.durationSeconds / 3600 : 0) : params.horasMissao);
   const custoKmFinal = params.kmPercurso > 0 ? precoFinal / params.kmPercurso : 0;
   const custoHoraFinal = horasMissaoCalc > 0 ? precoFinal / horasMissaoCalc : 0;
 
@@ -261,7 +264,7 @@ export default function CotacaoGastoPage() {
                 <Input type="number" step="0.1" value={params.notaFiscalPct} onChange={e => set("notaFiscalPct", e.target.value)} data-testid="input-nf-pct" />
               </div>
               <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">
-                <p className="text-[11px] text-neutral-500">Fórmula: <span className="font-bold text-neutral-900">Custo Total ÷ 0,65 (margem 35%)</span></p>
+                <p className="text-[11px] text-neutral-500">Fórmula: <span className="font-bold text-neutral-900">Custo Total ÷ 0,65 (margem 35%) · Mínimo R$ 530 · Hora mín. 3h</span></p>
               </div>
             </div>
           </div>
@@ -316,7 +319,7 @@ export default function CotacaoGastoPage() {
                       <div className="bg-neutral-900 rounded-lg p-3 text-center">
                         <p className="text-[10px] font-bold text-neutral-400 uppercase">Horas Missão</p>
                         <p className="text-lg font-black text-white">{horasMissaoCalc.toFixed(1)}h</p>
-                        <p className="text-[9px] text-neutral-500">{kmTrecho} km trecho ÷ 40</p>
+                        <p className="text-[9px] text-neutral-500">{kmTrecho > 0 ? `${kmTrecho} km ÷ 40` : ""} (mín. {HORA_MINIMA}h)</p>
                       </div>
                     </div>
                     <Button
@@ -377,7 +380,7 @@ export default function CotacaoGastoPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-4 bg-emerald-600/20 border border-emerald-500/30 rounded-xl">
-                    <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">Gasto Mínimo (35%)</p>
+                    <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">Gasto Mínimo {precoFinal > precoCalculado ? "(piso R$ 530)" : "(35%)"}</p>
                     <p className="text-2xl font-black font-mono text-white" data-testid="text-preco-final">{fmt(precoFinal)}</p>
                     <p className="text-[10px] text-emerald-300 mt-1">Margem: {fmtPct(margemReal)}</p>
                     <p className="text-[10px] text-emerald-300">Ganho: {fmt(lucro)}</p>
