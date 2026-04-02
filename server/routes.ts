@@ -9836,22 +9836,28 @@ Regras:
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
 
-      if (acao === "APROVADA" && data && Number(data.fat_total) > 0) {
-        await createAutoTransaction({
-          description: `ESCOLTA ${data.boletim_numero || ""} - ${data.client_name || "Cliente"} (${data.origem || ""} → ${data.destino || ""})`.trim(),
-          amount: Number(data.fat_total),
-          type: "INCOME",
-          due_date: (data.data_missao || data.created_at || new Date().toISOString()).split("T")[0],
-          origin_type: "escort_billing",
-          origin_id: data.id,
-          category_name: "Faturamento Escolta",
-          entity_name: data.client_name || null,
-          created_by: user.name,
-        });
+      if (acao === "APROVADA" && data) {
+        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.despesas_pedagio || 0);
+        await removeAutoTransaction("escort_billing", req.params.id);
+        await removeAutoTransaction("service_order", String(data.service_order_id));
+        if (totalFat > 0) {
+          await createAutoTransaction({
+            description: `ESCOLTA ${data.boletim_numero || ""} - ${data.client_name || "Cliente"} (${data.origem || ""} → ${data.destino || ""})`.trim(),
+            amount: totalFat,
+            type: "INCOME",
+            due_date: (data.data_missao || data.created_at || new Date().toISOString()).split("T")[0],
+            origin_type: "escort_billing",
+            origin_id: data.id,
+            category_name: "Faturamento Escolta",
+            entity_name: data.client_name || null,
+            created_by: user.name,
+          });
+        }
       }
 
       if (acao === "REJEITADA") {
         await removeAutoTransaction("escort_billing", req.params.id);
+        await removeAutoTransaction("service_order", String(billing.service_order_id));
       }
 
       res.json(data);
@@ -9874,6 +9880,7 @@ Regras:
       if (error) throw error;
 
       await removeAutoTransaction("escort_billing", req.params.id);
+      await removeAutoTransaction("service_order", String(billing.service_order_id));
       console.log(`[Billing] OS reaberta por ${user.name}: billing ${req.params.id}`);
 
       res.json(data);
