@@ -1702,7 +1702,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
-        data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+        data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
@@ -6812,7 +6812,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
                 origem: so.origin || null, destino: so.destination || null,
                 placa_viatura: vehicle?.plate || null,
-                data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+                data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
                 status: "CANCELADO", created_by: user.name,
                 observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
               });
@@ -7162,7 +7162,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
             motorista_escoltado: so.escortedDriverName || null,
-            data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+            data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
             status: "A_VERIFICAR", created_by: user.name,
           };
           const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
@@ -9952,7 +9952,7 @@ Regras:
         origem: body.origem, destino: body.destino,
         placa_viatura: body.placa_viatura, placa_escoltado: body.placa_escoltado,
         motorista_escoltado: body.motorista_escoltado,
-        data_missao: new Date(body.data_missao || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+        data_missao: (() => { const sd = String(body.data_missao || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
         observacoes: body.observacoes, notas: body.notas,
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
@@ -10158,18 +10158,27 @@ Regras:
       const allOrders = await storage.getServiceOrders();
       const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
+      const extractDatePart = (v: string | null | undefined): string | null => {
+        if (!v) return null;
+        const s = String(v);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        if (s.includes("T")) return s.split("T")[0];
+        try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+        catch { return null; }
+      };
+
       const todayEscoltaOs = allOrders.filter((so: any) => {
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
         if (so.status === "em_andamento") return true;
         const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
           so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
         if (isConcluded) {
-          const sdBRT = so.scheduledDate ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          const sdBRT = extractDatePart(so.scheduledDate);
           const cdBRT = so.completedDate ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           return sdBRT === todayBRT || cdBRT === todayBRT;
         }
         if (so.status === "agendada") {
-          const sdBRT = so.scheduledDate ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          const sdBRT = extractDatePart(so.scheduledDate);
           return sdBRT === todayBRT;
         }
         return false;
@@ -10282,7 +10291,12 @@ Regras:
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: new Date(so.scheduledDate || so.createdAt || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+            data_missao: (() => {
+              const sd = String(so.scheduledDate || so.createdAt || new Date().toISOString());
+              if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd;
+              if (sd.includes("T")) return sd.split("T")[0];
+              return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+            })(),
             status: existingBilling?.status || "A_VERIFICAR",
             despesas_pedagio, despesas_combustivel, despesas_outras,
           });
