@@ -225,10 +225,20 @@ const coerceDate = z.preprocess(
   (val) => (val === null || val === undefined || val === "" ? null : val),
   z.union([z.coerce.date(), z.null()])
 ).optional();
+const coerceReal = z.preprocess(
+  (val) => {
+    if (val === null || val === undefined || val === "") return null;
+    const n = Number(String(val).replace(",", "."));
+    return isNaN(n) ? null : n;
+  },
+  z.union([z.number(), z.null()])
+).optional();
 export const insertServiceOrderSchema = createInsertSchema(serviceOrders).omit({ id: true, createdAt: true }).extend({
   scheduledDate: coerceDate,
   completedDate: coerceDate,
   missionStartedAt: coerceDate,
+  valorEstimado: coerceReal,
+  pedagioEstimado: coerceReal,
 });
 export type InsertServiceOrder = z.infer<typeof insertServiceOrderSchema>;
 export type ServiceOrder = typeof serviceOrders.$inferSelect;

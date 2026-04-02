@@ -694,8 +694,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     scheduledDate: localInputToUtc(data.scheduledDate),
     ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
-    valorEstimado: data.valorEstimado ? Number(data.valorEstimado) : null,
-    pedagioEstimado: data.pedagioEstimado ? Number(data.pedagioEstimado) : null,
+    valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
+    pedagioEstimado: data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null,
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
