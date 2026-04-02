@@ -2514,6 +2514,94 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  async function generatePreAlertPdf(osData: any, client: any, emp1: any, emp2: any, vehicle: any): Promise<Buffer> {
+    const PDFDocument = (await import("pdfkit")).default;
+    const fmtDate = (d: string | null | undefined) => {
+      if (!d) return "—";
+      try { return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }); } catch { return "—"; }
+    };
+    const schedDate = osData.scheduledDate ? new Date(osData.scheduledDate) : null;
+    const dateStr = schedDate ? schedDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+    const timeStr = schedDate ? schedDate.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
+    const agendStr = `${dateStr} — ${timeStr}`;
+    const viaturaStr = vehicle ? `${vehicle.plate} / ${[vehicle.brand, vehicle.model].filter(Boolean).join(" ")}` : "—";
+    const rastreadorStr = vehicle?.truckscontrolIdentifier ? `TrucksControl / ID: ${vehicle.truckscontrolIdentifier}` : (vehicle?.trackerId || "—");
+
+    let espelhamento = "—";
+    if (osData.escortedVehiclePlate) {
+      try {
+        const { data: esps } = await supabaseAdmin.from("truckscontrol_espelhamentos").select("nome_empresa").eq("service_order_id", osData.id).limit(1);
+        if (esps?.[0]) espelhamento = esps[0].nome_empresa;
+      } catch {}
+    }
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      const chunks: Buffer[] = [];
+      doc.on("data", (c: Buffer) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+
+      const W = 515;
+      const LM = 40;
+
+      doc.rect(0, 0, 595, 60).fill("#1a1a1a");
+      doc.font("Helvetica-Bold").fontSize(16).fillColor("#ffffff").text("TORRES VIGILÂNCIA PATRIMONIAL", 0, 16, { align: "center", width: 595 });
+      doc.font("Helvetica").fontSize(9).fillColor("#999999").text("SEGURANÇA & ESCOLTA ARMADA", 0, 36, { align: "center", width: 595 });
+
+      let y = 80;
+      doc.fillColor("#1a1a1a").font("Helvetica-Bold").fontSize(14).text(`Confirmação de Escolta — ${osData.osNumber}`, LM, y);
+      y += 28;
+      doc.font("Helvetica").fontSize(11).fillColor("#333333").text("Prezado(a) Cliente,", LM, y);
+      y += 20;
+      doc.fontSize(10).fillColor("#555555").text("Segue a confirmação e detalhes completos da missão de escolta registrada para a sua empresa:", LM, y, { width: W });
+      y += 30;
+
+      const drawRow = (label: string, value: string) => {
+        doc.strokeColor("#e0e0e0").lineWidth(0.5).moveTo(LM, y).lineTo(LM + W, y).stroke();
+        doc.font("Helvetica-Bold").fontSize(10).fillColor("#333333").text(label, LM + 8, y + 7, { width: 140 });
+        doc.font("Helvetica").fontSize(10).fillColor("#1a1a1a").text(value || "—", LM + 155, y + 7, { width: W - 165 });
+        y += 28;
+      };
+
+      drawRow("Nº da OS", osData.osNumber);
+      drawRow("Cliente", client?.name || "—");
+      drawRow("Origem", osData.origin || "—");
+      drawRow("Destino", osData.destination || "—");
+      drawRow("Viatura (Placa / Modelo)", viaturaStr);
+      drawRow("Tipo de Escolta", (osData.type || "escolta").charAt(0).toUpperCase() + (osData.type || "escolta").slice(1));
+      drawRow("Agendamento", agendStr);
+      if (osData.escortedDriverName) drawRow("Motorista", osData.escortedDriverName);
+      if (osData.escortedDriverPhone) drawRow("Contato Motorista", osData.escortedDriverPhone);
+      drawRow("Agente 01", emp1?.name || "—");
+      if (emp2) drawRow("Agente 02", emp2.name || "—");
+      drawRow("Viatura de Escolta", osData.escortedVehiclePlate || "—");
+      drawRow("Espelhamento", espelhamento);
+      drawRow("Rastreador", rastreadorStr);
+      doc.strokeColor("#e0e0e0").lineWidth(0.5).moveTo(LM, y).lineTo(LM + W, y).stroke();
+
+      y += 20;
+      doc.rect(LM, y, W, 30).lineWidth(0.5).strokeColor("#cc3333").fillAndStroke("#fef2f2", "#cc3333");
+      doc.font("Helvetica").fontSize(9).fillColor("#333333");
+      doc.text("Observação: ", LM + 10, y + 9, { continued: true, width: W - 20 });
+      doc.font("Helvetica").text("Acompanhe o status da missão em tempo real pelo painel do sistema.");
+
+      y += 50;
+      doc.font("Helvetica").fontSize(10).fillColor("#333333").text("Atenciosamente,", LM, y);
+      y += 16;
+      doc.font("Helvetica-Bold").fontSize(10).text("Equipe Torres Vigilância Patrimonial", LM, y);
+
+      y = 770;
+      doc.rect(0, y, 595, 72).fill("#1a1a1a");
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#ffffff").text("Torres Vigilância Patrimonial", 0, y + 12, { align: "center", width: 595 });
+      doc.font("Helvetica").fontSize(8).fillColor("#cc3333").text("Torres Vigilância Patrimonial LTDA", 0, y + 28, { align: "center", width: 595 });
+      doc.fillColor("#999999").text("Intermediação de Escolta Armada", 0, y + 40, { align: "center", width: 595 });
+      doc.fontSize(7).fillColor("#666666").text("Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail escolta@torresseguranca.com.br", 0, y + 54, { align: "center", width: 595 });
+
+      doc.end();
+    });
+  }
+
   async function sendEscoltaReportEmail(osData: any): Promise<{ sent: boolean; reason?: string; to?: string }> {
     if (!osData.assignedEmployeeId) return { sent: false, reason: "Agente líder não atribuído" };
     if (!osData.vehicleId) return { sent: false, reason: "Viatura não atribuída" };
@@ -2532,154 +2620,80 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const [emp1, emp2, vehicle] = await Promise.all([
       storage.getEmployee(osData.assignedEmployeeId),
       osData.assignedEmployee2Id ? storage.getEmployee(osData.assignedEmployee2Id) : null,
-      storage.getVehicle(osData.vehicleId),
+      osData.vehicleId ? storage.getVehicle(osData.vehicleId) : null,
     ]);
 
-    let weapons: any[] = [];
-    try {
-      const kitItems = await storage.getWeaponKitItems(osData.kitId);
-      if (kitItems.length > 0) {
-        const weaponPromises = kitItems.map((ki: any) => storage.getWeapon(ki.weaponId));
-        weapons = (await Promise.all(weaponPromises)).filter(Boolean) as any[];
-      }
-    } catch (_e) {}
-
-    const fmtDate = (d: string | null | undefined) => {
-      if (!d) return "—";
-      try { return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }); } catch { return "—"; }
-    };
     const schedDate = osData.scheduledDate ? new Date(osData.scheduledDate) : null;
     const dateStr = schedDate ? schedDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
     const timeStr = schedDate ? schedDate.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
-    const nowStr = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    const agendStr = `${dateStr} — ${timeStr}`;
+    const viaturaStr = vehicle ? `${vehicle.plate} / ${[vehicle.brand, vehicle.model].filter(Boolean).join(" ")}` : "—";
+    const rastreadorStr = vehicle?.truckscontrolIdentifier ? `TrucksControl / ID: ${vehicle.truckscontrolIdentifier}` : (vehicle?.trackerId || "—");
 
-    const sH = `style="background:#2d3748;color:#ffffff;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:8px 12px;text-align:center;"`;
-    const sL = `style="padding:6px 12px;border-bottom:1px solid #e2e8f0;color:#718096;font-size:11px;font-weight:600;text-transform:uppercase;vertical-align:top;width:30%;"`;
-    const sV = `style="padding:6px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;font-weight:600;vertical-align:top;"`;
+    const sL = `style="padding:12px 16px;border-bottom:1px solid #eee;color:#333;font-size:13px;font-weight:700;width:180px;vertical-align:top;"`;
+    const sV = `style="padding:12px 16px;border-bottom:1px solid #eee;font-size:13px;color:#1a1a1a;vertical-align:top;"`;
 
-    const buildAgentSection = (emp: any, role: string) => {
-      if (!emp) return "";
-      return `
-        <tr><td colspan="4" ${sH}>${role}</td></tr>
-        <tr><td ${sL}>NOME:</td><td colspan="3" ${sV}>${emp.name || "—"}</td></tr>
-        <tr><td ${sL}>CPF:</td><td ${sV}>${emp.cpf || "—"}</td><td ${sL}>RG:</td><td ${sV}>${emp.rg || "—"}</td></tr>
-        <tr><td ${sL}>CNH:</td><td ${sV}>${emp.cnhNumber || "—"}</td><td ${sL}>CONTATO:</td><td ${sV}>${emp.phone || "—"}</td></tr>
-        <tr><td ${sL}>CNV:</td><td ${sV}>${emp.cnvNumber || "—"}</td><td ${sL}>VAL CNH:</td><td ${sV}>${fmtDate(emp.cnhExpiry)}</td></tr>
-        <tr><td ${sL}>MATRÍCULA:</td><td ${sV}>${emp.matricula || "—"}</td><td ${sL}>VAL CNV:</td><td ${sV}>${fmtDate(emp.cnvExpiry)}</td></tr>`;
-    };
-
-    const weaponsRows = weapons.length > 0 ? `
-        <tr><td colspan="4" ${sH}>ARMAMENTO DESIGNADO</td></tr>
-        <tr>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">TIPO / MODELO</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">CALIBRE</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">Nº SÉRIE</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">MUNIÇÃO</td>
-        </tr>
-        ${weapons.map(w => `<tr>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;font-weight:600;">${w.type || ""} ${w.model || ""}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;">${w.caliber || "—"}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;">${w.serialNumber || "—"}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;">${w.ammoCount || "12 proj."}</td>
-        </tr>`).join("")}` : "";
-
-    const vehicleRow = vehicle ? `
-        <tr><td colspan="4" ${sH}>DADOS DA VIATURA E RASTREAMENTO</td></tr>
-        <tr>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">VIATURA</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">COR</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">PLACA</td>
-          <td style="padding:6px 12px;border-bottom:1px solid #cbd5e0;color:#4a5568;font-size:10px;font-weight:700;text-transform:uppercase;">RASTREADOR / ID</td>
-        </tr>
-        <tr>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;font-weight:600;">${vehicle.brand || ""} ${vehicle.model || ""}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;font-weight:600;">${vehicle.color || "—"}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;font-weight:700;">${vehicle.plate}</td>
-          <td style="padding:5px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#1a202c;">${vehicle.truckscontrolIdentifier ? `TrucksControl / ${vehicle.truckscontrolIdentifier}` : (vehicle.trackerId || "—")}</td>
-        </tr>` : "";
-
-    const escortedSection = osData.escortedVehiclePlate ? `
-        <tr><td colspan="4" ${sH}>DADOS DA CARGA / VEÍCULO CLIENTE</td></tr>
-        <tr><td ${sL}>MOTORISTA:</td><td ${sV}>${osData.escortedDriverName || "—"}</td><td ${sL}>TELEFONE:</td><td ${sV}>${osData.escortedDriverPhone || "—"}</td></tr>
-        <tr><td ${sL}>VEÍCULO:</td><td ${sV}>${osData.escortedVehiclePlate}</td><td ${sL}>GR/DOC:</td><td ${sV}>—</td></tr>` : "";
-
-    const routeStr = [osData.origin, osData.destination].filter(Boolean).join(" → ");
-    const priorityLabel = (osData.priority || "").charAt(0).toUpperCase() + (osData.priority || "").slice(1);
+    const rows: string[] = [];
+    rows.push(`<tr><td ${sL}>Nº da OS</td><td ${sV}><span style="background:#1a1a1a;color:#fff;padding:3px 10px;border-radius:3px;font-weight:700;font-size:12px;">${osData.osNumber}</span></td></tr>`);
+    rows.push(`<tr><td ${sL}>Cliente</td><td ${sV}>${client?.name || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Origem</td><td ${sV}>${osData.origin || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Destino</td><td ${sV}>${osData.destination || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Viatura (Placa / Modelo)</td><td ${sV}>${viaturaStr}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Tipo de Escolta</td><td ${sV}>${(osData.type || "escolta").charAt(0).toUpperCase() + (osData.type || "escolta").slice(1)}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Agendamento</td><td ${sV}>${agendStr}</td></tr>`);
+    if (osData.escortedDriverName) rows.push(`<tr><td ${sL}>Motorista</td><td ${sV}>${osData.escortedDriverName}</td></tr>`);
+    if (osData.escortedDriverPhone) rows.push(`<tr><td ${sL}>Contato Motorista</td><td ${sV}>${osData.escortedDriverPhone}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Agente 01</td><td ${sV}>${emp1?.name || "—"}</td></tr>`);
+    if (emp2) rows.push(`<tr><td ${sL}>Agente 02</td><td ${sV}>${emp2.name || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Viatura de Escolta</td><td ${sV}>${osData.escortedVehiclePlate || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Rastreador</td><td ${sV}>${rastreadorStr}</td></tr>`);
 
     const htmlBody = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#edf2f7;font-family:'Helvetica Neue',Arial,sans-serif;">
-  <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background-color:#edf2f7;">
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background-color:#f5f5f5;">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;background:#ffffff;border:1px solid #cbd5e0;border-radius:4px;overflow:hidden;">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:4px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.1);">
 
-        <tr><td style="background:linear-gradient(135deg,#1a202c 0%,#2d3748 100%);padding:20px 24px;text-align:center;">
-          <p style="color:rgba(255,255,255,0.6);font-size:11px;margin:0;letter-spacing:1px;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</p>
-          <h1 style="color:#ffffff;font-size:18px;font-weight:800;margin:6px 0 0;letter-spacing:1.5px;">RELATÓRIO DE OPERAÇÃO DE ESCOLTA</h1>
+        <tr><td style="background:#1a1a1a;padding:24px 32px;text-align:center;">
+          <h1 style="color:#ffffff;font-size:18px;font-weight:800;margin:0;letter-spacing:2px;">TORRES <span style="color:#cc3333;">VIGILÂNCIA</span> PATRIMONIAL</h1>
+          <p style="color:#888;font-size:10px;margin:6px 0 0;letter-spacing:1.5px;text-transform:uppercase;">Segurança & Escolta Armada</p>
         </td></tr>
 
-        <tr><td style="padding:0;">
-          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-bottom:2px solid #2d3748;">
-            <tr>
-              <td style="padding:10px 16px;font-size:11px;color:#4a5568;font-weight:700;text-transform:uppercase;border-right:1px solid #e2e8f0;width:15%;">FOLHA / OS</td>
-              <td style="padding:10px 16px;font-size:16px;color:#1a202c;font-weight:800;letter-spacing:1px;border-right:1px solid #e2e8f0;width:25%;">${osData.osNumber}</td>
-              <td style="padding:10px 16px;font-size:11px;color:#4a5568;font-weight:700;text-transform:uppercase;border-right:1px solid #e2e8f0;width:20%;">OPERAÇÃO</td>
-              <td style="padding:10px 16px;font-size:14px;color:#1a202c;font-weight:700;text-transform:uppercase;">${(osData.type || "ESCOLTA").toUpperCase()}</td>
-            </tr>
+        <tr><td style="background:#ffffff;padding:28px 32px 0;">
+          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-bottom:2px solid #eee;padding-bottom:16px;margin-bottom:16px;">
+            <tr><td>
+              <p style="font-size:16px;font-weight:700;color:#1a1a1a;margin:0;">📋 Confirmação de Escolta — ${osData.osNumber}</p>
+            </td></tr>
           </table>
-          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-bottom:1px solid #e2e8f0;">
-            <tr>
-              <td style="padding:8px 16px;font-size:11px;color:#4a5568;font-weight:700;text-transform:uppercase;width:15%;">ROTA</td>
-              <td style="padding:8px 16px;font-size:12px;color:#1a202c;">${routeStr || "—"}</td>
-            </tr>
-          </table>
+          <p style="color:#555;font-size:13px;margin:16px 0 4px;">Prezado(a) Cliente,</p>
+          <p style="color:#777;font-size:13px;margin:0 0 24px;line-height:1.6;">Segue a confirmação e detalhes completos da missão de escolta registrada para a sua empresa:</p>
         </td></tr>
 
-        <tr><td style="padding:0;">
+        <tr><td style="background:#ffffff;padding:0 32px;">
           <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
-            <tr><td colspan="4" style="background:#3182ce;color:#ffffff;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:8px 12px;text-align:center;">EMPRESA CONTRATANTE / CLIENTE</td></tr>
-            <tr><td colspan="4" style="padding:10px 16px;text-align:center;font-size:13px;color:#1a202c;font-weight:700;border-bottom:1px solid #e2e8f0;">${client!.name || "—"}</td></tr>
-            <tr>
-              <td ${sL}>SOLICITANTE:</td><td ${sV}>${osData.requesterName || "—"}</td>
-              <td ${sL}></td><td ${sV}></td>
-            </tr>
-            <tr>
-              <td ${sL}>DATA:</td><td ${sV}>${dateStr}</td>
-              <td ${sL}>HORÁRIO:</td><td ${sV}>${timeStr}</td>
-            </tr>
-            <tr>
-              <td ${sL}>PRIORIDADE:</td><td colspan="3" ${sV}>${priorityLabel || "—"}</td>
-            </tr>
+            ${rows.join("\n            ")}
           </table>
         </td></tr>
 
-        <tr><td style="padding:0;">
-          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
-            ${buildAgentSection(emp1, "IDENTIFICAÇÃO DO AGENTE : LÍDER / MOTORISTA")}
-            ${buildAgentSection(emp2, "IDENTIFICAÇÃO DO AGENTE : ESCOLTA AUXILIAR")}
-            ${weaponsRows}
-            ${vehicleRow}
-            ${escortedSection}
-          </table>
-        </td></tr>
-
-        <tr><td style="padding:20px 24px;text-align:center;">
-          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f7fafc;border:1px solid #e2e8f0;border-radius:4px;">
-            <tr><td style="padding:14px 20px;text-align:center;">
-              <p style="color:#4a5568;font-size:12px;margin:0;line-height:1.6;">A equipe de escolta entrará em contato no horário previsto para início da operação.</p>
+        <tr><td style="background:#ffffff;padding:24px 32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-left:3px solid #cc3333;background:#fef2f2;border-radius:0 4px 4px 0;">
+            <tr><td style="padding:12px 16px;">
+              <p style="color:#333;font-size:12px;margin:0;line-height:1.5;"><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
             </td></tr>
           </table>
         </td></tr>
 
-        <tr><td style="padding:12px 24px;text-align:center;border-top:2px solid #2d3748;">
-          <p style="color:#2d3748;font-size:11px;font-weight:700;margin:0;letter-spacing:0.5px;">ATENCIOSAMENTE, DEPARTAMENTO DE ESCOLTA ARMADA — TORRES VIGILÂNCIA PATRIMONIAL</p>
+        <tr><td style="background:#ffffff;padding:8px 32px 28px;">
+          <p style="color:#555;font-size:13px;margin:0;">Atenciosamente,</p>
+          <p style="color:#1a1a1a;font-size:13px;font-weight:700;margin:4px 0 0;">Equipe Torres Vigilância Patrimonial</p>
         </td></tr>
 
-        <tr><td style="background:linear-gradient(135deg,#1a202c 0%,#2d3748 100%);padding:20px 24px;text-align:center;">
-          <p style="color:#ffffff;font-size:12px;font-weight:700;margin:0;">TORRES VIGILÂNCIA PATRIMONIAL LTDA</p>
-          <p style="color:rgba(255,255,255,0.5);font-size:11px;margin:4px 0 0;">CNPJ 36.982.392/0001-89</p>
-          <p style="color:rgba(255,255,255,0.5);font-size:11px;margin:4px 0 0;">Tel: (11) 96369-6699 | www.torresseguranca.com.br</p>
-          <p style="color:rgba(255,255,255,0.3);font-size:10px;margin:8px 0 0;">Documento gerado eletronicamente em ${nowStr}</p>
+        <tr><td style="background:#1a1a1a;padding:20px 32px;text-align:center;">
+          <p style="color:#ffffff;font-size:12px;font-weight:700;margin:0;">Torres Vigilância Patrimonial</p>
+          <p style="color:#cc3333;font-size:11px;margin:4px 0 0;">Torres Vigilância Patrimonial LTDA</p>
+          <p style="color:#888;font-size:10px;margin:4px 0 0;">Intermediação de Escolta Armada</p>
+          <p style="color:#666;font-size:9px;margin:8px 0 0;">Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail escolta@torresseguranca.com.br</p>
         </td></tr>
 
       </table>
@@ -2687,14 +2701,31 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   </table>
 </body></html>`;
 
-    await transporter.sendMail({
+    let pdfBuffer: Buffer | null = null;
+    try {
+      pdfBuffer = await generatePreAlertPdf(osData, client, emp1, emp2, vehicle);
+    } catch (err: any) {
+      console.error(`[pre-alert] Erro ao gerar PDF: ${err.message}`);
+    }
+
+    const mailOptions: any = {
       from: getSmtpFrom(),
       to: recipientEmail,
       bcc: SMTP_BCC_OS,
-      subject: `Relatório de Operação de Escolta — ${osData.osNumber}`,
+      subject: `Confirmação de Escolta — ${osData.osNumber}`,
       html: htmlBody,
-    });
-    console.log(`[pre-alert] Email enviado para ${recipientEmail} (OS ${osData.osNumber})`);
+    };
+
+    if (pdfBuffer) {
+      mailOptions.attachments = [{
+        filename: `Confirmacao_Escolta_${osData.osNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      }];
+    }
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[pre-alert] Email enviado para ${recipientEmail} (OS ${osData.osNumber})${pdfBuffer ? " com PDF anexo" : ""}`);
     return { sent: true, to: recipientEmail };
   }
 
