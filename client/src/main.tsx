@@ -3,9 +3,16 @@ import App from "./App";
 import "./index.css";
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
   });
+  if (caches) {
+    caches.keys().then((names) => {
+      for (const name of names) caches.delete(name);
+    });
+  }
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
