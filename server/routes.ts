@@ -2514,94 +2514,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
-  async function generatePreAlertPdf(osData: any, client: any, emp1: any, emp2: any, vehicle: any): Promise<Buffer> {
-    const PDFDocument = (await import("pdfkit")).default;
-    const fmtDate = (d: string | null | undefined) => {
-      if (!d) return "—";
-      try { return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }); } catch { return "—"; }
-    };
-    const schedDate = osData.scheduledDate ? new Date(osData.scheduledDate) : null;
-    const dateStr = schedDate ? schedDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
-    const timeStr = schedDate ? schedDate.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
-    const agendStr = `${dateStr} — ${timeStr}`;
-    const viaturaStr = vehicle ? `${vehicle.plate} / ${[vehicle.brand, vehicle.model].filter(Boolean).join(" ")}` : "—";
-    const rastreadorStr = vehicle?.truckscontrolIdentifier ? `TrucksControl / ID: ${vehicle.truckscontrolIdentifier}` : (vehicle?.trackerId || "—");
-
-    let espelhamento = "—";
-    if (osData.escortedVehiclePlate) {
-      try {
-        const { data: esps } = await supabaseAdmin.from("truckscontrol_espelhamentos").select("nome_empresa").eq("service_order_id", osData.id).limit(1);
-        if (esps?.[0]) espelhamento = esps[0].nome_empresa;
-      } catch {}
-    }
-
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: "A4", margin: 40 });
-      const chunks: Buffer[] = [];
-      doc.on("data", (c: Buffer) => chunks.push(c));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-
-      const W = 515;
-      const LM = 40;
-
-      doc.rect(0, 0, 595, 60).fill("#1a1a1a");
-      doc.font("Helvetica-Bold").fontSize(16).fillColor("#ffffff").text("TORRES VIGILÂNCIA PATRIMONIAL", 0, 16, { align: "center", width: 595 });
-      doc.font("Helvetica").fontSize(9).fillColor("#999999").text("SEGURANÇA & ESCOLTA ARMADA", 0, 36, { align: "center", width: 595 });
-
-      let y = 80;
-      doc.fillColor("#1a1a1a").font("Helvetica-Bold").fontSize(14).text(`Confirmação de Escolta — ${osData.osNumber}`, LM, y);
-      y += 28;
-      doc.font("Helvetica").fontSize(11).fillColor("#333333").text("Prezado(a) Cliente,", LM, y);
-      y += 20;
-      doc.fontSize(10).fillColor("#555555").text("Segue a confirmação e detalhes completos da missão de escolta registrada para a sua empresa:", LM, y, { width: W });
-      y += 30;
-
-      const drawRow = (label: string, value: string) => {
-        doc.strokeColor("#e0e0e0").lineWidth(0.5).moveTo(LM, y).lineTo(LM + W, y).stroke();
-        doc.font("Helvetica-Bold").fontSize(10).fillColor("#333333").text(label, LM + 8, y + 7, { width: 140 });
-        doc.font("Helvetica").fontSize(10).fillColor("#1a1a1a").text(value || "—", LM + 155, y + 7, { width: W - 165 });
-        y += 28;
-      };
-
-      drawRow("Nº da OS", osData.osNumber);
-      drawRow("Cliente", client?.name || "—");
-      drawRow("Origem", osData.origin || "—");
-      drawRow("Destino", osData.destination || "—");
-      drawRow("Viatura (Placa / Modelo)", viaturaStr);
-      drawRow("Tipo de Escolta", (osData.type || "escolta").charAt(0).toUpperCase() + (osData.type || "escolta").slice(1));
-      drawRow("Agendamento", agendStr);
-      if (osData.escortedDriverName) drawRow("Motorista", osData.escortedDriverName);
-      if (osData.escortedDriverPhone) drawRow("Contato Motorista", osData.escortedDriverPhone);
-      drawRow("Agente 01", emp1?.name || "—");
-      if (emp2) drawRow("Agente 02", emp2.name || "—");
-      drawRow("Viatura de Escolta", osData.escortedVehiclePlate || "—");
-      drawRow("Espelhamento", espelhamento);
-      drawRow("Rastreador", rastreadorStr);
-      doc.strokeColor("#e0e0e0").lineWidth(0.5).moveTo(LM, y).lineTo(LM + W, y).stroke();
-
-      y += 20;
-      doc.rect(LM, y, W, 30).lineWidth(0.5).strokeColor("#cc3333").fillAndStroke("#fef2f2", "#cc3333");
-      doc.font("Helvetica").fontSize(9).fillColor("#333333");
-      doc.text("Observação: ", LM + 10, y + 9, { continued: true, width: W - 20 });
-      doc.font("Helvetica").text("Acompanhe o status da missão em tempo real pelo painel do sistema.");
-
-      y += 50;
-      doc.font("Helvetica").fontSize(10).fillColor("#333333").text("Atenciosamente,", LM, y);
-      y += 16;
-      doc.font("Helvetica-Bold").fontSize(10).text("Equipe Torres Vigilância Patrimonial", LM, y);
-
-      y = 770;
-      doc.rect(0, y, 595, 72).fill("#1a1a1a");
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#ffffff").text("Torres Vigilância Patrimonial", 0, y + 12, { align: "center", width: 595 });
-      doc.font("Helvetica").fontSize(8).fillColor("#cc3333").text("Torres Vigilância Patrimonial LTDA", 0, y + 28, { align: "center", width: 595 });
-      doc.fillColor("#999999").text("Intermediação de Escolta Armada", 0, y + 40, { align: "center", width: 595 });
-      doc.fontSize(7).fillColor("#666666").text("Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail escolta@torresseguranca.com.br", 0, y + 54, { align: "center", width: 595 });
-
-      doc.end();
-    });
-  }
-
   async function sendEscoltaReportEmail(osData: any): Promise<{ sent: boolean; reason?: string; to?: string }> {
     if (!osData.assignedEmployeeId) return { sent: false, reason: "Agente líder não atribuído" };
     if (!osData.vehicleId) return { sent: false, reason: "Viatura não atribuída" };
@@ -2703,9 +2615,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     let pdfBuffer: Buffer | null = null;
     try {
-      pdfBuffer = await generatePreAlertPdf(osData, client, emp1, emp2, vehicle);
+      pdfBuffer = await generateOsReportPdfBuffer(osData.id);
     } catch (err: any) {
-      console.error(`[pre-alert] Erro ao gerar PDF: ${err.message}`);
+      console.error(`[pre-alert] Erro ao gerar PDF do relatório: ${err.message}`);
     }
 
     const mailOptions: any = {
@@ -2718,7 +2630,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     if (pdfBuffer) {
       mailOptions.attachments = [{
-        filename: `Confirmacao_Escolta_${osData.osNumber}.pdf`,
+        filename: `OS_${osData.osNumber}.pdf`,
         content: pdfBuffer,
         contentType: "application/pdf",
       }];
@@ -2751,51 +2663,54 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(updated);
   });
 
-  app.get("/api/service-orders/:id/pdf", requireAuth, async (req, res) => {
+  async function generateOsReportPdfBuffer(osId: number): Promise<Buffer> {
+    const PDFDocument = (await import("pdfkit")).default;
+    const QRCode = (await import("qrcode")).default;
+    const path = await import("path");
+    const fs = await import("fs");
+
+    const os = await storage.getServiceOrder(osId);
+    if (!os) throw new Error("OS não encontrada");
+
+    const client = os.clientId ? await storage.getClient(os.clientId) : null;
+    const emp1 = os.assignedEmployeeId ? await storage.getEmployee(os.assignedEmployeeId) : null;
+    const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
+    const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
+    let kitItems: any[] = [];
+    if (os.kitId) {
+      const rawItems = await storage.getWeaponKitItems(os.kitId);
+      kitItems = await Promise.all(rawItems.map(async (item) => {
+        const weapon = await storage.getWeapon(item.weaponId);
+        return { ...item, weapon };
+      }));
+    }
+
+    const qrData = `TORRES|OS:${os.osNumber}|${new Date().toISOString().slice(0, 10)}`;
+    const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
+
+    let osLogoBuffer: Buffer | null = null;
     try {
-      const PDFDocument = (await import("pdfkit")).default;
-      const QRCode = (await import("qrcode")).default;
-      const path = await import("path");
-      const fs = await import("fs");
-
-      const os = await storage.getServiceOrder(Number(req.params.id));
-      if (!os) return res.status(404).json({ message: "OS não encontrada" });
-
-      const client = os.clientId ? await storage.getClient(os.clientId) : null;
-      const emp1 = os.assignedEmployeeId ? await storage.getEmployee(os.assignedEmployeeId) : null;
-      const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
-      const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
-      let kitItems: any[] = [];
-      if (os.kitId) {
-        const rawItems = await storage.getWeaponKitItems(os.kitId);
-        kitItems = await Promise.all(rawItems.map(async (item) => {
-          const weapon = await storage.getWeapon(item.weaponId);
-          return { ...item, weapon };
-        }));
+      const logoSrc = path.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
+      if (fs.existsSync(logoSrc)) {
+        osLogoBuffer = await sharp(logoSrc)
+          .negate({ alpha: false })
+          .flatten({ background: { r: 34, g: 34, b: 34 } })
+          .png()
+          .toBuffer();
       }
+    } catch {}
+    const hasLogo = !!osLogoBuffer;
 
-      const qrData = `TORRES|OS:${os.osNumber}|${new Date().toISOString().slice(0, 10)}`;
-      const qrBuffer = await QRCode.toBuffer(qrData, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
+    const PAGE_H = 841.89;
+    const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false, bufferPages: true });
+    doc.addPage({ size: "A4", margin: 30 });
 
-      let osLogoBuffer: Buffer | null = null;
-      try {
-        const logoSrc = path.resolve("attached_assets/WhatsApp_Image_2026-03-19_at_18.44.30_1774459865687.jpeg");
-        if (fs.existsSync(logoSrc)) {
-          osLogoBuffer = await sharp(logoSrc)
-            .negate({ alpha: false })
-            .flatten({ background: { r: 34, g: 34, b: 34 } })
-            .png()
-            .toBuffer();
-        }
-      } catch {}
-      const hasLogo = !!osLogoBuffer;
-
-      const PAGE_H = 841.89;
-      const doc = new PDFDocument({ size: "A4", margin: 30, autoFirstPage: false, bufferPages: true });
-      doc.addPage({ size: "A4", margin: 30 });
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `inline; filename=OS_${os.osNumber}.pdf`);
-      doc.pipe(res);
+    const pdfChunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
+    const pdfDone = new Promise<Buffer>((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(pdfChunks)));
+      doc.on("error", reject);
+    });
 
       const W = 535;
       const LM = 30;
@@ -3206,6 +3121,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
 
       doc.end();
+    return pdfDone;
+  }
+
+  app.get("/api/service-orders/:id/pdf", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.id);
+      const os = await storage.getServiceOrder(osId);
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+      const pdfBuffer = await generateOsReportPdfBuffer(osId);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename=OS_${os.osNumber}.pdf`);
+      res.end(pdfBuffer);
     } catch (error: any) {
       console.error("PDF generation error:", error);
       if (!res.headersSent) {
