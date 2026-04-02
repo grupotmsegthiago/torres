@@ -586,113 +586,108 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Chegada Origem</p>
-                  {editingFields ? (
-                    <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmChegada} onChange={(e: any) => setOverrideKmChegada(e.target.value)} data-testid="input-km-chegada-origem" />
-                  ) : (
-                    <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmChegada > 0 ? kmChegada.toLocaleString("pt-BR") : "—"}</p>
-                  )}
-                </div>
-                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Fim Missão</p>
-                  {editingFields ? (
-                    <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmFim} onChange={(e: any) => setOverrideKmFim(e.target.value)} data-testid="input-km-fim-missao" />
-                  ) : (
-                    <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmFim > 0 ? kmFim.toLocaleString("pt-BR") : "—"}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Chegada Origem</p>
-                  {editingFields ? (
-                    <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
-                  ) : (
-                    <p className="text-sm font-bold font-mono text-neutral-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime ? `${schedTime} (Agend.)` : "—")}</p>
-                  )}
-                </div>
-                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
-                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Fim Missão</p>
-                  {editingFields ? (
-                    <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraFim} onChange={(e: any) => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
-                  ) : (
-                    <p className="text-sm font-bold font-mono text-neutral-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : "—"}</p>
-                  )}
-                </div>
-              </div>
-
-              {editingFields && (
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => {
-                      const payload: any = {};
-                      if (overrideKmChegada !== (os.km_chegada_origem != null ? String(os.km_chegada_origem) : "")) {
-                        payload.km_chegada_origem = Number(overrideKmChegada) || 0;
-                      }
-                      if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
-                        payload.km_fim_missao = Number(overrideKmFim) || 0;
-                      }
-                      if (overrideHoraFim) {
-                        const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
-                        const [hh, mm] = overrideHoraFim.split(":");
-                        const d = new Date(baseDate);
-                        d.setHours(Number(hh), Number(mm), 0, 0);
-                        payload.completedDate = d.toISOString();
-                      }
-                      if (overrideHoraChegada) {
-                        const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
-                        const [hh, mm] = overrideHoraChegada.split(":");
-                        const d = new Date(baseDate);
-                        d.setHours(Number(hh), Number(mm), 0, 0);
-                        payload.hora_chegada_origem = d.toISOString();
-                      }
-                      if (Object.keys(payload).length > 0) {
-                        overrideMutation.mutate({ osId: os.id, data: payload });
-                      } else {
-                        setEditingFields(false);
-                      }
-                    }}
-                    disabled={overrideMutation.isPending}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-xs tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                    data-testid="button-salvar-override"
-                  >
-                    {overrideMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                    Salvar Alterações
-                  </button>
-                  <button
-                    onClick={() => setEditingFields(false)}
-                    className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs rounded-xl transition-colors"
-                    data-testid="button-cancelar-override"
-                  >
-                    Cancelar
-                  </button>
-                </div>
+              {editingFields ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Chegada Origem</p>
+                      <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmChegada} onChange={(e: any) => setOverrideKmChegada(e.target.value)} data-testid="input-km-chegada-origem" />
+                    </div>
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Fim Missão</p>
+                      <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmFim} onChange={(e: any) => setOverrideKmFim(e.target.value)} data-testid="input-km-fim-missao" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Chegada Origem</p>
+                      <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
+                    </div>
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Fim Missão</p>
+                      <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraFim} onChange={(e: any) => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const payload: any = {};
+                        if (overrideKmChegada !== (os.km_chegada_origem != null ? String(os.km_chegada_origem) : "")) {
+                          payload.km_chegada_origem = Number(overrideKmChegada) || 0;
+                        }
+                        if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
+                          payload.km_fim_missao = Number(overrideKmFim) || 0;
+                        }
+                        if (overrideHoraFim) {
+                          const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
+                          const [hh, mm] = overrideHoraFim.split(":");
+                          const d = new Date(baseDate);
+                          d.setHours(Number(hh), Number(mm), 0, 0);
+                          payload.completedDate = d.toISOString();
+                        }
+                        if (overrideHoraChegada) {
+                          const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
+                          const [hh, mm] = overrideHoraChegada.split(":");
+                          const d = new Date(baseDate);
+                          d.setHours(Number(hh), Number(mm), 0, 0);
+                          payload.hora_chegada_origem = d.toISOString();
+                        }
+                        if (Object.keys(payload).length > 0) {
+                          overrideMutation.mutate({ osId: os.id, data: payload });
+                        } else {
+                          setEditingFields(false);
+                        }
+                      }}
+                      disabled={overrideMutation.isPending}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-xs tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                      data-testid="button-salvar-override"
+                    >
+                      {overrideMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      Salvar Alterações
+                    </button>
+                    <button
+                      onClick={() => setEditingFields(false)}
+                      className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs rounded-xl transition-colors"
+                      data-testid="button-cancelar-override"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100 text-center">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Chegada Origem</p>
+                      <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmChegada > 0 ? kmChegada.toLocaleString("pt-BR") : "—"}</p>
+                    </div>
+                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100 text-center">
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Fim Missão</p>
+                      <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmFim > 0 ? kmFim.toLocaleString("pt-BR") : "—"}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
+                      <p className="text-[9px] font-bold text-blue-400 uppercase">Total KM Rodado</p>
+                      <p className="text-lg font-black font-mono text-blue-800 mt-0.5">{kmTotalCalc > 0 ? kmTotalCalc.toLocaleString("pt-BR") : "—"} <span className="text-xs font-bold text-blue-500">km</span></p>
+                    </div>
+                    <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
+                      <p className="text-[9px] font-bold text-purple-400 uppercase">Total Horas Missão</p>
+                      <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalc > 0 ? `${Math.floor(hCalc)}h${String(Math.round((hCalc % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
+                      <p className="text-[9px] font-bold text-emerald-400 uppercase">Chegada na Origem</p>
+                      <p className="text-lg font-black font-mono text-emerald-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime || "—")}</p>
+                    </div>
+                    <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center">
+                      <p className="text-[9px] font-bold text-red-400 uppercase">Fim de Missão</p>
+                      <p className="text-lg font-black font-mono text-red-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : (endTime || "—")}</p>
+                    </div>
+                  </div>
+                </>
               )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
-                <p className="text-[9px] font-bold text-blue-400 uppercase">Total KM Rodado</p>
-                <p className="text-lg font-black font-mono text-blue-800 mt-0.5">{kmTotalCalc > 0 ? kmTotalCalc.toLocaleString("pt-BR") : "—"} <span className="text-xs font-bold text-blue-500">km</span></p>
-              </div>
-              <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
-                <p className="text-[9px] font-bold text-purple-400 uppercase">Total Horas Missão</p>
-                <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalc > 0 ? `${Math.floor(hCalc)}h${String(Math.round((hCalc % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
-                <p className="text-[9px] font-bold text-emerald-400 uppercase">Chegada na Origem</p>
-                <p className="text-lg font-black font-mono text-emerald-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime || "—")}</p>
-              </div>
-              <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center">
-                <p className="text-[9px] font-bold text-red-400 uppercase">Fim de Missão</p>
-                <p className="text-lg font-black font-mono text-red-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : (endTime || "—")}</p>
-              </div>
             </div>
 
             {b && (
