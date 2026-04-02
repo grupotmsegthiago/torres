@@ -1624,12 +1624,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
 
       const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
-      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, startTime=${startTime}, endTime=${endTime}, scheduledTime=${scheduledTime}`);
+      const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
+      let despPedagioCalc = 0, despCombustivelCalc = 0, despOutrasCalc = 0;
+      for (const mc of osMissionCosts) {
+        const amt = Number(mc.amount) || 0;
+        const cat = (mc.category || "").toLowerCase();
+        if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagioCalc += amt;
+        else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivelCalc += amt;
+        else despOutrasCalc += amt;
+      }
+      const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
+      if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
+      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, startTime=${startTime}, endTime=${endTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}`);
       const resultado = calcularEscolta({
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
         horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
         horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
-        despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+        despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, contrato,
       });
       console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
 
@@ -2420,12 +2431,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const horarioFim = data.completedDate ? toBRTx(new Date(data.completedDate as string)) : (bill.horario_fim || null);
           const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
 
+          let despPedagioAR = Number(bill.despesas_pedagio || 0);
+          const pedagioOS = Number((data as any).pedagioEstimado) || 0;
+          if (pedagioOS > 0 && despPedagioAR === 0) despPedagioAR = pedagioOS;
+
           const resultado = calcularEscolta({
             km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
             horas_missao: 0, horas_estadia: Number(bill.horas_estadia || 0),
             teve_pernoite: !!bill.teve_pernoite, horario_inicio: horarioInicio, horario_fim: horarioFim,
             horario_agendado: horarioAgendado,
-            despesas_pedagio: Number(bill.despesas_pedagio || 0), despesas_combustivel: Number(bill.despesas_combustivel || 0),
+            despesas_pedagio: despPedagioAR, despesas_combustivel: Number(bill.despesas_combustivel || 0),
             despesas_outras: Number(bill.despesas_outras || 0), contrato,
           });
 
