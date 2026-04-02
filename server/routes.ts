@@ -2408,9 +2408,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
           const kmIni = Number((data as any).kmSaida || bill.km_inicial || 0);
           const kmFin = Number((data as any).kmRetorno || bill.km_final || 0);
-          const horarioInicio = data.missionStartedAt ? new Date(data.missionStartedAt).toISOString() : (bill.horario_inicio || null);
-          const horarioFim = data.completedDate ? new Date(data.completedDate).toISOString() : (bill.horario_fim || null);
-          const horarioAgendado = data.scheduledDate ? new Date(data.scheduledDate).toISOString() : (bill.horario_agendado || null);
+          const toBRTx = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+          const horarioInicio = data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null);
+          const horarioFim = data.completedDate ? toBRTx(new Date(data.completedDate as string)) : (bill.horario_fim || null);
+          const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
 
           const resultado = calcularEscolta({
             km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
@@ -7036,10 +7037,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const kmInicial = kmChegadaPhoto?.kmValue || 0;
         const kmFinal = kmFinalPhoto?.kmValue || 0;
 
-        const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
-        const startTime = so.missionStartedAt ? new Date(so.missionStartedAt).toTimeString().slice(0, 5) : undefined;
+        const toBRTe = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+        const scheduledTime = so.scheduledDate ? toBRTe(new Date(so.scheduledDate)) : undefined;
+        const startTime = so.missionStartedAt ? toBRTe(new Date(so.missionStartedAt as string)) : undefined;
         const completedDateVal = updated.completedDate || so.completedDate;
-        const endTime = completedDateVal ? new Date(completedDateVal as string).toTimeString().slice(0, 5) : undefined;
+        const endTime = completedDateVal ? toBRTe(new Date(completedDateVal as string)) : undefined;
 
         let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
