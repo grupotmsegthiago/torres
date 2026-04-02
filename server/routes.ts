@@ -4963,8 +4963,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-            const kmInicial = kmSaidaPhoto?.kmValue || 0;
-            const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
+            const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+            const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
 
             const missionStartDate = o.missionStartedAt ? new Date(o.missionStartedAt as string) : null;
             const missionEndDate = o.completedDate ? new Date(o.completedDate) : null;
