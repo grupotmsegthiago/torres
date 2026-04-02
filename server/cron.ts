@@ -170,8 +170,8 @@ export function initCronJobs() {
           const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = kmSaidaPhoto?.kmValue || 0;
-          const kmFinalRaw = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || 0;
+          const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+          const kmFinalRaw = kmFinalPhoto?.kmValue || 0;
           const kmFinal = kmFinalRaw > kmInicial ? kmFinalRaw : kmInicial;
 
           const scheduledTime = so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : undefined;

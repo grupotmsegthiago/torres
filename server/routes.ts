@@ -4798,10 +4798,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       (o) => {
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") return true;
         if (o.status === "concluida" || o.missionStatus === "encerrada" || o.status === "cancelada") {
-          const oDate = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
-            : o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
-            : o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
-          if (oDate === todayBRT) return true;
+          const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          const udBRT = o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          if (sdBRT === todayBRT || cdBRT === todayBRT || udBRT === todayBRT) return true;
         }
         return false;
       }
@@ -9937,12 +9937,12 @@ Regras:
       const todayEscoltaOs = allOrders.filter((so: any) => {
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
         if (so.status === "em_andamento") return true;
-        const oDate = so.scheduledDate
-          ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
-          : so.completedDate
-            ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
-            : null;
-        return oDate === todayBRT && (so.status === "concluida" || so.status === "concluída" || so.status === "cancelada");
+        if (so.status === "concluida" || so.status === "concluída" || so.status === "cancelada") {
+          const sdBRT = so.scheduledDate ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          const cdBRT = so.completedDate ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          return sdBRT === todayBRT || cdBRT === todayBRT;
+        }
+        return false;
       });
       const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
