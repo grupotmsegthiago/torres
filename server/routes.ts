@@ -9950,7 +9950,7 @@ Regras:
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: so.scheduledDate || so.createdAt || new Date().toISOString(),
+            data_missao: so.status === "em_andamento" ? new Date().toISOString() : (so.scheduledDate || so.createdAt || new Date().toISOString()),
             status: existingBilling?.status || "A_VERIFICAR",
             despesas_pedagio, despesas_combustivel, despesas_outras,
           });
