@@ -95,10 +95,18 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
 
+  const parseEmails = (raw: string): string[] => {
+    return raw
+      .split(/[\n,;]+/)
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  };
+
   const sendTestEmail = async () => {
-    const targetEmail = form.emailOperacional || form.emailFinanceiro || form.email;
-    if (!targetEmail) {
-      toast({ title: "Preencha ao menos um e-mail", variant: "destructive" });
+    const allRaw = [form.emailOperacional, form.emailFinanceiro, form.email].join("\n");
+    const emails = parseEmails(allRaw);
+    if (emails.length === 0) {
+      toast({ title: "Preencha ao menos um e-mail válido", variant: "destructive" });
       return;
     }
     setTestingEmail(true);
@@ -107,11 +115,11 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       const r = await fetch("/api/email-test", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ to: targetEmail }),
+        body: JSON.stringify({ to: emails.join(", ") }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.message);
-      toast({ title: "E-mail enviado", description: data.message });
+      toast({ title: "E-mail enviado", description: `Enviado para ${emails.length} destinatário(s)` });
     } catch (err: any) {
       toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
     } finally {
@@ -233,15 +241,18 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Geral</label>
-          <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-client-email" />
+          <textarea value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Um e-mail por linha" data-testid="input-client-email" />
+          {parseEmails(form.email).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.email).length} e-mails</span>}
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Operacional</label>
-          <Input type="email" value={form.emailOperacional} onChange={(e) => setForm({ ...form, emailOperacional: e.target.value })} placeholder="Recebe pré-alertas de escolta" data-testid="input-client-email-operacional" />
+          <textarea value={form.emailOperacional} onChange={(e) => setForm({ ...form, emailOperacional: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Recebe pré-alertas de escolta&#10;Um e-mail por linha" data-testid="input-client-email-operacional" />
+          {parseEmails(form.emailOperacional).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.emailOperacional).length} e-mails</span>}
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Financeiro</label>
-          <Input type="email" value={form.emailFinanceiro} onChange={(e) => setForm({ ...form, emailFinanceiro: e.target.value })} placeholder="Recebe boletins e faturas" data-testid="input-client-email-financeiro" />
+          <textarea value={form.emailFinanceiro} onChange={(e) => setForm({ ...form, emailFinanceiro: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Recebe boletins e faturas&#10;Um e-mail por linha" data-testid="input-client-email-financeiro" />
+          {parseEmails(form.emailFinanceiro).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.emailFinanceiro).length} e-mails</span>}
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>

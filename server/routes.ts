@@ -29,6 +29,11 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode } from "./db-init";
 import OpenAI from "openai";
 
+function parseEmailList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+}
+
 function createSmtpTransporter() {
   const host = process.env.SMTP_HOST || "smtp.office365.com";
   const port = parseInt(process.env.SMTP_PORT || "587");
@@ -2523,8 +2528,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (!osData.scheduledDate) return { sent: false, reason: "Data agendada não definida" };
 
     const client = await storage.getClient(osData.clientId);
-    const recipientEmail = client?.emailOperacional || client?.email;
-    if (!recipientEmail) return { sent: false, reason: "Cliente sem email cadastrado" };
+    const operacionalEmails = parseEmailList(client?.emailOperacional);
+    const geralEmails = parseEmailList(client?.email);
+    const recipientEmails = operacionalEmails.length > 0 ? operacionalEmails : geralEmails;
+    if (recipientEmails.length === 0) return { sent: false, reason: "Cliente sem email cadastrado" };
+    const recipientEmail = recipientEmails.join(", ");
 
     const transporter = createSmtpTransporter();
     if (!transporter) return { sent: false, reason: "SMTP não configurado" };
