@@ -10149,10 +10149,16 @@ Regras:
       const todayEscoltaOs = allOrders.filter((so: any) => {
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
         if (so.status === "em_andamento") return true;
-        if (so.status === "concluida" || so.status === "concluída" || so.status === "cancelada") {
+        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
+          so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
+        if (isConcluded) {
           const sdBRT = so.scheduledDate ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const cdBRT = so.completedDate ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           return sdBRT === todayBRT || cdBRT === todayBRT;
+        }
+        if (so.status === "agendada") {
+          const sdBRT = so.scheduledDate ? new Date(so.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+          return sdBRT === todayBRT;
         }
         return false;
       });
@@ -10190,10 +10196,19 @@ Regras:
           const kmAtual = nb(kmFinalP?.kmValue || kmInicial);
           const km_carregado = Math.max(0, kmAtual - kmInicial);
 
-          const startedAt = so.missionStartedAt ? new Date(so.missionStartedAt) : null;
-          const endedAt = so.completedDate ? new Date(so.completedDate) : null;
-          const endRef = endedAt || new Date();
-          const horasMissao = startedAt ? calcHorasBRT(startedAt, endRef) : 0;
+          const stepLogsDash = (so.stepLogs || []) as any[];
+          const getLogTimeDash = (steps: string[]) => {
+            for (const s of steps) {
+              const entry = [...stepLogsDash].reverse().find((l: any) => l.step === s && l.timestamp);
+              if (entry) return entry.timestamp;
+            }
+            return null;
+          };
+          const horaChegadaOrigemDash = (so as any).hora_chegada_origem || getLogTimeDash(["checkin_chegada_km", "em_transito_origem"]);
+          const horaFimMissaoDash = (so as any).hora_fim_missao || so.completedDate || getLogTimeDash(["encerrada", "finalizada", "checkout_km_final"]);
+          const startRef = horaChegadaOrigemDash ? new Date(horaChegadaOrigemDash) : (so.missionStartedAt ? new Date(so.missionStartedAt) : null);
+          const endRef = horaFimMissaoDash ? new Date(horaFimMissaoDash) : new Date();
+          const horasMissao = startRef ? calcHorasBRT(startRef, endRef) : 0;
 
           const franquiaKm = nb(contrato.franquia_km) || nb(contrato.franquia_minima_km);
           const km_excedente = Math.max(0, km_carregado - franquiaKm);
