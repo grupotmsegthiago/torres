@@ -12,6 +12,7 @@ type MenuItem = {
   path?: string;
   label: string;
   icon: any;
+  iconColor?: string;
   adminOnly?: boolean;
   children?: MenuItem[];
 };
@@ -36,8 +37,9 @@ const menuItems: MenuItem[] = [
   {
     label: "Grid Operacional",
     icon: Radio,
+    iconColor: "text-amber-500",
     children: [
-      { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio },
+      { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
       { path: "/admin/mission", label: "Missao Ativa", icon: Target },
       { path: "/admin/simulador-missao", label: "Simulador Missao", icon: Play },
     ],
@@ -116,7 +118,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     }`}
                     data-testid={`button-menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}
                   >
-                    <item.icon className="w-4 h-4" />
+                    <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
                     <span className="flex-1 text-left">{item.label}</span>
                     {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
@@ -132,7 +134,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             }`}
                             data-testid={`link-${child.path!.split("/").pop()}`}
                           >
-                            <child.icon className="w-4 h-4" />
+                            <child.icon className={`w-4 h-4 ${child.iconColor || ""}`} />
                             {child.label}
                           </span>
                         </Link>
@@ -152,7 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   }`}
                   data-testid={`link-${item.path!.split("/").pop()}`}
                 >
-                  <item.icon className="w-4 h-4" />
+                  <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
                   {item.label}
                 </span>
               </Link>
