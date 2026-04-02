@@ -156,7 +156,18 @@ export function getIdleSamePlaceInfo(veiID: number): { count: number; isAlert: b
 }
 
 const BASE_URL = "https://webservice.newrastreamentoonline.com.br/";
-const VEHICLE_CACHE_TTL = 60 * 1000;
+const VEHICLE_CACHE_TTL = 5 * 60 * 1000;
+
+const API_INTERVALS = {
+  RequestVeiculo: 5 * 60 * 1000,
+  RequestMensagemCB: 30 * 1000,
+  RequestSpy: 5 * 60 * 1000,
+  RequestMensagemSpy: 30 * 1000,
+  RequestVeiculoEspelhado: 5 * 60 * 1000,
+  RequestDadosVeiculo: 30 * 1000,
+} as const;
+
+const lastCallByRequest: Record<string, number> = {};
 
 function getConfig(): TrucksControlConfig | null {
   const login = process.env.TRUCKSCONTROL_CHAVE;
@@ -169,6 +180,16 @@ function parseXmlValue(xml: string, tag: string): string {
   const regex = new RegExp(`<${tag}>([^<]*)</${tag}>`, "i");
   const match = xml.match(regex);
   return match ? match[1].trim() : "";
+}
+
+function canCallApi(requestType: string): boolean {
+  const interval = API_INTERVALS[requestType as keyof typeof API_INTERVALS] || 5 * 60 * 1000;
+  const lastCall = lastCallByRequest[requestType] || 0;
+  return Date.now() - lastCall >= interval;
+}
+
+function markApiCall(requestType: string): void {
+  lastCallByRequest[requestType] = Date.now();
 }
 
 async function postXml(xmlBody: string): Promise<string> {
@@ -300,7 +321,12 @@ async function fetchSpyDevices(config: TrucksControlConfig): Promise<SpyDevice[]
     return spyCache;
   }
 
+  if (!canCallApi("RequestSpy")) {
+    return spyCache;
+  }
+
   try {
+    markApiCall("RequestSpy");
     const xml = `<RequestSpy><login>${config.login}</login><senha>${config.senha}</senha></RequestSpy>`;
     const response = await postXml(xml);
 
@@ -330,7 +356,11 @@ async function fetchSpyDevices(config: TrucksControlConfig): Promise<SpyDevice[]
 }
 
 async function fetchSpyMessages(config: TrucksControlConfig): Promise<SpyMessage[]> {
+  if (!canCallApi("RequestMensagemSpy")) {
+    return [];
+  }
   try {
+    markApiCall("RequestMensagemSpy");
     const xml = `<RequestMensagemSpy><login>${config.login}</login><senha>${config.senha}</senha><mId>${lastSpyMid}</mId></RequestMensagemSpy>`;
     const response = await postXml(xml);
 
@@ -370,13 +400,22 @@ async function fetchVehicles(config: TrucksControlConfig): Promise<TrucksControl
     return vehicleCache;
   }
 
+  if (!canCallApi("RequestVeiculo")) {
+    if (vehicleCache.length > 0) return vehicleCache;
+    const remaining = Math.ceil((API_INTERVALS.RequestVeiculo - (Date.now() - (lastCallByRequest["RequestVeiculo"] || 0))) / 1000);
+    console.log(`[truckscontrol] RequestVeiculo rate limit — ${remaining}s restantes`);
+    return vehicleCache;
+  }
+
   try {
+    markApiCall("RequestVeiculo");
     const xml = `<RequestVeiculo><login>${config.login}</login><senha>${config.senha}</senha></RequestVeiculo>`;
     const response = await postXml(xml);
 
-    if (response.includes("<erro>")) {
+    if (response.includes("<erro>") || response.includes("<ErrorRequest>")) {
       const erroMsg = parseXmlValue(response, "erro");
       if (erroMsg.includes("tempo minimo")) {
+        console.log(`[truckscontrol] Rate limit da API — cache com ${vehicleCache.length} veículo(s)`);
         return vehicleCache;
       }
       console.log(`[truckscontrol] Erro RequestVeiculo: ${erroMsg}`);
@@ -397,7 +436,11 @@ async function fetchVehicles(config: TrucksControlConfig): Promise<TrucksControl
 }
 
 async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControlMessage[]> {
+  if (!canCallApi("RequestMensagemCB")) {
+    return [];
+  }
   try {
+    markApiCall("RequestMensagemCB");
     const xml = `<RequestMensagemCB><login>${config.login}</login><senha>${config.senha}</senha><mId>${lastMid}</mId></RequestMensagemCB>`;
     const response = await postXml(xml);
 
@@ -453,7 +496,7 @@ async function initializeCache(config: TrucksControlConfig): Promise<void> {
   console.log(`[truckscontrol] Cache inicial: ${vehicleCache.length} veículo(s), ${messagesByVehicle.size} posição(ões), ${spyCache.length} SPY(s)`);
 
   if (vehicleCache.length === 0 && !initRetryTimer) {
-    console.log("[truckscontrol] Cache vazio após init — agendando retry em 60s");
+    console.log("[truckscontrol] Cache vazio após init — agendando retry em 5 minutos (limite API)");
     initRetryTimer = setTimeout(async () => {
       initRetryTimer = null;
       initialized = false;
@@ -461,9 +504,13 @@ async function initializeCache(config: TrucksControlConfig): Promise<void> {
       try {
         await initializeCache(config);
       } catch {}
-    }, 60000);
+    }, API_INTERVALS.RequestVeiculo);
   }
 }
+
+let fetchAllLock: Promise<TrucksControlPosition[]> | null = null;
+let lastFetchAllTime = 0;
+const FETCH_ALL_MIN_INTERVAL = 35 * 1000;
 
 export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
   const config = getConfig();
@@ -472,14 +519,32 @@ export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
     return [];
   }
 
-  await initializeCache(config);
+  if (fetchAllLock) return fetchAllLock;
 
+  const now = Date.now();
+  if (now - lastFetchAllTime < FETCH_ALL_MIN_INTERVAL && vehicleCache.length > 0) {
+    return getCachedPositions();
+  }
+
+  fetchAllLock = (async () => {
+    try {
+      await initializeCache(config);
+      const vehicles = await fetchVehicles(config);
+      const spyDevices = await fetchSpyDevices(config);
+      await fetchMessages(config);
+      await fetchSpyMessages(config);
+      lastFetchAllTime = Date.now();
+      return _buildPositions(vehicles, spyDevices);
+    } finally {
+      fetchAllLock = null;
+    }
+  })();
+
+  return fetchAllLock;
+}
+
+function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): TrucksControlPosition[] {
   try {
-    const vehicles = await fetchVehicles(config);
-    const spyDevices = await fetchSpyDevices(config);
-    await fetchMessages(config);
-    await fetchSpyMessages(config);
-
     const positions: TrucksControlPosition[] = [];
 
     const processedVeiIDs = new Set<number>();
