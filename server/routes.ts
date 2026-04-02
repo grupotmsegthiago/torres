@@ -1572,9 +1572,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           billing: billing?.[0] || null,
           hasContract: !!clientContract,
           contractId: clientContract?.id || null,
+          contractName: clientContract?.name || null,
           contractValues: clientContract ? {
             valor_km_carregado: clientContract.valor_km_carregado,
             franquia_minima_km: clientContract.franquia_minima_km,
+            valor_acionamento: clientContract.valor_acionamento,
+            franquia_km: clientContract.franquia_km || clientContract.franquia_minima_km,
+            franquia_horas: clientContract.franquia_horas,
+            valor_hora_extra: clientContract.valor_hora_extra,
+            valor_km_extra: clientContract.valor_km_extra || clientContract.valor_km_carregado,
           } : null,
         };
       }));

@@ -579,6 +579,16 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
               </div>
             )}
 
+            {os.contractName && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5">
+                <FileText size={14} className="text-amber-600 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold text-amber-500 uppercase">Tabela de Preços</p>
+                  <p className="text-xs font-bold text-amber-800 mt-0.5">{os.contractName}</p>
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-neutral-100 pt-4">
               <div className="flex items-center justify-between mb-3">
                 <SectionTitle icon={<Gauge size={14} />} title="KM e Horários" />
