@@ -4787,6 +4787,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   // ====================== OPERATIONAL GRID ======================
 
   app.get("/api/operational-grid", requireAuth, async (_req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     const orders = await storage.getServiceOrders();
     const gridVehicles = await storage.getVehicles();
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -4802,6 +4804,28 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         return false;
       }
     );
+
+    for (const ao of activeOrders) {
+      if (ao.status === "em_andamento" && (!ao.originLat || !ao.destinationLat)) {
+        (async () => {
+          try {
+            const geoUpdates: any = {};
+            if (!ao.originLat && ao.origin) {
+              const geo = await nominatimGeocode(ao.origin);
+              if (geo) { geoUpdates.originLat = geo.lat; geoUpdates.originLng = geo.lng; }
+            }
+            if (!ao.destinationLat && ao.destination) {
+              const geo = await nominatimGeocode(ao.destination);
+              if (geo) { geoUpdates.destinationLat = geo.lat; geoUpdates.destinationLng = geo.lng; }
+            }
+            if (Object.keys(geoUpdates).length > 0) {
+              await storage.updateServiceOrder(ao.id, geoUpdates);
+              console.log(`[grid] Auto-geocoded OS ${ao.osNumber}: origin=${geoUpdates.originLat ? "OK" : "skip"} dest=${geoUpdates.destinationLat ? "OK" : "skip"}`);
+            }
+          } catch (_e) {}
+        })();
+      }
+    }
 
     const todayStr = new Date().toISOString().split("T")[0];
     const vehicleFuelCache = new Map<string, number>();
@@ -5121,6 +5145,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           id: o.id,
           osNumber: o.osNumber,
           scheduledDate: o.scheduledDate,
+          missionStartedAt: o.missionStartedAt || null,
           status: o.status,
           priority: o.priority || "agendada",
           missionStatus: o.missionStatus,
@@ -5166,6 +5191,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   app.get("/api/vehicle-tracking", requireAuth, async (_req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     const allVehicles = await storage.getVehicles();
     const orders = await storage.getServiceOrders();
     const FINISHED_MISSION = ["finalizada", "retorno_base", "chegada_base", "encerrada"];
@@ -5428,6 +5455,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                     longitude: lastUpd[0].longitude || null,
                   } : null,
                   scheduledDate: linkedOrder.scheduledDate,
+                  missionStartedAt: linkedOrder.missionStartedAt || null,
                   clientName: client?.name || "—",
                   priority: linkedOrder.priority || "agendada",
                   employee1: emp1 ? { id: emp1.id, name: emp1.name, phone: emp1.phone || null, addressLat: emp1.addressLat || null, addressLng: emp1.addressLng || null } : null,

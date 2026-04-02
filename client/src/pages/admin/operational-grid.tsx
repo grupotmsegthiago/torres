@@ -226,6 +226,7 @@ interface TrackedVehicle {
       longitude?: string | null;
     } | null;
     scheduledDate?: string | null;
+    missionStartedAt?: string | null;
     clientName: string;
     priority: string;
     employee1: { id: number; name: string; phone: string | null; addressLat?: number | null; addressLng?: number | null } | null;
@@ -271,6 +272,7 @@ interface GridItem {
   id: number;
   osNumber: string;
   scheduledDate: string | null;
+  missionStartedAt?: string | null;
   status: string;
   priority: string;
   missionStatus: string;
@@ -5015,7 +5017,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
-                                        const hora = g.scheduledDate ? new Date(g.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                                        const hora = (g.missionStartedAt || g.scheduledDate) ? new Date((g.missionStartedAt || g.scheduledDate)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                                         const he = g.liveCost?.fat_hora_extra || 0;
                                         const ke = g.liveCost?.fat_km_extra || 0;
                                         return (
@@ -5125,10 +5127,12 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const stepPct = getMissionProgress(ms);
                             return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={0} distTotalKm={0} compact noDistance /></div>;
                           })()}
-                          {v.activeOs.scheduledDate && (
+                          {(v.activeOs.missionStartedAt || v.activeOs.scheduledDate) && (
                             <p className="text-xs text-neutral-400 font-medium">
                               {(() => {
-                                const sd = new Date(v.activeOs.scheduledDate);
+                                const dateRef = v.activeOs.missionStartedAt || v.activeOs.scheduledDate;
+                                if (!dateRef) return "";
+                                const sd = new Date(dateRef);
                                 const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -6878,15 +6882,34 @@ export default function OperationalGridPage() {
 
   useEffect(() => { getReportTemplate(); }, []);
 
+  useEffect(() => {
+    const checkDateChange = () => {
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const stored = localStorage.getItem("torres_grid_date");
+      if (stored && stored !== today) {
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+      localStorage.setItem("torres_grid_date", today);
+    };
+    checkDateChange();
+    const interval = setInterval(checkDateChange, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
     refetchInterval: REFRESH_INTERVAL_MS,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid, dataUpdatedAt: gridUpdatedAt } = useQuery<GridItem[]>({
     queryKey: ["/api/operational-grid"],
     refetchInterval: REFRESH_INTERVAL_MS,
     staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
