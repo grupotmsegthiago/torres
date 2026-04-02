@@ -4845,13 +4845,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-            const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+            const kmInicial = kmSaidaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
 
-            const scheduledTime = o.scheduledDate ? new Date(o.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
-            const startTime = o.missionStartedAt ? new Date(o.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
-            const endTime = o.completedDate ? new Date(o.completedDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : null;
-            const nowTime = endTime || new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+            const missionStartDate = o.missionStartedAt ? new Date(o.missionStartedAt as string) : null;
+            const missionEndDate = o.completedDate ? new Date(o.completedDate) : null;
+            const nowDate = new Date();
+
+            const startTime = missionStartDate ? missionStartDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
+            const endTime = missionEndDate ? missionEndDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : null;
+            const nowTime = endTime || nowDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
             let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
             let contratoNome: string | null = null;
@@ -4866,7 +4869,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
             const n2 = (v: any) => Number(v) || 0;
             const franquiaHoras = n2(contrato.franquia_horas);
-            const horasCalcRaw = startTime ? calcularHorasTrabalhadas(startTime, nowTime) : 0;
+            let horasCalcRaw = 0;
+            if (missionStartDate) {
+              const endRef = missionEndDate || nowDate;
+              const diffMs = endRef.getTime() - missionStartDate.getTime();
+              horasCalcRaw = diffMs > 0 ? diffMs / 3600000 : 0;
+            }
 
             const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
             const kmTotal = kmFinalNorm - kmInicial;
