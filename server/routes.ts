@@ -9711,7 +9711,15 @@ Regras:
 
   app.post("/api/escort/contracts", requireAdminRole, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("escort_contracts").insert(req.body).select().single();
+      let { data, error } = await supabaseAdmin.from("escort_contracts").insert(req.body).select().single();
+      if (error && error.message?.includes("schema cache")) {
+        await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS tabela_cancelamento NUMERIC DEFAULT 0" });
+        await supabaseAdmin.rpc("exec_sql", { query: "NOTIFY pgrst, 'reload schema'" });
+        await new Promise(r => setTimeout(r, 2000));
+        const retry = await supabaseAdmin.from("escort_contracts").insert(req.body).select().single();
+        data = retry.data;
+        error = retry.error;
+      }
       if (error) throw error;
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -9719,7 +9727,15 @@ Regras:
 
   app.put("/api/escort/contracts/:id", requireAdminRole, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("escort_contracts").update(req.body).eq("id", req.params.id).select().single();
+      let { data, error } = await supabaseAdmin.from("escort_contracts").update(req.body).eq("id", req.params.id).select().single();
+      if (error && error.message?.includes("schema cache")) {
+        await supabaseAdmin.rpc("exec_sql", { query: "ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS tabela_cancelamento NUMERIC DEFAULT 0" });
+        await supabaseAdmin.rpc("exec_sql", { query: "NOTIFY pgrst, 'reload schema'" });
+        await new Promise(r => setTimeout(r, 2000));
+        const retry = await supabaseAdmin.from("escort_contracts").update(req.body).eq("id", req.params.id).select().single();
+        data = retry.data;
+        error = retry.error;
+      }
       if (error) throw error;
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
