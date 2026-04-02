@@ -7085,11 +7085,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
 
           const nb = (v: any) => Number(v) || 0;
-          await supabaseAdmin.from("escort_billings").insert({
+          const billingPayload = {
             service_order_id: serviceOrderId,
             client_id: so.clientId, client_name: client?.name || "—",
             contract_id: contrato.id || null,
-            km_inicial: nb(kmInicial), km_final: nb(kmFinal), km_vazio: 0,
+            km_inicial: nb(kmInicial), km_final: nb(kmFinal > kmInicial ? kmFinal : kmInicial), km_vazio: 0,
             km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
             km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
             km_excedente: nb(resultado.km_excedente),
@@ -7119,8 +7119,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             motorista_escoltado: so.escortedDriverName || null,
             data_missao: so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
-          });
-          console.log(`[auto-billing] OS ${so.osNumber}: despesas pedágio=${despPedagio} combustível=${despCombustivel} outras=${despOutras} pag_total=${resultado.pag_total} fat_total=${resultado.fat_total}`);
+          };
+          const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
+          if (existBill?.length) {
+            const { service_order_id: _sid, created_by: _cb, ...updatePayload } = billingPayload;
+            await supabaseAdmin.from("escort_billings").update(updatePayload).eq("id", existBill[0].id);
+            console.log(`[auto-billing] OS ${so.osNumber}: UPDATED billing ${existBill[0].id} km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
+          } else {
+            await supabaseAdmin.from("escort_billings").insert(billingPayload);
+            console.log(`[auto-billing] OS ${so.osNumber}: CREATED billing km_ini=${kmInicial} km_fin=${kmFinal} fat_total=${resultado.fat_total}`);
+          }
         }
       } catch (billingErr: any) {
         console.error("Auto-billing creation failed (non-blocking):", billingErr.message);
