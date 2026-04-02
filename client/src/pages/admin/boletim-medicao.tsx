@@ -673,6 +673,28 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
               )}
             </div>
 
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
+                <p className="text-[9px] font-bold text-blue-400 uppercase">Total KM Rodado</p>
+                <p className="text-lg font-black font-mono text-blue-800 mt-0.5">{kmTotalCalc > 0 ? kmTotalCalc.toLocaleString("pt-BR") : "—"} <span className="text-xs font-bold text-blue-500">km</span></p>
+              </div>
+              <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
+                <p className="text-[9px] font-bold text-purple-400 uppercase">Total Horas Missão</p>
+                <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalc > 0 ? `${Math.floor(hCalc)}h${String(Math.round((hCalc % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
+                <p className="text-[9px] font-bold text-emerald-400 uppercase">Chegada na Origem</p>
+                <p className="text-lg font-black font-mono text-emerald-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime || "—")}</p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center">
+                <p className="text-[9px] font-bold text-red-400 uppercase">Fim de Missão</p>
+                <p className="text-lg font-black font-mono text-red-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : (endTime || "—")}</p>
+              </div>
+            </div>
+
             {b && (
               <>
                 <div className="border-t border-neutral-100 pt-4">
