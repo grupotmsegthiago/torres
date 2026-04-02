@@ -79,11 +79,13 @@ let lastMid: number = 1;
 let vehicleCache: TrucksControlVehicle[] = [];
 let vehicleCacheTimestamp = 0;
 let messagesByVehicle: Map<number, TrucksControlMessage> = new Map();
+let lastValidMessageByVehicle: Map<number, TrucksControlMessage> = new Map();
 
 let lastSpyMid: number = 1;
 let spyCache: SpyDevice[] = [];
 let spyCacheTimestamp = 0;
 let messagesBySpy: Map<number, SpyMessage> = new Map();
+let lastValidMessageBySpy: Map<number, SpyMessage> = new Map();
 
 interface PositionHistoryEntry {
   lat: number;
@@ -373,13 +375,25 @@ async function fetchSpyMessages(config: TrucksControlConfig): Promise<SpyMessage
     }
 
     const messages = parseSpyMessages(response);
+    messages.sort((a, b) => parseTcDate(a.dtHora) - parseTcDate(b.dtHora));
+
     for (const msg of messages) {
-      const existing = messagesBySpy.get(msg.spyID);
-      if (!existing || msg.mId > existing.mId) {
-        messagesBySpy.set(msg.spyID, msg);
-      }
       if (msg.mId > lastSpyMid) {
         lastSpyMid = msg.mId;
+      }
+      if (hasValidCoords(msg.lat, msg.lon)) {
+        const existing = messagesBySpy.get(msg.spyID);
+        const existingTs = existing ? parseTcDate(existing.dtHora) : 0;
+        const msgTs = parseTcDate(msg.dtHora);
+        if (!existing || msgTs >= existingTs) {
+          messagesBySpy.set(msg.spyID, msg);
+        }
+        lastValidMessageBySpy.set(msg.spyID, msg);
+      } else {
+        if (!messagesBySpy.has(msg.spyID)) {
+          const lastValid = lastValidMessageBySpy.get(msg.spyID);
+          if (lastValid) messagesBySpy.set(msg.spyID, lastValid);
+        }
       }
     }
 
@@ -435,6 +449,18 @@ async function fetchVehicles(config: TrucksControlConfig): Promise<TrucksControl
   }
 }
 
+function parseTcDate(dtStr: string): number {
+  if (!dtStr) return 0;
+  const m = dtStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+  if (!m) return 0;
+  const y = m[3].length === 2 ? 2000 + parseInt(m[3]) : parseInt(m[3]);
+  return new Date(y, parseInt(m[1]) - 1, parseInt(m[2]), parseInt(m[4]), parseInt(m[5]), parseInt(m[6] || "0")).getTime();
+}
+
+function hasValidCoords(lat: number, lon: number): boolean {
+  return (lat !== 0 || lon !== 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
 async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControlMessage[]> {
   if (!canCallApi("RequestMensagemCB")) {
     return [];
@@ -453,18 +479,36 @@ async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControl
     }
 
     const messages = parseMessages(response);
+
+    messages.sort((a, b) => parseTcDate(a.dt) - parseTcDate(b.dt));
+
+    let emptyCount = 0;
     for (const msg of messages) {
-      const existing = messagesByVehicle.get(msg.veiID);
-      if (!existing || msg.mId > existing.mId) {
-        messagesByVehicle.set(msg.veiID, msg);
-      }
       if (msg.mId > lastMid) {
         lastMid = msg.mId;
+      }
+
+      if (hasValidCoords(msg.lat, msg.lon)) {
+        const existing = messagesByVehicle.get(msg.veiID);
+        const existingTs = existing ? parseTcDate(existing.dt) : 0;
+        const msgTs = parseTcDate(msg.dt);
+        if (!existing || msgTs >= existingTs) {
+          messagesByVehicle.set(msg.veiID, msg);
+        }
+        lastValidMessageByVehicle.set(msg.veiID, msg);
+      } else {
+        emptyCount++;
+        if (!messagesByVehicle.has(msg.veiID)) {
+          const lastValid = lastValidMessageByVehicle.get(msg.veiID);
+          if (lastValid) {
+            messagesByVehicle.set(msg.veiID, lastValid);
+          }
+        }
       }
     }
 
     if (messages.length > 0) {
-      console.log(`[truckscontrol] ${messages.length} mensagem(ns) novas, lastMid=${lastMid}`);
+      console.log(`[truckscontrol] ${messages.length} mensagem(ns) novas (${emptyCount} sem coordenadas), lastMid=${lastMid}`);
     }
 
     return messages;
@@ -552,15 +596,17 @@ function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): T
     for (const veh of vehicles) {
       processedVeiIDs.add(veh.veiID);
       const msg = messagesByVehicle.get(veh.veiID);
-      if (msg) {
-        const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
+      const validMsg = msg && hasValidCoords(msg.lat, msg.lon) ? msg : lastValidMessageByVehicle.get(veh.veiID);
+      if (validMsg) {
+        const isLive = msg && hasValidCoords(msg.lat, msg.lon);
+        const address = [validMsg.rua, validMsg.rod, validMsg.mun, validMsg.uf].filter(Boolean).join(", ");
         positions.push({
-          latitude: msg.lat,
-          longitude: msg.lon,
-          speed: msg.vel >= 0 ? msg.vel : 0,
-          ignition: msg.evt4 === 1,
-          lastPositionTime: msg.dt,
-          gpsSignal: true,
+          latitude: validMsg.lat,
+          longitude: validMsg.lon,
+          speed: isLive ? (validMsg.vel >= 0 ? validMsg.vel : 0) : 0,
+          ignition: isLive ? validMsg.evt4 === 1 : false,
+          lastPositionTime: validMsg.dt,
+          gpsSignal: !!isLive,
           address,
           direction: 0,
           odometer: 0,
@@ -568,8 +614,8 @@ function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): T
           identifier: veh.ident || String(veh.veiID),
           voltage: 0,
           veiID: veh.veiID,
-          municipality: msg.mun,
-          state: msg.uf,
+          municipality: validMsg.mun,
+          state: validMsg.uf,
           deviceType: "vehicle",
         });
       } else {
@@ -596,14 +642,16 @@ function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): T
 
     for (const [veiID, msg] of messagesByVehicle) {
       if (processedVeiIDs.has(veiID)) continue;
-      const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
+      const validMsg = hasValidCoords(msg.lat, msg.lon) ? msg : lastValidMessageByVehicle.get(veiID);
+      if (!validMsg || !hasValidCoords(validMsg.lat, validMsg.lon)) continue;
+      const address = [validMsg.rua, validMsg.rod, validMsg.mun, validMsg.uf].filter(Boolean).join(", ");
       positions.push({
-        latitude: msg.lat,
-        longitude: msg.lon,
-        speed: msg.vel >= 0 ? msg.vel : 0,
-        ignition: msg.evt4 === 1,
-        lastPositionTime: msg.dt,
-        gpsSignal: true,
+        latitude: validMsg.lat,
+        longitude: validMsg.lon,
+        speed: validMsg.vel >= 0 ? validMsg.vel : 0,
+        ignition: validMsg.evt4 === 1,
+        lastPositionTime: validMsg.dt,
+        gpsSignal: hasValidCoords(msg.lat, msg.lon),
         address,
         direction: 0,
         odometer: 0,
@@ -611,25 +659,27 @@ function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): T
         identifier: String(veiID),
         voltage: 0,
         veiID,
-        municipality: msg.mun,
-        state: msg.uf,
+        municipality: validMsg.mun,
+        state: validMsg.uf,
         deviceType: "vehicle",
       });
-      console.log(`[truckscontrol] Posição órfã adicionada: veiID=${veiID} lat=${msg.lat} lon=${msg.lon} (veículo não no cache)`);
+      console.log(`[truckscontrol] Posição órfã adicionada: veiID=${veiID} lat=${validMsg.lat} lon=${validMsg.lon} (veículo não no cache)`);
     }
 
     for (const spy of spyDevices) {
       const msg = messagesBySpy.get(spy.spyID);
       const eqpName = spy.eqp === 14 ? "SpyTrack2" : "SpyTrack";
-      if (msg) {
-        const address = [msg.rua, msg.rod, msg.mun, msg.uf].filter(Boolean).join(", ");
+      const validMsg = msg && hasValidCoords(msg.lat, msg.lon) ? msg : lastValidMessageBySpy.get(spy.spyID);
+      if (validMsg) {
+        const isLive = msg && hasValidCoords(msg.lat, msg.lon);
+        const address = [validMsg.rua, validMsg.rod, validMsg.mun, validMsg.uf].filter(Boolean).join(", ");
         positions.push({
-          latitude: msg.lat,
-          longitude: msg.lon,
-          speed: msg.vGPS >= 0 ? msg.vGPS : 0,
+          latitude: validMsg.lat,
+          longitude: validMsg.lon,
+          speed: isLive ? (validMsg.vGPS >= 0 ? validMsg.vGPS : 0) : 0,
           ignition: false,
-          lastPositionTime: msg.dtHora,
-          gpsSignal: msg.gps === "A" || msg.gps === "",
+          lastPositionTime: validMsg.dtHora,
+          gpsSignal: isLive ? (validMsg.gps === "A" || validMsg.gps === "") : false,
           address,
           direction: 0,
           odometer: 0,
@@ -637,8 +687,8 @@ function _buildPositions(vehicles: TrucksControlVehicle[], spyDevices: any[]): T
           identifier: spy.desc || `${eqpName} #${spy.spyID}`,
           voltage: 0,
           veiID: spy.spyID,
-          municipality: msg.mun,
-          state: msg.uf,
+          municipality: validMsg.mun,
+          state: validMsg.uf,
           deviceType: "spy",
           batteryLevel: spy.nBat >= 0 ? spy.nBat : undefined,
           coupled: spy.sAcop === 1,
