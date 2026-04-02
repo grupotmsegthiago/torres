@@ -1505,7 +1505,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     try {
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
-        o.status === "concluida" || o.missionStatus === "encerrada" ||
+        o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada" ||
         o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt) ||
         o.status === "cancelada"
       );
@@ -4886,7 +4886,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const activeOrders = orders.filter(
       (o) => {
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") return true;
-        if (o.status === "concluida" || o.missionStatus === "encerrada" || o.status === "cancelada") {
+        const isConcluida = o.status === "concluida" || o.status === "concluída";
+        if (isConcluida || o.missionStatus === "encerrada" || o.status === "cancelada") {
           const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const udBRT = o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
@@ -5046,7 +5047,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
 
-        if ((o.status === "em_andamento" || o.status === "concluida" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta") {
+        if ((o.status === "em_andamento" || o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta") {
           try {
             const photos = await storage.getMissionPhotosByOS(o.id);
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
@@ -5177,7 +5178,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const frozenHoras = Math.round(horasCalc * 100) / 100;
             const frozenKm = kmTotal;
 
-            if ((o.status === "concluida" || o.missionStatus === "encerrada") && !(o as any).custos_congelados_em) {
+            if ((o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada") && !(o as any).custos_congelados_em) {
               try {
                 await supabaseAdmin.from("service_orders").update({
                   fat_calculado: frozenFat,
