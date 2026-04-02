@@ -565,7 +565,7 @@ const FALLBACK_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 👮 *AGENTE 02:* {{agent2}}
 
 📈 *PROGRESSO DA MISSÃO:* {{progress}}%
-📣 *OCORRÊNCIA:* 🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
+🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
 🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 
 let _cachedReportTemplate: string | null = null;

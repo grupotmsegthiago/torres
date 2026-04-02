@@ -389,7 +389,7 @@ const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 👮 *AGENTE 02:* {{agent2}}
 
 📈 *PROGRESSO DA MISSÃO:* {{progress}}%
-📣 *OCORRÊNCIA:* 🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
+🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
 🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 
 async function ensureSystemSettingsTable() {
@@ -405,9 +405,20 @@ async function ensureSystemSettingsTable() {
     const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, "report_template"));
     if (existing.length === 0) {
       await db.insert(systemSettings).values({ key: "report_template", value: DEFAULT_REPORT_TEMPLATE });
-    } else if (existing[0].value.includes("ETAPA AVANÇADA")) {
-      const updated = existing[0].value.replace(/ETAPA AVANÇADA/g, "ATUALIZAÇÃO");
-      await db.update(systemSettings).set({ value: updated, updatedAt: new Date() }).where(eq(systemSettings.key, "report_template"));
+    } else {
+      let val = existing[0].value;
+      let changed = false;
+      if (val.includes("ETAPA AVANÇADA")) {
+        val = val.replace(/ETAPA AVANÇADA/g, "ATUALIZAÇÃO");
+        changed = true;
+      }
+      if (val.includes("📣 *OCORRÊNCIA:*")) {
+        val = val.replace(/📣 \*OCORRÊNCIA:\* /g, "");
+        changed = true;
+      }
+      if (changed) {
+        await db.update(systemSettings).set({ value: val, updatedAt: new Date() }).where(eq(systemSettings.key, "report_template"));
+      }
     }
   } catch (e) {
     console.error("[system_settings] init error:", e);
