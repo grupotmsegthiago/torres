@@ -88,6 +88,8 @@ async function ensureFinancialOriginColumns() {
       await supabaseAdmin.rpc("exec_sql", { query: q });
     }
     ok = true;
+    try { await supabaseAdmin.rpc("exec_sql", { query: "NOTIFY pgrst, 'reload schema'" }); } catch (_n) {}
+    try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
     console.log("[Financial] All columns ensured via Supabase RPC");
   } catch (rpcErr: any) {
     console.log("[Financial] Supabase RPC failed, trying direct SQL:", rpcErr?.message);
