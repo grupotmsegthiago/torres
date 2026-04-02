@@ -7,6 +7,7 @@ import {
   Calculator, Calendar,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -252,6 +253,7 @@ export default function RelatorioFaturamentoPage() {
       .sign-data { font-size: 6pt; color: #6b7280; margin-top: 1mm; }
       tfoot tr { break-inside: avoid; border-top: 2.5px solid #111; }
       tfoot td { font-size: 7pt; font-weight: 900; padding: 4px 6px; letter-spacing: 0.3px; }
+      .print-watermark { position: fixed !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: 300px !important; height: auto !important; opacity: 0.06 !important; pointer-events: none !important; z-index: 0 !important; }
     `;
 
     pw.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição — Torres</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
@@ -439,8 +441,9 @@ export default function RelatorioFaturamentoPage() {
       )}
 
       {reportGenerated && rowsData.length > 0 && (
-        <div id="print-area" className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-x-auto">
-          <div className="boletim-header" style={{ marginBottom: "12px", textAlign: "center", paddingBottom: "8px", borderBottom: "2px solid #111" }}>
+        <div id="print-area" className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-x-auto" style={{ position: "relative" }}>
+          <img src={torresLogoPath} alt="" className="print-watermark" style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "400px", height: "auto", opacity: 0.06, pointerEvents: "none", zIndex: 0 }} />
+          <div className="boletim-header" style={{ marginBottom: "12px", textAlign: "center", paddingBottom: "8px", borderBottom: "2px solid #111", position: "relative", zIndex: 1 }}>
             <h1 style={{ fontSize: "18px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", color: "#111", margin: 0 }}>TORRES — SERVIÇOS TÁTICOS</h1>
             <p className="subtitle-line" style={{ fontSize: "14px", fontWeight: 700, textTransform: "uppercase", color: "#374151", margin: "4px 0 2px" }}>BOLETIM DE MEDIÇÃO — {displayClientName}</p>
             <p className="ref-line" style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "#6b7280", margin: 0 }}>
@@ -448,7 +451,7 @@ export default function RelatorioFaturamentoPage() {
             </p>
           </div>
 
-          <div className="report-table-scroll" style={{ overflow: "auto", maxHeight: "70vh" }}>
+          <div className="report-table-scroll" style={{ overflow: "auto", maxHeight: "70vh", position: "relative", zIndex: 1 }}>
             <table style={{ borderCollapse: "collapse", border: "1.5px solid #111", tableLayout: "auto", width: "100%", minWidth: "1500px" }}>
               <thead>
                 <tr className="group-hdr">
@@ -532,7 +535,7 @@ export default function RelatorioFaturamentoPage() {
             </table>
           </div>
 
-          <div className="sign-section" style={{ marginTop: "30px", display: "flex", justifyContent: "space-between", paddingTop: "15px", borderTop: "1px solid #111", alignItems: "flex-end" }}>
+          <div className="sign-section" style={{ marginTop: "30px", display: "flex", justifyContent: "space-between", paddingTop: "15px", borderTop: "1px solid #111", alignItems: "flex-end", position: "relative", zIndex: 1 }}>
             <div className="sign-box" style={{ textAlign: "center", width: "250px" }}>
               <p className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: "20px", fontWeight: 700, color: "#111", borderBottom: "1.5px solid #374151", paddingBottom: "2px", display: "inline-block" }}>Torres Vigilância</p>
               <p className="sign-role" style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#111", letterSpacing: "0.8px", marginTop: "4px" }}>TORRES VIGILÂNCIA PATRIMONIAL</p>
