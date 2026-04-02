@@ -527,8 +527,8 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 function calcEta(distKm: number, speedKmh: number | null | undefined): string {
-  const avgSpeed = speedKmh && speedKmh > 5 ? speedKmh : 60;
-  const roadDist = distKm * 1.3;
+  const avgSpeed = speedKmh && speedKmh > 5 ? speedKmh : 80;
+  const roadDist = distKm;
   const hours = roadDist / avgSpeed;
   if (hours < 1) {
     const mins = Math.round(hours * 60);
@@ -638,7 +638,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   if (lat && lng && destLat && destLng) {
     const dist = haversineKm(lat, lng, destLat, destLng);
     const roadDist = Math.round(dist * 1.3);
-    const eta = calcEta(dist, v.tracker?.speed);
+    const eta = calcEta(roadDist, v.tracker?.speed);
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${roadDist} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
   }
 
@@ -6326,7 +6326,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   if (!lat || !lng || !dLat || !dLng) return null;
                   const dist = haversineKm(Number(lat), Number(lng), Number(dLat), Number(dLng));
                   const roadDist = Math.round(dist * 1.3);
-                  const eta = calcEta(dist, matchedVehicle?.tracker?.speed);
+                  const eta = calcEta(roadDist, matchedVehicle?.tracker?.speed);
                   return (
                     <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-3">
                       <div className="flex items-center gap-1.5">
