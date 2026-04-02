@@ -160,7 +160,7 @@ const VEHICLE_CACHE_TTL = 5 * 60 * 1000;
 
 const API_INTERVALS = {
   RequestVeiculo: 5 * 60 * 1000,
-  RequestMensagemCB: 30 * 1000,
+  RequestMensagemCB: 5 * 60 * 1000,
   RequestSpy: 5 * 60 * 1000,
   RequestMensagemSpy: 30 * 1000,
   RequestVeiculoEspelhado: 5 * 60 * 1000,
@@ -510,7 +510,7 @@ async function initializeCache(config: TrucksControlConfig): Promise<void> {
 
 let fetchAllLock: Promise<TrucksControlPosition[]> | null = null;
 let lastFetchAllTime = 0;
-const FETCH_ALL_MIN_INTERVAL = 35 * 1000;
+const FETCH_ALL_MIN_INTERVAL = 5 * 60 * 1000;
 
 export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
   const config = getConfig();
