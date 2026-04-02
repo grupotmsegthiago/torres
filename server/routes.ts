@@ -5525,6 +5525,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 const client = await storage.getClient(linkedOrder.clientId);
                 const emp1 = linkedOrder.assignedEmployeeId ? await storage.getEmployee(linkedOrder.assignedEmployeeId) : null;
                 const emp2 = linkedOrder.assignedEmployee2Id ? await storage.getEmployee(linkedOrder.assignedEmployee2Id) : null;
+                const kit = linkedOrder.kitId ? await storage.getWeaponKit(linkedOrder.kitId) : null;
                 const agentLoc1 = linkedOrder.assignedEmployeeId ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployeeId) : null;
                 const agentLoc2 = linkedOrder.assignedEmployee2Id ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployee2Id) : null;
                 const lastUpd = await db.select()
@@ -5565,6 +5566,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   escortedDriverPhone: linkedOrder.escortedDriverPhone || null,
                   escortedVehiclePlate: linkedOrder.escortedVehiclePlate || null,
                   earlyStartApproved: linkedOrder.earlyStartApproved || false,
+                  kitId: linkedOrder.kitId || null,
+                  kitName: kit?.name || null,
                 };
               })()
             : null,

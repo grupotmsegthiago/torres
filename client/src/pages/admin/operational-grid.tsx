@@ -236,6 +236,8 @@ interface TrackedVehicle {
     destinationLat?: number | null;
     destinationLng?: number | null;
     earlyStartApproved?: boolean;
+    kitId?: number | null;
+    kitName?: string | null;
   } | null;
   scheduledOs: {
     id: number;
@@ -5177,10 +5179,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         const vStatus = getViaturaStatus(v);
                         const VIcon = vStatus.icon;
                         return (
-                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
-                            <VIcon className="w-3 h-3" />
-                            {vStatus.label}
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
+                              <VIcon className="w-3 h-3" />
+                              {vStatus.label}
+                            </span>
+                            {v.activeOs?.kitName && (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" data-testid={`kit-badge-${v.id}`}>
+                                🔫 {v.activeOs.kitName}
+                              </span>
+                            )}
+                          </div>
                         );
                       })()}
                     </td>
