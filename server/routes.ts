@@ -10500,9 +10500,9 @@ Regras:
         })(),
       }));
 
-      const allFueling = await storage.getFuelingRecords();
-      const fuelingByAgent: { driverId: number; date: string; totalCost: number; liters: number; vehicleId: number }[] = allFueling.map((f: any) => ({
-        driverId: f.driverId, date: f.date, totalCost: Number(f.totalCost || 0), liters: Number(f.liters || 0), vehicleId: f.vehicleId,
+      const { data: allFueling } = await supabaseAdmin.from("fueling_records").select("id, vehicle_id, driver_id, date, liters, total_cost");
+      const fuelingByAgent: { driverId: number; date: string; totalCost: number; liters: number; vehicleId: number }[] = (allFueling || []).map((f: any) => ({
+        driverId: f.driver_id, date: f.date, totalCost: Number(f.total_cost || 0), liters: Number(f.liters || 0), vehicleId: f.vehicle_id,
       }));
 
       const { data: missionCostsRaw } = await supabaseAdmin.from("mission_costs").select("*");
