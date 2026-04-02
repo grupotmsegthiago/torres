@@ -2332,6 +2332,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    if (parsed.data.completedDate && existing) {
+      const currentStatus = parsed.data.status || existing.status || "";
+      if (!["concluída", "concluida", "cancelada"].includes(currentStatus)) {
+        (parsed.data as any).status = "concluída";
+      }
+    }
+
     const wasFinished = existing && (existing.status === "concluída" || existing.status === "concluida" || existing.status === "cancelada");
     const isReopening = wasFinished && parsed.data.status && !["concluída", "concluida", "cancelada"].includes(parsed.data.status);
     if (isReopening) {

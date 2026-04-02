@@ -561,7 +561,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortContractId: (order as any)?.escortContractId || "",
     type: "escolta",
     description: order?.description || "",
-    status: order?.status || "agendada",
+    status: (order?.status === "concluida" ? "concluída" : order?.status) || "agendada",
     priority: order?.priority || "agendada",
     scheduledDate: utcToLocalInput(order?.scheduledDate),
     missionStartedAt: utcToLocalInput(order?.missionStartedAt),
