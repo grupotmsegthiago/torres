@@ -1696,7 +1696,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
-        data_missao: so.scheduledDate || new Date().toISOString(),
+        data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
@@ -6806,7 +6806,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
                 origem: so.origin || null, destino: so.destination || null,
                 placa_viatura: vehicle?.plate || null,
-                data_missao: so.scheduledDate || new Date().toISOString(),
+                data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
                 status: "CANCELADO", created_by: user.name,
                 observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
               });
@@ -7156,7 +7156,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
             motorista_escoltado: so.escortedDriverName || null,
-            data_missao: so.scheduledDate || new Date().toISOString(),
+            data_missao: new Date(so.scheduledDate || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
             status: "A_VERIFICAR", created_by: user.name,
           };
           const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
@@ -9940,7 +9940,7 @@ Regras:
         origem: body.origem, destino: body.destino,
         placa_viatura: body.placa_viatura, placa_escoltado: body.placa_escoltado,
         motorista_escoltado: body.motorista_escoltado,
-        data_missao: body.data_missao || new Date().toISOString(),
+        data_missao: new Date(body.data_missao || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         observacoes: body.observacoes, notas: body.notas,
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
@@ -10270,7 +10270,7 @@ Regras:
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: so.status === "em_andamento" ? new Date().toISOString() : (so.scheduledDate || so.createdAt || new Date().toISOString()),
+            data_missao: new Date(so.scheduledDate || so.createdAt || new Date().toISOString()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
             status: existingBilling?.status || "A_VERIFICAR",
             despesas_pedagio, despesas_combustivel, despesas_outras,
           });
@@ -10302,9 +10302,15 @@ Regras:
         expensesByDay[d] = (expensesByDay[d] || 0) + Number(t.amount || 0);
       });
 
+      const toBRTDate = (v: string) => {
+        try {
+          return new Date(v).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        } catch { return v?.split("T")[0] || null; }
+      };
+
       const missionsByDay: Record<string, any[]> = {};
       items.forEach((b: any) => {
-        const d = b.data_missao ? new Date(b.data_missao).toISOString().split("T")[0] : b.created_at?.split("T")[0];
+        const d = b.data_missao ? toBRTDate(b.data_missao) : (b.created_at ? toBRTDate(b.created_at) : null);
         if (!d) return;
         if (!missionsByDay[d]) missionsByDay[d] = [];
         missionsByDay[d].push(b);
@@ -10396,7 +10402,7 @@ Regras:
         return {
         id: b.id,
         os_number: so?.osNumber || b.os_number || null,
-        data: b.data_missao || b.created_at,
+        data: toBRTDate(b.data_missao || b.created_at || new Date().toISOString()),
         origem: b.origem,
         destino: b.destino,
         placa_viatura: b.placa_viatura,
