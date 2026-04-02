@@ -1,5 +1,6 @@
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, and, or, eq, isNull } from "drizzle-orm";
+import { serviceOrders } from "@shared/schema";
 
 export async function ensureDbSchema() {
   try {
@@ -473,6 +474,11 @@ export async function ensureDbSchema() {
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
     `).catch(() => {});
 
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`).catch(() => {});
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS mission_positions (
         id SERIAL PRIMARY KEY,
@@ -489,7 +495,57 @@ export async function ensureDbSchema() {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
 
     console.log("[db-init] Schema verified OK");
+
+    backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
+  }
+}
+
+async function nominatimGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=br&limit=1`;
+    const resp = await fetch(url, { headers: { "User-Agent": "TorresVP/1.0" }, signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    const data = await resp.json() as any[];
+    if (data.length === 0) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch {
+    return null;
+  }
+}
+
+async function backfillOrderCoords() {
+  const orders = await db.select({
+    id: serviceOrders.id,
+    osNumber: serviceOrders.osNumber,
+    origin: serviceOrders.origin,
+    destination: serviceOrders.destination,
+    originLat: serviceOrders.originLat,
+    destinationLat: serviceOrders.destinationLat,
+  }).from(serviceOrders).where(
+    and(
+      or(eq(serviceOrders.status, "em_andamento"), eq(serviceOrders.status, "agendada")),
+      or(isNull(serviceOrders.originLat), isNull(serviceOrders.destinationLat))
+    )
+  );
+  if (orders.length === 0) return;
+  console.log(`[db-init] Backfilling coordinates for ${orders.length} order(s)...`);
+  for (const o of orders) {
+    const updates: any = {};
+    if (!o.originLat && o.origin) {
+      const geo = await nominatimGeocode(o.origin);
+      if (geo) { updates.originLat = geo.lat; updates.originLng = geo.lng; }
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    if (!o.destinationLat && o.destination) {
+      const geo = await nominatimGeocode(o.destination);
+      if (geo) { updates.destinationLat = geo.lat; updates.destinationLng = geo.lng; }
+      await new Promise(r => setTimeout(r, 1100));
+    }
+    if (Object.keys(updates).length > 0) {
+      await db.update(serviceOrders).set(updates).where(eq(serviceOrders.id, o.id));
+      console.log(`[db-init] Geocoded ${o.osNumber}: origin=${updates.originLat ? "OK" : "skip"} dest=${updates.destinationLat ? "OK" : "skip"}`);
+    }
   }
 }
