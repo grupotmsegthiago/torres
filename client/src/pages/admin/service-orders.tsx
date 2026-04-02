@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase, parseBRL } from "@/lib/utils";
+import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -582,8 +582,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     escortedDriverPhone: (order as any)?.escortedDriverPhone || "",
     escortedVehiclePlate: (order as any)?.escortedVehiclePlate || "",
     notes: order?.notes || "",
-    valorEstimado: (order as any)?.valorEstimado || "",
-    pedagioEstimado: (order as any)?.pedagioEstimado || "",
+    valorEstimado: (order as any)?.valorEstimado ? Number((order as any).valorEstimado).toFixed(2).replace(".", ",") : "",
+    pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -606,7 +606,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         const franquia = Number(contract.franquia_minima_km || contract.franquia_km || 0);
         const estimado = acion + (kmVal * franquia);
         if (estimado > 0) {
-          setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: String(estimado) });
+          setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: estimado.toFixed(2).replace(".", ",") });
         }
       }
     }
@@ -628,7 +628,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       const total = Number(data.totalIdaVolta || 0);
       setTollInfo({ totalIdaVolta: total, count: data.count || 0, loading: false });
       if (total > 0) {
-        setForm(prev => ({ ...prev, pedagioEstimado: total }));
+        setForm(prev => ({ ...prev, pedagioEstimado: total.toFixed(2).replace(".", ",") }));
       }
     } catch {
       setTollInfo({ totalIdaVolta: 0, count: 0, loading: false });
@@ -1022,12 +1022,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               )}
               <div>
                 <FieldLabel>Valor Estimado (R$)</FieldLabel>
-                <Input type="text" inputMode="decimal" min="0" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: e.target.value })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+                <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: maskBRL(e.target.value) })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
               </div>
               <div>
                 <FieldLabel>Pedágio (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 ? "✓" : ""}</FieldLabel>
                 <div className="relative">
-                  <Input type="text" inputMode="decimal" min="0" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: e.target.value })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && Number(form.pedagioEstimado) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
+                  <Input type="text" inputMode="decimal" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: maskBRL(e.target.value) })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && parseBRL(String(form.pedagioEstimado)) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
                   {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">AUTO</span>
                   )}
