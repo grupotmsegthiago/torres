@@ -5246,7 +5246,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
         const allNext: { os: any; veh: TrackedVehicle | null }[] = [];
         for (const v of vehicles) {
           for (const u of (v.upcomingOrders || [])) {
-            if (u.scheduledDate && !allNext.find(a => a.os.id === u.id)) {
+            const uStatus = (u.status || "").toLowerCase();
+            const uMission = (u.missionStatus || "").toLowerCase();
+            const isFinished = uStatus === "concluida" || uStatus === "concluída" || uStatus === "cancelada" || uMission === "encerrada" || uMission === "finalizada";
+            if (u.scheduledDate && !isFinished && !allNext.find(a => a.os.id === u.id)) {
               allNext.push({ os: u, veh: v });
             }
           }
@@ -5324,7 +5327,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           const allNext: { os: any; veh: TrackedVehicle | null }[] = [];
           for (const v of vehicles) {
             for (const u of (v.upcomingOrders || [])) {
-              if (u.scheduledDate && !allNext.find(a => a.os.id === u.id)) {
+              const uStatus = (u.status || "").toLowerCase();
+              const uMission = (u.missionStatus || "").toLowerCase();
+              const isFinished = uStatus === "concluida" || uStatus === "concluída" || uStatus === "cancelada" || uMission === "encerrada" || uMission === "finalizada";
+              if (u.scheduledDate && !isFinished && !allNext.find(a => a.os.id === u.id)) {
                 allNext.push({ os: u, veh: v });
               }
             }
