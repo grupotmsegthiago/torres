@@ -1,4 +1,4 @@
-import { parseBRL } from "@/lib/utils";
+import { parseBRL, maskBRL } from "@/lib/utils";
 import MobileLayout from "@/components/mobile/layout";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -355,12 +355,12 @@ export default function MobileAbastecimentoPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Gasolina</label>
-                    <input type="text" inputMode="decimal" value={gasolinaPrice} onChange={e => setGasolinaPrice(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="numeric" value={gasolinaPrice || "0,000"} onChange={e => setGasolinaPrice(maskBRL(e.target.value, 3))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-gasolina-price" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Etanol</label>
-                    <input type="text" inputMode="decimal" value={etanolPrice} onChange={e => setEtanolPrice(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="numeric" value={etanolPrice || "0,000"} onChange={e => setEtanolPrice(maskBRL(e.target.value, 3))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-etanol-price" />
                   </div>
                 </div>
@@ -393,20 +393,20 @@ export default function MobileAbastecimentoPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Litros *</label>
-                    <input type="text" inputMode="decimal" value={liters} onChange={e => setLiters(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="numeric" value={liters || "0,00"} onChange={e => setLiters(maskBRL(e.target.value))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-liters" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Litro *</label>
-                    <input type="text" inputMode="decimal" value={costPerLiter} onChange={e => setCostPerLiter(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="numeric" value={costPerLiter || "0,00"} onChange={e => setCostPerLiter(maskBRL(e.target.value))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-cost-per-liter" />
                   </div>
                 </div>
-                {liters && costPerLiter && (
+                {parseBRL(liters) > 0 && parseBRL(costPerLiter) > 0 && (
                   <div className="bg-neutral-900 rounded-xl p-3 flex items-center justify-between">
                     <span className="text-xs text-neutral-400 font-bold uppercase">Total</span>
                     <span className="text-lg font-black text-white font-mono" data-testid="text-total-cost">
-                      R$ {(parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2)}
+                      R$ {maskBRL((parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2))}
                     </span>
                   </div>
                 )}
@@ -462,7 +462,7 @@ export default function MobileAbastecimentoPage() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-neutral-500 uppercase font-bold">Total</p>
-                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? (parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2) : "0.00"}</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? maskBRL((parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2)) : "0,00"}</p>
               </div>
             </div>
 

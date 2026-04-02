@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { parseBRL } from "@/lib/utils";
+import { parseBRL, maskBRL } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -195,16 +195,16 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     vehicleId: fueling?.vehicleId || 0,
     driverId: fueling?.driverId || null as number | null,
     date: fueling?.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
-    liters: fueling?.liters || "",
-    costPerLiter: fueling?.costPerLiter || "",
-    totalCost: fueling?.totalCost || "",
+    liters: fueling?.liters ? maskBRL(String(fueling.liters)) : "",
+    costPerLiter: fueling?.costPerLiter ? maskBRL(String(fueling.costPerLiter)) : "",
+    totalCost: fueling?.totalCost ? maskBRL(String(fueling.totalCost)) : "",
     km: fueling?.km || 0,
     fuelType: fueling?.fuelType || "gasolina",
     fullTank: fueling?.fullTank !== false,
     station: fueling?.station || "",
     notes: fueling?.notes || "",
-    gasolinePrice: fueling?.gasolinePrice || "",
-    ethanolPrice: fueling?.ethanolPrice || "",
+    gasolinePrice: fueling?.gasolinePrice ? maskBRL(String(fueling.gasolinePrice), 3) : "",
+    ethanolPrice: fueling?.ethanolPrice ? maskBRL(String(fueling.ethanolPrice), 3) : "",
   });
 
   const gasParsed = parseBRL(form.gasolinePrice);
@@ -216,7 +216,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
   const autoCalcTotal = (liters: string, costPerLiter: string) => {
     const l = parseBRL(liters);
     const c = parseBRL(costPerLiter);
-    if (l > 0 && c > 0) return (l * c).toFixed(2);
+    if (l > 0 && c > 0) return maskBRL((l * c).toFixed(2));
     return form.totalCost;
   };
 
@@ -283,11 +283,11 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Gasolina (R$/L) *</label>
-              <Input type="number" step="0.001" value={form.gasolinePrice} onChange={(e) => setForm({ ...form, gasolinePrice: e.target.value })} placeholder="Ex: 5.790" className="bg-white" required data-testid="input-gasoline-price" />
+              <Input type="text" inputMode="numeric" value={form.gasolinePrice || "0,000"} onChange={(e) => setForm({ ...form, gasolinePrice: maskBRL(e.target.value, 3) })} placeholder="Ex: 5,790" className="bg-white" required data-testid="input-gasoline-price" />
             </div>
             <div>
               <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Álcool (R$/L) *</label>
-              <Input type="number" step="0.001" value={form.ethanolPrice} onChange={(e) => setForm({ ...form, ethanolPrice: e.target.value })} placeholder="Ex: 3.690" className="bg-white" required data-testid="input-ethanol-price" />
+              <Input type="text" inputMode="numeric" value={form.ethanolPrice || "0,000"} onChange={(e) => setForm({ ...form, ethanolPrice: maskBRL(e.target.value, 3) })} placeholder="Ex: 3,690" className="bg-white" required data-testid="input-ethanol-price" />
             </div>
           </div>
         </div>
@@ -356,22 +356,22 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Litros *</label>
-            <Input type="text" inputMode="decimal" value={form.liters} onChange={(e) => {
-              const liters = e.target.value;
+            <Input type="text" inputMode="numeric" value={form.liters || "0,00"} onChange={(e) => {
+              const liters = maskBRL(e.target.value);
               setForm({ ...form, liters, totalCost: autoCalcTotal(liters, String(form.costPerLiter)) });
             }} required disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-liters" />
             {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor/Litro (R$)</label>
-            <Input type="number" step="0.001" value={form.costPerLiter} onChange={(e) => {
-              const costPerLiter = e.target.value;
+            <Input type="text" inputMode="numeric" value={form.costPerLiter || "0,00"} onChange={(e) => {
+              const costPerLiter = maskBRL(e.target.value, 3);
               setForm({ ...form, costPerLiter, totalCost: autoCalcTotal(String(form.liters), costPerLiter) });
             }} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-cost-per-liter" />
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total (R$)</label>
-            <Input type="text" inputMode="decimal" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
+            <Input type="text" inputMode="numeric" value={form.totalCost || "0,00"} onChange={(e) => setForm({ ...form, totalCost: maskBRL(e.target.value) })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
             {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
           </div>
           <div>
