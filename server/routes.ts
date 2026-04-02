@@ -2435,6 +2435,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             km_carregado: nb(resultado.km_carregado), km_total: nb(resultado.km_total),
             km_faturado: nb(resultado.km_faturado), km_franquia: nb(resultado.km_franquia),
             km_excedente: nb(resultado.km_excedente),
+            placa_escoltado: data.escortedVehiclePlate || bill.placa_escoltado || null,
             horario_agendado: horarioAgendado, horario_inicio: horarioInicio, horario_fim: horarioFim,
             horario_inicio_considerado: resultado.horario_inicio_considerado,
             horas_missao: nb(resultado.horas_trabalhadas), horas_trabalhadas: nb(resultado.horas_trabalhadas),
