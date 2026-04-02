@@ -323,6 +323,7 @@ export const timesheets = pgTable("timesheets", {
   checkOutLunch: text("check_out_lunch"),
   checkInLunch: text("check_in_lunch"),
   checkOut: text("check_out"),
+  checkOutDate: date("check_out_date"),
   hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
   overtime: decimal("overtime", { precision: 5, scale: 2 }),
   notes: text("notes"),

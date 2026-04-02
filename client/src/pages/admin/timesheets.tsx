@@ -22,6 +22,7 @@ function TimesheetForm({ timesheet, employees, onClose }: {
     checkOutLunch: timesheet?.checkOutLunch || "",
     checkInLunch: timesheet?.checkInLunch || "",
     checkOut: timesheet?.checkOut || "",
+    checkOutDate: (timesheet as any)?.checkOutDate || "",
     hoursWorked: timesheet?.hoursWorked || "",
     overtime: timesheet?.overtime || "",
     notes: timesheet?.notes || "",
@@ -84,6 +85,10 @@ function TimesheetForm({ timesheet, employees, onClose }: {
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Saída</label>
           <Input type="time" value={form.checkOut} onChange={(e) => setForm({ ...form, checkOut: e.target.value })} data-testid="input-timesheet-checkout" />
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Saída</label>
+          <Input type="date" value={form.checkOutDate} onChange={(e) => setForm({ ...form, checkOutDate: e.target.value })} data-testid="input-timesheet-checkout-date" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Trabalhadas</label>
@@ -154,6 +159,7 @@ export default function TimesheetsPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Saída Almoço</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ret. Almoço</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Saída</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data Saída</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Horas</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
@@ -167,6 +173,7 @@ export default function TimesheetsPage() {
                     <td className="p-3 text-neutral-600">{t.checkOutLunch || "-"}</td>
                     <td className="p-3 text-neutral-600">{t.checkInLunch || "-"}</td>
                     <td className="p-3 text-neutral-600">{t.checkOut || "-"}</td>
+                    <td className="p-3 text-neutral-600">{(t as any).checkOutDate || "-"}</td>
                     <td className="p-3 text-neutral-600">{t.hoursWorked || "-"}</td>
                     <td className="p-3 text-right">
                       <Button variant="ghost" size="icon" onClick={() => { setEditItem(t); setShowForm(true); }}><Pencil className="w-4 h-4" /></Button>
