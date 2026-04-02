@@ -3366,22 +3366,23 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
 
 function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehicle | null; open: boolean; onClose: () => void }) {
   if (!vehicle) return null;
-  const HIDDEN_STATUS = ["concluida", "concluída", "cancelada"];
-  const HIDDEN_MISSION = ["encerrada"];
-  const isVisible = (o: any) => !HIDDEN_STATUS.includes(o.status) && !HIDDEN_MISSION.includes(o.missionStatus);
   const allOrders = [
-    ...(vehicle.activeOs && isVisible(vehicle.activeOs) ? [{
+    ...(vehicle.activeOs ? [{
       id: vehicle.activeOs.id,
       osNumber: vehicle.activeOs.osNumber,
       status: vehicle.activeOs.status,
       priority: vehicle.activeOs.priority,
       missionStatus: vehicle.activeOs.missionStatus,
       scheduledDate: vehicle.activeOs.scheduledDate || null,
+      completedDate: null as string | null,
       clientName: vehicle.activeOs.clientName,
       isCurrent: true,
     }] : []),
-    ...(vehicle.upcomingOrders || []).filter(isVisible).map(u => ({ ...u, isCurrent: false })),
+    ...(vehicle.upcomingOrders || []).map(u => ({ ...u, isCurrent: false })),
   ].sort((a, b) => {
+    const isFinA = a.status === "concluida" || a.status === "concluída" || a.status === "cancelada" ? 1 : 0;
+    const isFinB = b.status === "concluida" || b.status === "concluída" || b.status === "cancelada" ? 1 : 0;
+    if (isFinA !== isFinB) return isFinA - isFinB;
     const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
     const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
     return da - db;
@@ -3410,11 +3411,15 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
                     <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-neutral-900 text-white">ATUAL</span>
                   )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                    o.status === "concluida" || o.status === "concluída" ? "bg-green-100 text-green-800 border-green-300" :
+                    o.status === "cancelada" ? "bg-red-100 text-red-700 border-red-200" :
                     o.status === "em_andamento" ? "bg-amber-100 text-amber-800 border-amber-300" :
                     o.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" :
                     "bg-blue-50 text-blue-600 border-blue-200"
                   }`}>
-                    {o.status === "em_andamento" ? "EM ANDAMENTO" :
+                    {o.status === "concluida" || o.status === "concluída" ? "CONCLUÍDA" :
+                     o.status === "cancelada" ? "CANCELADA" :
+                     o.status === "em_andamento" ? "EM ANDAMENTO" :
                      o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
                   </span>
                 </div>

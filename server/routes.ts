@@ -5197,6 +5197,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.set("Pragma", "no-cache");
     const allVehicles = await storage.getVehicles();
     const orders = await storage.getServiceOrders();
+    const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const FINISHED_MISSION = ["finalizada", "retorno_base", "chegada_base", "encerrada"];
     const activeOrders = orders.filter(
       (o) => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStatus))
@@ -5493,9 +5494,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           })(),
           upcomingOrders: await (async () => {
             const upcoming = orders.filter(
-              (o) => o.vehicleId === v.id && o.id !== linkedOrder?.id &&
-              o.status !== "concluída" && o.status !== "concluida" && o.status !== "cancelada" &&
-              o.missionStatus !== "encerrada"
+              (o) => {
+                if (o.vehicleId !== v.id || o.id === linkedOrder?.id) return false;
+                if (o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") {
+                  const oDate = o.completedDate
+                    ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+                    : o.scheduledDate
+                      ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+                      : null;
+                  return oDate === todayBRT;
+                }
+                return true;
+              }
             );
             const results = [];
             for (const u of upcoming) {
@@ -5508,8 +5518,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 id: u.id,
                 osNumber: u.osNumber,
                 status: u.status,
+                missionStatus: u.missionStatus || null,
                 priority: u.priority || "agendada",
                 scheduledDate: u.scheduledDate,
+                completedDate: u.completedDate || null,
                 clientName: cl?.name || "—",
                 origin: u.origin || null,
                 destination: u.destination || null,
