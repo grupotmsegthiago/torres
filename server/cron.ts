@@ -170,13 +170,17 @@ export function initCronJobs() {
           const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
-          const kmFinalRaw = kmFinalPhoto?.kmValue || 0;
+          const kmInicial = kmSaidaPhoto?.kmValue || 0;
+          const kmFinalRaw = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || 0;
           const kmFinal = kmFinalRaw > kmInicial ? kmFinalRaw : kmInicial;
 
           const scheduledTime = so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : undefined;
           const startTime = so.missionStartedAt ? toBRT(new Date(so.missionStartedAt as string)) : undefined;
           const endTime = toBRT(new Date());
+
+          const scheduledDate = so.scheduledDate ? new Date(so.scheduledDate) : null;
+          const missionStartDate = so.missionStartedAt ? new Date(so.missionStartedAt as string) : null;
+          const nowDate = new Date();
 
           const hasAcionamento = n(contrato.valor_acionamento) > 0;
           const franquiaKm = n(contrato.franquia_km) || n(contrato.franquia_minima_km);
@@ -187,19 +191,21 @@ export function initCronJobs() {
           const valorKmCarregado = n(contrato.valor_km_carregado);
           const valorKmVazio = n(contrato.valor_km_vazio);
 
-          const calcInicioCobranca = (agendado?: string, chegada?: string) => {
-            if (!agendado && !chegada) return "00:00";
-            if (!agendado) return chegada!;
+          const calcInicioCobrancaDate = (agendado: Date | null, chegada: Date | null): Date | null => {
+            if (!agendado && !chegada) return null;
+            if (!agendado) return chegada;
             if (!chegada) return agendado;
-            const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
-            return toMin(chegada) <= toMin(agendado) ? agendado : chegada;
+            return chegada.getTime() <= agendado.getTime() ? agendado : chegada;
           };
 
-          const inicioConsiderado = calcInicioCobranca(scheduledTime, startTime);
-          const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
-          let diffMin = toMin(endTime) - toMin(inicioConsiderado);
-          if (diffMin < 0) diffMin += 24 * 60;
-          const horasMissao = Math.round((diffMin / 60) * 100) / 100;
+          const inicioConsideradoDate = calcInicioCobrancaDate(scheduledDate, missionStartDate);
+          const inicioConsiderado = inicioConsideradoDate ? toBRT(inicioConsideradoDate) : (scheduledTime || startTime || "00:00");
+
+          let horasMissao = 0;
+          if (inicioConsideradoDate) {
+            const diffMs = nowDate.getTime() - inicioConsideradoDate.getTime();
+            horasMissao = diffMs > 0 ? Math.round((diffMs / 3600000) * 100) / 100 : 0;
+          }
 
           const km_total = kmFinal - kmInicial;
           const km_carregado = Math.max(0, km_total);

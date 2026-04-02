@@ -156,7 +156,7 @@ export function getIdleSamePlaceInfo(veiID: number): { count: number; isAlert: b
 }
 
 const BASE_URL = "https://webservice.newrastreamentoonline.com.br/";
-const VEHICLE_CACHE_TTL = 5 * 60 * 1000;
+const VEHICLE_CACHE_TTL = 60 * 1000;
 
 function getConfig(): TrucksControlConfig | null {
   const login = process.env.TRUCKSCONTROL_CHAVE;
@@ -432,6 +432,7 @@ async function fetchMessages(config: TrucksControlConfig): Promise<TrucksControl
 }
 
 let initialized = false;
+let initRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function initializeCache(config: TrucksControlConfig): Promise<void> {
   if (initialized) return;
@@ -450,6 +451,18 @@ async function initializeCache(config: TrucksControlConfig): Promise<void> {
     await fetchSpyMessages(config);
   } catch {}
   console.log(`[truckscontrol] Cache inicial: ${vehicleCache.length} veículo(s), ${messagesByVehicle.size} posição(ões), ${spyCache.length} SPY(s)`);
+
+  if (vehicleCache.length === 0 && !initRetryTimer) {
+    console.log("[truckscontrol] Cache vazio após init — agendando retry em 60s");
+    initRetryTimer = setTimeout(async () => {
+      initRetryTimer = null;
+      initialized = false;
+      vehicleCacheTimestamp = 0;
+      try {
+        await initializeCache(config);
+      } catch {}
+    }, 60000);
+  }
 }
 
 export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
