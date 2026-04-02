@@ -10300,21 +10300,30 @@ Regras:
       const maintenanceExpense = txns.filter((t: any) => t.origin_type === "maintenance").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
       const missionCostExpense = txns.filter((t: any) => t.origin_type === "mission_cost").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
 
+      const safeDateKey = (v: string | null | undefined): string | null => {
+        if (!v) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+        try { return new Date(v).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+        catch { return v.split("T")[0] || null; }
+      };
+
       const revenueByDay: Record<string, number> = {};
       txns.filter((t: any) => t.type === "INCOME").forEach((t: any) => {
-        const d = (t.due_date)?.split("T")[0];
+        const d = safeDateKey(t.due_date);
         if (!d) return;
         revenueByDay[d] = (revenueByDay[d] || 0) + Number(t.amount || 0);
       });
 
       const expensesByDay: Record<string, number> = {};
       txns.filter((t: any) => t.type === "EXPENSE").forEach((t: any) => {
-        const d = (t.due_date)?.split("T")[0];
+        const d = safeDateKey(t.due_date);
         if (!d) return;
         expensesByDay[d] = (expensesByDay[d] || 0) + Number(t.amount || 0);
       });
 
       const toBRTDate = (v: string) => {
+        if (!v) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
         try {
           return new Date(v).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
         } catch { return v?.split("T")[0] || null; }
@@ -10322,7 +10331,7 @@ Regras:
 
       const missionsByDay: Record<string, any[]> = {};
       items.forEach((b: any) => {
-        const d = b.data_missao ? toBRTDate(b.data_missao) : (b.created_at ? toBRTDate(b.created_at) : null);
+        const d = b.data_missao || (b.created_at ? toBRTDate(b.created_at) : null);
         if (!d) return;
         if (!missionsByDay[d]) missionsByDay[d] = [];
         missionsByDay[d].push(b);
