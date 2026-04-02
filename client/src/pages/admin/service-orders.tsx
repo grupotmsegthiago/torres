@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 
@@ -1464,6 +1464,15 @@ export default function ServiceOrdersPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const sendReportEmailMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `/api/service-orders/${id}/send-report-email`);
+      return res.json();
+    },
+    onSuccess: (data: any) => { toast({ title: "Email enviado", description: data.message }); },
+    onError: (err: Error) => toast({ title: "Erro ao enviar email", description: err.message, variant: "destructive" }),
+  });
+
   const startMissionMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("PATCH", `/api/service-orders/${id}`, {
@@ -1976,6 +1985,13 @@ export default function ServiceOrdersPage() {
                             }} title="Editar Horários da Missão" data-testid={`button-edit-times-${o.id}`}><Timer className="w-4 h-4 text-amber-500" /></Button>
                           )
                         )}
+                        <Button variant="ghost" size="icon" onClick={() => {
+                          if (!o.assignedEmployeeId || !o.vehicleId || !o.kitId || !o.origin || !o.destination || !o.scheduledDate) {
+                            toast({ title: "Dados incompletos", description: "Preencha agente, viatura, kit, origem, destino e data para enviar o relatório.", variant: "destructive" });
+                            return;
+                          }
+                          if (window.confirm(`Enviar Relatório de Escolta (${o.osNumber}) por email ao cliente?`)) sendReportEmailMutation.mutate(o.id);
+                        }} title="Enviar Relatório por Email" data-testid={`button-send-report-${o.id}`}><Mail className="w-4 h-4 text-blue-500" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
                         {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente OS ${o.osNumber}?`)) deleteMutation.mutate(o.id); }} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                       </div>
