@@ -6,6 +6,12 @@ This project delivers an institutional landing page and an internal management s
 ## User Preferences
 I prefer clear and direct communication. When making changes, prioritize iterative development with clear explanations for each step. For any significant architectural or design decisions, please ask for my approval before proceeding. Ensure all code is well-documented and follows modern TypeScript and React best practices. I value a clean, maintainable codebase.
 
+## CRITICAL Rules
+- **NEVER use the local database (DATABASE_URL).** ALL database queries and operations MUST use Supabase (`SUPABASE_DATABASE_URL` or `supabaseAdmin` client). The local PostgreSQL is NOT used in this project.
+- **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
+- **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
+- **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.
+
 ## System Architecture
 The system employs a modern web stack: React with TypeScript and Vite for the frontend, and Express with Supabase Auth for the backend. PostgreSQL, managed via Drizzle ORM, serves as the primary database. Tailwind CSS is utilized for styling, maintaining a professional monochrome aesthetic (black/white) with Montserrat/Inter typography. UI components adhere to an "Enterprise UI" design, ensuring a consistent and polished user experience.
 
