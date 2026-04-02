@@ -498,12 +498,23 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   };
   const ini = b?.horario_inicio_considerado || b?.horario_inicio;
   const fimReal = fmtToHHMM(os.hora_fim_missao) || b?.horario_fim;
+
+  const horaChegadaOrigem = os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (os.scheduledDate ? fmtTime(os.scheduledDate) : null);
+  const horaFimMissao = os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : (os.completedDate ? fmtTime(os.completedDate) : null);
+  let hCalcReal = 0;
+  if (horaChegadaOrigem && horaFimMissao) {
+    let diff = toMin(horaFimMissao) - toMin(horaChegadaOrigem);
+    if (diff < 0) diff += 24 * 60;
+    hCalcReal = Math.round((diff / 60) * 100) / 100;
+  }
+
   let hCalc = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
   if (ini && fimReal) {
     let diff = toMin(fimReal) - toMin(ini);
     if (diff < 0) diff += 24 * 60;
     hCalc = Math.round((diff / 60) * 100) / 100;
   }
+  if (hCalcReal > 0 && hCalc === 0) hCalc = hCalcReal;
 
   const acionamento = Number(b?.fat_acionamento || 0);
   const horaExtra = Number(b?.fat_hora_extra || 0);
@@ -673,7 +684,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                     </div>
                     <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
                       <p className="text-[9px] font-bold text-purple-400 uppercase">Total Horas Missão</p>
-                      <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalc > 0 ? `${Math.floor(hCalc)}h${String(Math.round((hCalc % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
+                      <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalcReal > 0 ? `${Math.floor(hCalcReal)}h${String(Math.round((hCalcReal % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">

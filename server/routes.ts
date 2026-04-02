@@ -1613,6 +1613,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const completedDateValid = so.completedDate && new Date(so.completedDate as string).getFullYear() > 2000;
       const endTime = completedDateValid ? toBRT(new Date(so.completedDate as string)) : (isLive ? toBRT(new Date()) : undefined);
 
+      const stepLogs = (so.stepLogs || []) as any[];
+      const getLogTimeBilling = (steps: string[]) => {
+        for (const s of steps) {
+          const entry = [...stepLogs].reverse().find((l: any) => l.step === s && l.timestamp);
+          if (entry) return entry.timestamp;
+        }
+        return null;
+      };
+      const horaChegadaOrigemISO = (so as any).hora_chegada_origem || getLogTimeBilling(["checkin_chegada_km", "em_transito_origem"]);
+      const chegadaOrigemTime = horaChegadaOrigemISO ? toBRT(new Date(horaChegadaOrigemISO)) : undefined;
+      const horaFimMissaoISO = (so as any).hora_fim_missao || so.completedDate || getLogTimeBilling(["encerrada", "finalizada", "checkout_km_final"]);
+      const fimMissaoTime = horaFimMissaoISO ? toBRT(new Date(horaFimMissaoISO)) : endTime;
+      const billingStartTime = chegadaOrigemTime || startTime;
+
       let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
 
       if (so.escortContractId) {
@@ -1635,11 +1649,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
       const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
       if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
-      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, startTime=${startTime}, endTime=${endTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}`);
+      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}`);
       const resultado = calcularEscolta({
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
         horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
-        horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
+        horario_inicio: billingStartTime, horario_fim: fimMissaoTime, horario_agendado: scheduledTime,
         despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, contrato,
       });
       console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
@@ -1659,7 +1673,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         km_faturado: n(resultado.km_faturado), km_franquia: n(resultado.km_franquia),
         km_excedente: n(resultado.km_excedente),
         horario_agendado: scheduledTime || null,
-        horario_inicio: startTime || null, horario_fim: endTime || null,
+        horario_inicio: billingStartTime || startTime || null, horario_fim: fimMissaoTime || endTime || null,
         horario_inicio_considerado: resultado.horario_inicio_considerado,
         horas_missao: n(resultado.horas_trabalhadas), horas_trabalhadas: n(resultado.horas_trabalhadas),
         horas_estadia: 0, teve_pernoite: false, is_noturno: resultado.is_noturno,
@@ -2406,7 +2420,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
-    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino"];
+    const billingRelevantFields = ["completedDate", "missionStartedAt", "scheduledDate", "kmSaida", "kmRetorno", "kmOrigem", "kmDestino", "hora_chegada_origem", "hora_fim_missao"];
     const changedBillingFields = existing && billingRelevantFields.some(f => {
       const oldVal = (existing as any)[f];
       const newVal = (parsed.data as any)[f];
@@ -2434,8 +2448,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const kmIni = Number((data as any).kmSaida || bill.km_inicial || 0);
           const kmFin = Number((data as any).kmRetorno || bill.km_final || 0);
           const toBRTx = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-          const horarioInicio = data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null);
-          const horarioFim = data.completedDate ? toBRTx(new Date(data.completedDate as string)) : (bill.horario_fim || null);
+          const horaChegadaOrigemAR = (data as any).hora_chegada_origem || (existing as any)?.hora_chegada_origem;
+          const horarioInicio = horaChegadaOrigemAR ? toBRTx(new Date(horaChegadaOrigemAR)) : (data.missionStartedAt ? toBRTx(new Date(data.missionStartedAt as string)) : (bill.horario_inicio || null));
+          const horaFimMissaoAR = (data as any).hora_fim_missao || (existing as any)?.hora_fim_missao || data.completedDate;
+          const horarioFim = horaFimMissaoAR ? toBRTx(new Date(horaFimMissaoAR)) : (bill.horario_fim || null);
           const horarioAgendado = data.scheduledDate ? toBRTx(new Date(data.scheduledDate as string)) : (bill.horario_agendado || null);
 
           let despPedagioAR = Number(bill.despesas_pedagio || 0);
