@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn } from "@/lib/queryClient";
-import { titleCase } from "@/lib/utils";
+import { titleCase, parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -186,10 +186,10 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
     },
   });
 
-  const total = costs.reduce((sum, c) => sum + parseFloat(c.amount || "0"), 0);
+  const total = costs.reduce((sum, c) => sum + parseBRL(c.amount), 0);
 
   const handleSubmit = () => {
-    const val = parseFloat(amount.replace(",", "."));
+    const val = parseBRL(amount);
     if (!val || val <= 0) {
       toast({ title: "Informe um valor válido", variant: "destructive" });
       return;
@@ -302,7 +302,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                 <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{cost.category}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
                 <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-neutral-900 text-sm">
-                  R$ {parseFloat(cost.amount || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2 py-2.5">
                   {mcIsDiretoria && <button
@@ -991,12 +991,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               )}
               <div>
                 <FieldLabel>Valor Estimado (R$)</FieldLabel>
-                <Input type="number" step="0.01" min="0" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: e.target.value })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+                <Input type="text" inputMode="decimal" min="0" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: e.target.value })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
               </div>
               <div>
                 <FieldLabel>Pedágio (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 ? "✓" : ""}</FieldLabel>
                 <div className="relative">
-                  <Input type="number" step="0.01" min="0" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: e.target.value })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && Number(form.pedagioEstimado) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
+                  <Input type="text" inputMode="decimal" min="0" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: e.target.value })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && Number(form.pedagioEstimado) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
                   {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">AUTO</span>
                   )}

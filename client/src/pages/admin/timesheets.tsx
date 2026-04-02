@@ -87,11 +87,11 @@ function TimesheetForm({ timesheet, employees, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Trabalhadas</label>
-          <Input type="number" step="0.01" value={form.hoursWorked} onChange={(e) => setForm({ ...form, hoursWorked: e.target.value })} data-testid="input-timesheet-hours" />
+          <Input type="text" inputMode="decimal" value={form.hoursWorked} onChange={(e) => setForm({ ...form, hoursWorked: e.target.value })} data-testid="input-timesheet-hours" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Horas Extras</label>
-          <Input type="number" step="0.01" value={form.overtime} onChange={(e) => setForm({ ...form, overtime: e.target.value })} data-testid="input-timesheet-overtime" />
+          <Input type="text" inputMode="decimal" value={form.overtime} onChange={(e) => setForm({ ...form, overtime: e.target.value })} data-testid="input-timesheet-overtime" />
         </div>
         <div className="md:col-span-3">
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>

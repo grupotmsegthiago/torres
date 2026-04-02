@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
-import { titleCase } from "@/lib/utils";
+import { titleCase, parseBRL } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -218,7 +218,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Salário Base (R$) *</label>
-              <Input type="number" step="0.01" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: e.target.value })} required data-testid="input-salary-value" />
+              <Input type="text" inputMode="decimal" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: e.target.value })} required data-testid="input-salary-value" />
             </div>
             <div>
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Vigência *</label>
@@ -1282,7 +1282,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
   const [showFineForm, setShowFineForm] = useState(false);
   const [fineForm, setFineForm] = useState({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" });
   const addFine = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? Number(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? parseBRL(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); setShowFineForm(false); setFineForm({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" }); toast({ title: "Multa registrada" }); },
   });
   const deleteFine = useMutation({
@@ -1333,7 +1333,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
   const [showPsForm, setShowPsForm] = useState(false);
   const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
   const addPayslip = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? Number(psForm.grossSalary) : null, netSalary: psForm.netSalary ? Number(psForm.netSalary) : null, deductions: psForm.deductions ? Number(psForm.deductions) : null, benefits: psForm.benefits ? Number(psForm.benefits) : null }); },
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? parseBRL(psForm.grossSalary) : null, netSalary: psForm.netSalary ? parseBRL(psForm.netSalary) : null, deductions: psForm.deductions ? parseBRL(psForm.deductions) : null, benefits: psForm.benefits ? parseBRL(psForm.benefits) : null }); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); setShowPsForm(false); setPsForm({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" }); toast({ title: "Holerite registrado" }); },
   });
   const deletePayslip = useMutation({
@@ -1701,12 +1701,12 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
                   <Input type="number" value={psForm.year} onChange={(e) => setPsForm({ ...psForm, year: Number(e.target.value) })} placeholder="Ano" data-testid="input-payslip-year" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="number" step="0.01" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross" />
-                  <Input type="number" step="0.01" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net" />
+                  <Input type="text" inputMode="decimal" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross" />
+                  <Input type="text" inputMode="decimal" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="number" step="0.01" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions" />
-                  <Input type="number" step="0.01" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits" />
+                  <Input type="text" inputMode="decimal" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions" />
+                  <Input type="text" inputMode="decimal" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits" />
                 </div>
                 <Input value={psForm.notes} onChange={(e) => setPsForm({ ...psForm, notes: e.target.value })} placeholder="Observações" data-testid="input-payslip-notes" />
                 <Button size="sm" onClick={() => addPayslip.mutate()} disabled={addPayslip.isPending} data-testid="button-save-payslip">Salvar</Button>
@@ -1770,7 +1770,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
   const addDiscountMut = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", `/api/employees/${employee.id}/salary-discounts`, {
-        ...discountForm, amount: Number(discountForm.amount), month: selMonth, year: selYear,
+        ...discountForm, amount: parseBRL(discountForm.amount), month: selMonth, year: selYear,
       });
     },
     onSuccess: () => {
@@ -2094,7 +2094,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor Calculado (R$)</label>
-                        <Input type="number" step="0.01" value={discountForm.amount} readOnly className="text-xs h-9 bg-red-50 font-bold text-red-700" data-testid="input-falta-amount" />
+                        <Input type="text" inputMode="decimal" value={discountForm.amount} readOnly className="text-xs h-9 bg-red-50 font-bold text-red-700" data-testid="input-falta-amount" />
                       </div>
                     </div>
                     <div className="mt-2 bg-neutral-50 rounded-md p-2">
@@ -2141,7 +2141,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Valor (R$)</label>
-                        <Input type="number" step="0.01" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="150.00" className="text-xs h-9" data-testid="input-occurrence-amount" />
+                        <Input type="text" inputMode="decimal" min="0" value={discountForm.amount} onChange={(e) => setDiscountForm({ ...discountForm, amount: e.target.value })} placeholder="150.00" className="text-xs h-9" data-testid="input-occurrence-amount" />
                       </div>
                     </div>
                   </div>
@@ -2175,7 +2175,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Salário Base (R$)</label>
-                <Input type="number" step="0.01" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="2432.50" className="text-xs h-9" data-testid="input-salary-value-pasta" />
+                <Input type="text" inputMode="decimal" value={salForm.baseSalary} onChange={(e) => setSalForm({ ...salForm, baseSalary: e.target.value })} placeholder="2432.50" className="text-xs h-9" data-testid="input-salary-value-pasta" />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide block mb-1">Data Vigência</label>
@@ -2320,7 +2320,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const [showFineForm, setShowFineForm] = useState(false);
   const [fineForm, setFineForm] = useState({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" });
   const addFine = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? Number(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/fines`, { ...fineForm, amount: fineForm.amount ? parseBRL(fineForm.amount) : null, points: fineForm.points ? Number(fineForm.points) : null }); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "fines"] }); setShowFineForm(false); setFineForm({ date: "", infraction: "", amount: "", points: "", status: "pendente", notes: "" }); toast({ title: "Multa registrada" }); },
   });
   const deleteFine = useMutation({
@@ -2365,7 +2365,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const [showPsForm, setShowPsForm] = useState(false);
   const [psForm, setPsForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" });
   const addPayslip = useMutation({
-    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? Number(psForm.grossSalary) : null, netSalary: psForm.netSalary ? Number(psForm.netSalary) : null, deductions: psForm.deductions ? Number(psForm.deductions) : null, benefits: psForm.benefits ? Number(psForm.benefits) : null }); },
+    mutationFn: async () => { await apiRequest("POST", `/api/employees/${employee.id}/payslips`, { ...psForm, grossSalary: psForm.grossSalary ? parseBRL(psForm.grossSalary) : null, netSalary: psForm.netSalary ? parseBRL(psForm.netSalary) : null, deductions: psForm.deductions ? parseBRL(psForm.deductions) : null, benefits: psForm.benefits ? parseBRL(psForm.benefits) : null }); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); setShowPsForm(false); setPsForm({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), grossSalary: "", netSalary: "", deductions: "", benefits: "", notes: "" }); toast({ title: "Holerite registrado" }); },
   });
   const deletePayslip = useMutation({
@@ -3005,12 +3005,12 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
                   <Input type="number" value={psForm.year} onChange={(e) => setPsForm({ ...psForm, year: Number(e.target.value) })} placeholder="Ano" data-testid="input-payslip-year-pasta" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="number" step="0.01" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross-pasta" />
-                  <Input type="number" step="0.01" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net-pasta" />
+                  <Input type="text" inputMode="decimal" value={psForm.grossSalary} onChange={(e) => setPsForm({ ...psForm, grossSalary: e.target.value })} placeholder="Salário Bruto" data-testid="input-payslip-gross-pasta" />
+                  <Input type="text" inputMode="decimal" value={psForm.netSalary} onChange={(e) => setPsForm({ ...psForm, netSalary: e.target.value })} placeholder="Salário Líquido" data-testid="input-payslip-net-pasta" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="number" step="0.01" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions-pasta" />
-                  <Input type="number" step="0.01" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits-pasta" />
+                  <Input type="text" inputMode="decimal" value={psForm.deductions} onChange={(e) => setPsForm({ ...psForm, deductions: e.target.value })} placeholder="Descontos" data-testid="input-payslip-deductions-pasta" />
+                  <Input type="text" inputMode="decimal" value={psForm.benefits} onChange={(e) => setPsForm({ ...psForm, benefits: e.target.value })} placeholder="Benefícios" data-testid="input-payslip-benefits-pasta" />
                 </div>
                 <Input value={psForm.notes} onChange={(e) => setPsForm({ ...psForm, notes: e.target.value })} placeholder="Observações" data-testid="input-payslip-notes-pasta" />
                 <Button size="sm" onClick={() => addPayslip.mutate()} disabled={addPayslip.isPending} data-testid="button-save-payslip-pasta">Salvar</Button>

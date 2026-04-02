@@ -198,7 +198,7 @@ export default function CotacaoGastoPage() {
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">R$/Litro</label>
-                  <Input type="number" step="0.01" value={params.valorLitro} onChange={e => set("valorLitro", e.target.value)} data-testid="input-valor-litro" />
+                  <Input type="text" inputMode="decimal" value={params.valorLitro} onChange={e => set("valorLitro", e.target.value)} data-testid="input-valor-litro" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">KM Percurso (ida+volta)</label>
@@ -209,7 +209,7 @@ export default function CotacaoGastoPage() {
                     Pedágios (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && <span className="text-amber-600 text-[9px] ml-1">AUTO</span>}
                   </label>
                   <div className="relative">
-                    <Input type="number" step="0.01" value={params.pedagios} onChange={e => set("pedagios", e.target.value)} className={params.pedagios > 0 ? "border-amber-300 bg-amber-50/30 font-mono" : "font-mono"} data-testid="input-pedagios" />
+                    <Input type="text" inputMode="decimal" value={params.pedagios} onChange={e => set("pedagios", e.target.value)} className={params.pedagios > 0 ? "border-amber-300 bg-amber-50/30 font-mono" : "font-mono"} data-testid="input-pedagios" />
                     {tollInfo?.loading && <Loader2 className="w-3 h-3 animate-spin absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400" />}
                   </div>
                   {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
@@ -237,11 +237,11 @@ export default function CotacaoGastoPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Salário Base</label>
-                  <Input type="number" step="0.01" value={params.salarioBase} onChange={e => set("salarioBase", e.target.value)} data-testid="input-salario" />
+                  <Input type="text" inputMode="decimal" value={params.salarioBase} onChange={e => set("salarioBase", e.target.value)} data-testid="input-salario" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-neutral-500 mb-1 block">Periculosidade (30%)</label>
-                  <Input type="number" step="0.01" value={params.periculosidade} onChange={e => set("periculosidade", e.target.value)} data-testid="input-periculosidade" />
+                  <Input type="text" inputMode="decimal" value={params.periculosidade} onChange={e => set("periculosidade", e.target.value)} data-testid="input-periculosidade" />
                 </div>
               </div>
               <div className="mt-3 p-3 bg-neutral-50 rounded-lg space-y-1">

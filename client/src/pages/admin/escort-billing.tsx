@@ -1,3 +1,4 @@
+import { parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -98,8 +99,8 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
         num_vigilantes: parseInt(form.num_vigilantes),
         armamento_descricao: form.armamento_descricao || null,
         equipamentos: form.equipamentos || null,
-        multa_mora_pct: parseFloat(form.multa_mora_pct),
-        juros_mora_pct: parseFloat(form.juros_mora_pct),
+        multa_mora_pct: parseBRL(form.multa_mora_pct),
+        juros_mora_pct: parseBRL(form.juros_mora_pct),
         indice_correcao: form.indice_correcao,
         observacoes: form.observacoes || null,
         status: "Ativo",
@@ -174,8 +175,8 @@ function ServiceContractModal({ onClose, editing, clientId, clientName }: { onCl
           <div className="bg-red-50 p-4 rounded-lg border border-red-100">
             <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Penalidades</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Multa Mora (%)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.multa_mora_pct} onChange={e => sf("multa_mora_pct", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Juros Mora (% mês)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.juros_mora_pct} onChange={e => sf("juros_mora_pct", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Multa Mora (%)</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.multa_mora_pct} onChange={e => sf("multa_mora_pct", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Juros Mora (% mês)</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.juros_mora_pct} onChange={e => sf("juros_mora_pct", e.target.value)} /></div>
             </div>
           </div>
 
@@ -210,7 +211,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const n = (v: string) => parseFloat(v.replace(",", ".")) || 0;
+      const n = (v: string) => parseBRL(v);
       const payload = {
         client_id: clientId, client_name: clientName,
         valor_km_carregado: n(form.valor_km_carregado), valor_km_vazio: n(form.valor_km_vazio),
@@ -242,19 +243,19 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
             <p className="text-[10px] font-black text-blue-700 uppercase mb-3 tracking-widest flex items-center gap-1"><DollarSign size={12} /> Faturamento ao Cliente</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Carregado</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_carregado} onChange={e => sf("valor_km_carregado", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Vazio</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_vazio} onChange={e => sf("valor_km_vazio", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Carregado</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_carregado} onChange={e => sf("valor_km_carregado", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/KM Vazio</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_vazio} onChange={e => sf("valor_km_vazio", e.target.value)} /></div>
             </div>
             <div className="grid grid-cols-3 gap-3 mt-3">
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_minima_km} onChange={e => sf("franquia_minima_km", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Hora Estadia</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_estadia} onChange={e => sf("valor_hora_estadia", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Diária</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_diaria} onChange={e => sf("valor_diaria", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Hora Estadia</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_estadia} onChange={e => sf("valor_hora_estadia", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Diária</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_diaria} onChange={e => sf("valor_diaria", e.target.value)} /></div>
             </div>
           </div>
           <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
             <p className="text-[10px] font-black text-amber-700 uppercase mb-3 tracking-widest flex items-center gap-1"><User size={12} /> Pagamento Vigilante</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">VRP Base (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vrp_base} onChange={e => sf("vrp_base", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">VRP Base (R$)</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.vrp_base} onChange={e => sf("vrp_base", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Limite Horas</label><input type="number" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.periculosidade_horas_limite} onChange={e => sf("periculosidade_horas_limite", e.target.value)} /></div>
             </div>
           </div>
@@ -288,7 +289,7 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = { client_id: clientId, client_name: clientName, name: form.name, origin: form.origin, destination: form.destination, estimated_km: parseFloat(form.estimated_km), estimated_hours: parseFloat(form.estimated_hours || "0"), is_noturno: form.is_noturno, notes: form.notes || null, status: "Ativo" };
+      const payload = { client_id: clientId, client_name: clientName, name: form.name, origin: form.origin, destination: form.destination, estimated_km: parseBRL(form.estimated_km), estimated_hours: parseBRL(form.estimated_hours || "0"), is_noturno: form.is_noturno, notes: form.notes || null, status: "Ativo" };
       if (editing) return apiRequest("PUT", `/api/escort/routes/${editing.id}`, payload);
       return apiRequest("POST", "/api/escort/routes", payload);
     },
@@ -314,7 +315,7 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
             <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Destino</label><input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase" value={form.destination} onChange={e => sf("destination", e.target.value)} required /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">KM Estimado</label><input type="number" step="0.1" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.estimated_km} onChange={e => sf("estimated_km", e.target.value)} required /></div>
+            <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">KM Estimado</label><input type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.estimated_km} onChange={e => sf("estimated_km", e.target.value)} required /></div>
             <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Horas Estimadas</label><input type="number" step="0.5" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.estimated_hours} onChange={e => sf("estimated_hours", e.target.value)} /></div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.is_noturno} onChange={e => sf("is_noturno", e.target.checked)} className="rounded" /><span className="text-xs font-bold text-neutral-700 uppercase">Rota noturna (22h-05h)</span></label>

@@ -88,7 +88,7 @@ function MaintenanceForm({ maintenance, vehicles, onClose }: {
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Custo (R$)</label>
-          <Input type="number" step="0.01" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} data-testid="input-maintenance-cost" />
+          <Input type="text" inputMode="decimal" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} data-testid="input-maintenance-cost" />
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">KM Atual</label>

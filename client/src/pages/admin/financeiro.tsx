@@ -1,3 +1,4 @@
+import { parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
@@ -137,7 +138,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       ? `${description} (${editingTransaction.installment_number}/${editingTransaction.installment_total})`
       : description;
     return {
-      description: descFinal, amount: parseFloat(amount), type, status, due_date: dueDate,
+      description: descFinal, amount: parseBRL(amount), type, status, due_date: dueDate,
       payment_date: status === "PAID" ? dueDate : null,
       category_id: categoryId || null, category_name: cat?.name || null,
       account_id: accountId || null, account_name: acc?.name || null,
@@ -213,7 +214,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><DollarSign size={12} /> Valor</label>
-              <input required type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold bg-white" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} data-testid="input-amount" />
+              <input required type="text" inputMode="decimal" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold bg-white" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} data-testid="input-amount" />
             </div>
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Calendar size={12} /> Vencimento</label>
@@ -984,16 +985,16 @@ export default function FinanceiroPage() {
 
   const handleCalcEscort = () => {
     calcEscortMutation.mutate({
-      km_inicial: parseFloat(boCalc.km_inicial) || 0,
-      km_final: parseFloat(boCalc.km_final) || 0,
-      km_vazio: parseFloat(boCalc.km_vazio) || 0,
-      horas_missao: parseFloat(boCalc.horas_missao) || 0,
-      horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
+      km_inicial: parseBRL(boCalc.km_inicial),
+      km_final: parseBRL(boCalc.km_final),
+      km_vazio: parseBRL(boCalc.km_vazio),
+      horas_missao: parseBRL(boCalc.horas_missao),
+      horas_estadia: parseBRL(boCalc.horas_estadia),
       horario_agendado: boCalc.horario_agendado || undefined,
       horario_inicio: boCalc.horario_inicio || undefined,
       horario_fim: boCalc.horario_fim || undefined,
       contract_id: boCalc.contract_id || undefined,
-      despesas: { pedagio: parseFloat(boCalc.despesas_pedagio) || 0 },
+      despesas: { pedagio: parseBRL(boCalc.despesas_pedagio) },
     });
   };
 
@@ -1005,13 +1006,13 @@ export default function FinanceiroPage() {
       client_id: contract?.client_id || null,
       client_name: boCalc.client_name || contract?.client_name || null,
       vigilante_name: boCalc.vigilante_name || null,
-      km_inicial: parseFloat(boCalc.km_inicial) || 0,
-      km_final: parseFloat(boCalc.km_final) || 0,
+      km_inicial: parseBRL(boCalc.km_inicial),
+      km_final: parseBRL(boCalc.km_final),
       km_carregado: calcResult.km_carregado,
-      km_vazio: parseFloat(boCalc.km_vazio) || 0,
+      km_vazio: parseBRL(boCalc.km_vazio),
       km_total: calcResult.km_total,
-      horas_missao: parseFloat(boCalc.horas_missao) || 0,
-      horas_estadia: parseFloat(boCalc.horas_estadia) || 0,
+      horas_missao: parseBRL(boCalc.horas_missao),
+      horas_estadia: parseBRL(boCalc.horas_estadia),
       is_noturno: calcResult.is_noturno,
       fat_km_carregado: calcResult.faturamento.km_carregado,
       fat_km_vazio: calcResult.faturamento.km_vazio,
@@ -1023,7 +1024,7 @@ export default function FinanceiroPage() {
       pag_periculosidade: calcResult.pagamento.periculosidade,
       pag_adicional_noturno: calcResult.pagamento.adicional_noturno,
       pag_total: calcResult.pagamento.total,
-      desp_pedagio: parseFloat(boCalc.despesas_pedagio) || 0,
+      desp_pedagio: parseBRL(boCalc.despesas_pedagio),
       desp_combustivel: 0,
       desp_outras: 0,
       desp_total: calcResult.despesas.total,
@@ -1108,7 +1109,7 @@ export default function FinanceiroPage() {
 
                 <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                   <p className="text-[10px] font-black text-red-700 uppercase mb-3 flex items-center gap-1"><DollarSign size={12} /> Despesas</p>
-                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label><input type="number" step="0.01" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_pedagio} onChange={e => setBo("despesas_pedagio", e.target.value)} /></div>
+                  <div><label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label><input type="text" inputMode="decimal" className="w-full p-2 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={boCalc.despesas_pedagio} onChange={e => setBo("despesas_pedagio", e.target.value)} /></div>
                 </div>
 
                 <button onClick={handleCalcEscort} disabled={calcEscortMutation.isPending || !boCalc.km_inicial || !boCalc.km_final || (!boCalc.horas_missao && !boCalc.horario_inicio)} data-testid="button-calc-escort"

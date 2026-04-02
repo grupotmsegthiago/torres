@@ -1,3 +1,4 @@
+import { parseBRL } from "@/lib/utils";
 import MobileLayout from "@/components/mobile/layout";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -123,13 +124,13 @@ export default function MobileAbastecimentoPage() {
   const submitMutation = useMutation({
     mutationFn: async () => {
       const coords = await requestFreshGeo();
-      const totalCost = liters && costPerLiter ? (parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2) : undefined;
+      const totalCost = liters && costPerLiter ? (parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2) : undefined;
       const res = await authFetch("/api/mobile/abastecimento", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicleId: selectedVehicle.id, km: parseInt(km), liters: parseFloat(liters) || 0,
-          costPerLiter: parseFloat(costPerLiter) || undefined, totalCost,
+          vehicleId: selectedVehicle.id, km: parseInt(km), liters: parseBRL(liters) || 0,
+          costPerLiter: parseBRL(costPerLiter) || undefined, totalCost,
           fuelType, station, ...photos, platePhoto,
           latitude: coords.lat.toString(), longitude: coords.lng.toString(),
           address: geoAddress || undefined,
@@ -354,18 +355,18 @@ export default function MobileAbastecimentoPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Gasolina</label>
-                    <input type="number" step="0.01" value={gasolinaPrice} onChange={e => setGasolinaPrice(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="decimal" value={gasolinaPrice} onChange={e => setGasolinaPrice(e.target.value)} placeholder="0.00"
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-gasolina-price" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/L Etanol</label>
-                    <input type="number" step="0.01" value={etanolPrice} onChange={e => setEtanolPrice(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="decimal" value={etanolPrice} onChange={e => setEtanolPrice(e.target.value)} placeholder="0.00"
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-etanol-price" />
                   </div>
                 </div>
-                {gasolinaPrice && etanolPrice && parseFloat(gasolinaPrice) > 0 && (
+                {gasolinaPrice && etanolPrice && parseBRL(gasolinaPrice) > 0 && (
                   (() => {
-                    const ratio = parseFloat(etanolPrice) / parseFloat(gasolinaPrice);
+                    const ratio = parseBRL(etanolPrice) / parseBRL(gasolinaPrice);
                     const etanolVale = ratio <= 0.7;
                     return (
                       <div className={`mt-3 rounded-xl p-3 text-center border ${etanolVale ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
@@ -392,12 +393,12 @@ export default function MobileAbastecimentoPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Litros *</label>
-                    <input type="number" step="0.01" value={liters} onChange={e => setLiters(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="decimal" value={liters} onChange={e => setLiters(e.target.value)} placeholder="0.00"
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-liters" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Litro *</label>
-                    <input type="number" step="0.01" value={costPerLiter} onChange={e => setCostPerLiter(e.target.value)} placeholder="0.00"
+                    <input type="text" inputMode="decimal" value={costPerLiter} onChange={e => setCostPerLiter(e.target.value)} placeholder="0.00"
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-cost-per-liter" />
                   </div>
                 </div>
@@ -405,7 +406,7 @@ export default function MobileAbastecimentoPage() {
                   <div className="bg-neutral-900 rounded-xl p-3 flex items-center justify-between">
                     <span className="text-xs text-neutral-400 font-bold uppercase">Total</span>
                     <span className="text-lg font-black text-white font-mono" data-testid="text-total-cost">
-                      R$ {(parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2)}
+                      R$ {(parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -461,7 +462,7 @@ export default function MobileAbastecimentoPage() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-neutral-500 uppercase font-bold">Total</p>
-                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? (parseFloat(liters) * parseFloat(costPerLiter)).toFixed(2) : "0.00"}</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? (parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2) : "0.00"}</p>
               </div>
             </div>
 

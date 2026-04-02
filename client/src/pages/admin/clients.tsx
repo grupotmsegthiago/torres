@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { parseBRL } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -398,7 +399,7 @@ function CreditAnalysisModal({ client, onClose }: { client: Client; onClose: () 
                       <InfoRow label="Tipo" value={result.companyInfo.tipo} />
                       <InfoRow label="Porte" value={result.companyInfo.porte} />
                       <InfoRow label="Natureza Jurídica" value={result.companyInfo.natureza} />
-                      <InfoRow label="Capital Social" value={`R$ ${parseFloat(result.companyInfo.capitalSocial || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} icon={<Banknote className="w-3 h-3" />} />
+                      <InfoRow label="Capital Social" value={`R$ ${parseBRL(result.companyInfo.capitalSocial || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} icon={<Banknote className="w-3 h-3" />} />
                       <InfoRow label="Atividade Principal" value={result.companyInfo.atividadePrincipal} full />
                       <InfoRow label="Simples Nacional" value={result.companyInfo.simples} icon={<BadgeCheck className="w-3 h-3" />} />
                     </div>
@@ -544,8 +545,8 @@ function ServiceContractModal({ onClose, editing, client }: { onClose: () => voi
           reajuste_periodicidade: form.reajuste_periodicidade || null,
           reajuste_indice: form.reajuste_indice || null,
           reajuste_observacoes: form.reajuste_observacoes || null,
-          multa_mora_pct: parseFloat(form.multa_mora_pct),
-          juros_mora_pct: parseFloat(form.juros_mora_pct),
+          multa_mora_pct: parseBRL(form.multa_mora_pct),
+          juros_mora_pct: parseBRL(form.juros_mora_pct),
           indice_correcao: form.indice_correcao,
           testemunha1_nome: form.testemunha1_nome || null,
           testemunha1_rg: form.testemunha1_rg || null,
@@ -749,31 +750,21 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const n = (v: string) => parseFloat(v.replace(",", ".")) || 0;
-      const valAcionamento = n(form.valor_acionamento);
-      const valCancelamento = n(form.valor_cancelamento);
-      const valHoraExtra = n(form.valor_hora_extra);
-      if (valAcionamento > 0 && valAcionamento < 50) {
-        throw new Error(`Valor acionamento R$ ${valAcionamento.toFixed(2)} parece muito baixo. Verifique se não está usando vírgula como separador de milhar. Use ponto para decimais (ex: 530.00)`);
-      }
-      if (valCancelamento > 0 && valCancelamento < 50) {
-        throw new Error(`Valor cancelamento R$ ${valCancelamento.toFixed(2)} parece muito baixo. Use ponto para decimais (ex: 265.00)`);
-      }
       const payload = {
         client_id: clientId, client_name: clientName, name: form.name || null,
-        valor_km_carregado: n(form.valor_km_carregado), valor_km_vazio: n(form.valor_km_vazio),
-        franquia_minima_km: n(form.franquia_minima_km), valor_hora_estadia: n(form.valor_hora_estadia),
-        valor_diaria: n(form.valor_diaria), vrp_base: n(form.vrp_base),
-        adicional_noturno_vrp_pct: n(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: n(form.adicional_noturno_km_pct),
-        adicional_periculosidade_pct: n(form.adicional_periculosidade_pct), periculosidade_horas_limite: n(form.periculosidade_horas_limite),
-        valor_acionamento: valAcionamento,
-        franquia_horas: n(form.franquia_horas),
-        franquia_km: n(form.franquia_km),
-        valor_hora_extra: valHoraExtra,
-        valor_km_extra: n(form.valor_km_extra),
-        valor_cancelamento: valCancelamento,
-        tabela_cancelamento: n(form.tabela_cancelamento),
-        custo_deslocamento_100km: n(form.custo_deslocamento_100km),
+        valor_km_carregado: parseBRL(form.valor_km_carregado), valor_km_vazio: parseBRL(form.valor_km_vazio),
+        franquia_minima_km: parseBRL(form.franquia_minima_km), valor_hora_estadia: parseBRL(form.valor_hora_estadia),
+        valor_diaria: parseBRL(form.valor_diaria), vrp_base: parseBRL(form.vrp_base),
+        adicional_noturno_vrp_pct: parseBRL(form.adicional_noturno_vrp_pct), adicional_noturno_km_pct: parseBRL(form.adicional_noturno_km_pct),
+        adicional_periculosidade_pct: parseBRL(form.adicional_periculosidade_pct), periculosidade_horas_limite: parseBRL(form.periculosidade_horas_limite),
+        valor_acionamento: parseBRL(form.valor_acionamento),
+        franquia_horas: parseBRL(form.franquia_horas),
+        franquia_km: parseBRL(form.franquia_km),
+        valor_hora_extra: parseBRL(form.valor_hora_extra),
+        valor_km_extra: parseBRL(form.valor_km_extra),
+        valor_cancelamento: parseBRL(form.valor_cancelamento),
+        tabela_cancelamento: parseBRL(form.tabela_cancelamento),
+        custo_deslocamento_100km: parseBRL(form.custo_deslocamento_100km),
         status: "Ativo",
       };
       if (editing) return apiRequest("PUT", `/api/escort/contracts/${editing.id}`, payload);
@@ -802,25 +793,25 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
           <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
             <p className="text-[10px] font-black text-emerald-700 uppercase mb-3 tracking-widest">Valores de Acionamento</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Valor Acionamento (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_acionamento} onChange={e => sf("valor_acionamento", e.target.value)} /><p className="text-[8px] text-neutral-400 mt-0.5">Ex: 530.00</p></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. na Origem (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_cancelamento} onChange={e => sf("valor_cancelamento", e.target.value)} data-testid="input-valor-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Agente chegou no local</p></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. em Desloc. (R$)</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.tabela_cancelamento} onChange={e => sf("tabela_cancelamento", e.target.value)} data-testid="input-tabela-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Viatura saiu, não chegou</p></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Valor Acionamento (R$)</label><input type="text" inputMode="decimal" placeholder="530,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_acionamento} onChange={e => sf("valor_acionamento", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. na Origem (R$)</label><input type="text" inputMode="decimal" placeholder="265,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_cancelamento} onChange={e => sf("valor_cancelamento", e.target.value)} data-testid="input-valor-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Agente chegou no local</p></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cancel. em Desloc. (R$)</label><input type="text" inputMode="decimal" placeholder="0,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.tabela_cancelamento} onChange={e => sf("tabela_cancelamento", e.target.value)} data-testid="input-tabela-cancelamento" /><p className="text-[8px] text-neutral-400 mt-0.5">Viatura saiu, não chegou</p></div>
             </div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
             <p className="text-[10px] font-black text-purple-700 uppercase mb-3 tracking-widest">Franquias e Extras</p>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia Horas</label><input type="number" step="0.5" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_horas} onChange={e => sf("franquia_horas", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Hora Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_extra} onChange={e => sf("valor_hora_extra", e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ KM Extra</label><input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_extra} onChange={e => sf("valor_km_extra", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia Horas</label><input type="text" inputMode="decimal" placeholder="3" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_horas} onChange={e => sf("franquia_horas", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="text" inputMode="decimal" placeholder="100" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Hora Extra</label><input type="text" inputMode="decimal" placeholder="130,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_extra} onChange={e => sf("valor_hora_extra", e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ KM Extra</label><input type="text" inputMode="decimal" placeholder="5,30" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_extra} onChange={e => sf("valor_km_extra", e.target.value)} /></div>
             </div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg border border-red-100">
             <p className="text-[10px] font-black text-red-700 uppercase mb-3 tracking-widest">Custos Especiais</p>
             <div>
               <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Custo Deslocamento acima de 100km (R$)</label>
-              <input type="number" step="0.01" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.custo_deslocamento_100km} onChange={e => sf("custo_deslocamento_100km", e.target.value)} />
+              <input type="text" inputMode="decimal" placeholder="530,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.custo_deslocamento_100km} onChange={e => sf("custo_deslocamento_100km", e.target.value)} />
               <p className="text-[9px] text-neutral-400 mt-1">Rodando com saída da base</p>
             </div>
           </div>
@@ -846,7 +837,7 @@ function RouteFormModal({ onClose, editing, clientId, clientName }: { onClose: (
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = { client_id: clientId, client_name: clientName, name: form.name, origin: form.origin, destination: form.destination, estimated_km: parseFloat(form.estimated_km), estimated_hours: parseFloat(form.estimated_hours || "0"), is_noturno: form.is_noturno, notes: form.notes || null, status: "Ativo" };
+      const payload = { client_id: clientId, client_name: clientName, name: form.name, origin: form.origin, destination: form.destination, estimated_km: parseBRL(form.estimated_km), estimated_hours: parseBRL(form.estimated_hours || "0"), is_noturno: form.is_noturno, notes: form.notes || null, status: "Ativo" };
       if (editing) return apiRequest("PUT", `/api/escort/routes/${editing.id}`, payload);
       return apiRequest("POST", "/api/escort/routes", payload);
     },

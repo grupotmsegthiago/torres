@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { parseBRL } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -206,15 +207,15 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
     ethanolPrice: fueling?.ethanolPrice || "",
   });
 
-  const gasParsed = parseFloat(String(form.gasolinePrice));
-  const ethParsed = parseFloat(String(form.ethanolPrice));
+  const gasParsed = parseBRL(form.gasolinePrice);
+  const ethParsed = parseBRL(form.ethanolPrice);
   const pricesReady = gasParsed > 0 && ethParsed > 0;
   const ratio = pricesReady ? ethParsed / gasParsed : null;
   const recommendation: "etanol" | "gasolina" | null = ratio !== null ? (ratio <= 0.7 ? "etanol" : "gasolina") : null;
 
   const autoCalcTotal = (liters: string, costPerLiter: string) => {
-    const l = parseFloat(liters);
-    const c = parseFloat(costPerLiter);
+    const l = parseBRL(liters);
+    const c = parseBRL(costPerLiter);
     if (l > 0 && c > 0) return (l * c).toFixed(2);
     return form.totalCost;
   };
@@ -355,7 +356,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Litros *</label>
-            <Input type="number" step="0.01" value={form.liters} onChange={(e) => {
+            <Input type="text" inputMode="decimal" value={form.liters} onChange={(e) => {
               const liters = e.target.value;
               setForm({ ...form, liters, totalCost: autoCalcTotal(liters, String(form.costPerLiter)) });
             }} required disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-liters" />
@@ -370,7 +371,7 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           </div>
           <div>
             <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total (R$)</label>
-            <Input type="number" step="0.01" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
+            <Input type="text" inputMode="decimal" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
             {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
           </div>
           <div>
