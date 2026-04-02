@@ -35,6 +35,15 @@ export default function MobileAbastecimentoPage() {
   const [etanolPrice, setEtanolPrice] = useState("");
   const [gasolinaPrice, setGasolinaPrice] = useState("");
   const [station, setStation] = useState("");
+
+  useEffect(() => {
+    if (!gasolinaPrice || !etanolPrice) return;
+    const g = parseBRL(gasolinaPrice);
+    const e = parseBRL(etanolPrice);
+    if (g <= 0 || e <= 0) return;
+    const ratio = e / g;
+    setFuelType(ratio <= 0.7 ? "etanol" : "gasolina");
+  }, [gasolinaPrice, etanolPrice]);
   const [oilAlert, setOilAlert] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [geoAddress, setGeoAddress] = useState<string | null>(null);
@@ -375,6 +384,11 @@ export default function MobileAbastecimentoPage() {
                         <p className={`text-xs font-bold mt-1 ${etanolVale ? "text-green-600" : "text-amber-600"}`}>
                           {etanolVale ? "✅ ETANOL compensa! (≤ 70%)" : "⛽ GASOLINA é melhor (> 70%)"}
                         </p>
+                        <div className={`mt-2 rounded-lg p-2.5 ${etanolVale ? "bg-green-100 border border-green-300" : "bg-amber-100 border border-amber-300"}`}>
+                          <p className={`text-sm font-black uppercase tracking-wide ${etanolVale ? "text-green-800" : "text-amber-800"}`}>
+                            {etanolVale ? "🌿 Abasteça com ÁLCOOL (Etanol)" : "⛽ Abasteça com GASOLINA"}
+                          </p>
+                        </div>
                       </div>
                     );
                   })()
