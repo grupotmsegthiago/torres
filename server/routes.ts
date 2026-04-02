@@ -4273,6 +4273,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (vehicle && parsed.data.km < vehicle.km) {
         return res.status(400).json({ message: `KM informado (${parsed.data.km}) é menor que o KM atual do veículo (${vehicle.km}). Verifique o hodômetro.` });
       }
+      if (vehicle && vehicle.km > 0) {
+        const kmDiff = parsed.data.km - vehicle.km;
+        if (kmDiff > 1500) {
+          return res.status(400).json({ message: `KM informado (${parsed.data.km}) é ${kmDiff} km a mais que o KM atual (${vehicle.km}). Diferença muito grande — verifique o hodômetro.` });
+        }
+      }
     }
     parsed.data.createdByUserId = req.user?.id || null;
     const data = await storage.createVehicleFueling(parsed.data);
@@ -10851,8 +10857,15 @@ Regras:
 
       const vehicle = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
       if (!vehicle.length) return res.status(404).json({ message: "Veículo não encontrado" });
-      if (vehicle[0] && km < (vehicle[0].km || 0)) {
-        return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${vehicle[0].km})` });
+      const currentKm = vehicle[0]?.km || 0;
+      if (vehicle[0] && km < currentKm) {
+        return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${currentKm})` });
+      }
+      if (currentKm > 0) {
+        const kmDiff = km - currentKm;
+        if (kmDiff > 1500) {
+          return res.status(400).json({ message: `KM informado (${km}) é ${kmDiff} km a mais que o atual (${currentKm}). Diferença muito grande — verifique o hodômetro.` });
+        }
       }
 
       const [fueling] = await db.insert(vehicleFueling).values({
