@@ -1918,7 +1918,10 @@ export default function ServiceOrdersPage() {
                       {o.scheduledDate ? (() => {
                         const d = new Date(o.scheduledDate);
                         if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
-                        return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+                        const datePart = String(o.scheduledDate).includes("T") ? String(o.scheduledDate).split("T")[0] : d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                        const [yy, mm, dd] = datePart.split("-");
+                        const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+                        return <div className="leading-tight"><span className="block text-[10px] text-neutral-400">{`${dd}/${mm}/${yy}`}</span><span>{hora}</span></div>;
                       })() : "—"}
                     </td>
                     <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).origin || ""} data-testid={`text-origem-${o.id}`}>{(o as any).origin || "—"}</td>
