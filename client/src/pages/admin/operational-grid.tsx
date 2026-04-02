@@ -565,7 +565,7 @@ const FALLBACK_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 👮 *AGENTE 02:* {{agent2}}
 
 📈 *PROGRESSO DA MISSÃO:* {{progress}}%
-📣 *OCORRÊNCIA:* 🔲 *ETAPA AVANÇADA:* {{etapaAvancada}}
+📣 *OCORRÊNCIA:* 🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
 🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
 
 let _cachedReportTemplate: string | null = null;
@@ -628,7 +628,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
 
   const lastStep = os.lastAgentUpdate?.missionStep;
   const currentMs = os.missionStatus;
-  const etapaAvancada = lastStep && currentMs
+  const etapaAvancada = (lastStep && currentMs && lastStep !== currentMs)
     ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
     : getMissionLabel(currentMs);
 
