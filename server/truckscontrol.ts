@@ -1057,9 +1057,15 @@ export async function acceptEspelhamento(veiID: number, desc?: string): Promise<
   try {
     const response = await postXml(xml);
     console.log(`[truckscontrol] Aceitar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+
+    if (response.includes("<ErrorRequest>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro") || "Erro desconhecido";
+      return { success: false, message: `Erro: ${erroMsg}`, id, rawResponse: response.substring(0, 500) };
+    }
+
     const statusVal = parseInt(parseXmlValue(response, "status") || "0");
     const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
-    if (statusVal === 2) {
+    if (erroVal === 0 || statusVal === 2) {
       return { success: true, message: "Espelhamento aceito", id, status: statusVal, erro: erroVal };
     }
     return { success: false, message: `Falha ao aceitar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
@@ -1078,9 +1084,15 @@ export async function rejectEspelhamento(veiID: number): Promise<EspelhamentoRes
   try {
     const response = await postXml(xml);
     console.log(`[truckscontrol] Rejeitar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+
+    if (response.includes("<ErrorRequest>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro") || "Erro desconhecido";
+      return { success: false, message: `Erro: ${erroMsg}`, id, rawResponse: response.substring(0, 500) };
+    }
+
     const statusVal = parseInt(parseXmlValue(response, "status") || "0");
     const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
-    if (statusVal === 2) {
+    if (erroVal === 0 || statusVal === 2) {
       return { success: true, message: "Espelhamento rejeitado", id, status: statusVal, erro: erroVal };
     }
     return { success: false, message: `Falha ao rejeitar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
@@ -1100,9 +1112,15 @@ export async function cancelEspelhamentoProprietario(veiID: number, cnpjCliente:
   try {
     const response = await postXml(xml);
     console.log(`[truckscontrol] Cancelar espelhamento veiID=${veiID}: ${response.substring(0, 300)}`);
+
+    if (response.includes("<ErrorRequest>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro") || "Erro desconhecido";
+      return { success: false, message: `Erro: ${erroMsg}`, id, rawResponse: response.substring(0, 500) };
+    }
+
     const statusVal = parseInt(parseXmlValue(response, "status") || "0");
     const erroVal = parseInt(parseXmlValue(response, "erro") || "0");
-    if (statusVal === 2) {
+    if (erroVal === 0 || statusVal === 2) {
       return { success: true, message: "Espelhamento cancelado", id, status: statusVal, erro: erroVal };
     }
     return { success: false, message: `Falha ao cancelar (status=${statusVal}, erro=${erroVal})`, id, status: statusVal, erro: erroVal, rawResponse: response.substring(0, 500) };
@@ -1110,6 +1128,8 @@ export async function cancelEspelhamentoProprietario(veiID: number, cnpjCliente:
     return { success: false, message: `Erro: ${err.message}`, id };
   }
 }
+
+export const cancelEspelhamento = cancelEspelhamentoProprietario;
 
 function getDefaultValidade(): string {
   const d = new Date();
@@ -1131,24 +1151,20 @@ export async function diagnosticoEspelhamento(veiID: number, cnpj: string): Prom
 
   const xmlVariations: Array<{ test: string; xml: string }> = [
     {
-      test: `CNPJ somente dígitos (${cnpjClean}) + atributos login/senha`,
-      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>0</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
+      test: `CNPJ somente dígitos (${cnpjClean}) + usuario=torres`,
+      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>1</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
     },
     {
-      test: `CNPJ formatado (${cnpjFormatted}) + atributos login/senha`,
-      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>0</compartilhardados><cgccpf>${cnpjFormatted}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
-    },
-    {
-      test: `CNPJ dígitos + login/senha como elementos filhos`,
-      xml: `<RequestNovoEspelhamentoVeiculo><login>${config.login}</login><senha>${config.senha}</senha><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>0</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
+      test: `CNPJ formatado (${cnpjFormatted}) + usuario=torres`,
+      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>1</compartilhardados><cgccpf>${cnpjFormatted}</cgccpf><usuario>torres</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
     },
     {
       test: `CNPJ dígitos + usuario = login (${config.login.substring(0, 8)}...)`,
-      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>0</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>${config.login}</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
+      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>1</compartilhardados><cgccpf>${cnpjClean}</cgccpf><usuario>${config.login}</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
     },
     {
-      test: `CNPJ formatado + login/senha elementos + usuario = login`,
-      xml: `<RequestNovoEspelhamentoVeiculo><login>${config.login}</login><senha>${config.senha}</senha><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>0</compartilhardados><cgccpf>${cnpjFormatted}</cgccpf><usuario>${config.login}</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
+      test: `CNPJ formatado + usuario = login`,
+      xml: `<RequestNovoEspelhamentoVeiculo login="${config.login}" senha="${config.senha}"><espelhamento><id>${nextEspelhamentoId()}</id><veiID>${veiID}</veiID><cmd>1</cmd><IE>0</IE><TIE>0</TIE><validade>${validade}</validade><possocancelar>1</possocancelar><comandoexclusivo>0</comandoexclusivo><compartilhardados>1</compartilhardados><cgccpf>${cnpjFormatted}</cgccpf><usuario>${config.login}</usuario></espelhamento></RequestNovoEspelhamentoVeiculo>`,
     },
   ];
 
