@@ -457,6 +457,34 @@ function getMissionProgress(missionStatus: string | null): number {
   return Math.round(((idx + 1) / steps.length) * 100);
 }
 
+function getRouteProgress(opts: {
+  originLat?: number | null; originLng?: number | null;
+  destLat?: number | null; destLng?: number | null;
+  currentLat?: number | null; currentLng?: number | null;
+  missionStatus?: string | null;
+}): { pct: number; distTotalKm: number; distRemainingKm: number; distTravelledKm: number } | null {
+  const { originLat, originLng, destLat, destLng, currentLat, currentLng, missionStatus } = opts;
+  if (!originLat || !originLng || !destLat || !destLng) return null;
+  const totalDist = haversineKm(originLat, originLng, destLat, destLng) * 1.3;
+  if (totalDist < 1) return null;
+  if (!currentLat || !currentLng) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+
+  const isTransit = missionStatus === "em_transito_destino" || missionStatus === "em_transito_origem";
+  const isFinished = missionStatus === "chegada_destino" || missionStatus === "checkout_km_final" || missionStatus === "checkout_viatura_retorno" || missionStatus === "finalizada" || missionStatus === "retorno_base" || missionStatus === "chegada_base" || missionStatus === "encerrada";
+
+  if (isFinished) return { pct: 100, distTotalKm: totalDist, distRemainingKm: 0, distTravelledKm: totalDist };
+
+  const distFromOrigin = haversineKm(originLat, originLng, currentLat, currentLng) * 1.3;
+  const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
+
+  if (!isTransit) {
+    if (distFromOrigin < 5) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+  }
+
+  const pct = Math.min(100, Math.max(0, Math.round((1 - distToDest / totalDist) * 100)));
+  return { pct, distTotalKm: totalDist, distRemainingKm: distToDest, distTravelledKm: distFromOrigin };
+}
+
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   try {
     const pngBlob = await new Promise<Blob>((resolve, reject) => {
@@ -583,13 +611,20 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
   const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
   const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
-  const progress = String(getMissionProgress(os.missionStatus));
   const locationAddr = v.tracker?.address || "—";
   const transitStatus = getTransitStatus(os.missionStatus);
 
   const lat = v.tracker?.latitude;
   const lng = v.tracker?.longitude;
   const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
+
+  const routeP = getRouteProgress({
+    originLat: os.originLat, originLng: os.originLng,
+    destLat: os.destinationLat, destLng: os.destinationLng,
+    currentLat: lat ? Number(lat) : null, currentLng: lng ? Number(lng) : null,
+    missionStatus: os.missionStatus,
+  });
+  const progress = routeP ? String(routeP.pct) : String(getMissionProgress(os.missionStatus));
 
   const lastStep = os.lastAgentUpdate?.missionStep;
   const currentMs = os.missionStatus;
@@ -625,6 +660,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     agent1: agent1?.toUpperCase() || "—",
     agent2: agent2?.toUpperCase() || "—",
     progress,
+    routeInfo: routeP ? `${routeP.pct}% — ${routeP.distRemainingKm >= 10 ? Math.round(routeP.distRemainingKm) + " km restantes" : routeP.distRemainingKm.toFixed(1) + " km restantes"} (${Math.round(routeP.distTotalKm)} km total)` : `${progress}%`,
     etapaAvancada: etapaAvancada?.toUpperCase() || "—",
     locationAddr,
     etaLine,
@@ -744,6 +780,58 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
   if (h === 0) return `${m}min`;
   if (m === 0) return `${h}h`;
   return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
+function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact }: { pct: number; distRemainingKm: number; distTotalKm: number; compact?: boolean }) {
+  const fmtDist = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
+  const carLeft = Math.min(Math.max(pct, 2), 98);
+  if (compact) {
+    return (
+      <div className="w-full" data-testid="route-progress-bar">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-[9px] font-bold text-neutral-400 uppercase">Rota</span>
+          <span className="text-[9px] font-bold text-neutral-600 ml-auto">{fmtDist(distRemainingKm)} restantes</span>
+        </div>
+        <div className="relative h-3 w-full">
+          <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-[3px] bg-neutral-200 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-700" style={{ left: `${carLeft}%` }}>
+            <div className="w-3.5 h-3.5 bg-white border-2 border-emerald-600 rounded-full flex items-center justify-center shadow-sm">
+              <Car className="w-2 h-2 text-emerald-700" />
+            </div>
+          </div>
+          <div className="absolute top-1/2 left-0 -translate-y-1/2 w-1.5 h-1.5 bg-blue-500 rounded-full border border-white" />
+          <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1.5 h-1.5 bg-red-500 rounded-full border border-white" />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="w-full" data-testid="route-progress-bar">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] font-bold text-neutral-500">{pct}% da rota</span>
+        <span className="text-[10px] font-bold text-neutral-600">{fmtDist(distRemainingKm)} restantes</span>
+      </div>
+      <div className="relative h-5 w-full">
+        <div className="absolute top-1/2 left-2 right-2 -translate-y-1/2 h-1 bg-neutral-200 rounded-full overflow-hidden">
+          <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-700" style={{ left: `calc(${carLeft}% * 0.92 + 4%)` }}>
+          <div className="w-5 h-5 bg-white border-2 border-emerald-600 rounded-full flex items-center justify-center shadow">
+            <Car className="w-3 h-3 text-emerald-700" />
+          </div>
+        </div>
+        <div className="absolute top-1/2 left-0 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full border-2 border-white shadow-sm" title="Origem" />
+        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full border-2 border-white shadow-sm" title="Destino" />
+      </div>
+      <div className="flex justify-between mt-0.5 px-0.5">
+        <span className="text-[8px] text-blue-600 font-bold">ORIGEM</span>
+        <span className="text-[8px] text-neutral-400 font-bold">{fmtDist(distTotalKm)} total</span>
+        <span className="text-[8px] text-red-600 font-bold">DESTINO</span>
+      </div>
+    </div>
+  );
 }
 
 function getStatusDisplay(missionStatus: string, osStatus: string) {
@@ -5004,6 +5092,19 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </div>
                             );
                           })()}
+                          {(() => {
+                            const ms = v.activeOs?.missionStatus;
+                            const isTransitLike = ms === "em_transito_destino" || ms === "em_transito_origem" || ms === "iniciar_missao" || ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista";
+                            if (!isTransitLike || !v.activeOs) return null;
+                            const rp = getRouteProgress({
+                              originLat: v.activeOs.originLat, originLng: v.activeOs.originLng,
+                              destLat: v.activeOs.destinationLat, destLng: v.activeOs.destinationLng,
+                              currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
+                              missionStatus: ms,
+                            });
+                            if (!rp) return null;
+                            return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} compact /></div>;
+                          })()}
                           {v.activeOs.scheduledDate && (
                             <p className="text-xs text-neutral-400 font-medium">
                               {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -6110,7 +6211,6 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             const agent2 = getFirstLastName(os?.employee2?.fullName || os?.employee2?.name);
             const statusLabel = os?.lastAgentUpdate?.missionStep ? getMissionLabel(os.lastAgentUpdate.missionStep) : getMissionLabel(os?.missionStatus);
             const transitStatus = os ? getTransitStatus(os.missionStatus) : "—";
-            const progress = os ? getMissionProgress(os.missionStatus) : 0;
             const lat = matchedVehicle?.tracker?.latitude || forwardUpdate.latitude;
             const lng = matchedVehicle?.tracker?.longitude || forwardUpdate.longitude;
             const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
@@ -6118,6 +6218,14 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             const now = new Date();
             const dateStr = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
             const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+            const routeP = getRouteProgress({
+              originLat: matchedVehicle?.activeOs?.originLat, originLng: matchedVehicle?.activeOs?.originLng,
+              destLat: matchedVehicle?.activeOs?.destinationLat, destLng: matchedVehicle?.activeOs?.destinationLng,
+              currentLat: lat ? Number(lat) : null, currentLng: lng ? Number(lng) : null,
+              missionStatus: os?.missionStatus,
+            });
+            const progress = routeP ? routeP.pct : getMissionProgress(os?.missionStatus);
+            const fmtDistKm = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
 
             return (
             <div className="px-4">
@@ -6146,6 +6254,31 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     <span className="text-[10px] uppercase tracking-wide opacity-70">Operação</span>
                     <span className="text-xs font-bold">{statusLabel}</span>
                   </div>
+                  {routeP ? (
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">Progresso da Rota</span>
+                        <span className="text-[10px] font-bold">{fmtDistKm(routeP.distRemainingKm)} restantes</span>
+                      </div>
+                      <div className="relative h-4 w-full">
+                        <div className="absolute top-1/2 left-1 right-1 -translate-y-1/2 h-[3px] bg-white/20 rounded-full overflow-hidden">
+                          <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${progress}%` }} />
+                        </div>
+                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-700" style={{ left: `${Math.min(Math.max(progress, 3), 97)}%` }}>
+                          <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center shadow">
+                            <Car className="w-2.5 h-2.5 text-emerald-700" />
+                          </div>
+                        </div>
+                        <div className="absolute top-1/2 left-0 -translate-y-1/2 w-1.5 h-1.5 bg-blue-400 rounded-full" />
+                        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1.5 h-1.5 bg-red-400 rounded-full" />
+                      </div>
+                      <div className="flex justify-between mt-0.5">
+                        <span className="text-[8px] opacity-60">ORIGEM</span>
+                        <span className="text-[8px] font-bold">{progress}%</span>
+                        <span className="text-[8px] opacity-60">DESTINO</span>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] uppercase tracking-wide opacity-70">Progresso</span>
                     <div className="flex items-center gap-2">
@@ -6155,6 +6288,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                       <span className="text-[10px] font-bold">{progress}%</span>
                     </div>
                   </div>
+                  )}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div>
