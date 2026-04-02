@@ -439,6 +439,8 @@ export default function FinanceiroPage() {
 
   const { data: transactions = [], isLoading } = useQuery<FinancialTransaction[]>({
     queryKey: ["/api/financial/transactions"],
+    refetchInterval: 30000,
+    staleTime: 0,
   });
 
   const { data: categories = [] } = useQuery<FinancialCategory[]>({

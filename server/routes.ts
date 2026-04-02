@@ -408,6 +408,23 @@ async function ensureSystemSettingsTable() {
   }
 }
 
+async function logFinancialAudit(targetTable: string, targetId: string, action: string, changes: { field: string; old: any; new_val: any }[], changedBy: string, changedById?: number, reason?: string) {
+  try {
+    const rows = changes.map(c => ({
+      target_table: targetTable,
+      target_id: targetId,
+      action,
+      field_name: c.field,
+      old_value: c.old != null ? String(c.old) : null,
+      new_value: c.new_val != null ? String(c.new_val) : null,
+      changed_by: changedBy,
+      changed_by_id: changedById || null,
+      reason: reason || null,
+    }));
+    await supabaseAdmin.from("financial_audit_logs").insert(rows);
+  } catch (_e) {}
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -4310,8 +4327,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.patch("/api/fueling/:id", requireAuth, async (req, res) => {
     const parsed = insertVehicleFuelingSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const oldFueling = await storage.getVehicleFueling(Number(req.params.id));
     const data = await storage.updateVehicleFueling(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Abastecimento não encontrado" });
+    if (oldFueling) {
+      const auditChanges: { field: string; old: any; new_val: any }[] = [];
+      for (const f of ["km", "liters", "totalCost", "costPerLiter", "fuelType", "station"]) {
+        const ov = (oldFueling as any)[f]; const nv = (data as any)[f];
+        if (nv !== undefined && String(ov) !== String(nv)) auditChanges.push({ field: f, old: ov, new_val: nv });
+      }
+      if (auditChanges.length > 0) await logFinancialAudit("vehicle_fueling", String(data.id), "UPDATE", auditChanges, req.user?.name || "unknown", req.user?.id);
+    }
     if (data.vehicleId) {
       await syncVehicleKmFromFuelings(data.vehicleId);
     }
@@ -4343,6 +4369,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   app.delete("/api/fueling/:id", requireAuth, requireDiretoria, async (req, res) => {
     const fuelingId = Number(req.params.id);
     const existing = await storage.getVehicleFueling(fuelingId);
+    if (existing) {
+      await logFinancialAudit("vehicle_fueling", String(fuelingId), "DELETE", [
+        { field: "km", old: existing.km, new_val: null },
+        { field: "liters", old: existing.liters, new_val: null },
+        { field: "totalCost", old: existing.totalCost, new_val: null },
+      ], req.user?.name || "unknown", req.user?.id, "Exclusão manual");
+    }
     await storage.deleteVehicleFueling(fuelingId);
     if (existing?.vehicleId) {
       await syncVehicleKmFromFuelings(existing.vehicleId);
@@ -4965,22 +4998,55 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               }
             }
 
+            const frozenFat = Math.round(resultado.faturamento.total * 100) / 100;
+            const frozenPag = Math.round(resultado.pagamento.total * 100) / 100;
+            const frozenComb = Math.round(custoCombustivel * 100) / 100;
+            const frozenPed = Math.round(custoPedagio * 100) / 100;
+            const frozenOut = Math.round(custoOutros * 100) / 100;
+            const frozenCustoTotal = Math.round(custoTotal * 100) / 100;
+            const frozenLucro = Math.round(resultadoComCustos * 100) / 100;
+            const frozenMargem = Math.round(margemComCustos * 100) / 100;
+            const frozenHoras = Math.round(horasCalc * 100) / 100;
+            const frozenKm = kmTotal;
+
+            if ((o.status === "concluida" || o.missionStatus === "encerrada") && !(o as any).custos_congelados_em) {
+              try {
+                await supabaseAdmin.from("service_orders").update({
+                  fat_calculado: frozenFat,
+                  custo_combustivel_alocado: frozenComb,
+                  custo_pedagio_alocado: frozenPed,
+                  custo_pagamento_alocado: frozenPag,
+                  custo_outros_alocado: frozenOut,
+                  custo_total_alocado: frozenCustoTotal,
+                  lucro_calculado: frozenLucro,
+                  margem_calculada: frozenMargem,
+                  horas_missao_calculadas: frozenHoras,
+                  km_total_calculado: frozenKm,
+                  custos_congelados_em: new Date().toISOString(),
+                  custos_congelados_por: "system",
+                }).eq("id", o.id);
+              } catch (_fe) {}
+            }
+
+            const useFrozen = !!(o as any).custos_congelados_em;
+
             liveCost = {
               km_inicial: kmInicial,
               km_atual: kmFinalNorm,
-              km_total: resultado.km_total,
-              horas_missao: Math.round(horasCalc * 100) / 100,
-              faturamento: resultado.faturamento.total,
+              km_total: useFrozen ? ((o as any).km_total_calculado ?? frozenKm) : frozenKm,
+              horas_missao: useFrozen ? (Number((o as any).horas_missao_calculadas) || frozenHoras) : frozenHoras,
+              faturamento: useFrozen ? (Number((o as any).fat_calculado) || frozenFat) : frozenFat,
               fat_hora_extra: Math.round(fatHoraExtra * 100) / 100,
               fat_km_extra: Math.round(fatKmExtra * 100) / 100,
-              pagamento: resultado.pagamento.total,
-              custo_combustivel: custoCombustivel,
-              custo_pedagio: custoPedagio,
-              custo_outros: custoOutros,
-              custo_total: custoTotal,
-              resultado: resultadoComCustos,
-              margem_pct: Math.round(margemComCustos * 100) / 100,
-              fuel_allocated: o.fuelAllocated !== false && custoCombustivel > 0,
+              pagamento: useFrozen ? (Number((o as any).custo_pagamento_alocado) || frozenPag) : frozenPag,
+              custo_combustivel: useFrozen ? (Number((o as any).custo_combustivel_alocado) || frozenComb) : frozenComb,
+              custo_pedagio: useFrozen ? (Number((o as any).custo_pedagio_alocado) || frozenPed) : frozenPed,
+              custo_outros: useFrozen ? (Number((o as any).custo_outros_alocado) || frozenOut) : frozenOut,
+              custo_total: useFrozen ? (Number((o as any).custo_total_alocado) || frozenCustoTotal) : frozenCustoTotal,
+              resultado: useFrozen ? (Number((o as any).lucro_calculado) || frozenLucro) : frozenLucro,
+              margem_pct: useFrozen ? (Number((o as any).margem_calculada) || frozenMargem) : frozenMargem,
+              frozen: useFrozen,
+              fuel_allocated: o.fuelAllocated !== false && (useFrozen ? Number((o as any).custo_combustivel_alocado) > 0 : custoCombustivel > 0),
               fuel_allocated_hint: fuelAllocatedHint,
               contrato_nome: contratoNome || contrato.name || null,
               contrato_valores: {
@@ -8563,6 +8629,18 @@ Regras:
       }
       const { description, amount, type, status, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_name, notes, status_conciliacao, update_scope } = req.body;
 
+      const auditChanges: { field: string; old: any; new_val: any }[] = [];
+      const auditFields = ["description", "amount", "type", "status", "due_date", "category_name", "account_name", "entity_name"];
+      for (const f of auditFields) {
+        const oldVal = existing[f]; const newVal = req.body[f];
+        if (newVal !== undefined && String(oldVal) !== String(newVal)) {
+          auditChanges.push({ field: f, old: oldVal, new_val: newVal });
+        }
+      }
+      if (auditChanges.length > 0) {
+        await logFinancialAudit("financial_transactions", req.params.id, "UPDATE", auditChanges, user.name, user.id);
+      }
+
       const updatePayload: any = {
         description, amount, type, status, due_date, payment_date,
         category_id, category_name, account_id, account_name,
@@ -8626,6 +8704,7 @@ Regras:
       const { data: existing, error: fetchErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
+      await logFinancialAudit("financial_transactions", req.params.id, "UPDATE", [{ field: "status", old: existing.status, new_val: newStatus }], user.name, user.id);
       const { data, error } = await supabaseAdmin.from("financial_transactions").update({
         status: newStatus,
         payment_date: newStatus === "PAID" ? existing.due_date : null,
@@ -8640,14 +8719,47 @@ Regras:
 
   app.delete("/api/financial/transactions/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
-      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("origin_type").eq("id", req.params.id).single();
+      const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (existing.origin_type && existing.origin_type !== "manual") {
         return res.status(403).json({ message: "Lançamentos automáticos não podem ser excluídos manualmente. Exclua o registro de origem." });
       }
+      await logFinancialAudit("financial_transactions", req.params.id, "DELETE", [
+        { field: "description", old: existing.description, new_val: null },
+        { field: "amount", old: existing.amount, new_val: null },
+        { field: "type", old: existing.type, new_val: null },
+      ], user.name, user.id, "Exclusão manual");
       const { error } = await supabaseAdmin.from("financial_transactions").delete().eq("id", req.params.id);
       if (error) throw error;
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/financial/audit-logs", requireAuth, async (req, res) => {
+    try {
+      const { target_table, target_id, limit: lim } = req.query as any;
+      let query = supabaseAdmin.from("financial_audit_logs").select("*").order("created_at", { ascending: false }).limit(Number(lim) || 100);
+      if (target_table) query = query.eq("target_table", target_table);
+      if (target_id) query = query.eq("target_id", target_id);
+      const { data, error } = await query;
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/fleet-summary", requireAuth, async (req, res) => {
+    try {
+      const dateParam = (req.query.date as string) || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const { data, error } = await supabaseAdmin.rpc("get_daily_fleet_summary", { p_date: dateParam });
+      if (error) throw error;
+      const { data: totals, error: totErr } = await supabaseAdmin.rpc("get_fleet_totals", { p_date: dateParam });
+      if (totErr) throw totErr;
+      res.json({ orders: data || [], totals: totals?.[0] || null });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

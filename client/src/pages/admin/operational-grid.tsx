@@ -5692,7 +5692,7 @@ function TrucksControlStatus() {
   );
 }
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 30 * 1000;
 
 function useCountdown(intervalMs: number, lastFetchTime: number) {
   const [remaining, setRemaining] = useState(intervalMs / 1000);
