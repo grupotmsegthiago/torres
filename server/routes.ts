@@ -1832,13 +1832,20 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       };
 
       const steps = STEPS_FOR_GRID.map(s => {
-        const logEntry = [...stepLogs].reverse().find((l: any) => l.step === s.key);
+        let logEntry = [...stepLogs].reverse().find((l: any) => l.step === s.key);
+        if (!logEntry) {
+          logEntry = [...stepLogs].reverse().find((l: any) => l.nextStep === s.key);
+        }
+        let ts = logEntry?.timestamp || logEntry?.completedAt || null;
+        if (!ts && s.key === "finalizada" && os.completedDate) {
+          ts = new Date(os.completedDate as string).toISOString();
+        }
         return {
           key: s.key,
           label: s.label,
           hasKm: s.hasKm,
           kmStep: s.kmStep || null,
-          timestamp: logEntry?.timestamp || logEntry?.completedAt || null,
+          timestamp: ts,
           km: s.kmStep ? (kmMap[s.kmStep] ?? null) : null,
           agentName: logEntry?.agentName || null,
         };
