@@ -16,7 +16,7 @@ import {
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
   auditLogs, users, loginSelfies, employeeSalaryDiscounts,
-  companyDocuments, homologationLogs, missionUpdates,
+  companyDocuments, homologationLogs, missionUpdates, telemetryEvents,
   referencePoints, insertReferencePointSchema,
   missionPositions, missionPhotos,
   agentLocationHistory, systemSettings,
@@ -6073,13 +6073,41 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const unreadOnly = req.query.unread === "true";
     const limit = parseInt(req.query.limit as string) || 50;
 
-    let results;
+    let missionResults: any[];
     if (unreadOnly) {
-      results = await db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+      missionResults = await db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit);
     } else {
-      results = await db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+      missionResults = await db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
     }
-    res.json(results);
+
+    if (!unreadOnly) {
+      const telEvents = await db.select().from(telemetryEvents).orderBy(desc(telemetryEvents.createdAt)).limit(limit);
+      const telAsMission = telEvents.map(t => ({
+        id: `tel-${t.id}`,
+        serviceOrderId: null,
+        osNumber: null,
+        employeeId: null,
+        employeeName: t.driverName || t.plate,
+        message: t.details || `${t.eventType}: ${t.value}`,
+        missionStep: null,
+        latitude: t.latitude ? String(t.latitude) : null,
+        longitude: t.longitude ? String(t.longitude) : null,
+        photoUrl: null,
+        readByAdmin: 1,
+        createdAt: t.createdAt,
+        _type: "telemetry",
+        _eventType: t.eventType,
+        _plate: t.plate,
+        _value: t.value,
+        _address: t.address,
+      }));
+      const merged = [...missionResults.map(m => ({ ...m, _type: "mission" })), ...telAsMission]
+        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+        .slice(0, limit);
+      return res.json(merged);
+    }
+
+    res.json(missionResults);
   });
 
   app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {

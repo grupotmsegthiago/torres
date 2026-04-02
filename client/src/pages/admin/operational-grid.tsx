@@ -18,7 +18,7 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
-  CircleFadingPlus, Eye, Fuel,
+  CircleFadingPlus, Eye, Fuel, Gauge,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -6659,36 +6659,56 @@ function AlertsTimeline() {
                 const isCritical = ageMs < 600000;
                 const isNewest = idx === 0;
                 const hasPhoto = !!u.photoUrl;
+                const isTelemetry = u._type === "telemetry";
+                const isSpeedAlert = isTelemetry && u._eventType === "excesso_velocidade";
+                const isIdleAlert = isTelemetry && (u._eventType === "motor_ocioso" || u._eventType === "parada_prolongada");
+
+                const borderClass = isTelemetry
+                  ? isSpeedAlert
+                    ? "border-red-500 bg-red-50/80 shadow-md ring-2 ring-red-200"
+                    : "border-orange-400 bg-orange-50/60 shadow-sm"
+                  : isNewest && isCritical
+                    ? "border-red-400 bg-red-50 shadow-md ring-2 ring-red-300 animate-pulse"
+                    : isNewest
+                    ? "border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200"
+                    : isCritical
+                    ? "border-amber-300 bg-amber-50/60 shadow-sm"
+                    : "border-neutral-200 bg-white";
+
+                const iconBgClass = isTelemetry
+                  ? isSpeedAlert ? "bg-red-600" : "bg-orange-500"
+                  : isNewest && isCritical ? "bg-red-600" : isNewest ? "bg-blue-600" : isCritical ? "bg-amber-500" : "bg-neutral-800";
 
                 return (
                   <div
                     key={u.id}
-                    className={`relative rounded-xl border transition-all ${
-                      isNewest && isCritical
-                        ? "border-red-400 bg-red-50 shadow-md ring-2 ring-red-300 animate-pulse"
-                        : isNewest
-                        ? "border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200"
-                        : isCritical
-                        ? "border-amber-300 bg-amber-50/60 shadow-sm"
-                        : "border-neutral-200 bg-white"
-                    }`}
+                    className={`relative rounded-xl border transition-all ${borderClass}`}
                     data-testid={`alert-card-${u.id}`}
                   >
-                    {isNewest && isCritical && (
+                    {isTelemetry && (
+                      <div className="absolute top-2 right-3 flex items-center gap-1">
+                        <span className={`px-2 py-0.5 rounded-full text-white text-[9px] font-black uppercase tracking-wider ${
+                          isSpeedAlert ? "bg-red-600 animate-bounce" : "bg-orange-500"
+                        }`}>
+                          {isSpeedAlert ? "VELOCIDADE" : "TELEMETRIA"}
+                        </span>
+                      </div>
+                    )}
+                    {!isTelemetry && isNewest && isCritical && (
                       <div className="absolute top-2 right-3">
                         <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-black uppercase tracking-wider animate-bounce">
                           NOVO
                         </span>
                       </div>
                     )}
-                    {isNewest && !isCritical && (
+                    {!isTelemetry && isNewest && !isCritical && (
                       <div className="absolute top-2 right-3">
                         <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider">
                           ÚLTIMO
                         </span>
                       </div>
                     )}
-                    {!isNewest && isCritical && (
+                    {!isTelemetry && !isNewest && isCritical && (
                       <div className="absolute top-2 right-3">
                         <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider">
                           RECENTE
@@ -6698,10 +6718,10 @@ function AlertsTimeline() {
 
                     <div className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isNewest && isCritical ? "bg-red-600" : isNewest ? "bg-blue-600" : isCritical ? "bg-amber-500" : "bg-neutral-800"
-                        }`}>
-                          {hasPhoto ? (
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBgClass}`}>
+                          {isTelemetry ? (
+                            isSpeedAlert ? <Gauge className="w-4 h-4 text-white" /> : <AlertTriangle className="w-4 h-4 text-white" />
+                          ) : hasPhoto ? (
                             <Camera className="w-4 h-4 text-white" />
                           ) : (
                             <MessageSquareText className="w-4 h-4 text-white" />
@@ -6711,12 +6731,22 @@ function AlertsTimeline() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-sm text-neutral-900 uppercase">{u.employeeName || "Agente"}</span>
-                            {u.osNumber && (
+                            {isTelemetry && u._plate && (
+                              <span className="px-1.5 py-0.5 rounded bg-neutral-900 text-white text-[10px] font-bold tracking-wide">
+                                {u._plate}
+                              </span>
+                            )}
+                            {isTelemetry && u._value && isSpeedAlert && (
+                              <span className="px-1.5 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-black text-red-700">
+                                {Math.round(u._value)} km/h
+                              </span>
+                            )}
+                            {!isTelemetry && u.osNumber && (
                               <span className="px-1.5 py-0.5 rounded bg-neutral-100 border border-neutral-200 text-[10px] font-bold text-neutral-600">
                                 OS {u.osNumber}
                               </span>
                             )}
-                            {u.missionStep && (
+                            {!isTelemetry && u.missionStep && (
                               <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] font-bold text-blue-700 uppercase">
                                 {u.missionStep.replace(/_/g, " ")}
                               </span>
@@ -6724,6 +6754,12 @@ function AlertsTimeline() {
                           </div>
 
                           <p className="text-sm text-neutral-700 mt-1 leading-relaxed">{u.message}</p>
+
+                          {isTelemetry && u._address && (
+                            <p className="text-xs text-neutral-500 mt-0.5 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 flex-shrink-0" /> {u._address}
+                            </p>
+                          )}
 
                           {hasPhoto && (
                             <div className="mt-2">
@@ -6763,7 +6799,7 @@ function AlertsTimeline() {
                                 className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
                                 data-testid={`link-map-${u.id}`}
                               >
-                                <MapPin className="w-3 h-3" /> 📌 Mapa
+                                <MapPin className="w-3 h-3" /> Mapa
                               </a>
                             )}
                           </div>
