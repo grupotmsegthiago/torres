@@ -9788,6 +9788,25 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.patch("/api/escort/billings/:id", requireAdminRole, async (req, res) => {
+    try {
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
+
+      const updateBody = { ...req.body };
+      delete updateBody.id;
+      delete updateBody.created_at;
+      delete updateBody.created_by;
+
+      updateBody.edit_reason = updateBody.edit_reason || `Editado via Boletim por ${req.user!.name}`;
+
+      const { data, error } = await supabaseAdmin.from("escort_billings").update(updateBody).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      console.log(`[billing-edit] Billing ${req.params.id} editado por ${req.user!.name}: km_ini=${updateBody.km_inicial}, km_fin=${updateBody.km_final}, km_total=${updateBody.km_total}, fat_total=${updateBody.fat_total}`);
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.delete("/api/escort/billings/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       await removeAutoTransaction("escort_billing", req.params.id);

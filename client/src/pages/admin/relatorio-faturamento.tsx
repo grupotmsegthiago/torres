@@ -4,7 +4,7 @@ import AdminLayout from "@/components/admin/layout";
 import { authFetch } from "@/lib/queryClient";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
-  Calculator, Calendar,
+  Calculator, Calendar, Pencil, Save, X, Check,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
@@ -47,6 +47,9 @@ export default function RelatorioFaturamentoPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [billings, setBillings] = useState<any[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -128,6 +131,92 @@ export default function RelatorioFaturamentoPage() {
 
   const getContractForBilling = (b: any) => {
     return contracts.find((c: any) => c.id === b.contract_id) || null;
+  };
+
+  const startEditBilling = (billingId: string) => {
+    const b = billings.find((x: any) => x.id === billingId);
+    if (!b) return;
+    setEditForm({
+      km_inicial: b.km_inicial || 0,
+      km_final: b.km_final || 0,
+      horario_inicio: b.horario_inicio || "",
+      horario_fim: b.horario_fim || "",
+      placa_viatura: b.placa_viatura || "",
+      placa_escoltado: b.placa_escoltado || "",
+      despesas_pedagio: b.despesas_pedagio || 0,
+    });
+    setEditingBillingId(billingId);
+  };
+
+  const saveEditBilling = async () => {
+    if (!editingBillingId) return;
+    setSavingEdit(true);
+    try {
+      const b = billings.find((x: any) => x.id === editingBillingId);
+      const ct = b ? getContractForBilling(b) : null;
+      const n = (v: any) => Number(v) || 0;
+      const franquiaKm = n(ct?.franquia_km) || n(ct?.franquia_minima_km) || n(b?.km_franquia);
+      const franquiaHoras = n(ct?.franquia_horas) || n(b?.franquia_horas);
+      const valorKmExtra = n(ct?.valor_km_extra) || n(ct?.valor_km_carregado) || n(b?.valor_km_extra);
+      const valorHoraExtra = n(ct?.valor_hora_extra) || n(b?.valor_hora_extra);
+
+      const kmIni = n(editForm.km_inicial);
+      const kmFin = n(editForm.km_final);
+      const kmTotal = Math.max(0, kmFin - kmIni);
+      const kmExcedente = Math.max(0, kmTotal - franquiaKm);
+      const fatKm = Math.round(kmExcedente * valorKmExtra * 100) / 100;
+
+      const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+      let horasMissao = n(b?.horas_missao);
+      if (editForm.horario_inicio && editForm.horario_fim) {
+        let diff = toMin(editForm.horario_fim) - toMin(editForm.horario_inicio);
+        if (diff < 0) diff += 1440;
+        horasMissao = Math.round((diff / 60) * 100) / 100;
+      }
+      const horasExcedentes = Math.max(0, horasMissao - franquiaHoras);
+      const fatHoraExtra = Math.round(horasExcedentes * valorHoraExtra * 100) / 100;
+
+      const fatAcionamento = n(b?.fat_acionamento);
+      const fatEstadia = n(b?.fat_estadia);
+      const fatPernoite = n(b?.fat_pernoite);
+      const fatAdicNoturno = n(b?.fat_adicional_noturno);
+      const despPedagio = n(editForm.despesas_pedagio);
+      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio) * 100) / 100;
+
+      const payload = {
+        km_inicial: kmIni,
+        km_final: kmFin,
+        km_total: kmTotal,
+        km_carregado: kmTotal,
+        km_excedente: kmExcedente,
+        km_faturado: kmTotal,
+        fat_km: fatKm,
+        fat_hora_extra: fatHoraExtra,
+        horas_missao: horasMissao,
+        horas_trabalhadas: horasMissao,
+        fat_total: fatTotal,
+        horario_inicio: editForm.horario_inicio || null,
+        horario_fim: editForm.horario_fim || null,
+        placa_viatura: editForm.placa_viatura || null,
+        placa_escoltado: editForm.placa_escoltado || null,
+        despesas_pedagio: despPedagio,
+        valor_km_extra: fatKm,
+      };
+
+      const r = await authFetch(`/api/escort/billings/${editingBillingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error("Erro ao salvar");
+
+      setBillings(prev => prev.map(bl => bl.id === editingBillingId ? { ...bl, ...payload } : bl));
+      setEditingBillingId(null);
+    } catch (err: any) {
+      alert("Erro ao salvar: " + err.message);
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const getPeriodLabel = () => {
@@ -421,16 +510,72 @@ export default function RelatorioFaturamentoPage() {
                       <span className="text-sm font-black text-black">{fmt(r.totalGeral)}</span>
                     </div>
                   </div>
-                  {isExpanded && (
-                    <div className="px-3 pb-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs border-t border-gray-200 pt-2">
-                      <div><span className="text-gray-400 font-bold">Acionamento:</span> <span className="font-black">{fmt(r.activationFee)}</span></div>
-                      <div><span className="text-gray-400 font-bold">Franquia:</span> <span className="font-black">{r.franchiseHoursFmt}h / {fmtNum(r.franchiseKm)} km</span></div>
-                      <div><span className="text-gray-400 font-bold">KM Excedente:</span> <span className="font-black">{fmtNum(r.kmExtraQtd)} km = {fmt(r.kmExtraTotal)}</span></div>
-                      <div><span className="text-gray-400 font-bold">Hora Extra:</span> <span className="font-black">{fmtHHMM(r.hrExtraQtd)} = {fmt(r.hrExtraTotal)}</span></div>
-                      <div><span className="text-gray-400 font-bold">KM Inicial:</span> <span className="font-black">{fmtNum(r.kmStart)}</span></div>
-                      <div><span className="text-gray-400 font-bold">KM Final:</span> <span className="font-black">{fmtNum(r.kmEnd)}</span></div>
-                      <div><span className="text-gray-400 font-bold">Pedágio:</span> <span className="font-black">{fmt(r.tollVal)}</span></div>
-                      <div><span className="text-gray-400 font-bold">Viatura:</span> <span className="font-black">{r.viatura}</span></div>
+                  {isExpanded && editingBillingId === r.billingId && (
+                    <div className="px-3 pb-3 border-t border-gray-200 pt-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">KM Inicial</label>
+                          <input type="number" value={editForm.km_inicial} onChange={e => setEditForm({...editForm, km_inicial: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-km-ini" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">KM Final</label>
+                          <input type="number" value={editForm.km_final} onChange={e => setEditForm({...editForm, km_final: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-km-fin" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">Hora Início</label>
+                          <input type="time" value={editForm.horario_inicio?.substring(0,5) || ""} onChange={e => setEditForm({...editForm, horario_inicio: e.target.value})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-hr-ini" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">Hora Fim</label>
+                          <input type="time" value={editForm.horario_fim?.substring(0,5) || ""} onChange={e => setEditForm({...editForm, horario_fim: e.target.value})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-hr-fim" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">Placa Viatura</label>
+                          <input type="text" value={editForm.placa_viatura} onChange={e => setEditForm({...editForm, placa_viatura: e.target.value.toUpperCase()})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-viatura" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">Placa Escoltado</label>
+                          <input type="text" value={editForm.placa_escoltado} onChange={e => setEditForm({...editForm, placa_escoltado: e.target.value.toUpperCase()})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-escoltado" />
+                        </div>
+                        <div>
+                          <label className="text-gray-400 font-bold block mb-0.5">Pedágio (R$)</label>
+                          <input type="number" step="0.01" value={editForm.despesas_pedagio} onChange={e => setEditForm({...editForm, despesas_pedagio: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-pedagio" />
+                        </div>
+                        <div className="flex items-end gap-1">
+                          <button onClick={saveEditBilling} disabled={savingEdit} className="flex items-center gap-1 px-3 py-1 bg-black text-white rounded text-xs font-bold hover:bg-gray-800 disabled:opacity-50" data-testid="button-save-edit">
+                            {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Salvar
+                          </button>
+                          <button onClick={() => setEditingBillingId(null)} className="flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-bold hover:bg-gray-300" data-testid="button-cancel-edit">
+                            <X size={12} /> Cancelar
+                          </button>
+                        </div>
+                      </div>
+                      {editForm.km_final > editForm.km_inicial && (
+                        <div className="mt-2 text-[10px] text-gray-500 flex items-center gap-3">
+                          <span>KM Total: <strong>{editForm.km_final - editForm.km_inicial}</strong></span>
+                          <span>Franquia: <strong>{r.franchiseKm}</strong></span>
+                          <span>Excedente: <strong>{Math.max(0, (editForm.km_final - editForm.km_inicial) - r.franchiseKm)} km</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {isExpanded && editingBillingId !== r.billingId && (
+                    <div className="px-3 pb-3 border-t border-gray-200 pt-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div><span className="text-gray-400 font-bold">Acionamento:</span> <span className="font-black">{fmt(r.activationFee)}</span></div>
+                        <div><span className="text-gray-400 font-bold">Franquia:</span> <span className="font-black">{r.franchiseHoursFmt}h / {fmtNum(r.franchiseKm)} km</span></div>
+                        <div><span className="text-gray-400 font-bold">KM Excedente:</span> <span className="font-black">{fmtNum(r.kmExtraQtd)} km = {fmt(r.kmExtraTotal)}</span></div>
+                        <div><span className="text-gray-400 font-bold">Hora Extra:</span> <span className="font-black">{fmtHHMM(r.hrExtraQtd)} = {fmt(r.hrExtraTotal)}</span></div>
+                        <div><span className="text-gray-400 font-bold">KM Inicial:</span> <span className="font-black">{fmtNum(r.kmStart)}</span></div>
+                        <div><span className="text-gray-400 font-bold">KM Final:</span> <span className="font-black">{fmtNum(r.kmEnd)}</span></div>
+                        <div><span className="text-gray-400 font-bold">Pedágio:</span> <span className="font-black">{fmt(r.tollVal)}</span></div>
+                        <div><span className="text-gray-400 font-bold">Viatura:</span> <span className="font-black">{r.viatura}</span></div>
+                      </div>
+                      <div className="mt-2 flex justify-end">
+                        <button onClick={(e) => { e.stopPropagation(); startEditBilling(r.billingId); }} className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold transition-colors" data-testid={`button-edit-billing-${i}`}>
+                          <Pencil size={11} /> Editar
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
