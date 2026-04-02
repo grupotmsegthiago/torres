@@ -444,7 +444,7 @@ export default function BoletimMedicaoPage() {
                                         </button>
                                       )}
                                       <button
-                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); setObservacoesValue(b?.observacoes || ""); }}
+                                        onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setObservacoesValue(b?.observacoes || ""); }}
                                         className="p-1.5 rounded-lg hover:bg-neutral-100 border border-transparent hover:border-neutral-200 transition-all"
                                         data-testid={`button-view-os-${os.id}`}
                                       >
@@ -508,7 +508,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const acionamento = Number(b?.fat_acionamento || 0);
   const horaExtra = Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
-  const pedagio = Number(b?.despesas_pedagio || 0);
+  const pedagio = Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0);
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
