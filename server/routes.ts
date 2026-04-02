@@ -824,7 +824,9 @@ export async function registerRoutes(
   });
 
   app.get("/api/employees/:id", requireAuth, async (req, res) => {
-    const data = await storage.getEmployee(Number(req.params.id));
+    const empId = Number(req.params.id);
+    if (isNaN(empId)) return res.status(400).json({ message: "ID inválido" });
+    const data = await storage.getEmployee(empId);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     if (req.user!.role !== "diretoria") {
       const { blockType, blockReason, ...safe } = data as any;

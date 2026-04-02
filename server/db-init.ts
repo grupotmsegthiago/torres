@@ -508,8 +508,22 @@ export async function nominatimGeocode(address: string): Promise<{ lat: number; 
     const resp = await fetch(url, { headers: { "User-Agent": "TorresVP/1.0" }, signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     const data = await resp.json() as any[];
-    if (data.length === 0) return null;
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+
+    const cityMatch = address.match(/,\s*([^,]+?)\s*-\s*([A-Z]{2})\s*,?\s*Brasil/i);
+    if (cityMatch) {
+      const simpler = `${cityMatch[1].trim()}, ${cityMatch[2]}, Brasil`;
+      await new Promise(r => setTimeout(r, 1100));
+      const url2 = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(simpler)}&countrycodes=br&limit=1`;
+      const resp2 = await fetch(url2, { headers: { "User-Agent": "TorresVP/1.0" }, signal: AbortSignal.timeout(5000) });
+      if (!resp2.ok) return null;
+      const data2 = await resp2.json() as any[];
+      if (data2.length > 0) {
+        console.log(`[geocode] Fallback OK: "${address}" → "${simpler}" (${data2[0].lat},${data2[0].lon})`);
+        return { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) };
+      }
+    }
+    return null;
   } catch {
     return null;
   }

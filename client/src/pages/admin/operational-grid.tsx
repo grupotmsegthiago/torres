@@ -466,25 +466,34 @@ function getRouteProgress(opts: {
   missionStatus?: string | null;
 }): { pct: number; distTotalKm: number; distRemainingKm: number; distTravelledKm: number } | null {
   const { originLat, originLng, destLat, destLng, currentLat, currentLng, missionStatus } = opts;
-  if (!originLat || !originLng || !destLat || !destLng) return null;
-  const totalDist = haversineKm(originLat, originLng, destLat, destLng) * 1.3;
-  if (totalDist < 1) return null;
-  if (!currentLat || !currentLng) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+  if (!destLat || !destLng) return null;
+  if (!currentLat || !currentLng) return null;
 
   const isTransit = missionStatus === "em_transito_destino" || missionStatus === "em_transito_origem";
   const isFinished = missionStatus === "chegada_destino" || missionStatus === "checkout_km_final" || missionStatus === "checkout_viatura_retorno" || missionStatus === "finalizada" || missionStatus === "retorno_base" || missionStatus === "chegada_base" || missionStatus === "encerrada";
 
-  if (isFinished) return { pct: 100, distTotalKm: totalDist, distRemainingKm: 0, distTravelledKm: totalDist };
+  const hasOrigin = !!(originLat && originLng);
 
-  const distFromOrigin = haversineKm(originLat, originLng, currentLat, currentLng) * 1.3;
-  const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
+  if (hasOrigin) {
+    const totalDist = haversineKm(originLat!, originLng!, destLat, destLng) * 1.3;
+    if (totalDist < 1) return null;
 
-  if (!isTransit) {
-    if (distFromOrigin < 5) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+    if (isFinished) return { pct: 100, distTotalKm: totalDist, distRemainingKm: 0, distTravelledKm: totalDist };
+
+    const distFromOrigin = haversineKm(originLat!, originLng!, currentLat, currentLng) * 1.3;
+    const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
+
+    if (!isTransit) {
+      if (distFromOrigin < 5) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+    }
+
+    const pct = Math.min(100, Math.max(0, Math.round((1 - distToDest / totalDist) * 100)));
+    return { pct, distTotalKm: totalDist, distRemainingKm: distToDest, distTravelledKm: distFromOrigin };
   }
 
-  const pct = Math.min(100, Math.max(0, Math.round((1 - distToDest / totalDist) * 100)));
-  return { pct, distTotalKm: totalDist, distRemainingKm: distToDest, distTravelledKm: distFromOrigin };
+  const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
+  if (isFinished) return { pct: 100, distTotalKm: distToDest, distRemainingKm: 0, distTravelledKm: distToDest };
+  return { pct: 0, distTotalKm: 0, distRemainingKm: distToDest, distTravelledKm: 0 };
 }
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
@@ -787,7 +796,7 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
 function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact, noDistance }: { pct: number; distRemainingKm: number; distTotalKm: number; compact?: boolean; noDistance?: boolean }) {
   const fmtDist = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
   const carLeft = Math.min(Math.max(pct, 2), 98);
-  const showDist = !noDistance && distTotalKm > 0;
+  const showDist = !noDistance && (distTotalKm > 0 || distRemainingKm > 0);
   if (compact) {
     return (
       <div className="w-full" data-testid="route-progress-bar">
@@ -5121,10 +5130,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
                               missionStatus: ms,
                             });
-                            if (rp) {
+                            if (rp && rp.distTotalKm > 0) {
                               return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} compact /></div>;
                             }
                             const stepPct = getMissionProgress(ms);
+                            if (rp && rp.distRemainingKm > 0) {
+                              return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={rp.distRemainingKm} distTotalKm={0} compact /></div>;
+                            }
                             return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={0} distTotalKm={0} compact noDistance /></div>;
                           })()}
                           {(v.activeOs.missionStartedAt || v.activeOs.scheduledDate) && (
