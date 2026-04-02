@@ -9,7 +9,9 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, CheckCircle2, X, AlertTriangle, Clock, MapPin,
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
-  Car, User, Calculator, Filter, Lock, Pencil, RotateCcw,
+  Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
+  Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
+  CircleDot, Timer,
 } from "lucide-react";
 
 const fmt = (val: number | null | undefined) => {
@@ -24,6 +26,13 @@ const fmtHoras = (val: number | null | undefined) => {
   const h = Math.floor(val);
   const m = Math.round((val - h) * 60);
   return `${h}h${m.toString().padStart(2, "0")}`;
+};
+
+const computeKm = (os: any) => {
+  const b = os.billing;
+  const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b?.km_inicial || 0);
+  const kmFim = Number(os.km_final || b?.km_final || 0);
+  return Math.max(0, kmFim - kmChegada);
 };
 
 type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA";
@@ -164,10 +173,10 @@ export default function BoletimMedicaoPage() {
     }
   }, [selectedOs]);
 
-  const clientGroups: Record<number, { clientName: string; orders: any[] }> = {};
+  const clientGroups: Record<number, { clientName: string; clientCnpj: string | null; orders: any[] }> = {};
   osConcluidas.forEach(os => {
     const cid = os.clientId || 0;
-    if (!clientGroups[cid]) clientGroups[cid] = { clientName: os.clientName || "Sem Cliente", orders: [] };
+    if (!clientGroups[cid]) clientGroups[cid] = { clientName: os.clientName || "Sem Cliente", clientCnpj: os.clientCnpj || null, orders: [] };
     clientGroups[cid].orders.push(os);
   });
 
@@ -205,24 +214,29 @@ export default function BoletimMedicaoPage() {
       });
     }
     if (orders.length === 0) return null;
-    return { clientId: Number(cid), clientName: group.clientName, orders };
-  }).filter(Boolean) as { clientId: number; clientName: string; orders: any[] }[];
+    return { clientId: Number(cid), clientName: group.clientName, clientCnpj: group.clientCnpj, orders };
+  }).filter(Boolean) as { clientId: number; clientName: string; clientCnpj: string | null; orders: any[] }[];
 
+  const totalOs = osConcluidas.length;
   const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
   const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
+  const totalFaturamento = osConcluidas.reduce((acc, o) => {
+    const b = o.billing;
+    return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0);
+  }, 0);
 
   const getBillingStatus = (os: any) => {
-    if (!os.billing) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600" };
+    if (!os.billing) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
     switch (os.billing.status) {
-      case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-100 text-blue-800" };
-      case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-100 text-amber-800" };
-      case "APROVADA": return { label: "Aprovada ✓", color: "bg-green-100 text-green-800" };
-      case "REJEITADA": return { label: "Rejeitada", color: "bg-red-100 text-red-800" };
-      case "CALCULADO": return { label: "Calculado", color: "bg-blue-100 text-blue-800" };
-      case "FATURADO": return { label: "Faturado", color: "bg-indigo-100 text-indigo-800" };
-      case "CANCELADO": return { label: "Cancelada", color: "bg-red-600 text-white" };
-      default: return { label: os.billing.status, color: "bg-neutral-100 text-neutral-600" };
+      case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
+      case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-50 text-amber-700 border border-amber-200", dot: "bg-amber-500" };
+      case "APROVADA": return { label: "Aprovada", color: "bg-emerald-50 text-emerald-700 border border-emerald-200", dot: "bg-emerald-500" };
+      case "REJEITADA": return { label: "Rejeitada", color: "bg-red-50 text-red-700 border border-red-200", dot: "bg-red-500" };
+      case "CALCULADO": return { label: "Calculado", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
+      case "FATURADO": return { label: "Faturado", color: "bg-indigo-50 text-indigo-700 border border-indigo-200", dot: "bg-indigo-500" };
+      case "CANCELADO": return { label: "Cancelada", color: "bg-red-600 text-white", dot: "bg-red-300" };
+      default: return { label: os.billing.status, color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
     }
   };
 
@@ -231,20 +245,41 @@ export default function BoletimMedicaoPage() {
   return (
     <AdminLayout>
       <div className="space-y-6" data-testid="page-boletim-medicao">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
-            <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-1">OS em andamento e encerradas — verificacao e aprovacao de faturamento</p>
+            <h1 className="text-2xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
+            <p className="text-xs text-neutral-400 font-semibold mt-1">Verificação e aprovação de faturamento das ordens de serviço</p>
           </div>
-          <div className="flex items-center gap-3">
-            {pendingCount > 0 && (
-              <Badge className="bg-amber-100 text-amber-800 border-0 font-black text-sm px-3 py-1" data-testid="badge-pendentes">
-                <AlertTriangle size={14} className="mr-1" /> {pendingCount} pendente{pendingCount > 1 ? "s" : ""}
-              </Badge>
-            )}
-            <Badge className="bg-green-100 text-green-800 border-0 font-bold text-xs px-2 py-1">
-              {approvedCount} aprovada{approvedCount !== 1 ? "s" : ""}
-            </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-white border border-neutral-200 rounded-xl p-4" data-testid="stat-total">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><FileText size={14} className="text-neutral-500" /></div>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total OS</span>
+            </div>
+            <p className="text-2xl font-black text-neutral-900 mt-1">{totalOs}</p>
+          </div>
+          <div className="bg-white border border-amber-200 rounded-xl p-4" data-testid="stat-pendentes">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><AlertTriangle size={14} className="text-amber-600" /></div>
+              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Pendentes</span>
+            </div>
+            <p className="text-2xl font-black text-amber-700 mt-1">{pendingCount}</p>
+          </div>
+          <div className="bg-white border border-emerald-200 rounded-xl p-4" data-testid="stat-aprovadas">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><CheckCircle2 size={14} className="text-emerald-600" /></div>
+              <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Aprovadas</span>
+            </div>
+            <p className="text-2xl font-black text-emerald-700 mt-1">{approvedCount}</p>
+          </div>
+          <div className="bg-white border border-neutral-200 rounded-xl p-4" data-testid="stat-faturamento">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><DollarSign size={14} className="text-neutral-500" /></div>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Faturamento</span>
+            </div>
+            <p className="text-lg font-black text-neutral-900 mt-1">{fmt(totalFaturamento)}</p>
           </div>
         </div>
 
@@ -253,8 +288,8 @@ export default function BoletimMedicaoPage() {
             <button
               key={val}
               onClick={() => setStatusFilter(val)}
-              className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors ${
-                statusFilter === val ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                statusFilter === val ? "bg-neutral-900 text-white shadow-sm" : "bg-white text-neutral-500 hover:bg-neutral-100 border border-neutral-200"
               }`}
               data-testid={`filter-${val.toLowerCase()}`}
             >
@@ -288,7 +323,7 @@ export default function BoletimMedicaoPage() {
         {isLoading ? (
           <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-neutral-300" /></div>
         ) : filteredGroups.length === 0 ? (
-          <Card className="p-12 text-center">
+          <Card className="p-12 text-center border-dashed border-2 border-neutral-200 bg-neutral-50/50">
             <FileText size={48} className="mx-auto text-neutral-200 mb-4" />
             <p className="text-sm font-black text-neutral-400 uppercase">Nenhuma OS encontrada</p>
             <p className="text-xs text-neutral-300 mt-1">As OS em andamento e finalizadas aparecerão aqui para verificação</p>
@@ -298,28 +333,36 @@ export default function BoletimMedicaoPage() {
             {filteredGroups.map(group => {
               const isExpanded = expandedClient === group.clientId;
               const groupPending = group.orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
+              const groupApproved = group.orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
               const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_acionamento || 0) + Number(o.billing?.fat_hora_extra || 0) + Number(o.billing?.fat_km || 0) + Number(o.billing?.despesas_pedagio || 0), 0);
 
               return (
-                <Card key={group.clientId} className="overflow-hidden border-neutral-200" data-testid={`client-group-${group.clientId}`}>
+                <div key={group.clientId} className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm" data-testid={`client-group-${group.clientId}`}>
                   <button
                     onClick={() => setExpandedClient(isExpanded ? null : group.clientId)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition-colors"
+                    className="w-full px-5 py-4 flex items-center justify-between hover:bg-neutral-50/50 transition-colors"
                     data-testid={`toggle-client-${group.clientId}`}
                   >
-                    <div className="flex items-center gap-3">
-                      {isExpanded ? <ChevronDown size={18} className="text-neutral-400" /> : <ChevronRight size={18} className="text-neutral-400" />}
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center flex-shrink-0">
+                        {isExpanded ? <ChevronDown size={18} className="text-white" /> : <ChevronRight size={18} className="text-white" />}
+                      </div>
                       <div className="text-left">
                         <p className="text-sm font-black text-neutral-900 uppercase tracking-wider">{group.clientName}</p>
-                        <p className="text-[10px] text-neutral-400 font-bold">{group.orders.length} OS · Total Faturamento: {fmt(groupTotal)}</p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-[10px] text-neutral-400 font-semibold">{group.orders.length} OS</span>
+                          <span className="text-[10px] text-neutral-300">|</span>
+                          <span className="text-[10px] font-bold text-neutral-500">Faturamento: <span className="text-emerald-600">{fmt(groupTotal)}</span></span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {groupPending > 0 && <Badge className="bg-amber-100 text-amber-800 border-0 font-black text-[10px]">{groupPending} pendente{groupPending > 1 ? "s" : ""}</Badge>}
+                      {groupPending > 0 && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">{groupPending} pendente{groupPending > 1 ? "s" : ""}</Badge>}
+                      {groupApproved > 0 && <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">{groupApproved} aprovada{groupApproved > 1 ? "s" : ""}</Badge>}
                       {group.orders[0]?.hasContract ? (
-                        <Badge className="bg-green-50 text-green-700 border-0 text-[10px] font-bold">Tabela Cadastrada</Badge>
+                        <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">Tabela Cadastrada</Badge>
                       ) : (
-                        <Badge className="bg-red-50 text-red-700 border-0 text-[10px] font-bold">Sem Tabela</Badge>
+                        <Badge className="bg-red-50 text-red-700 border border-red-200 font-bold text-[10px]">Sem Tabela</Badge>
                       )}
                     </div>
                   </button>
@@ -329,84 +372,88 @@ export default function BoletimMedicaoPage() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs" data-testid={`table-os-${group.clientId}`}>
                           <thead>
-                            <tr className="bg-neutral-50 border-b border-neutral-100">
-                              <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">OS</th>
-                              <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Data</th>
-                              <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Rota</th>
-                              <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Agente</th>
-                              <th className="text-left px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Viatura</th>
-                              <th className="text-right px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">KM</th>
-                              <th className="text-right px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Horas</th>
-                              <th className="text-right px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Valor</th>
-                              <th className="text-center px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Status</th>
-                              <th className="text-center px-4 py-2.5 font-black text-neutral-400 uppercase tracking-wider text-[10px]">Ação</th>
+                            <tr className="bg-neutral-50/80">
+                              <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">OS</th>
+                              <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Data</th>
+                              <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Rota</th>
+                              <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Agente</th>
+                              <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Viatura</th>
+                              <th className="text-right px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">KM</th>
+                              <th className="text-right px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Horas</th>
+                              <th className="text-right px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Valor</th>
+                              <th className="text-center px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Status</th>
+                              <th className="text-center px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Ação</th>
                             </tr>
                           </thead>
                           <tbody>
                             {group.orders.map((os: any) => {
                               const status = getBillingStatus(os);
                               const b = os.billing;
+                              const kmTotal = computeKm(os);
                               return (
-                                <tr key={os.id} className={`border-b hover:bg-neutral-50 transition-colors ${os.status === "cancelada" ? "bg-red-50/50 border-red-100" : "border-neutral-50"}`} data-testid={`row-os-${os.id}`}>
-                                  <td className="px-4 py-3">
+                                <tr key={os.id} className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""}`} data-testid={`row-os-${os.id}`}>
+                                  <td className="px-4 py-3.5">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="font-mono font-black text-neutral-800">{os.osNumber}</span>
+                                      <span className="font-mono font-black text-neutral-800 text-[13px]">{os.osNumber}</span>
                                       {isLiveOs(os) && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Em andamento" />}
                                     </div>
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
                                     {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
-                                    {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{b?.observacoes ? b.observacoes.split("|")[0].trim() : "Serviço cancelado - Taxa Operacional"}</p>}
+                                    {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{b?.observacoes ? b.observacoes.split("|")[0].trim() : "Cancelada"}</p>}
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <span className="font-bold text-neutral-600">{fmtDate(os.scheduledDate || os.createdAt)}</span>
-                                    {os.missionStartedAt && <p className="text-[9px] text-neutral-400">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : <span className="text-green-600 font-bold">em andamento</span>}</p>}
+                                  <td className="px-4 py-3.5">
+                                    <span className="font-semibold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</span>
+                                    {os.missionStartedAt && <p className="text-[9px] text-neutral-400 mt-0.5">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : <span className="text-green-600 font-bold">em andamento</span>}</p>}
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <div className="max-w-[150px]">
-                                      {os.origin && <p className="text-[10px] font-bold text-neutral-600 truncate">{os.origin}</p>}
-                                      {os.destination && <p className="text-[10px] text-neutral-400 truncate">→ {os.destination}</p>}
+                                  <td className="px-4 py-3.5">
+                                    <div className="max-w-[160px]">
+                                      {os.origin && <p className="text-[10px] font-semibold text-neutral-600 truncate">{os.origin}</p>}
+                                      {os.destination && <p className="text-[10px] text-neutral-400 truncate flex items-center gap-0.5"><ArrowRight size={8} className="flex-shrink-0" /> {os.destination}</p>}
                                     </div>
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <span className="font-bold text-neutral-700">{os.employee1Name || "—"}</span>
+                                  <td className="px-4 py-3.5">
+                                    <span className="font-semibold text-neutral-700">{os.employee1Name || "—"}</span>
                                     {os.employee2Name && <p className="text-[9px] text-neutral-400">{os.employee2Name}</p>}
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="px-4 py-3.5">
                                     <span className="font-mono font-bold text-neutral-600">{os.vehiclePlate || "—"}</span>
                                     {os.escortedVehiclePlate && <p className="text-[9px] text-neutral-400">Escolt: {os.escortedVehiclePlate}</p>}
                                   </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <span className="font-mono font-bold text-neutral-800">{b ? Number(b.km_total || 0) : os.km_total || 0}</span>
-                                    <span className="text-neutral-400 ml-0.5">km</span>
+                                  <td className="px-4 py-3.5 text-right">
+                                    <span className={`font-mono font-black text-[13px] ${kmTotal > 0 ? "text-neutral-900" : "text-neutral-300"}`}>{kmTotal > 0 ? kmTotal.toLocaleString("pt-BR") : "—"}</span>
+                                    {kmTotal > 0 && <span className="text-neutral-400 text-[10px] ml-0.5">km</span>}
                                   </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <span className="font-mono font-bold text-neutral-800">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
+                                  <td className="px-4 py-3.5 text-right">
+                                    <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
                                   </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <span className="font-mono font-black text-green-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
+                                  <td className="px-4 py-3.5 text-right">
+                                    <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
                                   </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <Badge className={`${status.color} border-0 font-black text-[9px]`}>{status.label}</Badge>
+                                  <td className="px-4 py-3.5 text-center">
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold ${status.color}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
+                                      {status.label}
+                                    </span>
                                   </td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-4 py-3.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
                                       {(!b || isLiveOs(os) || b?.status === "REJEITADA") && (
                                         <button
                                           onClick={() => calcularMutation.mutate(os.id)}
                                           disabled={calcularMutation.isPending}
-                                          className="p-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+                                          className="p-1.5 rounded-lg hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all"
                                           title={b?.status === "REJEITADA" ? "Recalcular (Rejeitada)" : b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
                                           data-testid={`button-calc-os-${os.id}`}
                                         >
-                                          <Calculator size={16} className={b?.status === "REJEITADA" ? "text-red-500" : isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
+                                          <Calculator size={15} className={b?.status === "REJEITADA" ? "text-red-500" : isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
                                         </button>
                                       )}
                                       <button
                                         onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || "0"); setObservacoesValue(b?.observacoes || ""); }}
-                                        className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors"
+                                        className="p-1.5 rounded-lg hover:bg-neutral-100 border border-transparent hover:border-neutral-200 transition-all"
                                         data-testid={`button-view-os-${os.id}`}
                                       >
-                                        <Eye size={16} className="text-neutral-500" />
+                                        <Eye size={15} className="text-neutral-500" />
                                       </button>
                                     </div>
                                   </td>
@@ -415,9 +462,9 @@ export default function BoletimMedicaoPage() {
                             })}
                           </tbody>
                           <tfoot>
-                            <tr className="bg-neutral-50">
-                              <td colSpan={7} className="px-4 py-3 text-right font-black text-neutral-500 uppercase text-[10px]">Total do Cliente:</td>
-                              <td className="px-4 py-3 text-right font-mono font-black text-green-700 text-sm">{fmt(groupTotal)}</td>
+                            <tr className="bg-neutral-50/80">
+                              <td colSpan={7} className="px-4 py-3 text-right font-bold text-neutral-400 uppercase text-[10px] tracking-wider">Total do Cliente:</td>
+                              <td className="px-4 py-3 text-right font-mono font-black text-emerald-700 text-sm">{fmt(groupTotal)}</td>
                               <td colSpan={2}></td>
                             </tr>
                           </tfoot>
@@ -425,426 +472,436 @@ export default function BoletimMedicaoPage() {
                       </div>
                     </div>
                   )}
-                </Card>
+                </div>
               );
             })}
           </div>
         )}
 
-        {selectedOs && (() => {
-          const os = selectedOs;
-          const b = os.billing;
-          const status = getBillingStatus(os);
-          const isPendente = b?.status === "A_VERIFICAR";
+        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
+      </div>
+    </AdminLayout>
+  );
+}
 
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setSelectedOs(null)}>
-              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-testid="modal-boletim-detalhe">
-                <div className="sticky top-0 bg-white border-b border-neutral-100 px-6 py-4 flex justify-between items-center z-10">
-                  <div>
-                    <h3 className="font-black text-neutral-800 uppercase text-sm tracking-widest flex items-center gap-2">
-                      <FileText size={18} /> OS {os.osNumber}
-                    </h3>
-                    {b?.boletim_numero && <p className="text-[10px] font-mono text-blue-600 font-bold mt-0.5">{b.boletim_numero}</p>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={`${status.color} border-0 font-black text-xs`}>{status.label}</Badge>
-                    <button onClick={() => setSelectedOs(null)} className="p-1 rounded-lg hover:bg-neutral-100"><X size={20} className="text-neutral-400" /></button>
-                  </div>
+function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
+  const b = os.billing;
+  const status = getBillingStatus(os);
+  const isPendente = b?.status === "A_VERIFICAR";
+  const isApproved = b && ["APROVADA", "FATURADO", "PAGO"].includes(b.status);
+
+  const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b?.km_inicial || 0);
+  const kmFim = Number(os.km_final || b?.km_final || 0);
+  const kmTotalCalc = Math.max(0, kmFim - kmChegada);
+  const franquia = Number(b?.km_franquia || 0);
+  const kmExcCalc = Math.max(0, kmTotalCalc - franquia);
+
+  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+  const fmtToHHMM = (v: string | null) => {
+    if (!v) return null;
+    try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
+  };
+  const ini = b?.horario_inicio_considerado || b?.horario_inicio;
+  const fimReal = fmtToHHMM(os.hora_fim_missao) || b?.horario_fim;
+  let hCalc = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
+  if (ini && fimReal) {
+    let diff = toMin(fimReal) - toMin(ini);
+    if (diff < 0) diff += 24 * 60;
+    hCalc = Math.round((diff / 60) * 100) / 100;
+  }
+
+  const acionamento = Number(b?.fat_acionamento || 0);
+  const horaExtra = Number(b?.fat_hora_extra || 0);
+  const kmExtraVal = Number(b?.fat_km || 0);
+  const pedagio = Number(b?.despesas_pedagio || 0);
+  const resultado = acionamento + horaExtra + kmExtraVal + pedagio;
+
+  const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
+  const startTime = os.missionStartedAt ? fmtTime(os.missionStartedAt) : null;
+  const endTime = os.completedDate ? fmtTime(os.completedDate) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-3" onClick={onClose}>
+      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e: any) => e.stopPropagation()} data-testid="modal-boletim-detalhe">
+        <div className="bg-neutral-900 text-white px-6 py-5 flex-shrink-0">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Hash size={16} className="text-neutral-400" />
+                <h3 className="text-lg font-black tracking-wider uppercase">OS {os.osNumber}</h3>
+              </div>
+              {b?.boletim_numero && <p className="text-[11px] font-mono text-neutral-400 mt-1">{b.boletim_numero}</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black ${
+                isApproved ? "bg-emerald-500 text-white" : isPendente ? "bg-amber-400 text-neutral-900" : b?.status === "REJEITADA" ? "bg-red-500 text-white" : "bg-white/20 text-white"
+              }`}>
+                {isApproved && <CheckCircle2 size={12} />}
+                {status.label}
+              </span>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"><X size={18} /></button>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 mt-4 text-[11px] text-neutral-400">
+            <span className="flex items-center gap-1"><User size={12} /> {os.clientName}</span>
+            <span className="flex items-center gap-1"><Calendar size={12} /> {fmtDate(os.scheduledDate || os.createdAt)}</span>
+            {startTime && <span className="flex items-center gap-1"><Clock size={12} /> {startTime}{endTime ? ` — ${endTime}` : " (em andamento)"}</span>}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <InfoCard icon={<User size={13} />} label="Agente(s)" value={os.employee1Name || "—"} sub={os.employee2Name} />
+              <InfoCard icon={<Car size={13} />} label="Viatura" value={os.vehiclePlate || "—"} sub={os.vehicleModel} mono />
+              <InfoCard icon={<Shield size={13} />} label="Kit" value={os.kitName || "—"} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                <CircleDot size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Origem</p>
+                  <p className="text-xs font-semibold text-neutral-800 leading-snug mt-0.5">{os.origin || "—"}</p>
                 </div>
-
-                <div className="p-6 space-y-5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase">Cliente</p>
-                      <p className="text-sm font-black text-neutral-800">{os.clientName}</p>
-                      {os.clientCnpj && <p className="text-[10px] text-neutral-400 font-mono">{os.clientCnpj}</p>}
-                    </div>
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase">Data da Missão</p>
-                      <p className="text-sm font-bold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</p>
-                      {os.missionStartedAt && (
-                        <p className="text-[10px] text-neutral-400">
-                          {(() => {
-                            const startT = new Date(os.missionStartedAt).getTime();
-                            const schedT = os.scheduledDate ? new Date(os.scheduledDate).getTime() : 0;
-                            return schedT > startT ? fmtTime(os.scheduledDate) : fmtTime(os.missionStartedAt);
-                          })()} — {os.completedDate ? fmtTime(os.completedDate) : "em andamento"}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><User size={10} /> Agente(s)</p>
-                      <p className="text-xs font-bold text-neutral-700">{os.employee1Name || "—"}</p>
-                      {os.employee2Name && <p className="text-[10px] text-neutral-500">{os.employee2Name}</p>}
-                    </div>
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><Car size={10} /> Viatura</p>
-                      <p className="text-xs font-mono font-bold text-neutral-700">{os.vehiclePlate || "—"}</p>
-                      {os.vehicleModel && <p className="text-[10px] text-neutral-500">{os.vehicleModel}</p>}
-                    </div>
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><Shield size={10} /> Kit</p>
-                      <p className="text-xs font-bold text-neutral-700">{os.kitName || "—"}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><MapPin size={10} /> Origem</p>
-                      <p className="text-xs font-bold text-neutral-700">{os.origin || "—"}</p>
-                    </div>
-                    <div className="bg-neutral-50 p-3 rounded-xl">
-                      <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><MapPin size={10} /> Destino</p>
-                      <p className="text-xs font-bold text-neutral-700">{os.destination || "—"}</p>
-                    </div>
-                  </div>
-
-                  {os.escortedVehiclePlate && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase flex items-center gap-1"><Truck size={10} /> Veículo Escoltado</p>
-                        <p className="text-xs font-mono font-bold text-neutral-700">{os.escortedVehiclePlate}</p>
-                      </div>
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase">Motorista Escoltado</p>
-                        <p className="text-xs font-bold text-neutral-700">{os.escortedDriverName || "—"}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="border-t border-neutral-100 pt-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-1"><Clock size={12} /> KM e Horários da Missão</p>
-                      {isDiretoria && !editingFields && !(b && ["APROVADA", "FATURADO", "PAGO"].includes(b.status)) && (
-                        <button onClick={() => setEditingFields(true)} className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors" data-testid="button-editar-campos">
-                          <Pencil size={10} /> Editar
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase">KM Chegada Origem</p>
-                        {editingFields ? (
-                          <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideKmChegada} onChange={e => setOverrideKmChegada(e.target.value)} data-testid="input-km-chegada-origem" />
-                        ) : (
-                          <p className="text-sm font-black font-mono text-neutral-800">{os.km_chegada_origem != null ? Number(os.km_chegada_origem).toLocaleString("pt-BR") : "—"}</p>
-                        )}
-                      </div>
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase">KM Fim Missão</p>
-                        {editingFields ? (
-                          <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideKmFim} onChange={e => setOverrideKmFim(e.target.value)} data-testid="input-km-fim-missao" />
-                        ) : (
-                          <p className="text-sm font-black font-mono text-neutral-800">{os.km_final != null ? Number(os.km_final).toLocaleString("pt-BR") : "—"}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase">Hora Chegada Origem</p>
-                        {editingFields ? (
-                          <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideHoraChegada} onChange={e => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
-                        ) : (
-                          <p className="text-sm font-black font-mono text-neutral-800">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (os.scheduledDate ? `${fmtTime(os.scheduledDate)} (Agend.)` : "—")}</p>
-                        )}
-                      </div>
-                      <div className="bg-neutral-50 p-3 rounded-xl">
-                        <p className="text-[9px] font-black text-neutral-400 uppercase">Hora Fim Missão</p>
-                        {editingFields ? (
-                          <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1" value={overrideHoraFim} onChange={e => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
-                        ) : (
-                          <p className="text-sm font-black font-mono text-neutral-800">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : "—"}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {editingFields && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => {
-                            const payload: any = {};
-                            if (overrideKmChegada !== (os.km_chegada_origem != null ? String(os.km_chegada_origem) : "")) {
-                              payload.km_chegada_origem = Number(overrideKmChegada) || 0;
-                            }
-                            if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
-                              payload.km_fim_missao = Number(overrideKmFim) || 0;
-                            }
-                            if (overrideHoraFim) {
-                              const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
-                              const [hh, mm] = overrideHoraFim.split(":");
-                              const d = new Date(baseDate);
-                              d.setHours(Number(hh), Number(mm), 0, 0);
-                              payload.completedDate = d.toISOString();
-                            }
-                            if (overrideHoraChegada) {
-                              const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
-                              const [hh, mm] = overrideHoraChegada.split(":");
-                              const d = new Date(baseDate);
-                              d.setHours(Number(hh), Number(mm), 0, 0);
-                              payload.hora_chegada_origem = d.toISOString();
-                            }
-                            if (Object.keys(payload).length > 0) {
-                              overrideMutation.mutate({ osId: os.id, data: payload });
-                            } else {
-                              setEditingFields(false);
-                            }
-                          }}
-                          disabled={overrideMutation.isPending}
-                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                          data-testid="button-salvar-override"
-                        >
-                          {overrideMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                          Salvar Alterações
-                        </button>
-                        <button
-                          onClick={() => setEditingFields(false)}
-                          className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors"
-                          data-testid="button-cancelar-override"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {b && (
-                    <>
-                      <div className="border-t border-neutral-100 pt-4">
-                        <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1"><Calculator size={12} /> Cálculo da Missão</p>
-                      </div>
-
-                      {b.horario_inicio_considerado && (
-                        <div className={`p-3 rounded-xl border ${b.horario_agendado && b.horario_inicio && b.horario_inicio_considerado !== b.horario_agendado ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"}`}>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-[9px] font-black text-neutral-500 uppercase">Horário para Cobrança</p>
-                              <p className="text-lg font-black font-mono">{b.horario_inicio_considerado}</p>
-                            </div>
-                            <div className="text-right">
-                              {b.horario_agendado && <p className="text-[9px] text-neutral-400">Agendado: <span className="font-mono font-bold">{b.horario_agendado}</span></p>}
-                              {b.horario_inicio && <p className="text-[9px] text-neutral-400">Chegada Real: <span className="font-mono font-bold">{b.horario_inicio}</span></p>}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {(() => {
-                        const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b.km_inicial || 0);
-                        const kmFim = Number(os.km_final || b.km_final || 0);
-                        const kmTotalCalc = Math.max(0, kmFim - kmChegada);
-                        const franquia = Number(b.km_franquia || 0);
-                        const kmExcCalc = Math.max(0, kmTotalCalc - franquia);
-                        const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
-                        const fmtToHHMM = (v: string | null) => {
-                          if (!v) return null;
-                          try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
-                        };
-                        const ini = b.horario_inicio_considerado || b.horario_inicio;
-                        const fimReal = fmtToHHMM(os.hora_fim_missao) || b.horario_fim;
-                        let hCalc = Number(b.horas_trabalhadas || b.horas_missao || 0);
-                        if (ini && fimReal) {
-                          let diff = toMin(fimReal) - toMin(ini);
-                          if (diff < 0) diff += 24 * 60;
-                          hCalc = Math.round((diff / 60) * 100) / 100;
-                        }
-                        return (
-                          <div className="grid grid-cols-4 gap-3">
-                            <div className="bg-blue-50 p-3 rounded-xl text-center">
-                              <p className="text-[9px] font-black text-blue-600 uppercase">KM Total</p>
-                              <p className="text-lg font-black font-mono text-blue-800">{kmTotalCalc}</p>
-                            </div>
-                            <div className="bg-blue-50 p-3 rounded-xl text-center">
-                              <p className="text-[9px] font-black text-blue-600 uppercase">Franquia</p>
-                              <p className="text-lg font-black font-mono text-blue-800">{franquia}</p>
-                            </div>
-                            <div className={`p-3 rounded-xl text-center ${kmExcCalc > 0 ? "bg-red-50" : "bg-neutral-50"}`}>
-                              <p className="text-[9px] font-black uppercase text-neutral-500">KM Excedente</p>
-                              <p className={`text-lg font-black font-mono ${kmExcCalc > 0 ? "text-red-600" : "text-neutral-600"}`}>{kmExcCalc}</p>
-                            </div>
-                            <div className="bg-neutral-50 p-3 rounded-xl text-center">
-                              <p className="text-[9px] font-black text-neutral-500 uppercase">Horas</p>
-                              <p className="text-lg font-black font-mono text-neutral-800">{fmtHoras(hCalc)}</p>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {(() => {
-                        const acionamento = Number(b.fat_acionamento || 0);
-                        const horaExtra = Number(b.fat_hora_extra || 0);
-                        const kmExtra = Number(b.fat_km || 0);
-                        const pedagio = Number(b.despesas_pedagio || 0);
-                        const resultado = acionamento + horaExtra + kmExtra + pedagio;
-                        const items = [
-                          { label: "Acionamento", value: acionamento, color: "blue" },
-                          { label: "Hora Extra", value: horaExtra, color: "orange" },
-                          { label: "KM Excedente", value: kmExtra, color: "violet" },
-                          { label: "Pedágio", value: pedagio, color: "amber" },
-                        ].filter(i => i.value > 0 || i.label === "Acionamento" || i.label === "Pedágio");
-                        const colorMap: Record<string, string> = {
-                          blue: "bg-blue-50 border-blue-100 text-blue-700",
-                          orange: "bg-orange-50 border-orange-100 text-orange-700",
-                          violet: "bg-violet-50 border-violet-100 text-violet-700",
-                          amber: "bg-amber-50 border-amber-100 text-amber-700",
-                        };
-                        return (
-                          <>
-                            <div className={`grid gap-3 ${items.length <= 2 ? "grid-cols-2" : items.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
-                              {items.map(i => (
-                                <div key={i.label} className={`p-3 rounded-xl text-center border ${colorMap[i.color]}`}>
-                                  <p className="text-[9px] font-black uppercase">{i.label}</p>
-                                  <p className="text-lg font-black font-mono">{fmt(i.value)}</p>
-                                </div>
-                              ))}
-                            </div>
-                            <div className={`p-3 rounded-xl text-center border ${resultado >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-                              <p className="text-[9px] font-black text-neutral-500 uppercase">Resultado</p>
-                              <p className={`text-2xl font-black font-mono ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}>{fmt(resultado)}</p>
-                            </div>
-                          </>
-                        );
-                      })()}
-
-                      {isPendente && (
-                        <div className="space-y-3">
-                          <div className="bg-neutral-50 p-3 rounded-xl">
-                            <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Pedágio (R$)</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold"
-                              value={pedagioValue}
-                              onChange={e => setPedagioValue(e.target.value)}
-                              placeholder="0,00"
-                              data-testid="input-pedagio"
-                            />
-                          </div>
-                          <div className="bg-neutral-50 p-3 rounded-xl">
-                            <label className="text-[9px] font-black text-neutral-400 uppercase mb-1 block">Observações</label>
-                            <textarea
-                              className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold resize-none"
-                              rows={3}
-                              value={observacoesValue}
-                              onChange={e => setObservacoesValue(e.target.value)}
-                              placeholder="Observações sobre esta OS..."
-                              data-testid="input-observacoes"
-                            />
-                          </div>
-                          <button
-                            onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0 })}
-                            disabled={salvarBillingMutation.isPending}
-                            className="w-full bg-neutral-800 hover:bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                            data-testid="button-salvar-billing"
-                          >
-                            {salvarBillingMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                            Salvar Alterações
-                          </button>
-                        </div>
-                      )}
-
-                      {!isPendente && ["APROVADA", "FATURADO", "PAGO"].includes(b.status) && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 bg-green-50 border border-green-200 p-3 rounded-xl">
-                            <Lock size={14} className="text-green-700" />
-                            <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Valores travados — Boletim aprovado por {b.revisado_por || "admin"}</p>
-                          </div>
-                          {isDiretoria && b.status === "APROVADA" && (
-                            <button
-                              onClick={() => { if (confirm("Tem certeza que deseja reabrir esta OS? Ela voltará para 'A Verificar' e poderá ser editada.")) reabrirMutation.mutate(b.id); }}
-                              disabled={reabrirMutation.isPending}
-                              className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
-                              data-testid="button-reabrir-os"
-                            >
-                              {reabrirMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-                              Reabrir para Revisão
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {!isPendente && b.observacoes && (
-                        <div className="bg-neutral-50 p-3 rounded-xl">
-                          <p className="text-[9px] font-black text-neutral-400 uppercase">Observações</p>
-                          <p className="text-xs font-bold text-neutral-700 whitespace-pre-wrap">{b.observacoes}</p>
-                        </div>
-                      )}
-
-                      {b.revisado_por && (
-                        <div className="bg-neutral-50 p-3 rounded-xl">
-                          <p className="text-[9px] font-black text-neutral-400 uppercase">Revisado por</p>
-                          <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
-                        </div>
-                      )}
-
-                      {b.motivo_rejeicao && (
-                        <div className="bg-red-50 p-3 rounded-xl border border-red-200">
-                          <p className="text-[9px] font-black text-red-700 uppercase">Motivo da Rejeição</p>
-                          <p className="text-xs font-bold text-red-800">{b.motivo_rejeicao}</p>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {!b && (
-                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 text-center">
-                      <AlertTriangle size={24} className="mx-auto text-amber-500 mb-2" />
-                      <p className="text-xs font-black text-amber-700 uppercase">OS sem cálculo de faturamento</p>
-                      <p className="text-[10px] text-amber-600 mt-1">Esta OS foi concluída mas não possui dados de KM válidos para gerar o boletim automaticamente.</p>
-                    </div>
-                  )}
-
-                  {(b?.status === "REJEITADA" || b?.status === "A_VERIFICAR") && (
-                    <div className="pt-2">
-                      <button
-                        onClick={() => { calcularMutation.mutate(os.id); setSelectedOs(null); }}
-                        disabled={calcularMutation.isPending}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                        data-testid="button-recalcular-rejeitada"
-                      >
-                        {calcularMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
-                        Recalcular Billing
-                      </button>
-                    </div>
-                  )}
-
-                  {isPendente && (
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        onClick={() => b?.id && aprovarMutation.mutate(b.id)}
-                        disabled={aprovarMutation.isPending}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                        data-testid="button-aprovar-os"
-                      >
-                        {aprovarMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                        Aprovar OS
-                      </button>
-                      <button
-                        onClick={() => {
-                          const motivo = prompt("Motivo da rejeição:");
-                          if (!motivo || !b?.id) return;
-                          rejeitarMutation.mutate({ billingId: b.id, motivo });
-                        }}
-                        disabled={rejeitarMutation.isPending}
-                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs tracking-widest py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                        data-testid="button-rejeitar-os"
-                      >
-                        {rejeitarMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
-                        Solicitar Correção
-                      </button>
-                    </div>
-                  )}
+              </div>
+              <div className="flex items-start gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                <MapPin size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Destino</p>
+                  <p className="text-xs font-semibold text-neutral-800 leading-snug mt-0.5">{os.destination || "—"}</p>
                 </div>
               </div>
             </div>
-          );
-        })()}
+
+            {os.escortedVehiclePlate && (
+              <div className="grid grid-cols-2 gap-3">
+                <InfoCard icon={<Truck size={13} />} label="Veículo Escoltado" value={os.escortedVehiclePlate} mono />
+                <InfoCard icon={<User size={13} />} label="Motorista Escoltado" value={os.escortedDriverName || "—"} />
+              </div>
+            )}
+
+            <div className="border-t border-neutral-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <SectionTitle icon={<Gauge size={14} />} title="KM e Horários" />
+                {isDiretoria && !editingFields && !(b && ["APROVADA", "FATURADO", "PAGO"].includes(b.status)) && (
+                  <button onClick={() => setEditingFields(true)} className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors px-2 py-1 rounded-lg hover:bg-blue-50" data-testid="button-editar-campos">
+                    <Pencil size={10} /> Editar
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Chegada Origem</p>
+                  {editingFields ? (
+                    <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmChegada} onChange={(e: any) => setOverrideKmChegada(e.target.value)} data-testid="input-km-chegada-origem" />
+                  ) : (
+                    <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmChegada > 0 ? kmChegada.toLocaleString("pt-BR") : "—"}</p>
+                  )}
+                </div>
+                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Fim Missão</p>
+                  {editingFields ? (
+                    <input type="number" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideKmFim} onChange={(e: any) => setOverrideKmFim(e.target.value)} data-testid="input-km-fim-missao" />
+                  ) : (
+                    <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmFim > 0 ? kmFim.toLocaleString("pt-BR") : "—"}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Chegada Origem</p>
+                  {editingFields ? (
+                    <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
+                  ) : (
+                    <p className="text-sm font-bold font-mono text-neutral-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime ? `${schedTime} (Agend.)` : "—")}</p>
+                  )}
+                </div>
+                <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
+                  <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Fim Missão</p>
+                  {editingFields ? (
+                    <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraFim} onChange={(e: any) => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
+                  ) : (
+                    <p className="text-sm font-bold font-mono text-neutral-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : "—"}</p>
+                  )}
+                </div>
+              </div>
+
+              {editingFields && (
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => {
+                      const payload: any = {};
+                      if (overrideKmChegada !== (os.km_chegada_origem != null ? String(os.km_chegada_origem) : "")) {
+                        payload.km_chegada_origem = Number(overrideKmChegada) || 0;
+                      }
+                      if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
+                        payload.km_fim_missao = Number(overrideKmFim) || 0;
+                      }
+                      if (overrideHoraFim) {
+                        const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
+                        const [hh, mm] = overrideHoraFim.split(":");
+                        const d = new Date(baseDate);
+                        d.setHours(Number(hh), Number(mm), 0, 0);
+                        payload.completedDate = d.toISOString();
+                      }
+                      if (overrideHoraChegada) {
+                        const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
+                        const [hh, mm] = overrideHoraChegada.split(":");
+                        const d = new Date(baseDate);
+                        d.setHours(Number(hh), Number(mm), 0, 0);
+                        payload.hora_chegada_origem = d.toISOString();
+                      }
+                      if (Object.keys(payload).length > 0) {
+                        overrideMutation.mutate({ osId: os.id, data: payload });
+                      } else {
+                        setEditingFields(false);
+                      }
+                    }}
+                    disabled={overrideMutation.isPending}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-xs tracking-wider py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                    data-testid="button-salvar-override"
+                  >
+                    {overrideMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    Salvar Alterações
+                  </button>
+                  <button
+                    onClick={() => setEditingFields(false)}
+                    className="px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold text-xs rounded-xl transition-colors"
+                    data-testid="button-cancelar-override"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {b && (
+              <>
+                <div className="border-t border-neutral-100 pt-4">
+                  <SectionTitle icon={<Calculator size={14} />} title="Cálculo da Missão" />
+                </div>
+
+                {b.horario_inicio_considerado && (
+                  <div className="bg-neutral-900 text-white rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">Horário para Cobrança</p>
+                      <p className="text-2xl font-black font-mono tracking-tight mt-0.5">{b.horario_inicio_considerado}</p>
+                    </div>
+                    <div className="text-right space-y-0.5">
+                      {b.horario_agendado && <p className="text-[10px] text-neutral-400">Agendado: <span className="font-mono font-bold text-neutral-300">{b.horario_agendado}</span></p>}
+                      {b.horario_inicio && <p className="text-[10px] text-neutral-400">Chegada Real: <span className="font-mono font-bold text-neutral-300">{b.horario_inicio}</span></p>}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-4 gap-2">
+                  <MetricCard label="KM Total" value={String(kmTotalCalc)} accent="blue" />
+                  <MetricCard label="Franquia" value={String(franquia)} accent="neutral" />
+                  <MetricCard label="KM Excedente" value={String(kmExcCalc)} accent={kmExcCalc > 0 ? "red" : "neutral"} />
+                  <MetricCard label="Horas" value={fmtHoras(hCalc)} accent="neutral" />
+                </div>
+
+                <div className={`grid gap-2 ${[acionamento, horaExtra, kmExtraVal, pedagio].filter(v => v > 0 || v === acionamento).length <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+                  <ValueCard label="Acionamento" value={fmt(acionamento)} color="blue" />
+                  {horaExtra > 0 && <ValueCard label="Hora Extra" value={fmt(horaExtra)} color="amber" />}
+                  {kmExtraVal > 0 && <ValueCard label="KM Excedente" value={fmt(kmExtraVal)} color="violet" />}
+                  <ValueCard label="Pedágio" value={fmt(pedagio)} color="neutral" />
+                </div>
+
+                <div className={`rounded-xl p-4 text-center border-2 ${resultado >= 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Resultado</p>
+                  <p className={`text-3xl font-black font-mono ${resultado >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fmt(resultado)}</p>
+                </div>
+
+                {isPendente && (
+                  <div className="space-y-3 border-t border-neutral-100 pt-4">
+                    <SectionTitle icon={<Pencil size={14} />} title="Ajustes" />
+                    <div>
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Pedágio (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
+                        value={pedagioValue}
+                        onChange={(e: any) => setPedagioValue(e.target.value)}
+                        placeholder="0,00"
+                        data-testid="input-pedagio"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase mb-1.5 block">Observações</label>
+                      <textarea
+                        className="w-full p-2.5 border border-neutral-200 rounded-xl text-sm font-semibold resize-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-neutral-50"
+                        rows={3}
+                        value={observacoesValue}
+                        onChange={(e: any) => setObservacoesValue(e.target.value)}
+                        placeholder="Observações sobre esta OS..."
+                        data-testid="input-observacoes"
+                      />
+                    </div>
+                    <button
+                      onClick={() => b?.id && salvarBillingMutation.mutate({ billingId: b.id, observacoes: observacoesValue, pedagio: Number(pedagioValue) || 0 })}
+                      disabled={salvarBillingMutation.isPending}
+                      className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold uppercase text-xs tracking-wider py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                      data-testid="button-salvar-billing"
+                    >
+                      {salvarBillingMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                      Salvar Alterações
+                    </button>
+                  </div>
+                )}
+
+                {isApproved && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl">
+                      <Lock size={14} className="text-emerald-600 flex-shrink-0" />
+                      <p className="text-[11px] font-bold text-emerald-700">Valores travados — Boletim aprovado por {b.revisado_por || "admin"}</p>
+                    </div>
+                    {isDiretoria && b.status === "APROVADA" && (
+                      <button
+                        onClick={() => { if (confirm("Tem certeza que deseja reabrir esta OS? Ela voltará para 'A Verificar' e poderá ser editada.")) reabrirMutation.mutate(b.id); }}
+                        disabled={reabrirMutation.isPending}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                        data-testid="button-reabrir-os"
+                      >
+                        {reabrirMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                        Reabrir para Revisão
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {!isPendente && b.observacoes && (
+                  <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase mb-1">Observações</p>
+                    <p className="text-xs font-semibold text-neutral-700 whitespace-pre-wrap leading-relaxed">{b.observacoes}</p>
+                  </div>
+                )}
+
+                {b.revisado_por && (
+                  <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase mb-1">Revisado por</p>
+                    <p className="text-xs font-semibold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
+                  </div>
+                )}
+
+                {b.motivo_rejeicao && (
+                  <div className="bg-red-50 p-3 rounded-xl border border-red-200">
+                    <p className="text-[9px] font-bold text-red-600 uppercase mb-1">Motivo da Rejeição</p>
+                    <p className="text-xs font-semibold text-red-800">{b.motivo_rejeicao}</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!b && (
+              <div className="bg-amber-50 p-5 rounded-xl border border-amber-200 text-center">
+                <AlertTriangle size={28} className="mx-auto text-amber-400 mb-2" />
+                <p className="text-xs font-bold text-amber-700 uppercase">OS sem cálculo de faturamento</p>
+                <p className="text-[10px] text-amber-600 mt-1">Esta OS foi concluída mas não possui dados de KM válidos para gerar o boletim automaticamente.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {(isPendente || (b?.status === "REJEITADA") || (b?.status === "A_VERIFICAR")) && (
+          <div className="flex-shrink-0 border-t border-neutral-100 bg-neutral-50 p-4">
+            {(b?.status === "REJEITADA" || b?.status === "A_VERIFICAR") && !isPendente && (
+              <button
+                onClick={() => { calcularMutation.mutate(os.id); onClose(); }}
+                disabled={calcularMutation.isPending}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-xs tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                data-testid="button-recalcular-rejeitada"
+              >
+                {calcularMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Calculator size={14} />}
+                Recalcular Billing
+              </button>
+            )}
+            {isPendente && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => b?.id && aprovarMutation.mutate(b.id)}
+                  disabled={aprovarMutation.isPending}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold uppercase text-xs tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+                  data-testid="button-aprovar-os"
+                >
+                  {aprovarMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Aprovar
+                </button>
+                <button
+                  onClick={() => {
+                    const motivo = prompt("Motivo da rejeição:");
+                    if (!motivo || !b?.id) return;
+                    rejeitarMutation.mutate({ billingId: b.id, motivo });
+                  }}
+                  disabled={rejeitarMutation.isPending}
+                  className="flex-1 bg-white hover:bg-red-50 text-red-600 border-2 border-red-200 font-bold uppercase text-xs tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                  data-testid="button-rejeitar-os"
+                >
+                  {rejeitarMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                  Rejeitar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    </AdminLayout>
+    </div>
+  );
+}
+
+function InfoCard({ icon, label, value, sub, mono }: { icon: any; label: string; value: string; sub?: string | null; mono?: boolean }) {
+  return (
+    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
+      <p className="text-[9px] font-bold text-neutral-400 uppercase flex items-center gap-1 mb-1">{icon} {label}</p>
+      <p className={`text-xs font-bold text-neutral-800 ${mono ? "font-mono" : ""}`}>{value}</p>
+      {sub && <p className="text-[10px] text-neutral-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function SectionTitle({ icon, title }: { icon: any; title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="w-7 h-7 rounded-lg bg-neutral-900 flex items-center justify-center text-white">{icon}</div>
+      <p className="text-[11px] font-black text-neutral-700 uppercase tracking-wider">{title}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, accent }: { label: string; value: string; accent: "blue" | "red" | "neutral" }) {
+  const colors = {
+    blue: "bg-blue-50 border-blue-100 text-blue-800",
+    red: "bg-red-50 border-red-100 text-red-700",
+    neutral: "bg-neutral-50 border-neutral-100 text-neutral-800",
+  };
+  const labelColors = {
+    blue: "text-blue-500",
+    red: "text-red-500",
+    neutral: "text-neutral-400",
+  };
+  return (
+    <div className={`rounded-xl p-3 text-center border ${colors[accent]}`}>
+      <p className={`text-[8px] font-bold uppercase tracking-wider ${labelColors[accent]}`}>{label}</p>
+      <p className="text-xl font-black font-mono mt-0.5">{value}</p>
+    </div>
+  );
+}
+
+function ValueCard({ label, value, color }: { label: string; value: string; color: "blue" | "amber" | "violet" | "neutral" }) {
+  const styles: Record<string, string> = {
+    blue: "bg-blue-50 border-blue-200 text-blue-700",
+    amber: "bg-amber-50 border-amber-200 text-amber-700",
+    violet: "bg-violet-50 border-violet-200 text-violet-700",
+    neutral: "bg-neutral-50 border-neutral-200 text-neutral-700",
+  };
+  return (
+    <div className={`rounded-xl p-3 text-center border ${styles[color]}`}>
+      <p className="text-[9px] font-bold uppercase">{label}</p>
+      <p className="text-lg font-black font-mono mt-0.5">{value}</p>
+    </div>
   );
 }
