@@ -8,7 +8,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
-  Trophy,
+  Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -123,6 +123,22 @@ interface TimesheetEntry {
   hoursWorked: number;
 }
 
+interface FuelingEntry {
+  driverId: number;
+  date: string;
+  totalCost: number;
+  liters: number;
+  vehicleId: number;
+}
+
+interface MissionCostEntry {
+  agentId: number;
+  date: string;
+  amount: number;
+  category: string;
+  serviceOrderId: number;
+}
+
 interface DashboardData {
   byVehicle: { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }[];
   byAgent: { id: number; name: string; fat_total: number; pag_total: number; missions: number; horas_trabalhadas: number }[];
@@ -137,6 +153,9 @@ interface DashboardData {
   billings: any[];
   expenseTransactions: ExpenseTransaction[];
   timesheetsByAgent: TimesheetEntry[];
+  fuelingByAgent: FuelingEntry[];
+  missionCostsByAgent: MissionCostEntry[];
+  kmByVehicle: Record<string, number>;
   missionsByDay: Record<string, any[]>;
   expensesByDay: Record<string, number>;
   totals: {
@@ -145,7 +164,7 @@ interface DashboardData {
   };
 }
 
-type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES" | "METAS";
+type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES" | "METAS" | "ESTATISTICAS";
 
 export default function BalancoGerencialPage() {
   const [period, setPeriod] = useState<Period>("MONTH");
@@ -323,6 +342,7 @@ export default function BalancoGerencialPage() {
 
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
     { id: "BALANCO", label: "Balanço", icon: BarChart3 },
+    { id: "ESTATISTICAS", label: "Estatísticas", icon: TrendingUp },
     { id: "METAS", label: "Metas", icon: Target },
     { id: "VEICULOS", label: "Viaturas", icon: Car },
     { id: "AGENTES", label: "Agentes", icon: Users },
@@ -486,6 +506,7 @@ export default function BalancoGerencialPage() {
         </div>
 
         {activeTab === "BALANCO" && <BalancoTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} totals={totals} range={range} period={period} expenses={filtered.expenses} periodExpenses={filtered.periodExpenses} daysInPeriod={daysInPeriod} allVehicles={allVehicles || []} provisaoDiaria={provisaoDiaria} />}
+        {activeTab === "ESTATISTICAS" && <EstatisticasTab missions={filtered.missions} vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} range={range} data={data!} allEmployees={allEmployees || []} allVehicles={allVehicles || []} />}
         {activeTab === "METAS" && <MetasTab vehicles={filtered.vehicles} agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} totals={totals} allVehicles={allVehicles || []} />}
         {activeTab === "VEICULOS" && <VeiculosTab vehicles={filtered.vehicles} daysInPeriod={daysInPeriod} period={period} />}
         {activeTab === "AGENTES" && <AgentesTab agents={filtered.agents} daysInPeriod={daysInPeriod} period={period} />}
@@ -1023,6 +1044,377 @@ function AgentesTab({ agents, daysInPeriod, period }: { agents: any[]; daysInPer
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function RankingBar({ value, maxValue, color }: { value: number; maxValue: number; color: string }) {
+  const pct = maxValue > 0 ? Math.min((value / maxValue) * 100, 100) : 0;
+  return (
+    <div className="w-full bg-neutral-100 rounded-full h-2.5 overflow-hidden">
+      <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function StatSection({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6" data-testid={`stat-section-${title.toLowerCase().replace(/\s/g,"-")}`}>
+      <div className="flex items-center gap-2 mb-1">
+        {icon}
+        <h4 className="text-sm font-black text-neutral-900 uppercase tracking-wide">{title}</h4>
+      </div>
+      {subtitle && <p className="text-xs text-neutral-400 font-bold mb-4">{subtitle}</p>}
+      {!subtitle && <div className="mb-4" />}
+      {children}
+    </div>
+  );
+}
+
+function EstatisticasTab({ missions, vehicles, agents, daysInPeriod, period, range, data, allEmployees, allVehicles }: {
+  missions: any[]; vehicles: any[]; agents: any[]; daysInPeriod: number; period: Period;
+  range: { start: Date; end: Date; label: string }; data: DashboardData; allEmployees: any[]; allVehicles: any[];
+}) {
+  const metaDiariaViatura = META_DIARIA_VIATURA;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
+  const endStr = `${range.end.getFullYear()}-${pad(range.end.getMonth() + 1)}-${pad(range.end.getDate())}`;
+
+  const empName = (id: number) => allEmployees.find((e: any) => e.id === id)?.name || `Agente #${id}`;
+  const vehPlate = (id: number) => allVehicles.find((v: any) => v.id === id)?.plate || `Veículo #${id}`;
+
+  const vehicleMetaByDay = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    missions.forEach(m => {
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(m.data) ? m.data : m.data?.split("T")[0];
+      if (!d || !m.placa_viatura) return;
+      if (!map[d]) map[d] = {};
+      map[d][m.placa_viatura] = (map[d][m.placa_viatura] || 0) + m.fat_total;
+    });
+    const result: { date: string; total: number; atingiram: number; plates: string[] }[] = [];
+    Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, plates]) => {
+      const atingiram = Object.entries(plates).filter(([,v]) => v >= metaDiariaViatura);
+      result.push({ date, total: Object.keys(plates).length, atingiram: atingiram.length, plates: atingiram.map(([p]) => p) });
+    });
+    return result;
+  }, [missions, metaDiariaViatura]);
+
+  const agentMetaByDay = useMemo(() => {
+    const map: Record<string, Record<string, { name: string; fat: number }>> = {};
+    missions.forEach(m => {
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(m.data) ? m.data : m.data?.split("T")[0];
+      if (!d) return;
+      if (!map[d]) map[d] = {};
+      if (m.vigilante_id) {
+        const key = String(m.vigilante_id);
+        if (!map[d][key]) map[d][key] = { name: m.vigilante || "—", fat: 0 };
+        map[d][key].fat += m.fat_total;
+      }
+      if (m.vigilante2_id) {
+        const key = String(m.vigilante2_id);
+        if (!map[d][key]) map[d][key] = { name: m.vigilante2 || "—", fat: 0 };
+        map[d][key].fat += m.fat_total;
+      }
+    });
+    const result: { date: string; total: number; atingiram: number; names: string[] }[] = [];
+    Object.entries(map).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, agts]) => {
+      const hit = Object.entries(agts).filter(([,v]) => v.fat >= metaDiariaViatura);
+      result.push({ date, total: Object.keys(agts).length, atingiram: hit.length, names: hit.map(([,v]) => v.name) });
+    });
+    return result;
+  }, [missions, metaDiariaViatura]);
+
+  const agentAvgKm = useMemo(() => {
+    const map: Record<string, { name: string; totalKm: number; missions: number }> = {};
+    missions.forEach(m => {
+      const addAgent = (id: number, name: string) => {
+        const key = String(id);
+        if (!map[key]) map[key] = { name, totalKm: 0, missions: 0 };
+        map[key].totalKm += m.km_total || 0;
+        map[key].missions += 1;
+      };
+      if (m.vigilante_id) addAgent(m.vigilante_id, m.vigilante);
+      if (m.vigilante2_id) addAgent(m.vigilante2_id, m.vigilante2);
+    });
+    return Object.values(map).map(a => ({ ...a, avg: a.missions > 0 ? a.totalKm / a.missions : 0 })).sort((a,b) => b.avg - a.avg);
+  }, [missions]);
+
+  const agentRegistros = useMemo(() => {
+    const map: Record<string, { name: string; missoes: number; timesheets: number; fueling: number; missionCosts: number; total: number }> = {};
+    missions.forEach(m => {
+      const add = (id: number, name: string) => {
+        const key = String(id);
+        if (!map[key]) map[key] = { name, missoes: 0, timesheets: 0, fueling: 0, missionCosts: 0, total: 0 };
+        map[key].missoes += 1;
+      };
+      if (m.vigilante_id) add(m.vigilante_id, m.vigilante);
+      if (m.vigilante2_id) add(m.vigilante2_id, m.vigilante2);
+    });
+    (data.timesheetsByAgent || []).filter(ts => ts.date >= startStr && ts.date <= endStr).forEach(ts => {
+      const key = String(ts.employeeId);
+      if (!map[key]) map[key] = { name: empName(ts.employeeId), missoes: 0, timesheets: 0, fueling: 0, missionCosts: 0, total: 0 };
+      map[key].timesheets += 1;
+    });
+    (data.fuelingByAgent || []).filter(f => f.date >= startStr && f.date <= endStr).forEach(f => {
+      const key = String(f.driverId);
+      if (!map[key]) map[key] = { name: empName(f.driverId), missoes: 0, timesheets: 0, fueling: 0, missionCosts: 0, total: 0 };
+      map[key].fueling += 1;
+    });
+    (data.missionCostsByAgent || []).filter(mc => mc.date >= startStr && mc.date <= endStr).forEach(mc => {
+      const key = String(mc.agentId);
+      if (!map[key]) map[key] = { name: empName(mc.agentId), missoes: 0, timesheets: 0, fueling: 0, missionCosts: 0, total: 0 };
+      map[key].missionCosts += 1;
+    });
+    Object.values(map).forEach(a => { a.total = a.missoes + a.timesheets + a.fueling + a.missionCosts; });
+    return Object.values(map).sort((a,b) => b.total - a.total);
+  }, [missions, data, startStr, endStr]);
+
+  const agentFuelPedagio = useMemo(() => {
+    const map: Record<string, { name: string; fueling: number; pedagio: number; total: number; count: number }> = {};
+    (data.fuelingByAgent || []).filter(f => f.date >= startStr && f.date <= endStr).forEach(f => {
+      const key = String(f.driverId);
+      if (!map[key]) map[key] = { name: empName(f.driverId), fueling: 0, pedagio: 0, total: 0, count: 0 };
+      map[key].fueling += f.totalCost;
+      map[key].count += 1;
+    });
+    (data.missionCostsByAgent || []).filter(mc => mc.date >= startStr && mc.date <= endStr && (mc.category.toLowerCase().includes("pedágio") || mc.category.toLowerCase().includes("pedagio"))).forEach(mc => {
+      const key = String(mc.agentId);
+      if (!map[key]) map[key] = { name: empName(mc.agentId), fueling: 0, pedagio: 0, total: 0, count: 0 };
+      map[key].pedagio += mc.amount;
+      map[key].count += 1;
+    });
+    Object.values(map).forEach(a => { a.total = a.fueling + a.pedagio; });
+    return Object.values(map).sort((a,b) => b.total - a.total);
+  }, [data, startStr, endStr]);
+
+  const vehicleKmRanking = useMemo(() => {
+    const map: Record<string, { plate: string; model: string; km: number; missions: number }> = {};
+    missions.forEach(m => {
+      if (!m.placa_viatura) return;
+      if (!map[m.placa_viatura]) {
+        const v = allVehicles.find((v: any) => v.plate === m.placa_viatura);
+        map[m.placa_viatura] = { plate: m.placa_viatura, model: v?.model || "", km: 0, missions: 0 };
+      }
+      map[m.placa_viatura].km += m.km_total || 0;
+      map[m.placa_viatura].missions += 1;
+    });
+    return Object.values(map).sort((a,b) => b.km - a.km);
+  }, [missions, allVehicles]);
+
+  const agentHorasRanking = useMemo(() => {
+    const map: Record<string, { name: string; horas: number; missoes: number }> = {};
+    (data.timesheetsByAgent || []).filter(ts => ts.date >= startStr && ts.date <= endStr).forEach(ts => {
+      const key = String(ts.employeeId);
+      if (!map[key]) map[key] = { name: empName(ts.employeeId), horas: 0, missoes: 0 };
+      map[key].horas += ts.hoursWorked || 0;
+    });
+    agents.forEach(a => {
+      const key = String(a.id);
+      if (map[key]) map[key].missoes = a.missions;
+    });
+    return Object.values(map).sort((a,b) => b.horas - a.horas);
+  }, [data, agents, startStr, endStr]);
+
+  const fmtDateBR = (d: string) => {
+    try { return new Date(d + "T12:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }); }
+    catch { return d; }
+  };
+
+  const noData = (label: string) => (
+    <div className="text-center py-10 text-neutral-300">
+      <Activity size={36} className="mx-auto mb-2 opacity-40" />
+      <p className="text-xs font-bold uppercase">{label}</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4" data-testid="panel-estatisticas">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StatSection icon={<Car size={16} className="text-blue-600" />} title="Viaturas que Bateram Meta por Dia" subtitle={`Meta diária: ${fmt(metaDiariaViatura)} por viatura`}>
+          {vehicleMetaByDay.length === 0 ? noData("Sem dados no período") : (
+            <div className="space-y-2 max-h-[350px] overflow-y-auto">
+              {vehicleMetaByDay.map(d => {
+                const pct = d.total > 0 ? (d.atingiram / d.total) * 100 : 0;
+                return (
+                  <div key={d.date} className="p-3 rounded-lg border border-neutral-100 hover:bg-neutral-50 transition-colors" data-testid={`stat-veh-meta-${d.date}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-black text-neutral-600">{fmtDateBR(d.date)}</span>
+                      <div className="flex items-center gap-2">
+                        {d.atingiram > 0 && <Trophy size={12} className="text-green-600" />}
+                        <Badge className={`text-[10px] font-black px-1.5 py-0 border-0 ${d.atingiram > 0 ? "bg-green-100 text-green-800 hover:bg-green-100" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-100"}`}>
+                          {d.atingiram}/{d.total}
+                        </Badge>
+                      </div>
+                    </div>
+                    <RankingBar value={d.atingiram} maxValue={d.total} color={d.atingiram > 0 ? "bg-green-500" : "bg-neutral-300"} />
+                    {d.plates.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {d.plates.map(p => <span key={p} className="text-[9px] bg-green-50 text-green-700 font-bold rounded px-1.5 py-0.5">{p}</span>)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </StatSection>
+
+        <StatSection icon={<Users size={16} className="text-purple-600" />} title="Agentes que Bateram Meta por Dia" subtitle={`Meta diária: ${fmt(metaDiariaViatura)} por agente`}>
+          {agentMetaByDay.length === 0 ? noData("Sem dados no período") : (
+            <div className="space-y-2 max-h-[350px] overflow-y-auto">
+              {agentMetaByDay.map(d => {
+                return (
+                  <div key={d.date} className="p-3 rounded-lg border border-neutral-100 hover:bg-neutral-50 transition-colors" data-testid={`stat-agt-meta-${d.date}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-black text-neutral-600">{fmtDateBR(d.date)}</span>
+                      <div className="flex items-center gap-2">
+                        {d.atingiram > 0 && <Award size={12} className="text-purple-600" />}
+                        <Badge className={`text-[10px] font-black px-1.5 py-0 border-0 ${d.atingiram > 0 ? "bg-purple-100 text-purple-800 hover:bg-purple-100" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-100"}`}>
+                          {d.atingiram}/{d.total}
+                        </Badge>
+                      </div>
+                    </div>
+                    <RankingBar value={d.atingiram} maxValue={d.total} color={d.atingiram > 0 ? "bg-purple-500" : "bg-neutral-300"} />
+                    {d.names.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {d.names.map(n => <span key={n} className="text-[9px] bg-purple-50 text-purple-700 font-bold rounded px-1.5 py-0.5">{n.split(" ").slice(0,2).join(" ")}</span>)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </StatSection>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StatSection icon={<Gauge size={16} className="text-cyan-600" />} title="Agentes com Maior Média KM" subtitle="Média de quilômetros rodados por missão">
+          {agentAvgKm.length === 0 ? noData("Sem dados") : (
+            <div className="space-y-3">
+              {agentAvgKm.slice(0, 10).map((a, i) => (
+                <div key={a.name} className="flex items-center gap-3" data-testid={`stat-avg-km-${i}`}>
+                  <span className={`text-lg font-black w-7 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-neutral-400" : i === 2 ? "text-amber-700" : "text-neutral-300"}`}>
+                    {i < 3 ? ["🥇","🥈","🥉"][i] : `${i+1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-neutral-800 truncate">{a.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <RankingBar value={a.avg} maxValue={agentAvgKm[0]?.avg || 1} color="bg-cyan-500" />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-cyan-700 font-mono">{Math.round(a.avg)} km</p>
+                    <p className="text-[10px] text-neutral-400 font-bold">{a.missions} missões · {a.totalKm.toLocaleString("pt-BR")} km</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </StatSection>
+
+        <StatSection icon={<Activity size={16} className="text-indigo-600" />} title="Agentes com Mais Registros" subtitle="Total de registros no sistema (missões, timesheets, abastecimentos, custos)">
+          {agentRegistros.length === 0 ? noData("Sem registros") : (
+            <div className="space-y-3">
+              {agentRegistros.slice(0, 10).map((a, i) => (
+                <div key={a.name} className="flex items-center gap-3" data-testid={`stat-registros-${i}`}>
+                  <span className={`text-lg font-black w-7 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-neutral-400" : i === 2 ? "text-amber-700" : "text-neutral-300"}`}>
+                    {i < 3 ? ["🥇","🥈","🥉"][i] : `${i+1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-neutral-800 truncate">{a.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <RankingBar value={a.total} maxValue={agentRegistros[0]?.total || 1} color="bg-indigo-500" />
+                    </div>
+                    <div className="flex gap-2 mt-1 text-[9px] font-bold text-neutral-400">
+                      <span>{a.missoes} missões</span>
+                      <span>{a.timesheets} folhas</span>
+                      <span>{a.fueling} abast.</span>
+                      <span>{a.missionCosts} custos</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-indigo-700 font-mono">{a.total}</p>
+                    <p className="text-[10px] text-neutral-400 font-bold">registros</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </StatSection>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatSection icon={<Fuel size={16} className="text-orange-600" />} title="Agentes - Gasolina & Pedágio" subtitle="Quem mais incluiu despesas de combustível e pedágio">
+          {agentFuelPedagio.length === 0 ? noData("Sem dados") : (
+            <div className="space-y-3">
+              {agentFuelPedagio.slice(0, 8).map((a, i) => (
+                <div key={a.name} className="flex items-center gap-3" data-testid={`stat-fuel-${i}`}>
+                  <span className={`text-lg font-black w-7 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-neutral-400" : i === 2 ? "text-amber-700" : "text-neutral-300"}`}>
+                    {i < 3 ? ["🥇","🥈","🥉"][i] : `${i+1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-neutral-800 truncate">{a.name}</p>
+                    <RankingBar value={a.total} maxValue={agentFuelPedagio[0]?.total || 1} color="bg-orange-500" />
+                    <div className="flex gap-3 mt-1 text-[9px] font-bold">
+                      {a.fueling > 0 && <span className="text-orange-600">Combustível: {fmt(a.fueling)}</span>}
+                      {a.pedagio > 0 && <span className="text-amber-600">Pedágio: {fmt(a.pedagio)}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-orange-700 font-mono">{fmt(a.total)}</p>
+                    <p className="text-[10px] text-neutral-400 font-bold">{a.count} lanç.</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </StatSection>
+
+        <StatSection icon={<MapPin size={16} className="text-emerald-600" />} title="Veículo que Mais Rodou" subtitle="Ranking de quilometragem total no período">
+          {vehicleKmRanking.length === 0 ? noData("Sem dados") : (
+            <div className="space-y-3">
+              {vehicleKmRanking.slice(0, 8).map((v, i) => (
+                <div key={v.plate} className="flex items-center gap-3" data-testid={`stat-veh-km-${i}`}>
+                  <span className={`text-lg font-black w-7 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-neutral-400" : i === 2 ? "text-amber-700" : "text-neutral-300"}`}>
+                    {i < 3 ? ["🥇","🥈","🥉"][i] : `${i+1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-neutral-800">{v.plate} <span className="text-neutral-400 font-bold">{v.model}</span></p>
+                    <RankingBar value={v.km} maxValue={vehicleKmRanking[0]?.km || 1} color="bg-emerald-500" />
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-emerald-700 font-mono">{v.km.toLocaleString("pt-BR")} km</p>
+                    <p className="text-[10px] text-neutral-400 font-bold">{v.missions} missões</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </StatSection>
+
+        <StatSection icon={<Clock size={16} className="text-rose-600" />} title="Agente que Mais Trabalhou" subtitle="Total de horas registradas em timesheet no período">
+          {agentHorasRanking.length === 0 ? noData("Sem dados") : (
+            <div className="space-y-3">
+              {agentHorasRanking.slice(0, 8).map((a, i) => (
+                <div key={a.name} className="flex items-center gap-3" data-testid={`stat-hours-${i}`}>
+                  <span className={`text-lg font-black w-7 text-center ${i === 0 ? "text-yellow-500" : i === 1 ? "text-neutral-400" : i === 2 ? "text-amber-700" : "text-neutral-300"}`}>
+                    {i < 3 ? ["🥇","🥈","🥉"][i] : `${i+1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-neutral-800 truncate">{a.name}</p>
+                    <RankingBar value={a.horas} maxValue={agentHorasRanking[0]?.horas || 1} color="bg-rose-500" />
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-rose-700 font-mono">{fmtHoras(a.horas)}</p>
+                    <p className="text-[10px] text-neutral-400 font-bold">{a.missoes} missões</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </StatSection>
       </div>
     </div>
   );

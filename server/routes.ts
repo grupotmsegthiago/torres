@@ -10500,6 +10500,22 @@ Regras:
         })(),
       }));
 
+      const allFueling = await storage.getFuelingRecords();
+      const fuelingByAgent: { driverId: number; date: string; totalCost: number; liters: number; vehicleId: number }[] = allFueling.map((f: any) => ({
+        driverId: f.driverId, date: f.date, totalCost: Number(f.totalCost || 0), liters: Number(f.liters || 0), vehicleId: f.vehicleId,
+      }));
+
+      const { data: missionCostsRaw } = await supabaseAdmin.from("mission_costs").select("*");
+      const missionCostsByAgent: { agentId: number; date: string; amount: number; category: string; serviceOrderId: number }[] = (missionCostsRaw || []).map((mc: any) => ({
+        agentId: mc.agent_id || 0, date: mc.date || mc.created_at?.split("T")[0] || "", amount: Number(mc.amount || 0), category: mc.category || "", serviceOrderId: mc.service_order_id || 0,
+      }));
+
+      const kmByVehicle: Record<string, number> = {};
+      items.forEach((b: any) => {
+        const plate = b.placa_viatura || "SEM PLACA";
+        kmByVehicle[plate] = (kmByVehicle[plate] || 0) + Number(b.km_total || 0);
+      });
+
       res.json({
         billings: items,
         missionsByDay,
@@ -10507,6 +10523,9 @@ Regras:
         expensesByDay,
         expenseTransactions,
         timesheetsByAgent,
+        fuelingByAgent,
+        missionCostsByAgent,
+        kmByVehicle,
         byVehicle: Object.values(byVehicle),
         byAgent: Object.values(byAgent),
         byMission,
