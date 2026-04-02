@@ -770,39 +770,26 @@ export async function sendCommand(
 
   const msgTag = command === "mensagem_texto" && mensagem ? `<msg>${escapeXml(mensagem)}</msg>` : "";
 
-  const xmlVariants = [
-    { tag: "RequestComandoVeiculo", xml: `<RequestComandoVeiculo><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd>${msgTag}</RequestComandoVeiculo>` },
-    { tag: "RequestComando", xml: `<RequestComando><login>${config.login}</login><senha>${config.senha}</senha><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd>${msgTag}</RequestComando>` },
-    { tag: "RequestComandoVeiculo (attr)", xml: `<RequestComandoVeiculo login="${config.login}" senha="${config.senha}"><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd>${msgTag}</RequestComandoVeiculo>` },
-  ];
+  try {
+    const xml = `<RequestEnvioComando login="${config.login}" senha="${config.senha}"><comando><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd>${msgTag}</comando></RequestEnvioComando>`;
+    const response = await postXml(xml);
 
-  for (const variant of xmlVariants) {
-    try {
-      const response = await postXml(variant.xml);
-
-      if (response.includes("<erro>") || response.includes("<Erro>")) {
-        const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
-        if (erroMsg.toLowerCase().includes("tag xml invalida") || erroMsg.toLowerCase().includes("tag invalida")) {
-          console.log(`[truckscontrol] Tag ${variant.tag} rejeitada para comando ${command}, tentando próxima...`);
-          continue;
-        }
-        console.log(`[truckscontrol] Erro ao enviar comando ${command} para veiID=${veiID} (tag=${variant.tag}): ${erroMsg}`);
-        return { success: false, message: `Erro: ${erroMsg}`, rawResponse: response.substring(0, 500) };
-      }
-
-      const status = parseXmlValue(response, "status") || parseXmlValue(response, "Status");
-      console.log(`[truckscontrol] Comando ${command} enviado para veiID=${veiID} via ${variant.tag} — status: ${status || "OK"}`);
-      return {
-        success: true,
-        message: `Comando "${cmdInfo.label}" enviado com sucesso.${status ? ` Status: ${status}` : ""}`,
-      };
-    } catch (err: any) {
-      console.log(`[truckscontrol] Erro de conexão ao enviar ${command} via ${variant.tag}: ${err.message}`);
+    if (response.includes("<erro>") || response.includes("<Erro>")) {
+      const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
+      console.log(`[truckscontrol] Erro ao enviar comando ${command} para veiID=${veiID}: ${erroMsg}`);
+      return { success: false, message: `Erro: ${erroMsg}`, rawResponse: response.substring(0, 500) };
     }
-  }
 
-  console.log(`[truckscontrol] Todas as variantes de tag falharam para comando ${command} veiID=${veiID}`);
-  return { success: false, message: "Erro: nenhuma tag XML aceita pela API para envio de comandos." };
+    const status = parseXmlValue(response, "status") || parseXmlValue(response, "Status");
+    console.log(`[truckscontrol] Comando ${command} enviado para veiID=${veiID} — status: ${status || "OK"}`);
+    return {
+      success: true,
+      message: `Comando "${cmdInfo.label}" enviado com sucesso.${status ? ` Status: ${status}` : ""}`,
+    };
+  } catch (err: any) {
+    console.log(`[truckscontrol] Erro ao enviar comando ${command}: ${err.message}`);
+    return { success: false, message: `Erro de conexão: ${err.message}` };
+  }
 }
 
 const activeIdleAlerts: Map<number, { alertedAt: number; cabineTimer?: ReturnType<typeof setTimeout> }> = new Map();
