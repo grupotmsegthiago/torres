@@ -28,7 +28,7 @@ const fmtHoras = (val: number) => {
 };
 
 const META_DIARIA_VIATURA = 1800;
-const isActiveVehicle = (v: any) => v.status === "ATIVO" && !!(v.trackerId || v.truckscontrolIdentifier);
+const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
 
 const CCT = {
   salarioBase: 2432.50,
