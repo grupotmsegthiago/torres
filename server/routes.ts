@@ -2555,8 +2555,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     rows.push(`<tr><td ${sL}>Agendamento</td><td ${sV}>${agendStr}</td></tr>`);
     if (osData.escortedDriverName) rows.push(`<tr><td ${sL}>Motorista</td><td ${sV}>${osData.escortedDriverName}</td></tr>`);
     if (osData.escortedDriverPhone) rows.push(`<tr><td ${sL}>Contato Motorista</td><td ${sV}>${osData.escortedDriverPhone}</td></tr>`);
-    rows.push(`<tr><td ${sL}>Agente 01</td><td ${sV}>${emp1?.name || "—"}</td></tr>`);
-    if (emp2) rows.push(`<tr><td ${sL}>Agente 02</td><td ${sV}>${emp2.name || "—"}</td></tr>`);
+    rows.push(`<tr><td ${sL}>Agente 01</td><td ${sV}>${emp1?.name || "—"}${emp1?.phone ? ` — ${emp1.phone}` : ""}</td></tr>`);
+    if (emp2) rows.push(`<tr><td ${sL}>Agente 02</td><td ${sV}>${emp2.name || "—"}${emp2.phone ? ` — ${emp2.phone}` : ""}</td></tr>`);
     rows.push(`<tr><td ${sL}>Viatura de Escolta</td><td ${sV}>${osData.escortedVehiclePlate || "—"}</td></tr>`);
     rows.push(`<tr><td ${sL}>Rastreador</td><td ${sV}>${rastreadorStr}</td></tr>`);
 
