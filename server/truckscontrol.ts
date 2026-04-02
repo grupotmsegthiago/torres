@@ -902,10 +902,22 @@ export async function sendCommand(
     const xml = `<RequestEnvioComando login="${config.login}" senha="${config.senha}"><comando><veiID>${veiID}</veiID><cmd>${cmdInfo.cmd}</cmd>${msgTag}</comando></RequestEnvioComando>`;
     const response = await postXml(xml);
 
-    if (response.includes("<erro>") || response.includes("<Erro>")) {
+    const cleanResponse = response.replace(/<\?xml[^?]*\?>/, "").trim();
+    console.log(`[truckscontrol] Resposta crua comando ${command} veiID=${veiID}: "${cleanResponse.substring(0, 300)}"`);
+
+    if (response.includes("<erro>") || response.includes("<Erro>") || response.includes("<ErrorRequest>")) {
       const erroMsg = parseXmlValue(response, "erro") || parseXmlValue(response, "Erro");
-      console.log(`[truckscontrol] Erro ao enviar comando ${command} para veiID=${veiID}: ${erroMsg}`);
+      console.log(`[truckscontrol] ERRO ao enviar comando ${command} para veiID=${veiID}: ${erroMsg}`);
       return { success: false, message: `Erro: ${erroMsg}`, rawResponse: response.substring(0, 500) };
+    }
+
+    if (!cleanResponse) {
+      console.log(`[truckscontrol] AVISO: Resposta vazia para comando ${command} veiID=${veiID} — comando pode não ter sido entregue ao dispositivo`);
+      return {
+        success: true,
+        message: `Comando "${cmdInfo.label}" aceito pela API (resposta vazia — entrega ao dispositivo não confirmada).`,
+        rawResponse: "empty",
+      };
     }
 
     const status = parseXmlValue(response, "status") || parseXmlValue(response, "Status");
