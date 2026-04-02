@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
-import { authFetch, queryClient } from "@/lib/queryClient";
+import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -2737,14 +2737,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
       toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
       setMissionAction(null);
       setCancelReason("");
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      invalidateRelatedQueries("service-order");
+      invalidateRelatedQueries("billing");
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
     },
     onError: (err: Error) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -3601,14 +3596,9 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
     onSuccess: (_, vars) => {
       toast({ title: vars.action === "finish" ? "Missão finalizada" : "Missão cancelada", description: `OS ${v.activeOs?.osNumber} ${vars.action === "finish" ? "foi concluída" : "foi cancelada"} com sucesso.` });
       setMissionAction(null); setCancelReason("");
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+      invalidateRelatedQueries("service-order");
+      invalidateRelatedQueries("billing");
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
     },
     onError: (err: Error) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); },
   });

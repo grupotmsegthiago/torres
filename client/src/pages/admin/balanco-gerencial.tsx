@@ -28,7 +28,7 @@ const fmtHoras = (val: number) => {
 };
 
 const META_DIARIA_VIATURA = 1800;
-const hasTracker = (v: any) => !!(v.trackerId || v.truckscontrolIdentifier);
+const isActiveVehicle = (v: any) => v.status === "ATIVO" && !!(v.trackerId || v.truckscontrolIdentifier);
 
 const CCT = {
   salarioBase: 2432.50,
@@ -385,7 +385,7 @@ export default function BalancoGerencialPage() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {(() => {
-            const activeVehicles = (allVehicles || []).filter(hasTracker);
+            const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
             const totalViaturas = activeVehicles.length;
             const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * totalViaturas;
             const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
@@ -670,7 +670,7 @@ function MetasTab({ vehicles, agents, daysInPeriod, period, totals, allVehicles 
   allVehicles: any[];
 }) {
   const metaPeriodoViatura = META_DIARIA_VIATURA * daysInPeriod;
-  const activeVehicles = useMemo(() => allVehicles.filter(hasTracker), [allVehicles]);
+  const activeVehicles = useMemo(() => allVehicles.filter(isActiveVehicle), [allVehicles]);
   const totalViaturas = activeVehicles.length;
 
   const mergedVehicles = useMemo(() => {

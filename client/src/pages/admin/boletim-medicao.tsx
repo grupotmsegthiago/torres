@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,12 +72,7 @@ export default function BoletimMedicaoPage() {
   });
 
   const invalidateAllRelated = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+    invalidateRelatedQueries("billing");
   };
 
   const aprovarMutation = useMutation({

@@ -79,13 +79,63 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+export const GLOBAL_QUERY_KEYS = {
+  vehicles: ["/api/vehicles"],
+  employees: ["/api/employees"],
+  serviceOrders: ["/api/service-orders"],
+  operationalGrid: ["/api/operational-grid"],
+  escortBillings: ["/api/escort/billings"],
+  boletimOs: ["/api/boletim-medicao/os-concluidas"],
+  financialTx: ["/api/financial/transactions"],
+  financialResumo: ["/api/financial/resumo"],
+  financialDashboard: ["/api/financial/dashboard"],
+};
+
+export function invalidateRelatedQueries(scope: "vehicle" | "employee" | "billing" | "financial" | "service-order") {
+  const keys = GLOBAL_QUERY_KEYS;
+  const inv = (k: string[]) => queryClient.invalidateQueries({ queryKey: k });
+
+  if (scope === "vehicle") {
+    inv(keys.vehicles);
+    inv(keys.financialDashboard);
+    inv(keys.operationalGrid);
+  }
+  if (scope === "employee") {
+    inv(keys.employees);
+    inv(keys.financialDashboard);
+    inv(keys.operationalGrid);
+  }
+  if (scope === "billing") {
+    inv(keys.escortBillings);
+    inv(keys.boletimOs);
+    inv(keys.serviceOrders);
+    inv(keys.operationalGrid);
+    inv(keys.financialTx);
+    inv(keys.financialResumo);
+    inv(keys.financialDashboard);
+  }
+  if (scope === "financial") {
+    inv(keys.financialTx);
+    inv(keys.financialResumo);
+    inv(keys.financialDashboard);
+  }
+  if (scope === "service-order") {
+    inv(keys.serviceOrders);
+    inv(keys.operationalGrid);
+    inv(keys.escortBillings);
+    inv(keys.boletimOs);
+    inv(keys.vehicles);
+    inv(keys.financialDashboard);
+  }
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      refetchOnWindowFocus: true,
+      staleTime: 30_000,
       retry: false,
     },
     mutations: {

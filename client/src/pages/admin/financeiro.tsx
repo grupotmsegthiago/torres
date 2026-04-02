@@ -1,7 +1,7 @@
 import { parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useState, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";

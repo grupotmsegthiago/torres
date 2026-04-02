@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("vehicle");
       toast({ title: vehicle ? "Veículo atualizado" : "Veículo cadastrado" });
       onClose();
     },
@@ -447,7 +447,7 @@ function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vehicle-assignments", vehicle.id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("vehicle");
       setSelectedEmployee("");
       setNotes("");
       toast({ title: "Operação registrada" });
@@ -557,7 +557,7 @@ export default function VehiclesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/vehicles/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] }); toast({ title: "Veículo removido" }); },
+    onSuccess: () => { invalidateRelatedQueries("vehicle"); toast({ title: "Veículo removido" }); },
   });
 
   return (

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
@@ -849,7 +849,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       return autoUserInfo;
     },
     onSuccess: (autoUserInfo) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      invalidateRelatedQueries("employee");
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       const attachedCount = Object.values(docAttachments).filter(a => a.fileData).length;
       const docMsg = !employee && attachedCount > 0 ? ` com ${attachedCount} documento(s)` : "";
@@ -3053,7 +3053,7 @@ function ApplyCctBulkButton() {
     },
     onSuccess: (data: any) => {
       toast({ title: `Kit CCT aplicado para ${data.count} vigilante(s)` });
-      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      invalidateRelatedQueries("employee");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -3101,13 +3101,13 @@ export default function EmployeesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/employees/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); toast({ title: "Funcionário removido" }); },
+    onSuccess: () => { invalidateRelatedQueries("employee"); toast({ title: "Funcionário removido" }); },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const inactivateMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("PATCH", `/api/employees/${id}`, { status: "inativo" }); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); toast({ title: "Funcionário inativado" }); },
+    onSuccess: () => { invalidateRelatedQueries("employee"); toast({ title: "Funcionário inativado" }); },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 

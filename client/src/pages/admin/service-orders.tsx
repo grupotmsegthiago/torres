@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, authFetch, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -702,15 +702,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [pendingReassignData, setPendingReassignData] = useState<any>(null);
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+    invalidateRelatedQueries("service-order");
     queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
     queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
     queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
     queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
   };
 
   const mutation = useMutation({
