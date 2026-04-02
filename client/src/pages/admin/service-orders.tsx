@@ -535,8 +535,8 @@ function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderI
   );
 }
 
-function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean;
+function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean; billings?: any[];
 }) {
   const { toast } = useToast();
   const { user: formUser } = useAuth();
@@ -956,6 +956,41 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       </div>
 
       {!order && <StepIndicator />}
+
+      {order && (() => {
+        const isConcluida = order.status === "concluida" || order.status === "concluída";
+        if (!isConcluida || order.type !== "escolta") return null;
+        const bill = billings?.find((b: any) => b.service_order_id === order.id);
+        const alerts: string[] = [];
+        if (!bill) { alerts.push("Faturamento não gerado para esta OS"); }
+        else {
+          if (!bill.km_inicial || bill.km_inicial <= 0) alerts.push("KM inicial ausente no faturamento");
+          if (!bill.km_final || bill.km_final <= 0) alerts.push("KM final ausente no faturamento");
+          if (bill.km_total <= 0 && bill.km_final > 0 && bill.km_inicial > 0) alerts.push("KM total zerado — verificar cálculo");
+          if (!bill.horario_inicio) alerts.push("Horário de início ausente");
+          if (!bill.horario_fim) alerts.push("Horário de fim ausente");
+          if (bill.fat_total <= 0) alerts.push("Valor faturado = R$ 0,00");
+        }
+        if (alerts.length === 0) return null;
+        return (
+          <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="alert-os-billing">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Dados incompletos no faturamento</p>
+                <ul className="mt-1 space-y-0.5">
+                  {alerts.map((a, i) => (
+                    <li key={i} className="text-xs text-amber-700 flex items-center gap-1">
+                      <span className="w-1 h-1 bg-amber-500 rounded-full flex-shrink-0" />
+                      {a}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="p-5 space-y-4">
         {(step === 1 || !!order) && (
@@ -1451,6 +1486,24 @@ export default function ServiceOrdersPage() {
   const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: allBillings = [] } = useQuery<any[]>({ queryKey: ["/api/escort/billings"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  const getBillingAlerts = (o: any): string[] => {
+    const isConcluida = o.status === "concluida" || o.status === "concluída";
+    if (!isConcluida || o.type !== "escolta") return [];
+    const alerts: string[] = [];
+    const bill = allBillings.find((b: any) => b.service_order_id === o.id);
+    if (!bill) { alerts.push("Sem faturamento"); return alerts; }
+    if (!bill.km_inicial || bill.km_inicial <= 0) alerts.push("KM inicial ausente");
+    if (!bill.km_final || bill.km_final <= 0) alerts.push("KM final ausente");
+    if (bill.km_total <= 0 && bill.km_final > 0 && bill.km_inicial > 0) alerts.push("KM total zerado");
+    if (!bill.horario_inicio) alerts.push("Hora início ausente");
+    if (!bill.horario_fim) alerts.push("Hora fim ausente");
+    if (!bill.placa_viatura) alerts.push("Placa viatura ausente");
+    if (!bill.placa_escoltado && o.escortedVehiclePlate) alerts.push("Placa escoltado ausente");
+    if (bill.fat_total <= 0) alerts.push("Faturamento zerado");
+    return alerts;
+  };
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const isAdminOrDiretoria = user?.role === "admin" || user?.role === "diretoria";
@@ -1564,7 +1617,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} />}
+      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={allBillings} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} />}
 
       {filterVehicleId && (() => {
         const fv = vehicles.find(vv => vv.id === filterVehicleId);
@@ -1788,7 +1841,20 @@ export default function ServiceOrdersPage() {
               <tbody>
                 {displayOrders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
-                    <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">{o.osNumber}</td>
+                    <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        {o.osNumber}
+                        {(() => {
+                          const alerts = getBillingAlerts(o);
+                          if (alerts.length === 0) return null;
+                          return (
+                            <span title={alerts.join("\n")} className="cursor-help" data-testid={`alert-billing-${o.id}`}>
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </td>
                     <td className="p-2 overflow-hidden">
                       <span className="text-neutral-600 text-xs leading-tight line-clamp-2">{getClientName(o.clientId)}</span>
                       {(() => {

@@ -9141,7 +9141,8 @@ Regras:
             });
           }
 
-          const sameDayVehicleOrders = orders.filter((ox: any) => {
+          const allOrders = await storage.getServiceOrders();
+          const sameDayVehicleOrders = allOrders.filter((ox: any) => {
             if (ox.vehicleId !== so.vehicleId) return false;
             if (ox.status === "cancelada") return false;
             const oxDate = ox.scheduledDate ? new Date(ox.scheduledDate).toISOString().split("T")[0] : null;
