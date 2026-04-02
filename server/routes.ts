@@ -2603,8 +2603,6 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         <tr><td style="background:#1a1a1a;padding:20px 32px;text-align:center;">
           <p style="color:#ffffff;font-size:12px;font-weight:700;margin:0;">Torres Vigilância Patrimonial</p>
-          <p style="color:#cc3333;font-size:11px;margin:4px 0 0;">Torres Vigilância Patrimonial LTDA</p>
-          <p style="color:#888;font-size:10px;margin:4px 0 0;">Intermediação de Escolta Armada</p>
           <p style="color:#666;font-size:9px;margin:8px 0 0;">Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail escolta@torresseguranca.com.br</p>
         </td></tr>
 
