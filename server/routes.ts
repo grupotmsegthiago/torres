@@ -44,7 +44,7 @@ function createSmtpTransporter() {
 }
 
 function getSmtpFrom() {
-  return `"Grupo TM SEG" <${process.env.SMTP_FROM || process.env.SMTP_USER || "adm@grupotmseg.com.br"}>`;
+  return `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
 }
 
 const SMTP_BCC_OS = "thiago@grupotmseg.com.br, operacional@grupotmseg.com.br";
