@@ -26,6 +26,7 @@ import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
 import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
+import { nominatimGeocode } from "./db-init";
 import OpenAI from "openai";
 
 function createSmtpTransporter() {
@@ -2145,6 +2146,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
 
+    (async () => {
+      try {
+        const geoUpdates: any = {};
+        if (!data.originLat && data.origin) {
+          const geo = await nominatimGeocode(data.origin);
+          if (geo) { geoUpdates.originLat = geo.lat; geoUpdates.originLng = geo.lng; }
+        }
+        if (!data.destinationLat && data.destination) {
+          const geo = await nominatimGeocode(data.destination);
+          if (geo) { geoUpdates.destinationLat = geo.lat; geoUpdates.destinationLng = geo.lng; }
+        }
+        if (Object.keys(geoUpdates).length > 0) {
+          await storage.updateServiceOrder(data.id, geoUpdates);
+        }
+      } catch (_e) {}
+    })();
+
     const pedagioVal = Number((parsed.data as any).pedagioEstimado || 0);
     if (pedagioVal > 0) {
       try {
@@ -2350,6 +2368,25 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
+
+    if (!data.originLat && data.origin || !data.destinationLat && data.destination) {
+      (async () => {
+        try {
+          const geoUpdates: any = {};
+          if (!data.originLat && data.origin) {
+            const geo = await nominatimGeocode(data.origin);
+            if (geo) { geoUpdates.originLat = geo.lat; geoUpdates.originLng = geo.lng; }
+          }
+          if (!data.destinationLat && data.destination) {
+            const geo = await nominatimGeocode(data.destination);
+            if (geo) { geoUpdates.destinationLat = geo.lat; geoUpdates.destinationLng = geo.lng; }
+          }
+          if (Object.keys(geoUpdates).length > 0) {
+            await storage.updateServiceOrder(data.id, geoUpdates);
+          }
+        } catch (_e) {}
+      })();
+    }
 
     if (existing && existing.kitId && existing.kitId !== data.kitId) {
       await storage.updateWeaponKit(existing.kitId, { status: "disponível" });

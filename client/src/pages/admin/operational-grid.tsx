@@ -782,15 +782,20 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
   return `${h}h${m.toString().padStart(2, "0")}`;
 }
 
-function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact }: { pct: number; distRemainingKm: number; distTotalKm: number; compact?: boolean }) {
+function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact, noDistance }: { pct: number; distRemainingKm: number; distTotalKm: number; compact?: boolean; noDistance?: boolean }) {
   const fmtDist = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
   const carLeft = Math.min(Math.max(pct, 2), 98);
+  const showDist = !noDistance && distTotalKm > 0;
   if (compact) {
     return (
       <div className="w-full" data-testid="route-progress-bar">
         <div className="flex items-center gap-1.5 mb-0.5">
           <span className="text-[9px] font-bold text-neutral-400 uppercase">Rota</span>
-          <span className="text-[9px] font-bold text-neutral-600 ml-auto">{fmtDist(distRemainingKm)} restantes</span>
+          {showDist ? (
+            <span className="text-[9px] font-bold text-neutral-600 ml-auto">{fmtDist(distRemainingKm)} restantes</span>
+          ) : (
+            <span className="text-[9px] font-bold text-neutral-400 ml-auto">{pct}%</span>
+          )}
         </div>
         <div className="relative h-3 w-full">
           <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-[3px] bg-neutral-200 rounded-full overflow-hidden">
@@ -811,7 +816,11 @@ function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact }: { pct:
     <div className="w-full" data-testid="route-progress-bar">
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] font-bold text-neutral-500">{pct}% da rota</span>
-        <span className="text-[10px] font-bold text-neutral-600">{fmtDist(distRemainingKm)} restantes</span>
+        {showDist ? (
+          <span className="text-[10px] font-bold text-neutral-600">{fmtDist(distRemainingKm)} restantes</span>
+        ) : (
+          <span className="text-[10px] font-bold text-neutral-400">Progresso por etapa</span>
+        )}
       </div>
       <div className="relative h-5 w-full">
         <div className="absolute top-1/2 left-2 right-2 -translate-y-1/2 h-1 bg-neutral-200 rounded-full overflow-hidden">
@@ -4940,7 +4949,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {v.activeOs.clientName}
                             {v.activeOs.scheduledDate && (
                               <span className="ml-1 text-[10px] text-neutral-400">
-                                · {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} {new Date(v.activeOs.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                · {(() => {
+                                  const sd = new Date(v.activeOs.scheduledDate);
+                                  const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                                  const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                                  const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+                                  if (sdBRT === nowBRT) return `Hoje ${timeStr}`;
+                                  return `${sd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${timeStr}`;
+                                })()}
                               </span>
                             )}
                           </p>
@@ -5093,21 +5109,32 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             );
                           })()}
                           {(() => {
-                            const ms = v.activeOs?.missionStatus;
-                            const isTransitLike = ms === "em_transito_destino" || ms === "em_transito_origem" || ms === "iniciar_missao" || ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista";
-                            if (!isTransitLike || !v.activeOs) return null;
+                            if (!v.activeOs) return null;
+                            const ms = v.activeOs.missionStatus;
+                            const isActive = ms && ms !== "aguardando";
+                            if (!isActive) return null;
                             const rp = getRouteProgress({
                               originLat: v.activeOs.originLat, originLng: v.activeOs.originLng,
                               destLat: v.activeOs.destinationLat, destLng: v.activeOs.destinationLng,
                               currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
                               missionStatus: ms,
                             });
-                            if (!rp) return null;
-                            return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} compact /></div>;
+                            if (rp) {
+                              return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} compact /></div>;
+                            }
+                            const stepPct = getMissionProgress(ms);
+                            return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={0} distTotalKm={0} compact noDistance /></div>;
                           })()}
                           {v.activeOs.scheduledDate && (
                             <p className="text-xs text-neutral-400 font-medium">
-                              {new Date(v.activeOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                              {(() => {
+                                const sd = new Date(v.activeOs.scheduledDate);
+                                const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                                const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                                const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+                                if (sdBRT === nowBRT) return `Hoje ${timeStr}`;
+                                return `${sd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${timeStr}`;
+                              })()}
                             </p>
                           )}
                         </div>

@@ -502,7 +502,7 @@ export async function ensureDbSchema() {
   }
 }
 
-async function nominatimGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
+export async function nominatimGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=br&limit=1`;
     const resp = await fetch(url, { headers: { "User-Agent": "TorresVP/1.0" }, signal: AbortSignal.timeout(5000) });
