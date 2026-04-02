@@ -1558,10 +1558,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           employee1Name: emp1?.name || null,
           employee2Name: emp2?.name || null,
           kitName: kit?.name || null,
-          km_inicial: kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0,
+          km_inicial: kmChegadaPhoto?.kmValue || 0,
           km_chegada_origem: kmChegadaPhoto?.kmValue || null,
           km_final: kmFinalPhoto?.kmValue || 0,
-          km_total: (kmFinalPhoto?.kmValue || 0) - (kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0),
+          km_total: (kmFinalPhoto?.kmValue || 0) - (kmChegadaPhoto?.kmValue || 0),
           hora_chegada_origem: horaChegadaOrigem,
           hora_fim_missao: horaFimMissao,
           billing: billing?.[0] || null,
@@ -1599,7 +1599,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
       const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
       const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-      const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+      const kmInicial = kmChegadaPhoto?.kmValue || 0;
       const kmFinal = kmFinalPhoto?.kmValue || 0;
 
       const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -4144,7 +4144,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
         const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
         const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-        const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+        const kmInicial = kmChegadaPhoto?.kmValue || 0;
         let kmFinal = kmFinalPhoto?.kmValue || 0;
         if (kmFinal <= kmInicial) kmFinal = kmInicial;
 
@@ -5053,7 +5053,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-            const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+            const kmInicial = kmChegadaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
 
             const missionStartDate = o.missionStartedAt ? new Date(o.missionStartedAt as string) : null;
@@ -6723,7 +6723,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               const photos = await storage.getMissionPhotosByOS(serviceOrderId);
               const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
               const kmChegadaPhoto = [...photos].reverse().find((p: any) => p.step === "km_chegada");
-              const kmInicial = n(kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0);
+              const kmInicial = n(kmChegadaPhoto?.kmValue || 0);
               const kmFinal = kmInicial;
 
               const toBRT = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -7025,7 +7025,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         const kmSaidaPhoto = photos.find(p => p.step === "km_saida");
         const kmChegadaPhoto = [...photos].reverse().find(p => p.step === "km_chegada");
         const kmFinalPhoto = photos.find(p => p.step === "km_final");
-        const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
+        const kmInicial = kmChegadaPhoto?.kmValue || 0;
         const kmFinal = kmFinalPhoto?.kmValue || 0;
 
         const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toTimeString().slice(0, 5) : undefined;
@@ -9046,7 +9046,7 @@ Regras:
           const kmSaidaP = missionPhotos.find((p: any) => p.step === "km_saida");
           const kmChegadaP = [...missionPhotos].reverse().find((p: any) => p.step === "km_chegada");
           const kmFinalP = missionPhotos.find((p: any) => p.step === "km_final");
-          const kmInicial = Number(kmChegadaP?.kmValue || kmSaidaP?.kmValue || 0);
+          const kmInicial = Number(kmChegadaP?.kmValue || 0);
           const kmFinal = Number(kmFinalP?.kmValue || 0);
           const startedAt = so.missionStartedAt || so.scheduledDate;
           const now = new Date();
@@ -9191,8 +9191,8 @@ Regras:
           const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = kmChegadaPhoto?.kmValue || kmSaidaPhoto?.kmValue || 0;
-          const kmAtual = kmFinalPhoto?.kmValue || kmChegadaPhoto?.kmValue || kmInicial;
+          const kmInicial = kmChegadaPhoto?.kmValue || 0;
+          const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
           const startTime = so.missionStartedAt ? new Date(so.missionStartedAt as string).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
           const nowTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
           const scheduledTime = so.scheduledDate ? new Date(so.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;
@@ -10102,8 +10102,8 @@ Regras:
           const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaP = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalP = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = nb(kmChegadaP?.kmValue || kmSaidaP?.kmValue);
-          const kmAtual = nb(kmFinalP?.kmValue || kmChegadaP?.kmValue || kmInicial);
+          const kmInicial = nb(kmChegadaP?.kmValue);
+          const kmAtual = nb(kmFinalP?.kmValue || kmInicial);
           const km_carregado = Math.max(0, kmAtual - kmInicial);
 
           const startedAt = so.missionStartedAt ? new Date(so.missionStartedAt) : null;
