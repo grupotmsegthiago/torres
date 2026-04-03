@@ -278,17 +278,7 @@ export function initCronJobs() {
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: (() => {
-              if (so.missionStartedAt) {
-                const s = String(so.missionStartedAt);
-                if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-                try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); } catch { /**/ }
-              }
-              const sd = String(so.scheduledDate || new Date().toISOString());
-              if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd;
-              if (sd.includes("T")) return sd.split("T")[0];
-              return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-            })(),
+            data_missao: so.missionStartedAt || so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: "CRON",
           });
 

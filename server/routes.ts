@@ -1702,7 +1702,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
-        data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
+        data_missao: (so as any).missionStartedAt || so.scheduledDate || new Date().toISOString(),
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
@@ -6812,7 +6812,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
                 origem: so.origin || null, destino: so.destination || null,
                 placa_viatura: vehicle?.plate || null,
-                data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
+                data_missao: so.missionStartedAt || so.scheduledDate || new Date().toISOString(),
                 status: "CANCELADO", created_by: user.name,
                 observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
               });
@@ -7162,10 +7162,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
             motorista_escoltado: so.escortedDriverName || null,
-            data_missao: (() => {
-              if (so.missionStartedAt) { const s = String(so.missionStartedAt); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); } catch { /**/ } }
-              const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-            })(),
+            data_missao: so.missionStartedAt || so.scheduledDate || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
           };
           const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
@@ -9955,7 +9952,7 @@ Regras:
         origem: body.origem, destino: body.destino,
         placa_viatura: body.placa_viatura, placa_escoltado: body.placa_escoltado,
         motorista_escoltado: body.motorista_escoltado,
-        data_missao: (() => { const sd = String(body.data_missao || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
+        data_missao: body.data_missao || new Date().toISOString(),
         observacoes: body.observacoes, notas: body.notas,
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
@@ -10304,14 +10301,7 @@ Regras:
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: (() => {
-              const startDate = missionStartBRT(so);
-              if (startDate) return startDate;
-              const sd = String(so.scheduledDate || so.createdAt || new Date().toISOString());
-              if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd;
-              if (sd.includes("T")) return sd.split("T")[0];
-              return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-            })(),
+            data_missao: so.missionStartedAt || so.scheduledDate || so.createdAt || new Date().toISOString(),
             status: existingBilling?.status || "A_VERIFICAR",
             despesas_pedagio, despesas_combustivel, despesas_outras,
           });
