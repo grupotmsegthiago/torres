@@ -5311,10 +5311,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             let custoCombustivel = 0;
             let custoPedagio = 0;
             let custoOutros = 0;
+            let receitasOsGrid = 0;
             try {
               const osMissionCosts = await storage.getMissionCostsByOS(o.id);
               for (const mc of osMissionCosts) {
                 const amt = Number((mc as any).amount || 0);
+                if ((mc as any).costType === "revenue") { receitasOsGrid += amt; continue; }
                 const cat = ((mc as any).category || "").toLowerCase();
                 if (cat.includes("pedágio") || cat.includes("pedagio")) custoPedagio += amt;
                 else custoOutros += amt;
@@ -5340,6 +5342,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               }
             } catch (_e) {}
 
+            resultado.faturamento.total += receitasOsGrid;
             const custoTotal = resultado.pagamento.total + custoCombustivel + custoPedagio + custoOutros;
             const resultadoComCustos = resultado.faturamento.total - custoTotal;
             const margemComCustos = resultado.faturamento.total > 0 ? (resultadoComCustos / resultado.faturamento.total) * 100 : 0;
@@ -9359,10 +9362,24 @@ Regras:
 
       let missionCostPedagio = 0;
       let missionCostOutros = 0;
+      let missionCostReceitas = 0;
       const missionCostExpenses: any[] = [];
+      const missionCostRevenueItems: any[] = [];
       for (const mc of osMissionCosts) {
         const amt = Number((mc as any).amount || 0);
         const cat = ((mc as any).category || "").toLowerCase();
+        if ((mc as any).costType === "revenue") {
+          missionCostReceitas += amt;
+          missionCostRevenueItems.push({
+            id: `mc-${mc.id}`,
+            description: (mc as any).description || (mc as any).category || "Receita OS",
+            amount: amt,
+            type: "INCOME",
+            category_name: (mc as any).category,
+            origin_type: "mission_cost_revenue",
+          });
+          continue;
+        }
         if (cat.includes("pedágio") || cat.includes("pedagio")) {
           missionCostPedagio += amt;
         } else {
@@ -9454,10 +9471,12 @@ Regras:
       const billingOutras = Number(billingRow?.despesas_outras || 0);
       const billingDespesasTotal = billingPedagio + billingCombustivel + billingOutras;
 
-      console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${missionCostPedagio} outros=${missionCostOutros} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
+      console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${missionCostPedagio} outros=${missionCostOutros} receitas=${missionCostReceitas} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
 
-      const revenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
-      const totalRevenue = revenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const txRevenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
+      const revenue = [...txRevenue, ...missionCostRevenueItems];
+      const totalTxRevenue = txRevenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalRevenue = totalTxRevenue + missionCostReceitas;
       const billingFatTotal = Number(billingRow?.fat_total || 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
@@ -9527,7 +9546,8 @@ Regras:
           custosMissao: missionCostPedagio + missionCostOutros,
           despesasBilling: billingDespesasTotal,
           outrosCustos: totalOtherExpenses + missionCostOutros + billingOutras,
-          revenueSource: totalRevenue > 0 ? "transaction" : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
+          receitasOs: missionCostReceitas,
+          revenueSource: totalRevenue > 0 ? (missionCostReceitas > 0 ? "transaction+receitas" : "transaction") : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
         },
         totals: {
           totalRevenue: effectiveRevenue,
