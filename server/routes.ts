@@ -7162,7 +7162,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
             motorista_escoltado: so.escortedDriverName || null,
-            data_missao: (() => { const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); })(),
+            data_missao: (() => {
+              if (so.missionStartedAt) { const s = String(so.missionStartedAt); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); } catch { /**/ } }
+              const sd = String(so.scheduledDate || new Date().toISOString()); if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd; if (sd.includes("T")) return sd.split("T")[0]; return new Date(sd).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+            })(),
             status: "A_VERIFICAR", created_by: user.name,
           };
           const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);
@@ -10167,19 +10170,29 @@ Regras:
         catch { return null; }
       };
 
+      const missionStartBRT = (so: any): string | null => {
+        if (so.missionStartedAt) {
+          const s = String(so.missionStartedAt);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+          try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); } catch { return null; }
+        }
+        return null;
+      };
+
       const todayEscoltaOs = allOrders.filter((so: any) => {
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
+        const startBRT = missionStartBRT(so);
         if (so.status === "em_andamento") return true;
         const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
           so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
         if (isConcluded) {
           const sdBRT = extractDatePart(so.scheduledDate);
           const cdBRT = so.completedDate ? new Date(so.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
-          return sdBRT === todayBRT || cdBRT === todayBRT;
+          return startBRT === todayBRT || sdBRT === todayBRT || cdBRT === todayBRT;
         }
         if (so.status === "agendada") {
           const sdBRT = extractDatePart(so.scheduledDate);
-          return sdBRT === todayBRT;
+          return startBRT === todayBRT || sdBRT === todayBRT;
         }
         return false;
       });
@@ -10292,6 +10305,8 @@ Regras:
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
             data_missao: (() => {
+              const startDate = missionStartBRT(so);
+              if (startDate) return startDate;
               const sd = String(so.scheduledDate || so.createdAt || new Date().toISOString());
               if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) return sd;
               if (sd.includes("T")) return sd.split("T")[0];
