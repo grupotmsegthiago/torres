@@ -5342,8 +5342,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               }
             } catch (_e) {}
 
-            resultado.faturamento.total += receitasOsGrid;
-            const custoTotal = resultado.pagamento.total + custoCombustivel + custoPedagio + custoOutros;
+            resultado.faturamento.total += receitasOsGrid + custoPedagio;
+            const custoTotal = resultado.pagamento.total + custoCombustivel + custoOutros;
             const resultadoComCustos = resultado.faturamento.total - custoTotal;
             const margemComCustos = resultado.faturamento.total > 0 ? (resultadoComCustos / resultado.faturamento.total) * 100 : 0;
 
@@ -9456,9 +9456,13 @@ Regras:
         originalAmount: Number(t.amount || 0),
         prorated: fuelProrateDivisor > 1,
       }));
+      const missionCostExpensesNoPedagio = missionCostExpenses.filter((e: any) => {
+        const cat = (e.category_name || "").toLowerCase();
+        return !cat.includes("pedágio") && !cat.includes("pedagio");
+      });
       const allExpenses = [
         ...directExpenses,
-        ...missionCostExpenses,
+        ...missionCostExpensesNoPedagio,
         ...proratedFuelingTx,
       ];
       const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
@@ -9474,14 +9478,25 @@ Regras:
       console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${missionCostPedagio} outros=${missionCostOutros} receitas=${missionCostReceitas} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
 
       const txRevenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
+      const pedagioAsRevenue = missionCostPedagio + billingPedagio;
+      if (pedagioAsRevenue > 0) {
+        missionCostRevenueItems.push({
+          id: "pedagio-repasse",
+          description: "Pedágio (repasse ao cliente)",
+          amount: pedagioAsRevenue,
+          type: "INCOME",
+          category_name: "Pedágio",
+          origin_type: "pedagio_repasse",
+        });
+      }
       const revenue = [...txRevenue, ...missionCostRevenueItems];
       const totalTxRevenue = txRevenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalRevenue = totalTxRevenue + missionCostReceitas;
+      const totalRevenue = totalTxRevenue + missionCostReceitas + pedagioAsRevenue;
       const billingFatTotal = Number(billingRow?.fat_total || 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
       const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalExpense = txExpenseTotal + totalDiarias + billingDespesasTotal;
+      const totalExpense = txExpenseTotal + totalDiarias + (billingDespesasTotal - billingPedagio);
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
@@ -9541,10 +9556,11 @@ Regras:
         components: {
           receita: effectiveRevenue,
           combustivel: totalFueling + billingCombustivel,
-          pedagio: missionCostPedagio + billingPedagio,
+          pedagio: 0,
+          pedagioRepasse: pedagioAsRevenue,
           diarias: totalDiarias,
-          custosMissao: missionCostPedagio + missionCostOutros,
-          despesasBilling: billingDespesasTotal,
+          custosMissao: missionCostOutros,
+          despesasBilling: billingDespesasTotal - billingPedagio,
           outrosCustos: totalOtherExpenses + missionCostOutros + billingOutras,
           receitasOs: missionCostReceitas,
           revenueSource: totalRevenue > 0 ? (missionCostReceitas > 0 ? "transaction+receitas" : "transaction") : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
