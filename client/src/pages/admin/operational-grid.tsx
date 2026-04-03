@@ -5020,7 +5020,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
                             const totPed = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
                             const totOutros = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
-                            const totCusto = totPag + totComb + totOutros;
+                            const totCusto = totPag + totComb + totPed + totOutros;
                             const totResult = totFat - totCusto;
                             const META_VTR = 1800;
                             const metaBatida = totFat >= META_VTR;
@@ -5108,6 +5108,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
                                       <p className="text-neutral-700">VRP/Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
                                       {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
+                                      {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
                                       {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
                                       {vtrWithCost.length > 1 && (
                                         <div className="border-t border-neutral-200 pt-1 mt-1">

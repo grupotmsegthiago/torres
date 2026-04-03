@@ -5343,7 +5343,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             } catch (_e) {}
 
             resultado.faturamento.total += receitasOsGrid + custoPedagio;
-            const custoTotal = resultado.pagamento.total + custoCombustivel + custoOutros;
+            const custoTotal = resultado.pagamento.total + custoCombustivel + custoPedagio + custoOutros;
             const resultadoComCustos = resultado.faturamento.total - custoTotal;
             const margemComCustos = resultado.faturamento.total > 0 ? (resultadoComCustos / resultado.faturamento.total) * 100 : 0;
 
@@ -9456,13 +9456,9 @@ Regras:
         originalAmount: Number(t.amount || 0),
         prorated: fuelProrateDivisor > 1,
       }));
-      const missionCostExpensesNoPedagio = missionCostExpenses.filter((e: any) => {
-        const cat = (e.category_name || "").toLowerCase();
-        return !cat.includes("pedágio") && !cat.includes("pedagio");
-      });
       const allExpenses = [
         ...directExpenses,
-        ...missionCostExpensesNoPedagio,
+        ...missionCostExpenses,
         ...proratedFuelingTx,
       ];
       const uniqueExpenses = Array.from(new Map(allExpenses.map((t: any) => [t.id, t])).values());
@@ -9496,7 +9492,7 @@ Regras:
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
       const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalExpense = txExpenseTotal + totalDiarias + (billingDespesasTotal - billingPedagio);
+      const totalExpense = txExpenseTotal + totalDiarias + billingDespesasTotal;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
@@ -9556,11 +9552,11 @@ Regras:
         components: {
           receita: effectiveRevenue,
           combustivel: totalFueling + billingCombustivel,
-          pedagio: 0,
+          pedagio: missionCostPedagio + billingPedagio,
           pedagioRepasse: pedagioAsRevenue,
           diarias: totalDiarias,
-          custosMissao: missionCostOutros,
-          despesasBilling: billingDespesasTotal - billingPedagio,
+          custosMissao: missionCostPedagio + missionCostOutros,
+          despesasBilling: billingDespesasTotal,
           outrosCustos: totalOtherExpenses + missionCostOutros + billingOutras,
           receitasOs: missionCostReceitas,
           revenueSource: totalRevenue > 0 ? (missionCostReceitas > 0 ? "transaction+receitas" : "transaction") : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
