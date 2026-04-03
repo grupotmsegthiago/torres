@@ -1,10 +1,5 @@
-import { eq, desc, or, sql } from "drizzle-orm";
-import { db } from "./db";
+import { supabaseAdmin } from "./supabase";
 import {
-  users, clients, clientVehicles, employees, vehicles, serviceOrders, trips,
-  vehicleMaintenance, vehicleFueling, timesheets, employeeTimesheets, missionPhotos, apiLogs, employeeSalaries,
-  perfisAcesso, employeeDocuments, weapons, weaponAssignments, vehicleAssignments, weaponKits, weaponKitItems, gerenciadoras,
-  telemetryEvents,
   type User, type InsertUser,
   type Client, type InsertClient,
   type ClientVehicle, type InsertClientVehicle,
@@ -27,13 +22,39 @@ import {
   type WeaponKitItem, type InsertWeaponKitItem,
   type Gerenciadora, type InsertGerenciadora,
   type TelemetryEvent, type InsertTelemetryEvent,
-  agentLocations,
   type AgentLocation, type InsertAgentLocation,
-  missionCosts,
   type MissionCost, type InsertMissionCost,
-  clientForwards,
   type ClientForward, type InsertClientForward,
 } from "@shared/schema";
+
+function camelToSnake(str: string): string {
+  return str.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
+}
+
+function snakeToCamel(str: string): string {
+  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function toSnakeObj(obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue;
+    out[camelToSnake(k)] = v;
+  }
+  return out;
+}
+
+function toCamelObj<T = any>(obj: Record<string, any>): T {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[snakeToCamel(k)] = v;
+  }
+  return out as T;
+}
+
+function toCamelArray<T = any>(arr: any[]): T[] {
+  return arr.map((r) => toCamelObj<T>(r));
+}
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -163,541 +184,583 @@ export interface IStorage {
   createClientForward(forward: InsertClientForward): Promise<ClientForward>;
 }
 
+export { toSnakeObj, toCamelObj, toCamelArray };
+
 export class DatabaseStorage implements IStorage {
+
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    const { data } = await supabaseAdmin.from("users").select("*").eq("id", id).single();
+    return data ? toCamelObj<User>(data) : undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(
-      sql`LOWER(${users.email}) = LOWER(${email})`
-    );
-    return user;
+    const { data } = await supabaseAdmin.from("users").select("*").ilike("email", email).single();
+    return data ? toCamelObj<User>(data) : undefined;
   }
 
   async getUserBySupabaseUid(uid: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.supabaseUid, uid));
-    return user;
+    const { data } = await supabaseAdmin.from("users").select("*").eq("supabase_uid", uid).single();
+    return data ? toCamelObj<User>(data) : undefined;
   }
 
   async getUsers(): Promise<User[]> {
-    return db.select().from(users).orderBy(users.id);
+    const { data } = await supabaseAdmin.from("users").select("*").order("id");
+    return toCamelArray<User>(data || []);
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const [created] = await db.insert(users).values(user).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("users").insert(toSnakeObj(user as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<User>(data);
   }
 
-  async updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined> {
-    const [updated] = await db.update(users).set(data).where(eq(users.id, id)).returning();
-    return updated;
+  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
+    const { data, error } = await supabaseAdmin.from("users").update(toSnakeObj(userData as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<User>(data) : undefined;
   }
 
   async deleteUser(id: number): Promise<void> {
-    await db.delete(users).where(eq(users.id, id));
+    await supabaseAdmin.from("users").delete().eq("id", id);
   }
 
   async hasAnyUsers(): Promise<boolean> {
-    const allUsers = await db.select({ id: users.id }).from(users);
-    return allUsers.length > 0;
+    const { data } = await supabaseAdmin.from("users").select("id").limit(1);
+    return (data || []).length > 0;
   }
 
-  async createFirstAdmin(data: { supabaseUid: string; email: string; name: string }): Promise<User> {
-    const result = await db.transaction(async (tx) => {
-      const existing = await tx.select({ id: users.id }).from(users);
-      if (existing.length > 0) {
-        throw new Error("Sistema já possui usuários cadastrados");
-      }
-      const [created] = await tx.insert(users).values({
-        supabaseUid: data.supabaseUid,
-        email: data.email.toLowerCase().trim(),
-        name: data.name,
-        role: "diretoria",
-      }).returning();
-      return created;
-    });
-    return result;
+  async createFirstAdmin(adminData: { supabaseUid: string; email: string; name: string }): Promise<User> {
+    const { data: existing } = await supabaseAdmin.from("users").select("id").limit(1);
+    if (existing && existing.length > 0) {
+      throw new Error("Sistema já possui usuários cadastrados");
+    }
+    const { data, error } = await supabaseAdmin.from("users").insert({
+      supabase_uid: adminData.supabaseUid,
+      email: adminData.email.toLowerCase().trim(),
+      name: adminData.name,
+      role: "diretoria",
+    }).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<User>(data);
   }
 
   async getPerfilAcesso(role: string): Promise<PerfilAcesso | undefined> {
-    const [perfil] = await db.select().from(perfisAcesso).where(eq(perfisAcesso.role, role));
-    return perfil;
+    const { data } = await supabaseAdmin.from("perfis_acesso").select("*").eq("role", role).single();
+    return data ? toCamelObj<PerfilAcesso>(data) : undefined;
   }
 
   async getAllPerfis(): Promise<PerfilAcesso[]> {
-    return db.select().from(perfisAcesso);
+    const { data } = await supabaseAdmin.from("perfis_acesso").select("*");
+    return toCamelArray<PerfilAcesso>(data || []);
   }
 
   async getClients(): Promise<Client[]> {
-    return db.select().from(clients).orderBy(desc(clients.createdAt));
+    const { data } = await supabaseAdmin.from("clients").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Client>(data || []);
   }
 
   async getClient(id: number): Promise<Client | undefined> {
-    const [client] = await db.select().from(clients).where(eq(clients.id, id));
-    return client;
+    const { data } = await supabaseAdmin.from("clients").select("*").eq("id", id).single();
+    return data ? toCamelObj<Client>(data) : undefined;
   }
 
   async createClient(client: InsertClient): Promise<Client> {
-    const [created] = await db.insert(clients).values(client).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("clients").insert(toSnakeObj(client as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Client>(data);
   }
 
   async updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined> {
-    const [updated] = await db.update(clients).set(client).where(eq(clients.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("clients").update(toSnakeObj(client as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Client>(data) : undefined;
   }
 
   async deleteClient(id: number): Promise<void> {
-    await db.delete(clients).where(eq(clients.id, id));
+    await supabaseAdmin.from("clients").delete().eq("id", id);
   }
 
   async getClientVehicles(clientId: number): Promise<ClientVehicle[]> {
-    return db.select().from(clientVehicles).where(eq(clientVehicles.clientId, clientId)).orderBy(desc(clientVehicles.createdAt));
+    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).order("created_at", { ascending: false });
+    return toCamelArray<ClientVehicle>(data || []);
   }
 
   async getClientVehicle(id: number): Promise<ClientVehicle | undefined> {
-    const [v] = await db.select().from(clientVehicles).where(eq(clientVehicles.id, id));
-    return v;
+    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("id", id).single();
+    return data ? toCamelObj<ClientVehicle>(data) : undefined;
   }
 
   async getClientVehicleByPlate(clientId: number, plate: string): Promise<ClientVehicle | undefined> {
-    const [v] = await db.select().from(clientVehicles).where(sql`${clientVehicles.clientId} = ${clientId} AND UPPER(${clientVehicles.plate}) = UPPER(${plate})`);
-    return v;
+    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).ilike("plate", plate).single();
+    return data ? toCamelObj<ClientVehicle>(data) : undefined;
   }
 
   async createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle> {
-    const [created] = await db.insert(clientVehicles).values(v).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("client_vehicles").insert(toSnakeObj(v as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<ClientVehicle>(data);
   }
 
   async updateClientVehicle(id: number, v: Partial<InsertClientVehicle>): Promise<ClientVehicle | undefined> {
-    const [updated] = await db.update(clientVehicles).set(v).where(eq(clientVehicles.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("client_vehicles").update(toSnakeObj(v as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<ClientVehicle>(data) : undefined;
   }
 
   async deleteClientVehicle(id: number): Promise<void> {
-    await db.delete(clientVehicles).where(eq(clientVehicles.id, id));
+    await supabaseAdmin.from("client_vehicles").delete().eq("id", id);
   }
 
   async getEmployees(): Promise<Employee[]> {
-    return db.select().from(employees).orderBy(desc(employees.createdAt));
+    const { data } = await supabaseAdmin.from("employees").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Employee>(data || []);
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const [emp] = await db.select().from(employees).where(eq(employees.id, id));
-    return emp;
+    const { data } = await supabaseAdmin.from("employees").select("*").eq("id", id).single();
+    return data ? toCamelObj<Employee>(data) : undefined;
   }
 
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
-    const [created] = await db.insert(employees).values(employee).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("employees").insert(toSnakeObj(employee as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Employee>(data);
   }
 
   async updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
-    const [updated] = await db.update(employees).set(employee).where(eq(employees.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("employees").update(toSnakeObj(employee as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Employee>(data) : undefined;
   }
 
   async deleteEmployee(id: number): Promise<void> {
-    await db.delete(employees).where(eq(employees.id, id));
+    await supabaseAdmin.from("employees").delete().eq("id", id);
   }
 
   async getVehicles(): Promise<Vehicle[]> {
-    return db.select().from(vehicles).orderBy(desc(vehicles.createdAt));
+    const { data } = await supabaseAdmin.from("vehicles").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Vehicle>(data || []);
   }
 
   async getVehicle(id: number): Promise<Vehicle | undefined> {
-    const [v] = await db.select().from(vehicles).where(eq(vehicles.id, id));
-    return v;
+    const { data } = await supabaseAdmin.from("vehicles").select("*").eq("id", id).single();
+    return data ? toCamelObj<Vehicle>(data) : undefined;
   }
 
   async createVehicle(vehicle: InsertVehicle): Promise<Vehicle> {
-    const [created] = await db.insert(vehicles).values(vehicle).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("vehicles").insert(toSnakeObj(vehicle as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Vehicle>(data);
   }
 
   async updateVehicle(id: number, vehicle: Partial<InsertVehicle>): Promise<Vehicle | undefined> {
-    const [updated] = await db.update(vehicles).set(vehicle).where(eq(vehicles.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("vehicles").update(toSnakeObj(vehicle as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Vehicle>(data) : undefined;
   }
 
   async deleteVehicle(id: number): Promise<void> {
-    await db.delete(vehicles).where(eq(vehicles.id, id));
+    await supabaseAdmin.from("vehicles").delete().eq("id", id);
   }
 
   async getServiceOrders(): Promise<ServiceOrder[]> {
-    return db.select().from(serviceOrders).orderBy(desc(serviceOrders.createdAt));
+    const { data } = await supabaseAdmin.from("service_orders").select("*").order("created_at", { ascending: false });
+    return toCamelArray<ServiceOrder>(data || []);
   }
 
   async getServiceOrder(id: number): Promise<ServiceOrder | undefined> {
-    const [so] = await db.select().from(serviceOrders).where(eq(serviceOrders.id, id));
-    return so;
+    const { data } = await supabaseAdmin.from("service_orders").select("*").eq("id", id).single();
+    return data ? toCamelObj<ServiceOrder>(data) : undefined;
   }
 
   async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
-    const [created] = await db.insert(serviceOrders).values(order).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("service_orders").insert(toSnakeObj(order as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<ServiceOrder>(data);
   }
 
   async updateServiceOrder(id: number, order: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined> {
-    const [updated] = await db.update(serviceOrders).set(order).where(eq(serviceOrders.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("service_orders").update(toSnakeObj(order as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<ServiceOrder>(data) : undefined;
   }
 
   async deleteServiceOrder(id: number): Promise<void> {
-    await db.delete(serviceOrders).where(eq(serviceOrders.id, id));
+    await supabaseAdmin.from("service_orders").delete().eq("id", id);
   }
 
   async getTrips(): Promise<Trip[]> {
-    return db.select().from(trips).orderBy(desc(trips.createdAt));
+    const { data } = await supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Trip>(data || []);
   }
 
   async getTrip(id: number): Promise<Trip | undefined> {
-    const [t] = await db.select().from(trips).where(eq(trips.id, id));
-    return t;
+    const { data } = await supabaseAdmin.from("trips").select("*").eq("id", id).single();
+    return data ? toCamelObj<Trip>(data) : undefined;
   }
 
   async createTrip(trip: InsertTrip): Promise<Trip> {
-    const [created] = await db.insert(trips).values(trip).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("trips").insert(toSnakeObj(trip as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Trip>(data);
   }
 
   async updateTrip(id: number, trip: Partial<InsertTrip>): Promise<Trip | undefined> {
-    const [updated] = await db.update(trips).set(trip).where(eq(trips.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("trips").update(toSnakeObj(trip as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Trip>(data) : undefined;
   }
 
   async deleteTrip(id: number): Promise<void> {
-    await db.delete(trips).where(eq(trips.id, id));
+    await supabaseAdmin.from("trips").delete().eq("id", id);
   }
 
   async getVehicleMaintenances(): Promise<VehicleMaintenance[]> {
-    return db.select().from(vehicleMaintenance).orderBy(desc(vehicleMaintenance.createdAt));
+    const { data } = await supabaseAdmin.from("vehicle_maintenance").select("*").order("created_at", { ascending: false });
+    return toCamelArray<VehicleMaintenance>(data || []);
   }
 
   async getVehicleMaintenance(id: number): Promise<VehicleMaintenance | undefined> {
-    const [m] = await db.select().from(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
-    return m;
+    const { data } = await supabaseAdmin.from("vehicle_maintenance").select("*").eq("id", id).single();
+    return data ? toCamelObj<VehicleMaintenance>(data) : undefined;
   }
 
   async createVehicleMaintenance(m: InsertVehicleMaintenance): Promise<VehicleMaintenance> {
-    const [created] = await db.insert(vehicleMaintenance).values(m).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("vehicle_maintenance").insert(toSnakeObj(m as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<VehicleMaintenance>(data);
   }
 
   async updateVehicleMaintenance(id: number, m: Partial<InsertVehicleMaintenance>): Promise<VehicleMaintenance | undefined> {
-    const [updated] = await db.update(vehicleMaintenance).set(m).where(eq(vehicleMaintenance.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("vehicle_maintenance").update(toSnakeObj(m as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<VehicleMaintenance>(data) : undefined;
   }
 
   async deleteVehicleMaintenance(id: number): Promise<void> {
-    await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
+    await supabaseAdmin.from("vehicle_maintenance").delete().eq("id", id);
   }
 
   async getVehicleFuelings(): Promise<VehicleFueling[]> {
-    return db.select().from(vehicleFueling).orderBy(desc(vehicleFueling.createdAt));
+    const { data } = await supabaseAdmin.from("vehicle_fueling").select("*").order("created_at", { ascending: false });
+    return toCamelArray<VehicleFueling>(data || []);
   }
 
   async getVehicleFueling(id: number): Promise<VehicleFueling | undefined> {
-    const [f] = await db.select().from(vehicleFueling).where(eq(vehicleFueling.id, id));
-    return f;
+    const { data } = await supabaseAdmin.from("vehicle_fueling").select("*").eq("id", id).single();
+    return data ? toCamelObj<VehicleFueling>(data) : undefined;
   }
 
   async createVehicleFueling(f: InsertVehicleFueling): Promise<VehicleFueling> {
-    const [created] = await db.insert(vehicleFueling).values(f).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("vehicle_fueling").insert(toSnakeObj(f as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<VehicleFueling>(data);
   }
 
   async updateVehicleFueling(id: number, f: Partial<InsertVehicleFueling>): Promise<VehicleFueling | undefined> {
-    const [updated] = await db.update(vehicleFueling).set(f).where(eq(vehicleFueling.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("vehicle_fueling").update(toSnakeObj(f as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<VehicleFueling>(data) : undefined;
   }
 
   async deleteVehicleFueling(id: number): Promise<void> {
-    await db.delete(vehicleFueling).where(eq(vehicleFueling.id, id));
+    await supabaseAdmin.from("vehicle_fueling").delete().eq("id", id);
   }
 
   async getTimesheets(): Promise<Timesheet[]> {
-    return db.select().from(timesheets).orderBy(desc(timesheets.createdAt));
+    const { data } = await supabaseAdmin.from("timesheets").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Timesheet>(data || []);
   }
 
   async getTimesheet(id: number): Promise<Timesheet | undefined> {
-    const [t] = await db.select().from(timesheets).where(eq(timesheets.id, id));
-    return t;
+    const { data } = await supabaseAdmin.from("timesheets").select("*").eq("id", id).single();
+    return data ? toCamelObj<Timesheet>(data) : undefined;
   }
 
   async createTimesheet(t: InsertTimesheet): Promise<Timesheet> {
-    const [created] = await db.insert(timesheets).values(t).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("timesheets").insert(toSnakeObj(t as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Timesheet>(data);
   }
 
   async updateTimesheet(id: number, t: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
-    const [updated] = await db.update(timesheets).set(t).where(eq(timesheets.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("timesheets").update(toSnakeObj(t as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Timesheet>(data) : undefined;
   }
 
   async deleteTimesheet(id: number): Promise<void> {
-    await db.delete(employeeTimesheets).where(eq(employeeTimesheets.id, id));
+    await supabaseAdmin.from("employee_timesheets").delete().eq("id", id);
   }
 
   async getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]> {
-    return db.select().from(missionPhotos)
-      .where(eq(missionPhotos.serviceOrderId, serviceOrderId))
-      .orderBy(missionPhotos.createdAt);
+    const { data } = await supabaseAdmin.from("mission_photos").select("*").eq("service_order_id", serviceOrderId).order("created_at");
+    return toCamelArray<MissionPhoto>(data || []);
   }
 
   async getMissionPhoto(id: number): Promise<MissionPhoto | undefined> {
-    const [p] = await db.select().from(missionPhotos).where(eq(missionPhotos.id, id));
-    return p;
+    const { data } = await supabaseAdmin.from("mission_photos").select("*").eq("id", id).single();
+    return data ? toCamelObj<MissionPhoto>(data) : undefined;
   }
 
   async createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto> {
-    const [created] = await db.insert(missionPhotos).values(photo).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("mission_photos").insert(toSnakeObj(photo as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<MissionPhoto>(data);
   }
 
   async getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]> {
-    return db.select().from(serviceOrders)
-      .where(
-        or(
-          eq(serviceOrders.assignedEmployeeId, employeeId),
-          eq(serviceOrders.assignedEmployee2Id, employeeId)
-        )
-      )
-      .orderBy(desc(serviceOrders.createdAt));
+    const { data } = await supabaseAdmin.from("service_orders").select("*").or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`).order("created_at", { ascending: false });
+    return toCamelArray<ServiceOrder>(data || []);
   }
 
-  async createApiLog(log: InsertApiLog): Promise<ApiLog> {
-    const [created] = await db.insert(apiLogs).values(log).returning();
-    return created;
+  async createApiLog(logEntry: InsertApiLog): Promise<ApiLog> {
+    const { data, error } = await supabaseAdmin.from("api_logs").insert(toSnakeObj(logEntry as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<ApiLog>(data);
   }
 
   async getRecentApiLogs(limit = 100): Promise<ApiLog[]> {
-    return db.select().from(apiLogs).orderBy(desc(apiLogs.createdAt)).limit(limit);
+    const { data } = await supabaseAdmin.from("api_logs").select("*").order("created_at", { ascending: false }).limit(limit);
+    return toCamelArray<ApiLog>(data || []);
   }
 
   async getEmployeeSalaries(employeeId: number): Promise<EmployeeSalary[]> {
-    return db.select().from(employeeSalaries)
-      .where(eq(employeeSalaries.employeeId, employeeId))
-      .orderBy(desc(employeeSalaries.effectiveDate));
+    const { data } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", employeeId).order("effective_date", { ascending: false });
+    return toCamelArray<EmployeeSalary>(data || []);
   }
 
   async createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary> {
-    const [created] = await db.insert(employeeSalaries).values(salary).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("employee_salaries").insert(toSnakeObj(salary as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<EmployeeSalary>(data);
   }
 
   async deleteEmployeeSalary(id: number): Promise<void> {
-    await db.delete(employeeSalaries).where(eq(employeeSalaries.id, id));
+    await supabaseAdmin.from("employee_salaries").delete().eq("id", id);
   }
 
   async getNextMatricula(): Promise<string> {
-    const result = await db.select().from(employees).orderBy(desc(employees.id)).limit(1);
-    const nextId = result.length > 0 ? result[0].id + 1 : 1;
+    const { data } = await supabaseAdmin.from("employees").select("id").order("id", { ascending: false }).limit(1);
+    const nextId = data && data.length > 0 ? data[0].id + 1 : 1;
     return "TVP-" + String(nextId).padStart(4, "0");
   }
 
   async getEmployeeDocuments(employeeId: number): Promise<EmployeeDocument[]> {
-    return db.select().from(employeeDocuments)
-      .where(eq(employeeDocuments.employeeId, employeeId))
-      .orderBy(desc(employeeDocuments.createdAt));
+    const { data } = await supabaseAdmin.from("employee_documents").select("*").eq("employee_id", employeeId).order("created_at", { ascending: false });
+    return toCamelArray<EmployeeDocument>(data || []);
   }
 
   async createEmployeeDocument(doc: InsertEmployeeDocument): Promise<EmployeeDocument> {
-    const [created] = await db.insert(employeeDocuments).values(doc).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("employee_documents").insert(toSnakeObj(doc as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<EmployeeDocument>(data);
   }
 
   async updateEmployeeDocument(id: number, doc: Partial<InsertEmployeeDocument>): Promise<EmployeeDocument | undefined> {
-    const [updated] = await db.update(employeeDocuments).set(doc).where(eq(employeeDocuments.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("employee_documents").update(toSnakeObj(doc as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<EmployeeDocument>(data) : undefined;
   }
 
   async deleteEmployeeDocument(id: number): Promise<void> {
-    await db.delete(employeeDocuments).where(eq(employeeDocuments.id, id));
+    await supabaseAdmin.from("employee_documents").delete().eq("id", id);
   }
 
   async getWeapons(): Promise<Weapon[]> {
-    return db.select().from(weapons).orderBy(desc(weapons.createdAt));
+    const { data } = await supabaseAdmin.from("weapons").select("*").order("created_at", { ascending: false });
+    return toCamelArray<Weapon>(data || []);
   }
 
   async getWeapon(id: number): Promise<Weapon | undefined> {
-    const [w] = await db.select().from(weapons).where(eq(weapons.id, id));
-    return w;
+    const { data } = await supabaseAdmin.from("weapons").select("*").eq("id", id).single();
+    return data ? toCamelObj<Weapon>(data) : undefined;
   }
 
   async createWeapon(weapon: InsertWeapon): Promise<Weapon> {
-    const [created] = await db.insert(weapons).values(weapon).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("weapons").insert(toSnakeObj(weapon as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Weapon>(data);
   }
 
   async updateWeapon(id: number, weapon: Partial<InsertWeapon>): Promise<Weapon | undefined> {
-    const [updated] = await db.update(weapons).set(weapon).where(eq(weapons.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("weapons").update(toSnakeObj(weapon as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Weapon>(data) : undefined;
   }
 
   async deleteWeapon(id: number): Promise<void> {
-    await db.delete(weapons).where(eq(weapons.id, id));
+    await supabaseAdmin.from("weapons").delete().eq("id", id);
   }
 
   async getWeaponAssignments(weaponId: number): Promise<WeaponAssignment[]> {
-    return db.select().from(weaponAssignments)
-      .where(eq(weaponAssignments.weaponId, weaponId))
-      .orderBy(desc(weaponAssignments.createdAt));
+    const { data } = await supabaseAdmin.from("weapon_assignments").select("*").eq("weapon_id", weaponId).order("created_at", { ascending: false });
+    return toCamelArray<WeaponAssignment>(data || []);
   }
 
   async createWeaponAssignment(a: InsertWeaponAssignment): Promise<WeaponAssignment> {
-    const [created] = await db.insert(weaponAssignments).values(a).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("weapon_assignments").insert(toSnakeObj(a as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<WeaponAssignment>(data);
   }
 
   async getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]> {
-    return db.select().from(vehicleAssignments)
-      .where(eq(vehicleAssignments.vehicleId, vehicleId))
-      .orderBy(desc(vehicleAssignments.createdAt));
+    const { data } = await supabaseAdmin.from("vehicle_assignments").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
+    return toCamelArray<VehicleAssignment>(data || []);
   }
 
   async createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment> {
-    const [created] = await db.insert(vehicleAssignments).values(a).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("vehicle_assignments").insert(toSnakeObj(a as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<VehicleAssignment>(data);
   }
 
   async getGerenciadoras(): Promise<Gerenciadora[]> {
-    return db.select().from(gerenciadoras).orderBy(gerenciadoras.name);
+    const { data } = await supabaseAdmin.from("gerenciadoras").select("*").order("name");
+    return toCamelArray<Gerenciadora>(data || []);
   }
 
   async getGerenciadora(id: number): Promise<Gerenciadora | undefined> {
-    const [g] = await db.select().from(gerenciadoras).where(eq(gerenciadoras.id, id));
-    return g;
+    const { data } = await supabaseAdmin.from("gerenciadoras").select("*").eq("id", id).single();
+    return data ? toCamelObj<Gerenciadora>(data) : undefined;
   }
 
   async createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora> {
-    const [created] = await db.insert(gerenciadoras).values(g).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("gerenciadoras").insert(toSnakeObj(g as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<Gerenciadora>(data);
   }
 
   async updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined> {
-    const [updated] = await db.update(gerenciadoras).set(g).where(eq(gerenciadoras.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("gerenciadoras").update(toSnakeObj(g as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<Gerenciadora>(data) : undefined;
   }
 
   async deleteGerenciadora(id: number): Promise<void> {
-    await db.delete(gerenciadoras).where(eq(gerenciadoras.id, id));
+    await supabaseAdmin.from("gerenciadoras").delete().eq("id", id);
   }
 
   async getWeaponKits(): Promise<WeaponKit[]> {
-    return db.select().from(weaponKits).orderBy(weaponKits.name);
+    const { data } = await supabaseAdmin.from("weapon_kits").select("*").order("name");
+    return toCamelArray<WeaponKit>(data || []);
   }
 
   async getWeaponKit(id: number): Promise<WeaponKit | undefined> {
-    const [k] = await db.select().from(weaponKits).where(eq(weaponKits.id, id));
-    return k;
+    const { data } = await supabaseAdmin.from("weapon_kits").select("*").eq("id", id).single();
+    return data ? toCamelObj<WeaponKit>(data) : undefined;
   }
 
   async createWeaponKit(kit: InsertWeaponKit): Promise<WeaponKit> {
-    const [created] = await db.insert(weaponKits).values(kit).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("weapon_kits").insert(toSnakeObj(kit as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<WeaponKit>(data);
   }
 
   async updateWeaponKit(id: number, kit: Partial<InsertWeaponKit>): Promise<WeaponKit | undefined> {
-    const [updated] = await db.update(weaponKits).set(kit).where(eq(weaponKits.id, id)).returning();
-    return updated;
+    const { data, error } = await supabaseAdmin.from("weapon_kits").update(toSnakeObj(kit as any)).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<WeaponKit>(data) : undefined;
   }
 
   async deleteWeaponKit(id: number): Promise<void> {
-    await db.delete(weaponKitItems).where(eq(weaponKitItems.kitId, id));
-    await db.delete(weaponKits).where(eq(weaponKits.id, id));
+    await supabaseAdmin.from("weapon_kit_items").delete().eq("kit_id", id);
+    await supabaseAdmin.from("weapon_kits").delete().eq("id", id);
   }
 
   async getWeaponKitItems(kitId: number): Promise<WeaponKitItem[]> {
-    return db.select().from(weaponKitItems).where(eq(weaponKitItems.kitId, kitId));
+    const { data } = await supabaseAdmin.from("weapon_kit_items").select("*").eq("kit_id", kitId);
+    return toCamelArray<WeaponKitItem>(data || []);
   }
 
   async createWeaponKitItem(item: InsertWeaponKitItem): Promise<WeaponKitItem> {
-    const [created] = await db.insert(weaponKitItems).values(item).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("weapon_kit_items").insert(toSnakeObj(item as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<WeaponKitItem>(data);
   }
 
   async deleteWeaponKitItem(id: number): Promise<void> {
-    await db.delete(weaponKitItems).where(eq(weaponKitItems.id, id));
+    await supabaseAdmin.from("weapon_kit_items").delete().eq("id", id);
   }
 
   async deleteWeaponKitItemsByKit(kitId: number): Promise<void> {
-    await db.delete(weaponKitItems).where(eq(weaponKitItems.kitId, kitId));
+    await supabaseAdmin.from("weapon_kit_items").delete().eq("kit_id", kitId);
   }
 
   async createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent> {
-    const [created] = await db.insert(telemetryEvents).values(e).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("telemetry_events").insert(toSnakeObj(e as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<TelemetryEvent>(data);
+  }
+
+  async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {
+    let query = supabaseAdmin.from("telemetry_events").select("*");
+    if (filters?.eventType) query = query.eq("event_type", filters.eventType);
+    if (filters?.plate) query = query.eq("plate", filters.plate);
+    if (filters?.from) query = query.gte("created_at", filters.from.toISOString());
+    if (filters?.to) query = query.lte("created_at", filters.to.toISOString());
+    query = query.order("created_at", { ascending: false });
+    if (filters?.limit) query = query.limit(filters.limit);
+    const { data } = await query;
+    return toCamelArray<TelemetryEvent>(data || []);
   }
 
   async getLastAlertByPlates(plates: string[]): Promise<Map<string, TelemetryEvent>> {
     const result = new Map<string, TelemetryEvent>();
     if (plates.length === 0) return result;
-    const rows = await db.select().from(telemetryEvents)
-      .where(sql`${telemetryEvents.plate} IN ${plates}`)
-      .orderBy(desc(telemetryEvents.createdAt));
-    for (const row of rows) {
-      if (!result.has(row.plate)) {
-        result.set(row.plate, row);
+    const { data } = await supabaseAdmin.from("telemetry_events").select("*").in("plate", plates).order("created_at", { ascending: false });
+    for (const row of (data || [])) {
+      const camel = toCamelObj<TelemetryEvent>(row);
+      if (!result.has(camel.plate)) {
+        result.set(camel.plate, camel);
       }
     }
     return result;
   }
 
-  async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {
-    const conditions = [];
-    if (filters?.eventType) conditions.push(eq(telemetryEvents.eventType, filters.eventType));
-    if (filters?.plate) conditions.push(eq(telemetryEvents.plate, filters.plate));
-    if (filters?.from) conditions.push(sql`${telemetryEvents.createdAt} >= ${filters.from}`);
-    if (filters?.to) conditions.push(sql`${telemetryEvents.createdAt} <= ${filters.to}`);
-
-    let query = db.select().from(telemetryEvents);
-    if (conditions.length > 0) {
-      query = query.where(sql`${sql.join(conditions, sql` AND `)}`) as any;
-    }
-    query = query.orderBy(desc(telemetryEvents.createdAt)) as any;
-    if (filters?.limit) query = query.limit(filters.limit) as any;
-    return query;
-  }
   async upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation> {
-    const existing = await db.select().from(agentLocations).where(eq(agentLocations.userId, data.userId));
-    if (existing.length > 0) {
-      const [updated] = await db.update(agentLocations)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(agentLocations.userId, data.userId))
-        .returning();
-      return updated;
+    const { data: existing } = await supabaseAdmin.from("agent_locations").select("id").eq("user_id", (data as any).userId).limit(1);
+    if (existing && existing.length > 0) {
+      const payload = toSnakeObj(data as any);
+      payload.updated_at = new Date().toISOString();
+      const { data: updated, error } = await supabaseAdmin.from("agent_locations").update(payload).eq("user_id", (data as any).userId).select().single();
+      if (error) throw new Error(error.message);
+      return toCamelObj<AgentLocation>(updated);
     }
-    const [created] = await db.insert(agentLocations).values(data).returning();
-    return created;
+    const { data: created, error } = await supabaseAdmin.from("agent_locations").insert(toSnakeObj(data as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<AgentLocation>(created);
   }
 
   async getAgentLocations(): Promise<AgentLocation[]> {
-    return db.select().from(agentLocations).orderBy(desc(agentLocations.updatedAt));
+    const { data } = await supabaseAdmin.from("agent_locations").select("*").order("updated_at", { ascending: false });
+    return toCamelArray<AgentLocation>(data || []);
   }
 
   async getMissionCostsByOS(serviceOrderId: number): Promise<MissionCost[]> {
-    return db.select().from(missionCosts).where(eq(missionCosts.serviceOrderId, serviceOrderId)).orderBy(desc(missionCosts.createdAt));
+    const { data } = await supabaseAdmin.from("mission_costs").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false });
+    return toCamelArray<MissionCost>(data || []);
   }
 
   async createMissionCost(cost: InsertMissionCost): Promise<MissionCost> {
-    const [created] = await db.insert(missionCosts).values(cost).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("mission_costs").insert(toSnakeObj(cost as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<MissionCost>(data);
   }
 
   async deleteMissionCost(id: number): Promise<void> {
-    await db.delete(missionCosts).where(eq(missionCosts.id, id));
+    await supabaseAdmin.from("mission_costs").delete().eq("id", id);
   }
+
   async getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]> {
-    return db.select().from(clientForwards).where(eq(clientForwards.serviceOrderId, serviceOrderId)).orderBy(desc(clientForwards.createdAt));
+    const { data } = await supabaseAdmin.from("client_forwards").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false });
+    return toCamelArray<ClientForward>(data || []);
   }
 
   async createClientForward(forward: InsertClientForward): Promise<ClientForward> {
-    const [created] = await db.insert(clientForwards).values(forward).returning();
-    return created;
+    const { data, error } = await supabaseAdmin.from("client_forwards").insert(toSnakeObj(forward as any)).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<ClientForward>(data);
   }
 }
 

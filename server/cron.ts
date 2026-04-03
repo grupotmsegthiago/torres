@@ -4,9 +4,6 @@ import * as apibrasil from "./apibrasil";
 import { log } from "./index";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
-import { db } from "./db";
-import { employeeSalaryDiscounts } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],

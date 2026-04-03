@@ -8,19 +8,24 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 ## ⛔ CRITICAL Rules — READ FIRST
 
-- **NUNCA use o banco local do Replit (DATABASE_URL).** TODO acesso a dados DEVE usar Supabase (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` via `supabaseAdmin`). O PostgreSQL local do Replit NÃO é usado neste projeto — nenhuma query, nenhuma migration, nenhum `storage.*` que acesse o banco local.
-- **NEVER use the local database (DATABASE_URL).** ALL queries MUST go through `supabaseAdmin` (or `SUPABASE_DATABASE_URL`). The Replit-managed PostgreSQL is completely unused and must stay that way.
+- **O banco local do Replit (DATABASE_URL) NÃO é usado.** TODO acesso a dados usa Supabase — via REST API (`supabaseAdmin`) ou via conexão PostgreSQL direta (`SUPABASE_DATABASE_URL` com Drizzle ORM).
+- **The local Replit database (DATABASE_URL) is UNUSED.** ALL data access goes through Supabase — either via REST API (`supabaseAdmin`) or direct PostgreSQL connection (`SUPABASE_DATABASE_URL` via Drizzle ORM).
+- **Data Access Paths:** `storage.*` methods use Supabase REST API (supabaseAdmin) with automatic snake_case↔camelCase conversion. Direct `db.*` calls in routes.ts use Drizzle ORM connected to `SUPABASE_DATABASE_URL`. Both hit the SAME Supabase PostgreSQL database.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.
 - **`data_missao` must be stored as a full ISO timestamp** (e.g., `"2026-04-02T11:00:00"`) — never a date-only string (`"2026-04-02"`). PostgreSQL stores date-only strings as UTC midnight, which shifts the BRT date by one day back.
+- **CRON billing** MUST use `supabaseAdmin.from("service_orders")` (REST API with snake_case columns) — NEVER `storage.getServiceOrders()`. Only recalculates active missions; concluded missions are never touched.
 
 ## System Architecture
-The system employs a modern web stack: React with TypeScript and Vite for the frontend, and Express with Supabase Auth for the backend. **Supabase (PostgreSQL) is the ONLY database** — accessed exclusively via the `supabaseAdmin` client. Tailwind CSS is utilized for styling, maintaining a professional monochrome aesthetic (black/white) with Montserrat/Inter typography. UI components adhere to an "Enterprise UI" design, ensuring a consistent and polished user experience.
+The system employs a modern web stack: React with TypeScript and Vite for the frontend, and Express with Supabase Auth for the backend. **Supabase (PostgreSQL) is the ONLY database**. Tailwind CSS is utilized for styling, maintaining a professional monochrome aesthetic (black/white) with Montserrat/Inter typography. UI components adhere to an "Enterprise UI" design, ensuring a consistent and polished user experience.
 
 **Key Architectural Decisions & Implementations:**
 -   **Authentication & Authorization:** JWT-based authentication via Supabase Auth, implementing robust Role-Based Access Control (RBAC) through a `perfis_acesso` table. Session cookies are not used.
--   **Data Layer:** ALL data access goes through `supabaseAdmin` (from `server/supabase.ts`). The `storage.*` interface in `server/storage.ts` is a legacy wrapper — prefer direct `supabaseAdmin.from(...)` calls for any new code.
+-   **Data Layer:** Two access paths to the SAME Supabase PostgreSQL:
+    1. `storage.*` (in `server/storage.ts`) — uses Supabase REST API (`supabaseAdmin`) with `toSnakeObj()`/`toCamelObj()` converters. Returns camelCase TypeScript types.
+    2. `db.*` (in `server/routes.ts`, `server/db-init.ts`) — uses Drizzle ORM connected to `SUPABASE_DATABASE_URL`. Returns camelCase via schema mapping.
+    3. `supabaseAdmin.from(...)` — direct REST API calls in CRON and some routes. Returns snake_case.
 -   **Operational Grid:** A central feature providing real-time vehicle tracking, status monitoring (speed, idle, signal loss), and integration with risk management companies.
 -   **Mobile Interface for Field Agents:** A dedicated mobile-first experience for `funcionario` roles, supporting mission workflows, checklists, GPS tracking, and photo capture.
 -   **Smart OCR Integration:** Utilizes OpenAI Vision for intelligent data extraction from documents (CNH, CNV, weapon registrations) to auto-fill forms.
