@@ -147,17 +147,28 @@ export function initCronJobs() {
         so.mission_status !== "aguardando"
       );
 
-      const { data: existingBillingIds } = await supabaseAdmin.from("escort_billings").select("service_order_id");
-      const billedSet = new Set((existingBillingIds || []).map((b: any) => b.service_order_id));
+      const { data: existingBillings } = await supabaseAdmin.from("escort_billings").select("service_order_id, status");
+      const billedSet = new Set((existingBillings || []).map((b: any) => b.service_order_id));
+      const unverifBilledSet = new Set((existingBillings || []).filter((b: any) => b.status === "A_VERIFICAR").map((b: any) => b.service_order_id));
       const unbilledConcluded = allOrders.filter((so: any) =>
         so.type === "escolta" &&
         isConcluded(so) &&
         !billedSet.has(so.id)
       );
+      const unverifConcluded = allOrders.filter((so: any) =>
+        so.type === "escolta" &&
+        isConcluded(so) &&
+        unverifBilledSet.has(so.id)
+      );
 
-      const liveOrders = [...activeOrders, ...unbilledConcluded];
+      const seenIds = new Set<number>();
+      const liveOrders = [...activeOrders, ...unbilledConcluded, ...unverifConcluded].filter((so: any) => {
+        if (seenIds.has(so.id)) return false;
+        seenIds.add(so.id);
+        return true;
+      });
       if (!liveOrders.length) return;
-      log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing para processar`, "cron");
+      log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing + ${unverifConcluded.length} A_VERIFICAR para processar`, "cron");
 
       for (const so of liveOrders) {
         try {
