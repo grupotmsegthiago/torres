@@ -174,6 +174,35 @@ export function invalidateAllQueries() {
   _channel?.postMessage({ type: "invalidate-all" });
 }
 
+const AUTO_REFRESH_MS = 60_000;
+let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startAutoRefresh() {
+  if (_autoRefreshTimer) return;
+  _autoRefreshTimer = setInterval(() => {
+    queryClient.invalidateQueries();
+  }, AUTO_REFRESH_MS);
+}
+
+export function stopAutoRefresh() {
+  if (_autoRefreshTimer) {
+    clearInterval(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+  }
+}
+
+if (typeof window !== "undefined") {
+  startAutoRefresh();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopAutoRefresh();
+    } else {
+      queryClient.invalidateQueries();
+      startAutoRefresh();
+    }
+  });
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
