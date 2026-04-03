@@ -1645,22 +1645,26 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
       const kmFinalNorm = kmFinal > kmInicial ? kmFinal : kmInicial;
       const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-      let despPedagioCalc = 0, despCombustivelCalc = 0, despOutrasCalc = 0;
+      let despPedagioCalc = 0, despCombustivelCalc = 0, despOutrasCalc = 0, receitasOsCalc = 0;
       for (const mc of osMissionCosts) {
         const amt = Number(mc.amount) || 0;
-        const cat = (mc.category || "").toLowerCase();
-        if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagioCalc += amt;
-        else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivelCalc += amt;
-        else despOutrasCalc += amt;
+        if ((mc as any).costType === "revenue") {
+          receitasOsCalc += amt;
+        } else {
+          const cat = (mc.category || "").toLowerCase();
+          if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagioCalc += amt;
+          else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivelCalc += amt;
+          else despOutrasCalc += amt;
+        }
       }
       const pedagioEstimadoCalc = Number((so as any).pedagioEstimado) || 0;
       if (pedagioEstimadoCalc > 0 && despPedagioCalc === 0) despPedagioCalc = pedagioEstimadoCalc;
-      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}`);
+      console.log(`[CALCULAR] OS ${so.osNumber}: contrato.valor_acionamento=${contrato.valor_acionamento}, contrato.valor_km_carregado=${contrato.valor_km_carregado}, contrato.franquia_km=${contrato.franquia_km}, contrato.franquia_horas=${contrato.franquia_horas}, kmInicial=${kmInicial}, kmFinal=${kmFinalNorm}, billingStartTime=${billingStartTime}, fimMissaoTime=${fimMissaoTime}, scheduledTime=${scheduledTime}, pedagio=${despPedagioCalc}, receitas=${receitasOsCalc}`);
       const resultado = calcularEscolta({
         km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
         horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
         horario_inicio: billingStartTime, horario_fim: fimMissaoTime, horario_agendado: scheduledTime,
-        despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, contrato,
+        despesas_pedagio: despPedagioCalc, despesas_combustivel: despCombustivelCalc, despesas_outras: despOutrasCalc, receitas_os: receitasOsCalc, contrato,
       });
       console.log(`[CALCULAR] OS ${so.osNumber}: resultado.fat_total=${resultado.fat_total}, resultado.fat_acionamento=${resultado.fat_acionamento}, resultado.modelo_acionamento=${resultado.modelo_acionamento}, resultado.km_total=${resultado.km_total}`);
 
@@ -1688,7 +1692,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         fat_km_vazio: n(resultado.faturamento.km_vazio),
         fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
         fat_diaria: n(resultado.fat_pernoite), fat_adicional_noturno: n(resultado.fat_adicional_noturno),
-        fat_total: n(resultado.fat_total),
+        fat_total: n(resultado.fat_total), receitas_os: n(resultado.receitas_os),
         valor_franquia: n(resultado.valor_franquia), valor_km_extra: n(resultado.valor_km_extra),
         pag_vrp: n(resultado.pag_vrp), pag_periculosidade: n(resultado.pag_periculosidade),
         pag_adicional_noturno: n(resultado.pag_adicional_noturno),
@@ -1796,11 +1800,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
 
           const kmFN = kmF > kmI ? kmF : kmI;
+          const mcList = await storage.getMissionCostsByOS(osId);
+          let dpCalc = 0, dcCalc = 0, doCalc = 0, roCalc = 0;
+          for (const mc of mcList) {
+            const amt = Number(mc.amount) || 0;
+            if ((mc as any).costType === "revenue") { roCalc += amt; }
+            else {
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) dpCalc += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dcCalc += amt;
+              else doCalc += amt;
+            }
+          }
           const resultado = calcularEscolta({
             km_inicial: kmI, km_final: kmFN, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: stTime, horario_fim: eTime, horario_agendado: sTime,
-            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+            despesas_pedagio: dpCalc, despesas_combustivel: dcCalc, despesas_outras: doCalc, receitas_os: roCalc, contrato,
           });
 
           const n = (v: any) => Number(v) || 0;
@@ -1816,6 +1832,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             fat_km_vazio: n(resultado.faturamento.km_vazio),
             fat_estadia: n(resultado.fat_estadia), fat_pernoite: n(resultado.fat_pernoite),
             fat_adicional_noturno: n(resultado.fat_adicional_noturno), fat_total: n(resultado.fat_total),
+            receitas_os: n(resultado.receitas_os),
+            despesas_pedagio: n(dpCalc), despesas_combustivel: n(dcCalc), despesas_outras: n(doCalc),
           }).eq("service_order_id", osId);
         }
       }
@@ -1992,16 +2010,30 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           }
 
           const kmFN = kmF > kmI ? kmF : kmI;
+          const mcList2 = await storage.getMissionCostsByOS(osId);
+          let dp2 = 0, dc2 = 0, do2 = 0, ro2 = 0;
+          for (const mc of mcList2) {
+            const amt = Number(mc.amount) || 0;
+            if ((mc as any).costType === "revenue") { ro2 += amt; }
+            else {
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) dp2 += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dc2 += amt;
+              else do2 += amt;
+            }
+          }
           const resultado = calcularEscolta({
             contrato, km_inicial: kmI, km_final: kmFN,
             km_vazio: 0, horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_agendado: sTime, horario_inicio: stTime, horario_fim: eTime,
-            despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+            despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2, receitas_os: ro2,
           });
 
           await supabaseAdmin.from("escort_billings").update({
             km_inicial: kmI, km_final: kmFN,
             horario_inicio: stTime || null, horario_fim: eTime || null,
+            receitas_os: Number(resultado.receitas_os) || 0,
+            despesas_pedagio: dp2, despesas_combustivel: dc2, despesas_outras: do2,
             ...resultado,
           }).eq("id", existingBilling[0].id);
         }
@@ -2464,13 +2496,27 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const pedagioOS = Number((data as any).pedagioEstimado) || 0;
           if (pedagioOS > 0 && despPedagioAR === 0) despPedagioAR = pedagioOS;
 
+          const mcListAR = await storage.getMissionCostsByOS(osId);
+          let dpAR = 0, dcAR = 0, doAR = 0, roAR = 0;
+          for (const mc of mcListAR) {
+            const amt = Number(mc.amount) || 0;
+            if ((mc as any).costType === "revenue") { roAR += amt; }
+            else {
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) dpAR += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) dcAR += amt;
+              else doAR += amt;
+            }
+          }
+          if (dpAR > 0) despPedagioAR = dpAR;
+
           const resultado = calcularEscolta({
             km_inicial: kmIni, km_final: kmFin, km_vazio: Number(bill.km_vazio || 0),
             horas_missao: 0, horas_estadia: Number(bill.horas_estadia || 0),
             teve_pernoite: !!bill.teve_pernoite, horario_inicio: horarioInicio, horario_fim: horarioFim,
             horario_agendado: horarioAgendado,
-            despesas_pedagio: despPedagioAR, despesas_combustivel: Number(bill.despesas_combustivel || 0),
-            despesas_outras: Number(bill.despesas_outras || 0), contrato,
+            despesas_pedagio: despPedagioAR, despesas_combustivel: dcAR || Number(bill.despesas_combustivel || 0),
+            despesas_outras: doAR || Number(bill.despesas_outras || 0), receitas_os: roAR, contrato,
           });
 
           const nb = (v: any) => Number(v) || 0;
@@ -2490,6 +2536,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
             fat_diaria: nb(resultado.fat_pernoite),
             fat_adicional_noturno: nb(resultado.fat_adicional_noturno), fat_total: nb(resultado.fat_total),
+            receitas_os: nb(resultado.receitas_os),
+            despesas_pedagio: nb(despPedagioAR), despesas_combustivel: nb(dcAR || Number(bill.despesas_combustivel || 0)), despesas_outras: nb(doAR || Number(bill.despesas_outras || 0)),
             valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
             pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
             pag_adicional_noturno: nb(resultado.pag_adicional_noturno), pag_reembolsos: nb(resultado.pag_reembolsos),
@@ -7109,13 +7157,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
         {
           const osMissionCosts = await storage.getMissionCostsByOS(serviceOrderId);
-          let despPedagio = 0, despCombustivel = 0, despOutras = 0;
+          let despPedagio = 0, despCombustivel = 0, despOutras = 0, receitasOsEnc = 0;
           for (const mc of osMissionCosts) {
             const amt = Number(mc.amount) || 0;
-            const cat = (mc.category || "").toLowerCase();
-            if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagio += amt;
-            else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivel += amt;
-            else despOutras += amt;
+            if ((mc as any).costType === "revenue") { receitasOsEnc += amt; }
+            else {
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) despPedagio += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombustivel += amt;
+              else despOutras += amt;
+            }
           }
           const pedagioEstimado = Number((so as any).pedagioEstimado) || 0;
           if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
@@ -7124,7 +7175,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
-            despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, contrato,
+            despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, receitas_os: receitasOsEnc, contrato,
           });
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
@@ -7150,7 +7201,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             fat_km_vazio: nb(resultado.faturamento.km_vazio),
             fat_estadia: nb(resultado.fat_estadia), fat_pernoite: nb(resultado.fat_pernoite),
             fat_diaria: nb(resultado.fat_pernoite), fat_adicional_noturno: nb(resultado.fat_adicional_noturno),
-            fat_total: nb(resultado.fat_total),
+            fat_total: nb(resultado.fat_total), receitas_os: nb(receitasOsEnc),
             valor_franquia: nb(resultado.valor_franquia), valor_km_extra: nb(resultado.valor_km_extra),
             pag_vrp: nb(resultado.pag_vrp), pag_periculosidade: nb(resultado.pag_periculosidade),
             pag_adicional_noturno: nb(resultado.pag_adicional_noturno),
@@ -9588,9 +9639,11 @@ Regras:
     horario_inicio?: string; horario_fim?: string;
     horario_agendado?: string;
     despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
+    receitas_os?: number;
     contrato: any;
   }) {
     const { km_inicial, km_final, km_vazio, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
+    const receitas_os = Number(dados.receitas_os) || 0;
 
     if (km_final < km_inicial) throw new Error("KM final não pode ser menor que KM inicial");
 
@@ -9658,7 +9711,7 @@ Regras:
     if (isNoturno) {
       fat_adicional_noturno = (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
     }
-    const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total;
+    const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total + receitas_os;
 
     let pag_vrp = n(contrato.vrp_base);
     let pag_periculosidade = 0;
@@ -9700,6 +9753,7 @@ Regras:
         total: r(pag_total),
       },
       despesas: { pedagio: despesas_pedagio, combustivel: despesas_combustivel, outras: despesas_outras, total: despesas_total },
+      receitas_os: r(receitas_os),
       resultado: { bruto: r(resultado_bruto), liquido: r(resultado_liquido), margem_pct: r(margem_pct) },
       fat_km: r(fat_km), fat_estadia: r(fat_estadia), fat_pernoite,
       fat_adicional_noturno: r(fat_adicional_noturno), fat_total: r(fat_total),
@@ -9749,7 +9803,7 @@ Regras:
 
   app.post("/api/escort/calculate", requireAuth, async (req, res) => {
     try {
-      const { contract_id, km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, is_noturno, despesas } = req.body;
+      const { contract_id, km_inicial, km_final, km_vazio, horas_missao, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, receitas_os, is_noturno, despesas } = req.body;
 
       const kmIni = Number(km_inicial || 0);
       const kmFin = Number(km_final || 0);
@@ -9771,7 +9825,8 @@ Regras:
         teve_pernoite: !!teve_pernoite, horario_inicio, horario_fim, horario_agendado,
         despesas_pedagio: Number(desp.pedagio || despesas_pedagio || 0),
         despesas_combustivel: Number(desp.combustivel || despesas_combustivel || 0),
-        despesas_outras: Number(desp.outras || despesas_outras || 0), contrato,
+        despesas_outras: Number(desp.outras || despesas_outras || 0),
+        receitas_os: Number(desp.receitas_os || receitas_os || 0), contrato,
       });
 
       res.json({ status: "sucesso", ...resultado, require_foto_hodometro: resultado.require_photo });
@@ -9917,7 +9972,7 @@ Regras:
         teve_pernoite: !!body.teve_pernoite, horario_inicio: body.horario_inicio, horario_fim: body.horario_fim,
         horario_agendado: body.horario_agendado,
         despesas_pedagio: Number(body.despesas_pedagio || 0), despesas_combustivel: Number(body.despesas_combustivel || 0),
-        despesas_outras: Number(body.despesas_outras || 0), contrato,
+        despesas_outras: Number(body.despesas_outras || 0), receitas_os: Number(body.receitas_os || 0), contrato,
       });
 
       const nb = (v: any) => Number(v) || 0;
@@ -9936,7 +9991,7 @@ Regras:
         horas_trabalhadas: nb(resultado.horas_trabalhadas),
         teve_pernoite: !!body.teve_pernoite, is_noturno: resultado.is_noturno,
         despesas_pedagio: nb(body.despesas_pedagio), despesas_combustivel: nb(body.despesas_combustivel),
-        despesas_outras: nb(body.despesas_outras),
+        despesas_outras: nb(body.despesas_outras), receitas_os: nb(resultado.receitas_os),
         desp_total: nb(resultado.despesas.total),
         fat_acionamento: nb(resultado.fat_acionamento), fat_hora_extra: nb(resultado.fat_hora_extra),
         fat_km: nb(resultado.fat_km), fat_km_carregado: nb(resultado.faturamento.km_carregado),
@@ -10028,7 +10083,7 @@ Regras:
       if (error) throw error;
 
       if (acao === "APROVADA" && data) {
-        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.despesas_pedagio || 0);
+        const totalFat = Number(data.fat_acionamento || 0) + Number(data.fat_hora_extra || 0) + Number(data.fat_km || 0) + Number(data.despesas_pedagio || 0) + Number(data.receitas_os || 0);
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(data.service_order_id));
         if (totalFat > 0) {
@@ -10358,7 +10413,7 @@ Regras:
         missionsByDay[d].push(b);
       });
 
-      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0);
+      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
       const byVehicle: Record<string, { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }> = {};
       items.forEach((b: any) => {
         const plate = b.placa_viatura || "SEM PLACA";

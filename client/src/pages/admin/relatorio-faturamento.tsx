@@ -181,7 +181,8 @@ export default function RelatorioFaturamentoPage() {
       const fatPernoite = n(b?.fat_pernoite);
       const fatAdicNoturno = n(b?.fat_adicional_noturno);
       const despPedagio = n(editForm.despesas_pedagio);
-      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio) * 100) / 100;
+      const receitasOs = n(b?.receitas_os);
+      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio + receitasOs) * 100) / 100;
 
       const payload = {
         km_inicial: kmIni,

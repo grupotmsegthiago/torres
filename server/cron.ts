@@ -230,14 +230,18 @@ export function initCronJobs() {
             fat_total += (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
           }
 
-          const { data: mCosts } = await supabaseAdmin.from("mission_costs").select("category, amount").eq("service_order_id", so.id);
-          let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0;
+          const { data: mCosts } = await supabaseAdmin.from("mission_costs").select("category, amount, cost_type").eq("service_order_id", so.id);
+          let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0, receitas_os = 0;
           (mCosts || []).forEach((c: any) => {
-            if (c.category === "Pedágio") despesas_pedagio += n(c.amount);
-            else if (c.category === "Combustível") despesas_combustivel += n(c.amount);
-            else despesas_outras += n(c.amount);
+            if (c.cost_type === "revenue") {
+              receitas_os += n(c.amount);
+            } else {
+              if (c.category === "Pedágio") despesas_pedagio += n(c.amount);
+              else if (c.category === "Combustível") despesas_combustivel += n(c.amount);
+              else despesas_outras += n(c.amount);
+            }
           });
-          fat_total += despesas_pedagio;
+          fat_total += despesas_pedagio + receitas_os;
 
           const pag_vrp = n(contrato.vrp_base);
           const resultado_bruto = fat_total - pag_vrp;
@@ -272,7 +276,7 @@ export function initCronJobs() {
             placa_viatura: vehRow?.plate || null,
             placa_escoltado: so.escorted_vehicle_plate || null,
             motorista_escoltado: so.escorted_driver_name || null,
-            despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
+            despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras), receitas_os: r(receitas_os),
             data_missao: so.mission_started_at || so.scheduled_date || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: "CRON",
           };

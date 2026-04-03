@@ -469,6 +469,10 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await db.execute(sql`
+      ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS receitas_os NUMERIC(10,2) DEFAULT 0
+    `).catch(() => {});
+
+    await db.execute(sql`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 

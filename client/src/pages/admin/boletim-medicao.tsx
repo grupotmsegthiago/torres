@@ -218,7 +218,7 @@ export default function BoletimMedicaoPage() {
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
   const totalFaturamento = osConcluidas.reduce((acc, o) => {
     const b = o.billing;
-    return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0);
+    return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
   }, 0);
 
   const getBillingStatus = (os: any) => {
@@ -329,7 +329,7 @@ export default function BoletimMedicaoPage() {
               const isExpanded = expandedClient === group.clientId;
               const groupPending = group.orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
               const groupApproved = group.orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
-              const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_acionamento || 0) + Number(o.billing?.fat_hora_extra || 0) + Number(o.billing?.fat_km || 0) + Number(o.billing?.despesas_pedagio || 0), 0);
+              const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_acionamento || 0) + Number(o.billing?.fat_hora_extra || 0) + Number(o.billing?.fat_km || 0) + Number(o.billing?.despesas_pedagio || 0) + Number(o.billing?.receitas_os || 0), 0);
 
               return (
                 <div key={group.clientId} className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm" data-testid={`client-group-${group.clientId}`}>
@@ -422,7 +422,7 @@ export default function BoletimMedicaoPage() {
                                     <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3.5 text-right">
-                                    <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
+                                    <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
                                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold ${status.color}`}>
@@ -512,7 +512,8 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const horaExtra = Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
   const pedagio = Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0);
-  const resultado = acionamento + horaExtra + kmExtraVal + pedagio;
+  const receitasOs = Number(b?.receitas_os || 0);
+  const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOs;
 
   const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
   const startTime = os.missionStartedAt ? fmtTime(os.missionStartedAt) : null;
@@ -734,6 +735,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                   {horaExtra > 0 && <ValueCard label="Hora Extra" value={fmt(horaExtra)} color="amber" />}
                   {kmExtraVal > 0 && <ValueCard label="KM Excedente" value={fmt(kmExtraVal)} color="violet" />}
                   <ValueCard label="Pedágio" value={fmt(pedagio)} color="neutral" />
+                  {receitasOs > 0 && <ValueCard label="Receitas OS" value={fmt(receitasOs)} color="green" />}
                 </div>
 
                 <div className={`rounded-xl p-4 text-center border-2 ${resultado >= 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
