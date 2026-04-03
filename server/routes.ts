@@ -10348,6 +10348,26 @@ Regras:
       for (const so of todayEscoltaOs) {
         try {
           const nb = (v: any) => Number(v) || 0;
+          const existingBilling = (billings || []).find((b: any) => b.service_order_id === so.id);
+
+          if (existingBilling) {
+            let receitasOs = nb(existingBilling.receitas_os);
+            if (receitasOs === 0) {
+              try {
+                const osMC = await storage.getMissionCostsByOS(so.id);
+                for (const mc of osMC) {
+                  if ((mc as any).costType === "revenue") receitasOs += Number(mc.amount) || 0;
+                }
+              } catch (_e) {}
+            }
+            const billingFatTotal = nb(existingBilling.fat_acionamento) + nb(existingBilling.fat_km) +
+              nb(existingBilling.fat_hora_extra) + nb(existingBilling.fat_adicional_noturno) +
+              nb(existingBilling.despesas_pedagio) + receitasOs;
+            const finalFatTotal = Math.max(nb(existingBilling.fat_total), billingFatTotal);
+            items.push({ ...existingBilling, fat_total: Math.round(finalFatTotal * 100) / 100, receitas_os: receitasOs });
+            continue;
+          }
+
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
           if (so.escortContractId) {
             const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escortContractId).limit(1);
@@ -10357,7 +10377,6 @@ Regras:
             if (cc?.length) contrato = cc[0];
           }
           const photos = await storage.getMissionPhotosByOS(so.id);
-          const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
           const kmChegadaP = photos.find((p: any) => p.step === "km_chegada");
           const kmFinalP = photos.find((p: any) => p.step === "km_final");
           const kmInicial = nb(kmChegadaP?.kmValue);
@@ -10375,54 +10394,49 @@ Regras:
           const horaChegadaOrigemDash = (so as any).hora_chegada_origem || getLogTimeDash(["checkin_chegada_km", "em_transito_origem"]);
           const horaFimMissaoDash = (so as any).hora_fim_missao || so.completedDate || getLogTimeDash(["encerrada", "finalizada", "checkout_km_final"]);
           const startRef = horaChegadaOrigemDash ? new Date(horaChegadaOrigemDash) : (so.missionStartedAt ? new Date(so.missionStartedAt) : null);
-          const endRef = horaFimMissaoDash ? new Date(horaFimMissaoDash) : new Date();
-          const horasMissao = startRef ? calcHorasBRT(startRef, endRef) : 0;
+          const endRef = horaFimMissaoDash ? new Date(horaFimMissaoDash) : null;
+          const horasMissao = startRef && endRef ? calcHorasBRT(startRef, endRef) : 0;
 
           const franquiaKm = nb(contrato.franquia_km) || nb(contrato.franquia_minima_km);
           const km_excedente = Math.max(0, km_carregado - franquiaKm);
           const hasAcion = nb(contrato.valor_acionamento) > 0;
           const franquiaHoras = nb(contrato.franquia_horas);
-          let fat_total = 0, fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0;
+          let fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0;
           if (hasAcion) {
             fat_acionamento = nb(contrato.valor_acionamento);
             fat_km = km_excedente * (nb(contrato.valor_km_extra) || nb(contrato.valor_km_carregado));
             if (franquiaHoras > 0 && horasMissao > franquiaHoras) {
               fat_hora_extra = (horasMissao - franquiaHoras) * nb(contrato.valor_hora_extra);
             }
-            fat_total = fat_acionamento + fat_km + fat_hora_extra;
           } else {
             const km_faturado = Math.max(km_carregado, franquiaKm);
             fat_km = km_faturado * nb(contrato.valor_km_carregado);
-            fat_total = fat_km;
           }
 
-          const existingBilling = (billings || []).find((b: any) => b.service_order_id === so.id);
-          let despesas_pedagio = nb(existingBilling?.despesas_pedagio);
-          let despesas_combustivel = nb(existingBilling?.despesas_combustivel);
-          let despesas_outras = nb(existingBilling?.despesas_outras);
+          let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0;
+          let receitasOs = 0;
+          try {
+            const osMC = await storage.getMissionCostsByOS(so.id);
+            for (const mc of osMC) {
+              const amt = Number(mc.amount) || 0;
+              if ((mc as any).costType === "revenue") { receitasOs += amt; continue; }
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) despesas_pedagio += amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despesas_combustivel += amt;
+              else despesas_outras += amt;
+            }
+            const pedEstimado = Number((so as any).pedagioEstimado) || 0;
+            if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
+          } catch (_e) {}
 
-          if (despesas_pedagio === 0 && despesas_combustivel === 0 && despesas_outras === 0) {
-            try {
-              const osMC = await storage.getMissionCostsByOS(so.id);
-              for (const mc of osMC) {
-                const amt = Number(mc.amount) || 0;
-                const cat = (mc.category || "").toLowerCase();
-                if (cat.includes("pedágio") || cat.includes("pedagio")) despesas_pedagio += amt;
-                else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despesas_combustivel += amt;
-                else despesas_outras += amt;
-              }
-              const pedEstimado = Number((so as any).pedagioEstimado) || 0;
-              if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
-            } catch (_e) {}
-          }
-
+          const fat_total = fat_acionamento + fat_km + fat_hora_extra + despesas_pedagio + receitasOs;
           const r = (v: number) => Math.round(v * 100) / 100;
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
           const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
           const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
           items.push({
-            id: existingBilling?.id || `calc-${so.id}`, service_order_id: so.id,
+            id: `calc-${so.id}`, service_order_id: so.id,
             client_id: so.clientId, client_name: client?.name || "--",
             contract_id: contrato.id || null,
             km_inicial: kmInicial, km_final: kmAtual, km_vazio: 0,
@@ -10431,6 +10445,7 @@ Regras:
             km_excedente: r(km_excedente),
             horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
             fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
+            receitas_os: r(receitasOs),
             pag_vrp: r(nb(contrato.vrp_base)), pag_total: r(nb(contrato.vrp_base)),
             resultado_bruto: r(fat_total - nb(contrato.vrp_base)),
             resultado_liquido: r(fat_total - nb(contrato.vrp_base)),
@@ -10439,8 +10454,8 @@ Regras:
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
             data_missao: so.missionStartedAt || so.scheduledDate || so.createdAt || new Date().toISOString(),
-            status: existingBilling?.status || "A_VERIFICAR",
-            despesas_pedagio, despesas_combustivel, despesas_outras,
+            status: "A_VERIFICAR",
+            despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
           });
         } catch (err: any) {
           console.error(`[dashboard] calc billing for OS ${so.osNumber}: ${err.message}`);
@@ -10554,13 +10569,16 @@ Regras:
         if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
           try {
             const osMC = await storage.getMissionCostsByOS(b.service_order_id);
+            let osReceitasOs = 0;
             for (const mc of osMC) {
               const amt = Number(mc.amount) || 0;
+              if ((mc as any).costType === "revenue") { osReceitasOs += amt; continue; }
               const cat = (mc.category || "").toLowerCase();
               if (cat.includes("pedágio") || cat.includes("pedagio")) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + amt;
               else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + amt;
               else b.despesas_outras = (Number(b.despesas_outras) || 0) + amt;
             }
+            if (osReceitasOs > 0 && !b.receitas_os) b.receitas_os = osReceitasOs;
             if ((Number(b.despesas_pedagio) || 0) === 0) {
               const soData = osLookup.get(b.service_order_id);
               const pedEst = Number(soData?.pedagioEstimado) || 0;
