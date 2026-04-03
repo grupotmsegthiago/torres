@@ -2249,6 +2249,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           const geo = await nominatimGeocode(data.destination);
           if (geo) { geoUpdates.destinationLat = geo.lat; geoUpdates.destinationLng = geo.lng; }
         }
+        const wps = Array.isArray(data.waypoints) ? data.waypoints as any[] : [];
+        let wpsChanged = false;
+        for (const wp of wps) {
+          if (wp.address && (!wp.lat || !wp.lng)) {
+            const geo = await nominatimGeocode(wp.address);
+            if (geo) { wp.lat = geo.lat; wp.lng = geo.lng; wpsChanged = true; }
+          }
+        }
+        if (wpsChanged) geoUpdates.waypoints = wps;
         if (Object.keys(geoUpdates).length > 0) {
           await storage.updateServiceOrder(data.id, geoUpdates);
         }
@@ -2404,7 +2413,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
 
-    if (!data.originLat && data.origin || !data.destinationLat && data.destination) {
+    const needsGeo = (!data.originLat && data.origin) || (!data.destinationLat && data.destination);
+    const wpsNeedGeo = Array.isArray(data.waypoints) && (data.waypoints as any[]).some((wp: any) => wp.address && (!wp.lat || !wp.lng));
+    if (needsGeo || wpsNeedGeo) {
       (async () => {
         try {
           const geoUpdates: any = {};
@@ -2416,6 +2427,15 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             const geo = await nominatimGeocode(data.destination);
             if (geo) { geoUpdates.destinationLat = geo.lat; geoUpdates.destinationLng = geo.lng; }
           }
+          const wps = Array.isArray(data.waypoints) ? data.waypoints as any[] : [];
+          let wpsChanged = false;
+          for (const wp of wps) {
+            if (wp.address && (!wp.lat || !wp.lng)) {
+              const geo = await nominatimGeocode(wp.address);
+              if (geo) { wp.lat = geo.lat; wp.lng = geo.lng; wpsChanged = true; }
+            }
+          }
+          if (wpsChanged) geoUpdates.waypoints = wps;
           if (Object.keys(geoUpdates).length > 0) {
             await storage.updateServiceOrder(data.id, geoUpdates);
           }
