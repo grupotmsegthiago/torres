@@ -137,13 +137,20 @@ export function initCronJobs() {
       const n = (v: any) => Number(v) || 0;
 
       const allOrders = await storage.getServiceOrders();
-      const activeOrders = allOrders.filter((so: any) => so.status !== "concluida" && so.missionStatus !== "encerrada" && so.missionStatus !== "aguardando" && so.type === "escolta");
+      const isConcluded = (so: any) =>
+        ["concluida", "concluída", "cancelada"].includes(so.status) ||
+        ["encerrada", "finalizada"].includes(so.missionStatus);
+      const activeOrders = allOrders.filter((so: any) =>
+        so.type === "escolta" &&
+        !isConcluded(so) &&
+        so.missionStatus !== "aguardando"
+      );
 
       const { data: existingBillingIds } = await supabaseAdmin.from("escort_billings").select("service_order_id");
       const billedSet = new Set((existingBillingIds || []).map((b: any) => b.service_order_id));
       const missingBillingOrders = allOrders.filter((so: any) =>
         so.type === "escolta" &&
-        (so.status === "em_andamento" || so.status === "concluida") &&
+        (so.status === "em_andamento" || so.status === "concluida" || so.status === "concluída") &&
         so.missionStatus !== "aguardando" &&
         !billedSet.has(so.id) &&
         !activeOrders.some((a: any) => a.id === so.id)
@@ -174,13 +181,14 @@ export function initCronJobs() {
           const kmFinalRaw = kmFinalPhoto?.kmValue || 0;
           const kmFinal = kmFinalRaw > kmInicial ? kmFinalRaw : kmInicial;
 
+          const missionEndDate = so.completedDate ? new Date(so.completedDate as string) : new Date();
           const scheduledTime = so.scheduledDate ? toBRT(new Date(so.scheduledDate)) : undefined;
           const startTime = so.missionStartedAt ? toBRT(new Date(so.missionStartedAt as string)) : undefined;
-          const endTime = toBRT(new Date());
+          const endTime = toBRT(missionEndDate);
 
           const scheduledDate = so.scheduledDate ? new Date(so.scheduledDate) : null;
           const missionStartDate = so.missionStartedAt ? new Date(so.missionStartedAt as string) : null;
-          const nowDate = new Date();
+          const nowDate = missionEndDate;
 
           const hasAcionamento = n(contrato.valor_acionamento) > 0;
           const franquiaKm = n(contrato.franquia_km) || n(contrato.franquia_minima_km);
