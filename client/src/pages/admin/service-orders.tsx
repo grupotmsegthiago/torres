@@ -584,6 +584,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     notes: order?.notes || "",
     valorEstimado: (order as any)?.valorEstimado ? Number((order as any).valorEstimado).toFixed(2).replace(".", ",") : "",
     pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
+    waypoints: ((order as any)?.waypoints || []) as Array<{ address: string; lat: number | null; lng: number | null }>,
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -1099,6 +1100,58 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   theme="light"
                   data-testid="input-route-destination"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <FieldLabel>Pontos de Parada (Entregas Intermediárias)</FieldLabel>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, waypoints: [...form.waypoints, { address: "", lat: null, lng: null }] })}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    data-testid="button-add-waypoint"
+                  >
+                    <Plus className="w-3 h-3" /> Adicionar Parada
+                  </button>
+                </div>
+                {form.waypoints.length === 0 && (
+                  <p className="text-xs text-neutral-400 italic">Nenhum ponto de parada — entrega direta origem → destino</p>
+                )}
+                {form.waypoints.map((wp, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-2" data-testid={`waypoint-row-${idx}`}>
+                    <span className="text-xs font-bold text-neutral-500 w-5 shrink-0">{idx + 1}.</span>
+                    <div className="flex-1">
+                      <PlacesAutocomplete
+                        value={wp.address}
+                        onChange={(v) => {
+                          const wps = [...form.waypoints];
+                          wps[idx] = { ...wps[idx], address: v };
+                          setForm({ ...form, waypoints: wps });
+                        }}
+                        onPlaceSelect={(p) => {
+                          const wps = [...form.waypoints];
+                          wps[idx] = { address: p.address, lat: p.lat, lng: p.lng };
+                          setForm({ ...form, waypoints: wps });
+                        }}
+                        placeholder={`Parada ${idx + 1} — endereço de entrega`}
+                        className="text-sm"
+                        theme="light"
+                        data-testid={`input-waypoint-${idx}`}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const wps = form.waypoints.filter((_, i) => i !== idx);
+                        setForm({ ...form, waypoints: wps });
+                      }}
+                      className="p-1.5 rounded border border-neutral-200 hover:bg-red-50 transition-colors shrink-0"
+                      title="Remover parada"
+                      data-testid={`button-remove-waypoint-${idx}`}
+                    >
+                      <X className="w-3.5 h-3.5 text-red-500" />
+                    </button>
+                  </div>
+                ))}
               </div>
               {form.route && (
                 <div className="md:col-span-2">
@@ -1925,7 +1978,14 @@ export default function ServiceOrdersPage() {
                       })() : "—"}
                     </td>
                     <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).origin || ""} data-testid={`text-origem-${o.id}`}>{(o as any).origin || "—"}</td>
-                    <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).destination || ""} data-testid={`text-destino-${o.id}`}>{(o as any).destination || "—"}</td>
+                    <td className="p-2 text-xs text-neutral-600 truncate overflow-hidden" title={(o as any).destination || ""} data-testid={`text-destino-${o.id}`}>
+                      {(o as any).destination || "—"}
+                      {((o as any).waypoints as any[])?.length > 0 && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1" title={((o as any).waypoints as any[]).map((w: any, i: number) => `Parada ${i+1}: ${w.address}`).join("\n")}>
+                          +{((o as any).waypoints as any[]).length} parada{((o as any).waypoints as any[]).length > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </td>
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
                       const tSaida = o.missionStartedAt ? new Date(o.missionStartedAt).toISOString() : getStepTime(logs, ["checkout_km_saida", "aguardando"]);

@@ -566,7 +566,7 @@ const FALLBACK_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 🛡 *OPERAÇÃO:* {{statusLabel}}
 🏢 *CLIENTE:* {{clientName}}
 
-📍 *ORIGEM:* {{origin}}
+📍 *ORIGEM:* {{origin}}{{waypointsBlock}}
 🏁 *DESTINO:* {{destination}}
 
 🚛 *VEÍCULO:* {{driverPlate}}
@@ -659,6 +659,11 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
 
   const mapsBlock = mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : "";
 
+  const waypoints: Array<{ address: string }> = (os.waypoints || (gridItem as any)?.waypoints || []) as any;
+  const waypointsBlock = waypoints.length > 0
+    ? "\n" + waypoints.map((wp, i) => `📦 *PARADA ${i + 1}:* ${wp.address?.toUpperCase() || "—"}`).join("\n")
+    : "";
+
   return {
     osNumber: os.osNumber || "—",
     transitStatus: transitStatus?.toUpperCase() || "—",
@@ -680,6 +685,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     locationAddr,
     etaLine,
     mapsBlock,
+    waypointsBlock,
   };
 }
 

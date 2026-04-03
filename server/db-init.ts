@@ -461,6 +461,10 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await db.execute(sql`
+      ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS waypoints JSONB DEFAULT '[]'::jsonb
+    `).catch(() => {});
+
+    await db.execute(sql`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 

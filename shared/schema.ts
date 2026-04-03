@@ -217,6 +217,7 @@ export const serviceOrders = pgTable("service_orders", {
   pedagioEstimado: real("pedagio_estimado"),
   fuelAllocated: boolean("fuel_allocated"),
   stepLogs: jsonb("step_logs").default([]),
+  waypoints: jsonb("waypoints").default([]),
   createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
