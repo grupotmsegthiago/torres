@@ -238,6 +238,7 @@ interface TrackedVehicle {
     earlyStartApproved?: boolean;
     kitId?: number | null;
     kitName?: string | null;
+    waypoints?: Array<{ address: string; lat?: number; lng?: number }>;
   } | null;
   scheduledOs: {
     id: number;
@@ -540,15 +541,18 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 function calcEta(distKm: number, speedKmh: number | null | undefined): string {
-  const avgSpeed = speedKmh && speedKmh > 5 ? speedKmh : 80;
+  const AVG_HIGHWAY_SPEED = 65;
+  const avgSpeed = (speedKmh && speedKmh > 30 && speedKmh < 130) ? Math.min(speedKmh, 100) : AVG_HIGHWAY_SPEED;
   const roadDist = distKm;
-  const hours = roadDist / avgSpeed;
-  if (hours < 1) {
-    const mins = Math.round(hours * 60);
+  const stopTimeMins = roadDist > 200 ? Math.floor(roadDist / 200) * 15 : 0;
+  const drivingHours = roadDist / avgSpeed;
+  const totalHours = drivingHours + (stopTimeMins / 60);
+  if (totalHours < 1) {
+    const mins = Math.round(totalHours * 60);
     return `~${mins} min`;
   }
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
+  const h = Math.floor(totalHours);
+  const m = Math.round((totalHours - h) * 60);
   return `~${h}h${m.toString().padStart(2, "0")}`;
 }
 
@@ -650,7 +654,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   let etaLine = "";
   if (lat && lng && destLat && destLng) {
     const dist = haversineKm(lat, lng, destLat, destLng);
-    const roadDist = Math.round(dist * 1.3);
+    const roadDist = Math.round(dist * 1.4);
     const eta = calcEta(roadDist, v.tracker?.speed);
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${roadDist} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
   } else {
@@ -692,6 +696,32 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
 async function generateReportAsync(v: TrackedVehicle, gridItem?: GridItem | null): Promise<string> {
   const vars = buildReportVars(v, gridItem);
   if (!vars) return "";
+
+  const os = v.activeOs || (gridItem as any);
+  const lat = v.tracker?.latitude;
+  const lng = v.tracker?.longitude;
+  const destLat = os?.destinationLat;
+  const destLng = os?.destinationLng;
+  if (lat && lng && destLat && destLng) {
+    try {
+      const wpArr = (os?.waypoints || []) as Array<{ lat?: number; lng?: number }>;
+      const resp = await authFetch("/api/road-distance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ originLat: lat, originLng: lng, destLat, destLng, waypoints: wpArr.filter(w => w.lat && w.lng) }),
+      });
+      if (resp.ok) {
+        const rd = await resp.json();
+        if (rd.distKm && rd.durationMin) {
+          const h = Math.floor(rd.durationMin / 60);
+          const m = rd.durationMin % 60;
+          const etaStr = h > 0 ? `~${h}h${m.toString().padStart(2, "0")}` : `~${m} min`;
+          vars.etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${rd.distKm} km\n⏱️ *PREVISÃO DE CHEGADA:* ${etaStr}`;
+        }
+      }
+    } catch {}
+  }
+
   const template = await getReportTemplate();
   return applyTemplate(template, vars);
 }

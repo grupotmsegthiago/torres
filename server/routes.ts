@@ -382,7 +382,7 @@ const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 🛡 *OPERAÇÃO:* {{statusLabel}}
 🏢 *CLIENTE:* {{clientName}}
 
-📍 *ORIGEM:* {{origin}}
+📍 *ORIGEM:* {{origin}}{{waypointsBlock}}
 🏁 *DESTINO:* {{destination}}
 
 🚛 *VEÍCULO:* {{driverPlate}}
@@ -419,6 +419,10 @@ async function ensureSystemSettingsTable() {
       }
       if (val.includes("📣 *OCORRÊNCIA:*")) {
         val = val.replace(/📣 \*OCORRÊNCIA:\* /g, "");
+        changed = true;
+      }
+      if (val.includes("📍 *ORIGEM:* {{origin}}") && !val.includes("{{waypointsBlock}}")) {
+        val = val.replace("📍 *ORIGEM:* {{origin}}", "📍 *ORIGEM:* {{origin}}{{waypointsBlock}}");
         changed = true;
       }
       if (changed) {
@@ -3261,6 +3265,60 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  const _roadDistCache: Record<string, { distKm: number; durationMin: number; ts: number }> = {};
+  app.post("/api/road-distance", requireAuth, async (req, res) => {
+    try {
+      const { originLat, originLng, destLat, destLng, waypoints: wps } = req.body;
+      if (!originLat || !originLng || !destLat || !destLng) return res.status(400).json({ message: "Missing coordinates" });
+
+      const cacheKey = `${Number(originLat).toFixed(2)},${Number(originLng).toFixed(2)}-${Number(destLat).toFixed(2)},${Number(destLng).toFixed(2)}`;
+      const cached = _roadDistCache[cacheKey];
+      if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
+        return res.json({ distKm: cached.distKm, durationMin: cached.durationMin, source: "cache" });
+      }
+
+      const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        const haversine = (() => {
+          const R = 6371;
+          const dLat = (destLat - originLat) * Math.PI / 180;
+          const dLng = (destLng - originLng) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(originLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        })();
+        const roadKm = Math.round(haversine * 1.4);
+        const durMin = Math.round(roadKm / 65 * 60);
+        return res.json({ distKm: roadKm, durationMin: durMin, source: "estimate" });
+      }
+
+      let waypointsParam = "";
+      if (Array.isArray(wps) && wps.length > 0) {
+        const wpStr = wps.filter((w: any) => w.lat && w.lng).map((w: any) => `${w.lat},${w.lng}`).join("|");
+        if (wpStr) waypointsParam = `&waypoints=${wpStr}`;
+      }
+
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originLat},${originLng}&destination=${destLat},${destLng}${waypointsParam}&key=${apiKey}&region=br`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) throw new Error("Directions API error");
+      const data = await resp.json();
+      if (!data.routes?.length) throw new Error("No route found");
+
+      let totalDistM = 0, totalDurS = 0;
+      for (const leg of data.routes[0].legs) {
+        totalDistM += leg.distance.value;
+        totalDurS += leg.duration.value;
+      }
+      const distKm = Math.round(totalDistM / 1000);
+      const durationMin = Math.round(totalDurS / 60);
+
+      _roadDistCache[cacheKey] = { distKm, durationMin, ts: Date.now() };
+
+      res.json({ distKm, durationMin, source: "directions" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/calculate-tolls", requireAuth, async (req, res) => {
     try {
       const { origin, destination } = req.body;
@@ -5368,6 +5426,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           escortedDriverName: o.escortedDriverName || null,
           escortedDriverPhone: o.escortedDriverPhone || null,
           escortedVehiclePlate: o.escortedVehiclePlate || null,
+          waypoints: (o as any).waypoints || [],
           employee1: emp1 ? {
             name: formatName(emp1.name),
             fullName: emp1.name,
@@ -5679,6 +5738,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   earlyStartApproved: linkedOrder.earlyStartApproved || false,
                   kitId: linkedOrder.kitId || null,
                   kitName: kit?.name || null,
+                  waypoints: (linkedOrder as any).waypoints || [],
                 };
               })()
             : null,
