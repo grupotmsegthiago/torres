@@ -653,6 +653,8 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     const roadDist = Math.round(dist * 1.3);
     const eta = calcEta(roadDist, v.tracker?.speed);
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${roadDist} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
+  } else {
+    etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* Calculando...\n⏱️ *PREVISÃO DE CHEGADA:* Calculando...`;
   }
 
   const mapsBlock = mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : "";
