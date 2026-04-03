@@ -85,13 +85,33 @@ export const GLOBAL_QUERY_KEYS = {
   serviceOrders: ["/api/service-orders"],
   operationalGrid: ["/api/operational-grid"],
   escortBillings: ["/api/escort/billings"],
+  escortContracts: ["/api/escort/contracts"],
   boletimOs: ["/api/boletim-medicao/os-concluidas"],
   financialTx: ["/api/financial/transactions"],
   financialResumo: ["/api/financial/resumo"],
   financialDashboard: ["/api/financial/dashboard"],
+  weaponKits: ["/api/weapon-kits"],
+  vehicleTracking: ["/api/vehicle-tracking"],
 };
 
-export function invalidateRelatedQueries(scope: "vehicle" | "employee" | "billing" | "financial" | "service-order") {
+type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost";
+
+const _channel: BroadcastChannel | null = typeof BroadcastChannel !== "undefined"
+  ? new BroadcastChannel("torres-sync")
+  : null;
+
+if (_channel) {
+  _channel.onmessage = (e) => {
+    if (e.data?.type === "invalidate" && e.data?.scope) {
+      _invalidateLocal(e.data.scope as InvalidationScope);
+    }
+    if (e.data?.type === "invalidate-all") {
+      queryClient.invalidateQueries();
+    }
+  };
+}
+
+function _invalidateLocal(scope: InvalidationScope) {
   const keys = GLOBAL_QUERY_KEYS;
   const inv = (k: string[]) => queryClient.invalidateQueries({ queryKey: k });
 
@@ -107,6 +127,7 @@ export function invalidateRelatedQueries(scope: "vehicle" | "employee" | "billin
   }
   if (scope === "billing") {
     inv(keys.escortBillings);
+    inv(keys.escortContracts);
     inv(keys.boletimOs);
     inv(keys.serviceOrders);
     inv(keys.operationalGrid);
@@ -118,6 +139,7 @@ export function invalidateRelatedQueries(scope: "vehicle" | "employee" | "billin
     inv(keys.financialTx);
     inv(keys.financialResumo);
     inv(keys.financialDashboard);
+    inv(keys.escortBillings);
   }
   if (scope === "service-order") {
     inv(keys.serviceOrders);
@@ -126,7 +148,30 @@ export function invalidateRelatedQueries(scope: "vehicle" | "employee" | "billin
     inv(keys.boletimOs);
     inv(keys.vehicles);
     inv(keys.financialDashboard);
+    inv(keys.financialTx);
+    inv(keys.financialResumo);
+    inv(keys.weaponKits);
+    inv(keys.vehicleTracking);
   }
+  if (scope === "mission-cost") {
+    inv(keys.serviceOrders);
+    inv(keys.escortBillings);
+    inv(keys.boletimOs);
+    inv(keys.financialTx);
+    inv(keys.financialResumo);
+    inv(keys.financialDashboard);
+    inv(keys.operationalGrid);
+  }
+}
+
+export function invalidateRelatedQueries(scope: InvalidationScope) {
+  _invalidateLocal(scope);
+  _channel?.postMessage({ type: "invalidate", scope });
+}
+
+export function invalidateAllQueries() {
+  queryClient.invalidateQueries();
+  _channel?.postMessage({ type: "invalidate-all" });
 }
 
 export const queryClient = new QueryClient({
@@ -135,7 +180,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: true,
-      staleTime: 30_000,
+      staleTime: 15_000,
       retry: false,
     },
     mutations: {

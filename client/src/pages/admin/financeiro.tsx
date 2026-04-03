@@ -157,9 +157,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
       return apiRequest("POST", "/api/financial/transactions", payload);
     },
     onSuccess: (_data: any, scope?: "single" | "future") => {
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      invalidateRelatedQueries("financial");
       const msg = isEdit
         ? scope === "future"
           ? "Série atualizada com sucesso"
@@ -471,11 +469,7 @@ export default function FinanceiroPage() {
   const saveBoletimMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/escort/billings", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      invalidateRelatedQueries("billing");
       toast({ title: "Boletim salvo com sucesso", description: "BO gerado automaticamente" });
       setCalcResult(null);
       setBoCalc({ contract_id: "", km_inicial: "", km_final: "", km_vazio: "0", horas_missao: "", horas_estadia: "0", horario_agendado: "", horario_inicio: "", horario_fim: "", despesas_pedagio: "0", client_name: "", vigilante_name: "", origem: "", destino: "", placa_viatura: "", placa_escoltado: "", motorista_escoltado: "", route_id: "" });
@@ -486,16 +480,14 @@ export default function FinanceiroPage() {
   const toggleMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/financial/transactions/${id}/toggle-status`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      invalidateRelatedQueries("financial");
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/financial/transactions/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      invalidateRelatedQueries("financial");
       toast({ title: "Lançamento excluído" });
     },
   });
@@ -1231,10 +1223,7 @@ export default function FinanceiroPage() {
                             onClick={async () => {
                               try {
                                 await apiRequest("POST", `/api/escort/billings/${b.id}/revisar`, { acao: "APROVADA" });
-                                queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+                                invalidateRelatedQueries("billing");
                                 toast({ title: "OS Aprovada", description: "Boletim gerado automaticamente." });
                               } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
                             }}
@@ -1249,10 +1238,7 @@ export default function FinanceiroPage() {
                               if (!motivo) return;
                               try {
                                 await apiRequest("POST", `/api/escort/billings/${b.id}/revisar`, { acao: "REJEITADA", motivo_rejeicao: motivo });
-                                queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-                                queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+                                invalidateRelatedQueries("billing");
                                 toast({ title: "OS Rejeitada", description: "Correção solicitada." });
                               } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
                             }}
@@ -1365,7 +1351,7 @@ export default function FinanceiroPage() {
             <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="button-print" className="text-xs font-bold uppercase">
               <Printer size={14} className="mr-1" /> Imprimir
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] }); queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] }); queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] }); }} data-testid="button-refresh" className="text-xs font-bold uppercase">
+            <Button variant="outline" size="sm" onClick={() => { invalidateRelatedQueries("financial"); queryClient.invalidateQueries({ queryKey: ["/api/financial/categories"] }); queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] }); }} data-testid="button-refresh" className="text-xs font-bold uppercase">
               <RefreshCw size={14} />
             </Button>
             {(activeStep === "PAGAR" || activeStep === "RECEBER") && (

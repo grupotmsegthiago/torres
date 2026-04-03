@@ -172,8 +172,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders", orderId, "costs"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      invalidateRelatedQueries("mission-cost");
       setCategory(EXPENSE_CATEGORIES[0]);
       setCostType("expense");
       setDescription("");
@@ -192,6 +191,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders", orderId, "costs"] });
+      invalidateRelatedQueries("mission-cost");
       toast({ title: "Custo removido" });
     },
     onError: (err: any) => {
@@ -756,10 +756,6 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const invalidateAll = () => {
     invalidateRelatedQueries("service-order");
-    queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/vehicle-tracking"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
   };
 
   const mutation = useMutation({
@@ -1618,7 +1614,7 @@ export default function ServiceOrdersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] }); queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] }); queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] }); queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] }); toast({ title: "OS removida" }); },
+    onSuccess: () => { invalidateRelatedQueries("service-order"); toast({ title: "OS removida" }); },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
@@ -1639,9 +1635,7 @@ export default function ServiceOrdersPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("service-order");
       toast({ title: "Missão iniciada — agente liberado para saída" });
     },
     onError: (err: any) => {
@@ -1655,9 +1649,7 @@ export default function ServiceOrdersPage() {
       await apiRequest("POST", "/api/mission/rollback-step", { serviceOrderId: id });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("service-order");
       toast({ title: "Etapa retrocedida", description: "O vigilante foi movido para a etapa anterior." });
     },
     onError: (err: any) => {
@@ -1670,9 +1662,7 @@ export default function ServiceOrdersPage() {
       await apiRequest("PATCH", `/api/service-orders/${id}`, { missionStartedAt, completedDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
+      invalidateRelatedQueries("service-order");
       setEditingTimeOs(null);
       toast({ title: "Horários atualizados" });
     },

@@ -10,7 +10,7 @@ import {
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
   Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText,
 } from "lucide-react";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -368,7 +368,7 @@ export default function BalancoGerencialPage() {
             <p className="text-xs text-neutral-500 font-bold uppercase">Controle de faturamento, custos e lucratividade</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] })} data-testid="button-refresh-dashboard">
+            <Button variant="outline" size="sm" onClick={() => invalidateRelatedQueries("financial")} data-testid="button-refresh-dashboard">
               <RefreshCw size={14} />
             </Button>
           </div>

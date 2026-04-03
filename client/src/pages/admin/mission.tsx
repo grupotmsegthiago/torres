@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import AdminLayout from "@/components/admin/layout";
@@ -536,6 +536,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      invalidateRelatedQueries("service-order");
     },
     onError: (err: Error) => {
       toast({ title: "Erro ao iniciar missão", description: err.message, variant: "destructive" });
@@ -549,6 +550,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      invalidateRelatedQueries("service-order");
       if (mission.missionStatus === "checkout_km_saida") {
         toast({ title: "OK, Viagem Liberada!", description: "Boa viagem! Dirija com segurança." });
       } else {
@@ -569,6 +571,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      invalidateRelatedQueries("service-order");
       toast({ title: "Etapa retrocedida", description: "O vigilante foi movido para a etapa anterior." });
     },
     onError: (err: Error) => {
@@ -583,7 +586,7 @@ function MissionWorkflow({ mission }: { mission: ActiveMission }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/service-orders"] });
+      invalidateRelatedQueries("service-order");
       toast({ title: "Missão cancelada", description: "A missão foi cancelada com sucesso." });
     },
     onError: (err: Error) => {
