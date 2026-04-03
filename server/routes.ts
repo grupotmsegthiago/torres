@@ -3320,22 +3320,24 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       if (!Number.isInteger(serviceOrderId) || serviceOrderId <= 0) return res.status(400).json({ message: "ID inválido" });
       const os = await storage.getServiceOrder(serviceOrderId);
       if (!os) return res.status(404).json({ message: "OS não encontrada" });
-      const { category, description, amount } = req.body;
+      const { category, description, amount, costType } = req.body;
       if (!category || typeof category !== "string") return res.status(400).json({ message: "Categoria é obrigatória" });
       const numAmount = parseFloat(amount);
       if (isNaN(numAmount) || numAmount <= 0) return res.status(400).json({ message: "Valor deve ser positivo" });
-      const cost = await storage.createMissionCost({ serviceOrderId, category, description: description || null, amount: numAmount.toFixed(2) });
+      const type = costType === "revenue" ? "revenue" : "expense";
+      const cost = await storage.createMissionCost({ serviceOrderId, category, description: description || null, amount: numAmount.toFixed(2), costType: type });
 
       if (cost) {
         const osNum = os.osNumber || `OS-${serviceOrderId}`;
+        const isRevenue = type === "revenue";
         await createAutoTransaction({
-          description: `CUSTO MISSÃO ${osNum} - ${category} ${description || ""}`.toUpperCase().trim(),
+          description: `${isRevenue ? "RECEITA" : "CUSTO"} MISSÃO ${osNum} - ${category} ${description || ""}`.toUpperCase().trim(),
           amount: numAmount,
-          type: "EXPENSE",
+          type: isRevenue ? "INCOME" : "EXPENSE",
           due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
           origin_type: "mission_cost",
           origin_id: String(cost.id),
-          category_name: "Custos de Missão",
+          category_name: isRevenue ? "Receitas de Missão" : "Custos de Missão",
           entity_name: null,
           created_by: "SISTEMA",
         });

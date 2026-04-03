@@ -465,6 +465,10 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await db.execute(sql`
+      ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS cost_type TEXT DEFAULT 'expense'
+    `).catch(() => {});
+
+    await db.execute(sql`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 

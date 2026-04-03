@@ -814,6 +814,7 @@ export const missionCosts = pgTable("mission_costs", {
   category: text("category").notNull(),
   description: text("description"),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  costType: text("cost_type").default("expense"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

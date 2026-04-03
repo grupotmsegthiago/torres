@@ -132,7 +132,7 @@ function generateNextOsNumber(existingOrders: ServiceOrder[]): string {
   return `TOR-${String(maxNum + 1).padStart(4, "0")}`;
 }
 
-const COST_CATEGORIES = [
+const EXPENSE_CATEGORIES = [
   "Pedágio",
   "Combustível",
   "Alimentação",
@@ -142,12 +142,22 @@ const COST_CATEGORIES = [
   "Outro",
 ];
 
+const REVENUE_CATEGORIES = [
+  "Deslocamento",
+  "Pernoite",
+  "Hora Extra",
+  "Taxa Adicional",
+  "Outro",
+];
+
 function MissionCostsSection({ orderId }: { orderId: number }) {
   const { toast } = useToast();
   const { user: mcUser } = useAuth();
   const mcIsDiretoria = mcUser?.role === "diretoria";
   const [showForm, setShowForm] = useState(false);
-  const [category, setCategory] = useState(COST_CATEGORIES[0]);
+  const [costType, setCostType] = useState<"expense" | "revenue">("expense");
+  const categories = costType === "revenue" ? REVENUE_CATEGORIES : EXPENSE_CATEGORIES;
+  const [category, setCategory] = useState(categories[0]);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -157,16 +167,19 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: { category: string; description: string; amount: string }) => {
+    mutationFn: async (data: { category: string; description: string; amount: string; costType: string }) => {
       return apiRequest("POST", `/api/service-orders/${orderId}/costs`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/service-orders", orderId, "costs"] });
-      setCategory(COST_CATEGORIES[0]);
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      setCategory(EXPENSE_CATEGORIES[0]);
+      setCostType("expense");
       setDescription("");
       setAmount("");
       setShowForm(false);
-      toast({ title: "Custo adicionado" });
+      toast({ title: costType === "revenue" ? "Receita adicionada" : "Custo adicionado" });
     },
     onError: (err: any) => {
       toast({ title: "Erro ao adicionar custo", description: err.message, variant: "destructive" });
@@ -186,7 +199,8 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
     },
   });
 
-  const total = costs.reduce((sum, c) => sum + parseBRL(c.amount), 0);
+  const totalExpenses = costs.filter(c => (c as any).costType !== "revenue").reduce((sum, c) => sum + parseBRL(c.amount), 0);
+  const totalRevenue = costs.filter(c => (c as any).costType === "revenue").reduce((sum, c) => sum + parseBRL(c.amount), 0);
 
   const handleSubmit = () => {
     const val = parseBRL(amount);
@@ -194,7 +208,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
       toast({ title: "Informe um valor válido", variant: "destructive" });
       return;
     }
-    addMutation.mutate({ category, description, amount: val.toFixed(2) });
+    addMutation.mutate({ category, description, amount: val.toFixed(2), costType });
   };
 
   return (
@@ -202,12 +216,22 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
       <div className="flex items-center justify-between bg-neutral-900 text-white px-3.5 py-2.5">
         <div className="flex items-center gap-2">
           <DollarSign className="w-4 h-4" />
-          <span className="text-xs uppercase tracking-wider font-bold">Custos Operacionais</span>
+          <span className="text-xs uppercase tracking-wider font-bold">Financeiro da OS</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-emerald-400">
-            R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </span>
+          {totalRevenue > 0 && (
+            <span className="text-xs font-bold text-emerald-400">
+              +R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+            </span>
+          )}
+          {totalExpenses > 0 && (
+            <span className="text-xs font-bold text-red-400">
+              -R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+            </span>
+          )}
+          {totalRevenue === 0 && totalExpenses === 0 && (
+            <span className="text-xs text-neutral-400">R$ 0,00</span>
+          )}
           <button
             type="button"
             onClick={() => setShowForm(!showForm)}
@@ -221,6 +245,24 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
 
       {showForm && (
         <div className="p-3 bg-blue-50/50 border-b border-neutral-200">
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => { setCostType("expense"); setCategory(EXPENSE_CATEGORIES[0]); }}
+              className={`flex-1 text-xs font-bold py-2 rounded-md border transition-colors ${costType === "expense" ? "bg-red-600 text-white border-red-600" : "bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50"}`}
+              data-testid="button-type-expense"
+            >
+              Despesa
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCostType("revenue"); setCategory(REVENUE_CATEGORIES[0]); }}
+              className={`flex-1 text-xs font-bold py-2 rounded-md border transition-colors ${costType === "revenue" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50"}`}
+              data-testid="button-type-revenue"
+            >
+              Receita
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
             <div>
               <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold mb-1 block">Categoria</label>
@@ -230,7 +272,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                 className="w-full text-sm border border-neutral-300 rounded-md px-2.5 py-1.5 bg-white"
                 data-testid="select-cost-category"
               >
-                {COST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -262,7 +304,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                 size="sm"
                 disabled={addMutation.isPending}
                 onClick={handleSubmit}
-                className="bg-neutral-900 hover:bg-neutral-800 text-xs"
+                className={`text-xs ${costType === "revenue" ? "bg-emerald-700 hover:bg-emerald-800" : "bg-neutral-900 hover:bg-neutral-800"}`}
                 data-testid="button-save-cost"
               >
                 {addMutation.isPending ? "..." : "Salvar"}
@@ -290,6 +332,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
         <table className="w-full text-xs" data-testid="table-mission-costs">
           <thead>
             <tr className="bg-neutral-50 border-b border-neutral-100">
+              <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Tipo</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Categoria</th>
               <th className="text-left px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Descrição</th>
               <th className="text-right px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Valor</th>
@@ -297,12 +340,19 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {costs.map(cost => (
-              <tr key={cost.id} data-testid={`row-cost-${cost.id}`}>
+            {costs.map(cost => {
+              const isRevenue = (cost as any).costType === "revenue";
+              return (
+              <tr key={cost.id} data-testid={`row-cost-${cost.id}`} className={isRevenue ? "bg-emerald-50/40" : ""}>
+                <td className="px-3.5 py-2.5">
+                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${isRevenue ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                    {isRevenue ? "Receita" : "Despesa"}
+                  </span>
+                </td>
                 <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{cost.category}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
-                <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-neutral-900 text-sm">
-                  R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                <td className={`px-3.5 py-2.5 text-right font-mono font-semibold text-sm ${isRevenue ? "text-emerald-700" : "text-red-700"}`}>
+                  {isRevenue ? "+" : "-"}R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </td>
                 <td className="px-2 py-2.5">
                   {mcIsDiretoria && <button
@@ -315,13 +365,15 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                   </button>}
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
           <tfoot>
             <tr className="bg-neutral-50 border-t border-neutral-200">
-              <td colSpan={2} className="px-3.5 py-2.5 text-sm font-bold text-neutral-700 uppercase">Total</td>
-              <td className="px-3.5 py-2.5 text-right font-mono font-bold text-neutral-900 text-sm">
-                R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              <td colSpan={2} className="px-3.5 py-2.5 text-sm font-bold text-neutral-700 uppercase">Saldo</td>
+              <td className="px-3.5 py-2.5 text-sm font-bold text-neutral-500 uppercase">Receitas - Despesas</td>
+              <td className={`px-3.5 py-2.5 text-right font-mono font-bold text-sm ${totalRevenue - totalExpenses >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                R$ {(totalRevenue - totalExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </td>
               <td></td>
             </tr>
