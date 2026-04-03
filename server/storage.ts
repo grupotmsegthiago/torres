@@ -28,11 +28,15 @@ import {
 } from "@shared/schema";
 
 function camelToSnake(str: string): string {
-  return str.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
+  return str
+    .replace(/([a-z])(\d)/g, "$1_$2")
+    .replace(/(\d)([A-Z])/g, "$1_$2")
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase();
 }
 
 function snakeToCamel(str: string): string {
-  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  return str.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
 
 function toSnakeObj(obj: Record<string, any>): Record<string, any> {
