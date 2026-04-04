@@ -5245,6 +5245,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           .orderBy(desc(missionUpdates.createdAt))
           .limit(1);
 
+        const recentUpdates = await db.select()
+          .from(missionUpdates)
+          .where(eq(missionUpdates.serviceOrderId, o.id))
+          .orderBy(desc(missionUpdates.createdAt))
+          .limit(5);
+
         let liveCost: {
           km_inicial: number; km_atual: number; km_total: number;
           horas_missao: number;
@@ -5465,6 +5471,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             latitude: lastUpdate[0].latitude || null,
             longitude: lastUpdate[0].longitude || null,
           } : null,
+          recentUpdates: recentUpdates.map(u => ({
+            id: u.id,
+            message: u.message,
+            missionStep: u.missionStep,
+            agentName: u.employeeName,
+            createdAt: u.createdAt,
+          })),
           clientName: client?.name || "—",
           origin: o.origin || null,
           destination: o.destination || null,
@@ -5748,6 +5761,11 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                   .where(and(eq(missionUpdates.serviceOrderId, linkedOrder.id), eq(missionUpdates.readByAdmin, 0)))
                   .orderBy(desc(missionUpdates.createdAt))
                   .limit(1);
+                const recentUpds = await db.select()
+                  .from(missionUpdates)
+                  .where(eq(missionUpdates.serviceOrderId, linkedOrder.id))
+                  .orderBy(desc(missionUpdates.createdAt))
+                  .limit(5);
                 return {
                   id: linkedOrder.id,
                   osNumber: linkedOrder.osNumber,
@@ -5763,6 +5781,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                     latitude: lastUpd[0].latitude || null,
                     longitude: lastUpd[0].longitude || null,
                   } : null,
+                  recentUpdates: recentUpds.map(u => ({
+                    id: u.id,
+                    message: u.message,
+                    missionStep: u.missionStep,
+                    agentName: u.employeeName,
+                    createdAt: u.createdAt,
+                  })),
                   scheduledDate: linkedOrder.scheduledDate,
                   missionStartedAt: linkedOrder.missionStartedAt || null,
                   clientName: client?.name || "—",

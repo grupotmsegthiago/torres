@@ -225,6 +225,13 @@ interface TrackedVehicle {
       latitude?: string | null;
       longitude?: string | null;
     } | null;
+    recentUpdates?: Array<{
+      id: number;
+      message: string;
+      missionStep: string | null;
+      agentName: string | null;
+      createdAt: string | null;
+    }>;
     scheduledDate?: string | null;
     missionStartedAt?: string | null;
     clientName: string;
@@ -497,6 +504,31 @@ function getRouteProgress(opts: {
   const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
   if (isFinished) return { pct: 100, distTotalKm: distToDest, distRemainingKm: 0, distTravelledKm: distToDest };
   return { pct: 0, distTotalKm: 0, distRemainingKm: distToDest, distTravelledKm: 0 };
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "-9999px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
@@ -3048,6 +3080,30 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               </p>
             </div>
           )}
+          {(v.activeOs?.recentUpdates?.length ?? 0) > 0 && (
+            <div className="px-4 py-2 border-t border-neutral-700/30">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">Histórico de Atualizações</p>
+              <div className="space-y-1">
+                {v.activeOs!.recentUpdates!.map((u) => (
+                  <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`history-update-${u.id}`}>
+                    <span className="text-neutral-500 font-mono flex-shrink-0">
+                      {u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
+                    </span>
+                    <span className="text-neutral-400">—</span>
+                    <span className="text-amber-400 font-semibold flex-shrink-0">
+                      {u.missionStep ? getMissionLabel(u.missionStep) : "—"}
+                    </span>
+                    {u.message && u.message !== getMissionLabel(u.missionStep) && (
+                      <>
+                        <span className="text-neutral-400">·</span>
+                        <span className="text-neutral-300 truncate">{u.message}</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {(() => {
             const alertLat = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
             const alertLng = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
@@ -3097,12 +3153,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                   const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
                   const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                  try {
-                    await navigator.clipboard.writeText(fullReport);
-                    toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
-                  } catch {
-                    toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
-                  }
+                  const ok = await copyTextToClipboard(fullReport);
+                  toast(ok ? { title: "Formulário copiado!", description: "Texto copiado para a área de transferência." } : { title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
                 }}
                 data-testid={`btn-copy-form-modal-${v.id}`}
               >
@@ -3118,13 +3170,9 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                   const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
                   const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                  try {
-                    await navigator.clipboard.writeText(fullReport);
-                    const encoded = encodeURIComponent(fullReport);
-                    window.open(`https://wa.me/?text=${encoded}`, "_blank");
-                  } catch {
-                    toast({ title: "Erro", description: "Não foi possível enviar.", variant: "destructive" });
-                  }
+                  await copyTextToClipboard(fullReport);
+                  const encoded = encodeURIComponent(fullReport);
+                  window.open(`https://wa.me/?text=${encoded}`, "_blank");
                 }}
                 data-testid={`btn-whatsapp-form-modal-${v.id}`}
               >
@@ -3996,6 +4044,30 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}</p>
               </div>
             )}
+            {(v.activeOs?.recentUpdates?.length ?? 0) > 0 && (
+              <div className={`px-4 py-2 border-t ${photoModalUrl !== "__no_photo__" ? "border-neutral-700/30" : "border-neutral-200"}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${photoModalUrl !== "__no_photo__" ? "text-neutral-400" : "text-neutral-500"}`}>Histórico de Atualizações</p>
+                <div className="space-y-1">
+                  {v.activeOs!.recentUpdates!.map((u) => (
+                    <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`ctx-history-${u.id}`}>
+                      <span className={`font-mono flex-shrink-0 ${photoModalUrl !== "__no_photo__" ? "text-neutral-500" : "text-neutral-400"}`}>
+                        {u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
+                      </span>
+                      <span className={photoModalUrl !== "__no_photo__" ? "text-neutral-400" : "text-neutral-300"}>—</span>
+                      <span className="text-amber-500 font-semibold flex-shrink-0">
+                        {u.missionStep ? getMissionLabel(u.missionStep) : "—"}
+                      </span>
+                      {u.message && u.message !== getMissionLabel(u.missionStep) && (
+                        <>
+                          <span className={photoModalUrl !== "__no_photo__" ? "text-neutral-400" : "text-neutral-300"}>·</span>
+                          <span className={`truncate ${photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>{u.message}</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {(() => {
               const alertLat = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
               const alertLng = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
@@ -4033,7 +4105,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                     const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
                     const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                    try { await navigator.clipboard.writeText(fullReport); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                    const ok = await copyTextToClipboard(fullReport); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
                   }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Formulário</button>
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
@@ -4043,7 +4115,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
                     const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
                     const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                    try { await navigator.clipboard.writeText(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                    await copyTextToClipboard(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   }} data-testid={`ctx-whatsapp-form-${v.id}`}><SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp</button>
               </div>
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
@@ -5797,7 +5869,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
                   const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
                   const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
-                  try { await navigator.clipboard.writeText(fullReport); toast({ title: "Formulário copiado!" }); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  const ok = await copyTextToClipboard(fullReport); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
                 }}
                 data-testid="btn-row-copy-form"
               >
@@ -5815,7 +5887,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
                   const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
                   const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
-                  try { await navigator.clipboard.writeText(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank"); } catch { toast({ title: "Erro", variant: "destructive" }); }
+                  await copyTextToClipboard(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank");
                 }}
                 data-testid="btn-row-whatsapp-form"
               >
@@ -6580,10 +6652,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     if (mapsLink && !reportText.includes(mapsLink)) {
                       reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
                     }
-                    try {
-                      await navigator.clipboard.writeText(reportText);
-                      toast({ title: "Formulário copiado!" });
-                    } catch { toast({ title: "Erro ao copiar", variant: "destructive" }); }
+                    const ok = await copyTextToClipboard(reportText);
+                    toast(ok ? { title: "Formulário copiado!" } : { title: "Erro ao copiar", variant: "destructive" });
                   }}
                   data-testid="btn-forward-copy-form"
                 >
@@ -6598,11 +6668,9 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     if (mapsLink && !reportText.includes(mapsLink)) {
                       reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
                     }
-                    try {
-                      await navigator.clipboard.writeText(reportText);
-                      const encoded = encodeURIComponent(reportText);
-                      window.open(`https://wa.me/?text=${encoded}`, "_blank");
-                    } catch { toast({ title: "Erro ao enviar", variant: "destructive" }); }
+                    await copyTextToClipboard(reportText);
+                    const encoded = encodeURIComponent(reportText);
+                    window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   }}
                   data-testid="btn-forward-whatsapp-form"
                 >
