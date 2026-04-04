@@ -615,9 +615,12 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   const date = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-  const statusLabel = os.lastAgentUpdate?.missionStep
-    ? getMissionLabel(os.lastAgentUpdate.missionStep)
-    : getMissionLabel(os.missionStatus);
+  const agentMsg = os.lastAgentUpdate?.message?.trim();
+  const statusLabel = agentMsg
+    ? agentMsg
+    : os.lastAgentUpdate?.missionStep
+      ? getMissionLabel(os.lastAgentUpdate.missionStep)
+      : getMissionLabel(os.missionStatus);
 
   const pick = (...vals: (string | null | undefined)[]) => vals.find(v => v && v.trim()) || "—";
   const origin = pick(gridItem?.origin, os.origin, v.activeOs?.origin);
@@ -645,9 +648,11 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
 
   const lastStep = os.lastAgentUpdate?.missionStep;
   const currentMs = os.missionStatus;
-  const etapaAvancada = (lastStep && currentMs && lastStep !== currentMs)
-    ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
-    : getMissionLabel(currentMs);
+  const etapaAvancada = agentMsg
+    ? agentMsg
+    : (lastStep && currentMs && lastStep !== currentMs)
+      ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
+      : getMissionLabel(currentMs);
 
   const destLat = os.destinationLat;
   const destLng = os.destinationLng;
@@ -6340,7 +6345,10 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             const vehiclePlate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
             const agent1 = getFirstLastName(os?.employee1?.fullName || os?.employee1?.name);
             const agent2 = getFirstLastName(os?.employee2?.fullName || os?.employee2?.name);
-            const statusLabel = os?.lastAgentUpdate?.missionStep ? getMissionLabel(os.lastAgentUpdate.missionStep) : getMissionLabel(os?.missionStatus);
+            const fwdAgentMsg = forwardUpdate?.message?.trim() || os?.lastAgentUpdate?.message?.trim();
+            const statusLabel = fwdAgentMsg
+              ? fwdAgentMsg
+              : os?.lastAgentUpdate?.missionStep ? getMissionLabel(os.lastAgentUpdate.missionStep) : getMissionLabel(os?.missionStatus);
             const transitStatus = os ? getTransitStatus(os.missionStatus) : "—";
             const lat = matchedVehicle?.tracker?.latitude || forwardUpdate.latitude;
             const lng = matchedVehicle?.tracker?.longitude || forwardUpdate.longitude;
