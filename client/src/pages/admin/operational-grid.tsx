@@ -507,28 +507,54 @@ function getRouteProgress(opts: {
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
+  const execCopyFallback = (): boolean => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;";
+      document.body.appendChild(ta);
+      if (/iP(hone|ad|od)/i.test(navigator.userAgent)) {
+        const range = document.createRange();
+        range.selectNodeContents(ta);
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        ta.setSelectionRange(0, 999999);
+      } else {
+        ta.focus();
+        ta.select();
+      }
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch { return false; }
+  };
+
+  try {
+    if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+      const item = new ClipboardItem({ "text/plain": Promise.resolve(new Blob([text], { type: "text/plain" })) });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+  } catch {}
+
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {}
   }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    ta.style.top = "-9999px";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
+
+  if (execCopyFallback()) return true;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+      return true;
+    } catch {}
   }
+
+  return false;
 }
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
