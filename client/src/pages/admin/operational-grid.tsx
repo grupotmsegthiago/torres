@@ -721,7 +721,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* Calculando...\n⏱️ *PREVISÃO DE CHEGADA:* Calculando...`;
   }
 
-  const mapsBlock = mapsLink ? `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}` : "";
+  const mapsBlock = mapsLink ? `\n\n📌 *LOCALIZAÇÃO:*\n${mapsLink}` : "";
 
   const waypoints: Array<{ address: string }> = (os.waypoints || (gridItem as any)?.waypoints || []) as any;
   const waypointsBlock = waypoints.length > 0
@@ -3175,11 +3175,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                   const reportText = await generateReportAsync(v, gridItem || null);
-                  const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
-                  const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
-                  const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
-                  const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                  const ok = await copyTextToClipboard(fullReport);
+                  const ok = await copyTextToClipboard(reportText);
                   toast(ok ? { title: "Formulário copiado!", description: "Texto copiado para a área de transferência." } : { title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
                 }}
                 data-testid={`btn-copy-form-modal-${v.id}`}
@@ -3192,12 +3188,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 onClick={async () => {
                   const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                   const reportText = await generateReportAsync(v, gridItem || null);
-                  const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
-                  const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
-                  const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
-                  const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                  await copyTextToClipboard(fullReport);
-                  const encoded = encodeURIComponent(fullReport);
+                  await copyTextToClipboard(reportText);
+                  const encoded = encodeURIComponent(reportText);
                   window.open(`https://wa.me/?text=${encoded}`, "_blank");
                 }}
                 data-testid={`btn-whatsapp-form-modal-${v.id}`}
@@ -4127,21 +4119,13 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                     const reportText = await generateReportAsync(v, gridItem || null);
-                    const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
-                    const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
-                    const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
-                    const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                    const ok = await copyTextToClipboard(fullReport); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
+                    const ok = await copyTextToClipboard(reportText); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
                   }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Formulário</button>
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                     const reportText = await generateReportAsync(v, gridItem || null);
-                    const alertLat2 = v.activeOs?.lastAgentUpdate?.latitude || v.tracker?.latitude;
-                    const alertLng2 = v.activeOs?.lastAgentUpdate?.longitude || v.tracker?.longitude;
-                    const mapsUrl = alertLat2 && alertLng2 ? `https://www.google.com/maps?q=${alertLat2},${alertLng2}` : "";
-                    const fullReport = mapsUrl && !reportText.includes(mapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${mapsUrl}` : reportText;
-                    await copyTextToClipboard(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank");
+                    await copyTextToClipboard(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   }} data-testid={`ctx-whatsapp-form-${v.id}`}><SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp</button>
               </div>
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
@@ -5891,11 +5875,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
                   const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
-                  const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
-                  const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
-                  const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
-                  const ok = await copyTextToClipboard(fullReport); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
+                  const ok = await copyTextToClipboard(reportText); toast(ok ? { title: "Formulário copiado!" } : { title: "Erro", variant: "destructive" });
                 }}
                 data-testid="btn-row-copy-form"
               >
@@ -5909,11 +5889,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
                   const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  const rLat = rowForwardUpdate.latitude || matchedVehicle?.tracker?.latitude;
-                  const rLng = rowForwardUpdate.longitude || matchedVehicle?.tracker?.longitude;
-                  const rMapsUrl = rLat && rLng ? `https://www.google.com/maps?q=${rLat},${rLng}` : "";
-                  const fullReport = rMapsUrl && !reportText.includes(rMapsUrl) ? reportText + `\n\n📌 *LOCALIZAÇÃO:*\n${rMapsUrl}` : reportText;
-                  await copyTextToClipboard(fullReport); const encoded = encodeURIComponent(fullReport); window.open(`https://wa.me/?text=${encoded}`, "_blank");
+                  await copyTextToClipboard(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank");
                 }}
                 data-testid="btn-row-whatsapp-form"
               >
@@ -6384,10 +6360,6 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
                     reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
                   }
-                  if (u.latitude && u.longitude) {
-                    const link = `https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`;
-                    if (!reportText.includes(link)) reportText += `\n\n📌 *LOCALIZAÇÃO:*\n${link}`;
-                  }
                   const ok = await copyTextToClipboard(reportText);
                   toast(ok ? { title: "Relatório copiado!" } : { title: "Erro ao copiar", variant: "destructive" });
                 }}
@@ -6683,10 +6655,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-neutral-800 text-white hover:bg-neutral-900"
                   onClick={async () => {
                     if (!forwardUpdate) return;
-                    let reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
-                    if (mapsLink && !reportText.includes(mapsLink)) {
-                      reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
-                    }
+                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                     const ok = await copyTextToClipboard(reportText);
                     toast(ok ? { title: "Formulário copiado!" } : { title: "Erro ao copiar", variant: "destructive" });
                   }}
@@ -6699,10 +6668,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     if (!forwardUpdate) return;
-                    let reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
-                    if (mapsLink && !reportText.includes(mapsLink)) {
-                      reportText += `\n\n📌 *LOCALIZAÇÃO FIXA:*\n${mapsLink}`;
-                    }
+                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                     await copyTextToClipboard(reportText);
                     const encoded = encodeURIComponent(reportText);
                     window.open(`https://wa.me/?text=${encoded}`, "_blank");
