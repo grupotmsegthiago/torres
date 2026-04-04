@@ -203,7 +203,7 @@ if (typeof window !== "undefined") {
   });
 
   try {
-    supabase.channel("realtime-costs")
+    const realtimeChannel = supabase.channel("realtime-costs")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_costs" }, () => {
         _invalidateLocal("mission-cost");
         _invalidateLocal("financial");
@@ -217,7 +217,31 @@ if (typeof window !== "undefined") {
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[Realtime] channel error, will retry:", err?.message ?? status);
+          try { supabase.removeChannel(realtimeChannel); } catch {}
+          setTimeout(() => {
+            try {
+              supabase.channel("realtime-costs-retry")
+                .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_costs" }, () => {
+                  _invalidateLocal("mission-cost");
+                  _invalidateLocal("financial");
+                })
+                .on("postgres_changes", { event: "INSERT", schema: "public", table: "financial_transactions" }, () => {
+                  _invalidateLocal("financial");
+                  _invalidateLocal("mission-cost");
+                })
+                .on("postgres_changes", { event: "INSERT", schema: "public", table: "vehicle_fueling" }, () => {
+                  _invalidateLocal("vehicle");
+                  _invalidateLocal("financial");
+                  _invalidateLocal("mission-cost");
+                })
+                .subscribe();
+            } catch {}
+          }, 5000);
+        }
+      });
   } catch {}
 }
 
