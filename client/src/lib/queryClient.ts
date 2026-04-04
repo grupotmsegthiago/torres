@@ -217,6 +217,9 @@ if (typeof window !== "undefined") {
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "service_orders" }, () => {
+        _invalidateLocal("service-order");
+      })
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           console.warn("[Realtime] channel error, will retry:", err?.message ?? status);
@@ -236,6 +239,9 @@ if (typeof window !== "undefined") {
                   _invalidateLocal("vehicle");
                   _invalidateLocal("financial");
                   _invalidateLocal("mission-cost");
+                })
+                .on("postgres_changes", { event: "UPDATE", schema: "public", table: "service_orders" }, () => {
+                  _invalidateLocal("service-order");
                 })
                 .subscribe();
             } catch {}

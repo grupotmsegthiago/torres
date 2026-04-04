@@ -582,3 +582,23 @@ async function backfillOrderCoords() {
     }
   }
 }
+
+export async function ensureCalcMissionRPC() {
+  try {
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION calc_mission_elapsed_hours(p_os_id integer)
+      RETURNS numeric AS $$
+        SELECT COALESCE(
+          EXTRACT(EPOCH FROM (
+            COALESCE(completed_date, NOW()) - mission_started_at
+          )) / 3600.0,
+          0
+        )
+        FROM service_orders WHERE id = p_os_id;
+      $$ LANGUAGE sql STABLE;
+    `);
+    console.log("[db-init] calc_mission_elapsed_hours RPC created OK");
+  } catch (e: any) {
+    console.error("[db-init] calc_mission_elapsed_hours error:", e.message);
+  }
+}

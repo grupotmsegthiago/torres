@@ -6,7 +6,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { initCronJobs } from "./cron";
-import { ensureDbSchema } from "./db-init";
+import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,6 +70,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await ensureDbSchema();
+  await ensureCalcMissionRPC();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

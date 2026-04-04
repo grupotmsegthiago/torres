@@ -4,6 +4,7 @@ import * as apibrasil from "./apibrasil";
 import { log } from "./index";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
+import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -197,41 +198,24 @@ export function initCronJobs() {
           const startTime = missionStartDate ? toBRT(missionStartDate) : undefined;
           const endTime = toBRT(missionEndDate);
 
-          const inicioConsideradoDate = (() => {
-            if (!scheduledDate && !missionStartDate) return null;
-            if (!scheduledDate) return missionStartDate;
-            if (!missionStartDate) return scheduledDate;
-            return missionStartDate.getTime() > scheduledDate.getTime() ? missionStartDate : scheduledDate;
-          })();
-          const inicioConsiderado = inicioConsideradoDate ? toBRT(inicioConsideradoDate) : (scheduledTime || startTime || "00:00");
+          const billingStartDate = missionStartDate || scheduledDate;
+          const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
 
-          let horasMissao = 0;
-          if (inicioConsideradoDate) {
-            const diffMs = missionEndDate.getTime() - inicioConsideradoDate.getTime();
-            horasMissao = diffMs > 0 ? r(diffMs / 3600000) : 0;
-          }
+          const horasMissao = await getHorasElapsedFromDB(so.id);
 
           const km_total = kmFinal - kmInicial;
           const km_carregado = Math.max(0, km_total);
-          const km_excedente = Math.max(0, km_carregado - (n(contrato.franquia_km) || n(contrato.franquia_minima_km)));
 
-          const hasAcionamento = n(contrato.valor_acionamento) > 0;
-          const franquiaKm = n(contrato.franquia_km) || n(contrato.franquia_minima_km);
-          const franquiaHoras = n(contrato.franquia_horas);
+          const billing = calcularFaturamentoLive({
+            horasMissao,
+            kmInicial,
+            kmFinal,
+            contrato,
+          });
 
-          const valorKmExtra = n(contrato.valor_km_extra) || n(contrato.valor_km_carregado);
-          const valorHoraExtra = n(contrato.valor_hora_extra) || n(contrato.valor_hora_estadia);
-
-          let fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0, fat_total = 0;
-          if (hasAcionamento) {
-            fat_acionamento = n(contrato.valor_acionamento);
-            fat_km = km_excedente * valorKmExtra;
-            fat_hora_extra = Math.max(0, horasMissao - franquiaHoras) * valorHoraExtra;
-            fat_total = fat_acionamento + fat_km + fat_hora_extra;
-          } else {
-            fat_km = Math.max(km_carregado, franquiaKm) * n(contrato.valor_km_carregado);
-            fat_total = fat_km;
-          }
+          let { fat_acionamento, fat_km, fat_hora_extra, fat_total } = billing;
+          const { km_excedente, has_acionamento: hasAcionamento } = billing;
+          const franquiaKm = billing.franquia_km;
 
           const isNoturno = (() => {
             const checkH = (t?: string) => { if (!t) return false; const h = parseInt(t.split(":")[0]); return h >= 22 || h < 5; };
