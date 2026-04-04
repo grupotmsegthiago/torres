@@ -865,8 +865,17 @@ export default function MobileMissaoPage() {
   const [statusUpdate, setStatusUpdate] = useState("");
   const [activeTab, setActiveTab] = useState<"missao" | "agendamentos">("missao");
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const simulateOsId = urlParams.get("osId");
+
   const { data: mission, isLoading } = useQuery<any>({
-    queryKey: ["/api/mission/active"],
+    queryKey: ["/api/mission/active", simulateOsId || "self"],
+    queryFn: async () => {
+      const url = simulateOsId ? `/api/mission/active?osId=${simulateOsId}` : "/api/mission/active";
+      const r = await authFetch(url);
+      if (!r.ok) return null;
+      return r.json();
+    },
     refetchInterval: 5000,
   });
 

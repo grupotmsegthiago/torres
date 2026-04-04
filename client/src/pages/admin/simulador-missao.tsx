@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Play, CheckCircle2, Loader2, ArrowRight, RotateCcw,
+  Play, Loader2, ArrowRight, RotateCcw,
   AlertTriangle, FastForward, Smartphone, RefreshCw,
-  ChevronRight, History,
 } from "lucide-react";
 import type { ServiceOrder, Employee, Vehicle } from "@shared/schema";
 
@@ -74,19 +73,6 @@ export default function SimuladorMissaoPage() {
   });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
-
-  const { data: updateHistory = [] } = useQuery<any[]>({
-    queryKey: ["/api/service-orders", selectedOS, "updates-history"],
-    queryFn: async () => {
-      if (!selectedOS) return [];
-      const r = await authFetch(`/api/service-orders/${selectedOS}/updates`);
-      if (!r.ok) return [];
-      const data = await r.json();
-      return (data || []).slice(0, 5);
-    },
-    enabled: !!selectedOS,
-    refetchInterval: 10000,
-  });
 
   const activeOrders = orders.filter(o =>
     o.missionStatus && o.missionStatus !== "encerrada" &&
@@ -258,36 +244,6 @@ export default function SimuladorMissaoPage() {
           )}
 
           {selectedOrder && (
-            <Card className="p-4 border-neutral-200">
-              <h2 className="text-xs font-black text-neutral-500 uppercase tracking-wider mb-3">
-                <History className="w-3.5 h-3.5 inline mr-1" />
-                Últimos 5 Alertas
-              </h2>
-              {updateHistory.length === 0 ? (
-                <p className="text-[10px] text-neutral-400 text-center py-3">Nenhuma atualização ainda</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {updateHistory.map((u: any, i: number) => {
-                    const dt = new Date(u.createdAt || u.created_at);
-                    const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-                    const stepLabel = STEP_LABELS[u.missionStep || u.mission_step] || u.missionStep || u.mission_step || "—";
-                    const msg = u.message || u.agentMessage || u.agent_message || "";
-                    return (
-                      <div key={u.id || i} className="flex items-start gap-2 py-1.5 border-b border-neutral-100 last:border-0">
-                        <span className="text-[10px] font-mono text-neutral-400 shrink-0 mt-0.5">{timeStr}</span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] font-bold text-neutral-700">{stepLabel}</span>
-                          {msg && <span className="text-[10px] text-neutral-500"> — {msg}</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-          )}
-
-          {selectedOrder && (
             <Card className="p-4 border-neutral-200 space-y-3">
               <h2 className="text-xs font-black text-neutral-500 uppercase tracking-wider">Controles do Simulador</h2>
               <Button
@@ -350,8 +306,9 @@ export default function SimuladorMissaoPage() {
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-neutral-900 rounded-b-2xl z-10" />
                 <div className="bg-white rounded-[2rem] overflow-hidden" style={{ height: "75vh", minHeight: "600px" }}>
                   <iframe
+                    key={selectedOS}
                     ref={iframeRef}
-                    src="/mobile/missao"
+                    src={`/mobile/missao?osId=${selectedOS}`}
                     className="w-full h-full border-0"
                     title="Tela do Agente"
                     data-testid="iframe-mobile-mission"

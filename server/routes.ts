@@ -6249,6 +6249,42 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
   app.get("/api/mission/active", requireAuth, async (req, res) => {
     const user = req.user!;
+
+    const simulateOsId = req.query.osId ? parseInt(req.query.osId as string) : null;
+    if (simulateOsId && user.role === "admin") {
+      const active = await storage.getServiceOrder(simulateOsId);
+      if (!active) return res.json(null);
+
+      const [client, vehicle, emp1, emp2] = await Promise.all([
+        storage.getClient(active.clientId),
+        active.vehicleId ? storage.getVehicle(active.vehicleId) : null,
+        active.assignedEmployeeId ? storage.getEmployee(active.assignedEmployeeId) : null,
+        active.assignedEmployee2Id ? storage.getEmployee(active.assignedEmployee2Id) : null,
+      ]);
+      const photos = await storage.getMissionPhotosByOS(active.id);
+      const completedSteps = photos.map((p) => p.step);
+
+      return res.json({
+        ...active,
+        serviceOrderId: active.id,
+        clientName: client?.name || "—",
+        vehiclePlate: vehicle?.plate || "—",
+        vehicleModel: vehicle?.model || "—",
+        employee1Name: emp1?.name || "—",
+        employee2Name: emp2?.name || "—",
+        employeeId: active.assignedEmployeeId,
+        completedSteps,
+        escortedDriverName: active.escortedDriverName || null,
+        escortedDriverPhone: active.escortedDriverPhone || null,
+        escortedVehiclePlate: active.escortedVehiclePlate || null,
+        missionStartedAt: active.missionStartedAt || null,
+        origin: active.origin || null,
+        destination: active.destination || null,
+        route: active.route || null,
+        scheduledMissions: [],
+      });
+    }
+
     if (!user.employeeId) return res.json(null);
 
     const orders = await storage.getServiceOrdersByEmployee(user.employeeId);
