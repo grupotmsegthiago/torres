@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
-import html2canvas from "html2canvas";
+import html2canvas from "-ohtml2canvas";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -5167,7 +5167,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <TooltipTrigger>
                                       <button
                                         type="button"
-                                        onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: v.activeOs!.liveCost }); }}
+                                        onClick={(e) => { e.stopPropagation(); const gridLc = vtrWithCost.find((g: any) => g.id === v.activeOs!.id); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: gridLc?.liveCost || null }); }}
                                         className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
                                         data-testid={`button-dre-${v.id}`}
                                       >
