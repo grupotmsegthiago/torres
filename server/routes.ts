@@ -9495,9 +9495,10 @@ Regras:
       const billingFatTotal = Number(billingRow?.fat_total || 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
-      const nonMissionCostExpenses = uniqueExpenses.filter((t: any) => t.origin_type !== "mission_cost");
-      const txExpenseTotal = nonMissionCostExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalExpense = txExpenseTotal + totalDiarias + billingDespesasTotal;
+      const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const missionCostInTx = uniqueExpenses.filter((t: any) => t.origin_type === "mission_cost").reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const billingOnlyDespesas = Math.max(0, billingDespesasTotal - missionCostInTx);
+      const totalExpense = txExpenseTotal + totalDiarias + billingOnlyDespesas;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
