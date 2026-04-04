@@ -10312,8 +10312,18 @@ Regras:
 
   app.get("/api/financial/dashboard", requireAuth, requireAdminRole, async (req, res) => {
     try {
-      const { data: billings, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
+      const { data: billingsRaw, error: bErr } = await supabaseAdmin.from("escort_billings").select("*").order("data_missao", { ascending: true });
       if (bErr) throw bErr;
+      const billingDedup = new Map<number, any>();
+      for (const b of (billingsRaw || [])) {
+        const soId = Number(b.service_order_id);
+        if (!soId) continue;
+        const existing = billingDedup.get(soId);
+        if (!existing || new Date(b.created_at || 0) > new Date(existing.created_at || 0)) {
+          billingDedup.set(soId, b);
+        }
+      }
+      const billings = Array.from(billingDedup.values());
 
       const { data: transactions, error: tErr } = await supabaseAdmin.from("financial_transactions").select("*");
       if (tErr) throw tErr;
@@ -10542,6 +10552,48 @@ Regras:
       });
 
       const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+
+      const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
+
+      for (const b of items) {
+        if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
+          try {
+            const osMC = await storage.getMissionCostsByOS(b.service_order_id);
+            let osReceitasOs = 0;
+            for (const mc of osMC) {
+              const amt = Number(mc.amount) || 0;
+              if ((mc as any).costType === "revenue") { osReceitasOs += amt; continue; }
+              const cat = (mc.category || "").toLowerCase();
+              if (cat.includes("pedágio") || cat.includes("pedagio")) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + amt;
+              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + amt;
+              else b.despesas_outras = (Number(b.despesas_outras) || 0) + amt;
+            }
+            if (osReceitasOs > 0 && !b.receitas_os) b.receitas_os = osReceitasOs;
+            if ((Number(b.despesas_pedagio) || 0) === 0) {
+              const soData = osLookup.get(b.service_order_id);
+              const pedEst = Number(soData?.pedagioEstimado) || 0;
+              if (pedEst > 0) b.despesas_pedagio = pedEst;
+            }
+          } catch (_e) {}
+        }
+      }
+
+      const fuelAllocatedVehicleDay = new Set<string>();
+      for (const b of items) {
+        const plate = (b.placa_viatura || "").toUpperCase();
+        const day = toBRTDate(b.data_missao || b.created_at || "");
+        if (!plate || !day) continue;
+        const key = `${plate}:${day}`;
+        const comb = Number(b.despesas_combustivel || 0);
+        if (comb > 0) {
+          if (fuelAllocatedVehicleDay.has(key)) {
+            b.despesas_combustivel = 0;
+          } else {
+            fuelAllocatedVehicleDay.add(key);
+          }
+        }
+      }
+
       const byVehicle: Record<string, { plate: string; model: string; fat_total: number; pag_total: number; missions: number; despesas: number }> = {};
       items.forEach((b: any) => {
         const plate = b.placa_viatura || "SEM PLACA";
@@ -10595,31 +10647,6 @@ Regras:
       Object.values(byAgent).forEach((agent) => {
         agent.horas_trabalhadas = timesheetHoursByEmployee[agent.id] || 0;
       });
-
-      const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
-
-      for (const b of items) {
-        if (Number(b.despesas_pedagio || 0) === 0 && Number(b.despesas_combustivel || 0) === 0 && Number(b.despesas_outras || 0) === 0 && b.service_order_id) {
-          try {
-            const osMC = await storage.getMissionCostsByOS(b.service_order_id);
-            let osReceitasOs = 0;
-            for (const mc of osMC) {
-              const amt = Number(mc.amount) || 0;
-              if ((mc as any).costType === "revenue") { osReceitasOs += amt; continue; }
-              const cat = (mc.category || "").toLowerCase();
-              if (cat.includes("pedágio") || cat.includes("pedagio")) b.despesas_pedagio = (Number(b.despesas_pedagio) || 0) + amt;
-              else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) b.despesas_combustivel = (Number(b.despesas_combustivel) || 0) + amt;
-              else b.despesas_outras = (Number(b.despesas_outras) || 0) + amt;
-            }
-            if (osReceitasOs > 0 && !b.receitas_os) b.receitas_os = osReceitasOs;
-            if ((Number(b.despesas_pedagio) || 0) === 0) {
-              const soData = osLookup.get(b.service_order_id);
-              const pedEst = Number(soData?.pedagioEstimado) || 0;
-              if (pedEst > 0) b.despesas_pedagio = pedEst;
-            }
-          } catch (_e) {}
-        }
-      }
 
       const byMission = items.map((b: any) => {
         const fat = calcFat(b);
