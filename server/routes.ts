@@ -6251,7 +6251,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const user = req.user!;
 
     const simulateOsId = req.query.osId ? parseInt(req.query.osId as string) : null;
-    if (simulateOsId && user.role === "admin") {
+    if (simulateOsId && (user.role === "admin" || user.role === "diretoria")) {
       const active = await storage.getServiceOrder(simulateOsId);
       if (!active) return res.json(null);
 
