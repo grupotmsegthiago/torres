@@ -201,6 +201,18 @@ if (typeof window !== "undefined") {
       startAutoRefresh();
     }
   });
+
+  try {
+    supabase.channel("realtime-costs")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_costs" }, () => {
+        _invalidateLocal("mission-cost");
+        _invalidateLocal("financial");
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "financial_transactions" }, () => {
+        _invalidateLocal("financial");
+      })
+      .subscribe();
+  } catch {}
 }
 
 export const queryClient = new QueryClient({

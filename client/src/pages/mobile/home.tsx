@@ -2,7 +2,7 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer } from "lucide-react";
+import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign } from "lucide-react";
 
 export default function MobileHomePage() {
   const { user } = useAuth();
@@ -110,7 +110,7 @@ export default function MobileHomePage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Link href="/mobile/abastecimento">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-abastecimento">
               <Fuel className="w-6 h-6 text-blue-600 mx-auto mb-2" />
@@ -118,6 +118,16 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Combustível</p>
             </div>
           </Link>
+          <Link href="/mobile/pedagio">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-pedagio">
+              <CircleDollarSign className="w-6 h-6 text-violet-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Pedágio</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Registrar custo</p>
+            </div>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
           <Link href="/mobile/ocorrencia">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-ocorrencia">
               <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" />

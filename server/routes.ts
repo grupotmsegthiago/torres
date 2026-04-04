@@ -13,6 +13,7 @@ import {
   insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
+  employees, serviceOrders,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
   auditLogs, users, loginSelfies, employeeSalaryDiscounts,
@@ -5154,6 +5155,23 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
+    const vehicleVazioCosts = new Map<number, number>();
+    try {
+      const { data: vazioCosts } = await supabaseAdmin.from("mission_costs")
+        .select("vehicle_id, amount")
+        .is("service_order_id", null)
+        .not("vehicle_id", "is", null)
+        .gte("created_at", todayStr + "T00:00:00")
+        .lte("created_at", todayStr + "T23:59:59");
+      if (vazioCosts) {
+        for (const vc of vazioCosts) {
+          if (vc.vehicle_id) {
+            vehicleVazioCosts.set(vc.vehicle_id, (vehicleVazioCosts.get(vc.vehicle_id) || 0) + Number(vc.amount || 0));
+          }
+        }
+      }
+    } catch (_e) {}
+
     const enriched = await Promise.all(
       activeOrders.map(async (o) => {
         const [client, vehicle, emp1, emp2] = await Promise.all([
@@ -5320,6 +5338,12 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               }
               if (custoPedagio === 0 && (o as any).pedagioEstimado) {
                 custoPedagio = Number((o as any).pedagioEstimado) || 0;
+              }
+
+              if (o.vehicleId && vehicleVazioCosts.has(o.vehicleId)) {
+                const vazioAmt = vehicleVazioCosts.get(o.vehicleId) || 0;
+                custoPedagio += vazioAmt;
+                vehicleVazioCosts.delete(o.vehicleId);
               }
 
               if (o.vehicleId) {
@@ -11649,6 +11673,92 @@ Regras:
 
       res.status(201).json({ fueling, oilAlert });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── MOBILE: Pedágio Vazio (deslocamento sem OS) ──────────────────
+  app.post("/api/mobile/pedagio-vazio", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
+
+      const { amount, photoUrl, latitude, longitude } = req.body;
+      const parsedAmount = Number(amount);
+      if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ message: "Valor do pedágio obrigatório" });
+      if (!photoUrl || typeof photoUrl !== "string" || !photoUrl.startsWith("data:image/"))
+        return res.status(400).json({ message: "Foto do comprovante obrigatória" });
+      if (!latitude || !longitude)
+        return res.status(400).json({ message: "Localização GPS obrigatória" });
+
+      const { data: lastAssignment } = await supabaseAdmin
+        .from("vehicle_assignments")
+        .select("vehicle_id")
+        .eq("employee_id", employeeId)
+        .eq("action", "vincular")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      let vehicleId = lastAssignment?.[0]?.vehicle_id || null;
+
+      if (!vehicleId) {
+        const { data: activeOs } = await supabaseAdmin.from("service_orders")
+          .select("vehicle_id")
+          .or(`assigned_employee_id.eq.${employeeId},assigned_employee2_id.eq.${employeeId}`)
+          .eq("status", "ativa")
+          .limit(1);
+        if (activeOs?.length && activeOs[0].vehicle_id) {
+          vehicleId = activeOs[0].vehicle_id;
+        }
+      }
+
+      let vehiclePlate = "Sem viatura";
+      if (vehicleId) {
+        const { data: vData } = await supabaseAdmin.from("vehicles")
+          .select("plate").eq("id", vehicleId).limit(1).single();
+        vehiclePlate = vData?.plate || "Desconhecida";
+      }
+
+      const { data: empData } = await supabaseAdmin.from("employees")
+        .select("name").eq("id", employeeId).limit(1).single();
+      const empName = empData?.name || "Agente";
+
+      const { data: record, error: insertError } = await supabaseAdmin.from("mission_costs").insert({
+        service_order_id: null,
+        vehicle_id: vehicleId,
+        employee_id: employeeId,
+        category: "Pedágio",
+        description: `Custo de Deslocamento Vazio - ${empName} (${vehiclePlate})`,
+        amount: parsedAmount.toFixed(2),
+        cost_type: "expense",
+        photo_url: photoUrl,
+        latitude: String(latitude),
+        longitude: String(longitude),
+      }).select().single();
+
+      if (insertError) throw new Error(insertError.message);
+
+      const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const { error: txError } = await supabaseAdmin.from("financial_transactions").insert({
+        type: "EXPENSE",
+        status: "PENDING",
+        category_name: "Custos Fixos/Deslocamento Extra",
+        description: `Pedágio Vazio - ${empName} (${vehiclePlate})`,
+        amount: parsedAmount.toFixed(2),
+        due_date: todayBRT,
+        origin_type: "mission_cost",
+        origin_id: String(record.id),
+        entity_name: vehiclePlate,
+        created_by: "SISTEMA",
+      });
+      if (txError) {
+        console.error("[pedagio-vazio] Financial transaction error:", txError.message);
+      }
+
+      console.log(`[pedagio-vazio] Agent ${empName} (${employeeId}) registered R$${parsedAmount.toFixed(2)} toll for vehicle ${vehiclePlate} (${vehicleId})`);
+      res.status(201).json({ success: true, record, vehiclePlate });
+    } catch (err: any) {
+      console.error("[pedagio-vazio] Error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

@@ -810,11 +810,16 @@ export type ClientForward = typeof clientForwards.$inferSelect;
 
 export const missionCosts = pgTable("mission_costs", {
   id: serial("id").primaryKey(),
-  serviceOrderId: integer("service_order_id").notNull(),
+  serviceOrderId: integer("service_order_id"),
+  vehicleId: integer("vehicle_id"),
+  employeeId: integer("employee_id"),
   category: text("category").notNull(),
   description: text("description"),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   costType: text("cost_type").default("expense"),
+  photoUrl: text("photo_url"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

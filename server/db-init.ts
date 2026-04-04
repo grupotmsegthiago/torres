@@ -506,6 +506,13 @@ export async function ensureDbSchema() {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_so ON mission_positions(service_order_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
 
+    await db.execute(sql`ALTER TABLE mission_costs ALTER COLUMN service_order_id DROP NOT NULL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS vehicle_id INTEGER`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS employee_id INTEGER`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS photo_url TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
