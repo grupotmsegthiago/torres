@@ -6401,6 +6401,16 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
   });
 
+  app.get("/api/service-orders/:id/updates", requireAuth, async (req, res) => {
+    const osId = parseInt(req.params.id);
+    if (isNaN(osId)) return res.status(400).json({ message: "ID inválido" });
+    const results = await db.select().from(missionUpdates)
+      .where(eq(missionUpdates.serviceOrderId, osId))
+      .orderBy(desc(missionUpdates.createdAt))
+      .limit(5);
+    res.json(results);
+  });
+
   app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
