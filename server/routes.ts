@@ -9472,31 +9472,6 @@ Regras:
 
       console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${effectivePedagio} outros=${effectiveOutras} receitas=${missionCostReceitas} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
 
-      const txRevenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
-      const pedagioAsRevenue = effectivePedagio;
-      if (pedagioAsRevenue > 0) {
-        missionCostRevenueItems.push({
-          id: "pedagio-repasse",
-          description: "Reembolso de Pedágio",
-          amount: pedagioAsRevenue,
-          type: "INCOME",
-          category_name: "Pedágio",
-          origin_type: "pedagio_repasse",
-        });
-      }
-      const revenue = [...txRevenue, ...missionCostRevenueItems];
-      const totalTxRevenue = txRevenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const totalRevenue = totalTxRevenue + missionCostReceitas + pedagioAsRevenue;
-      const billingFatTotal = Number(billingRow?.fat_total || 0);
-      const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
-      const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
-      const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const missionCostInTx = uniqueExpenses.filter((t: any) => t.origin_type === "mission_cost").reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-      const billingOnlyDespesas = Math.max(0, billingDespesasTotal - missionCostInTx);
-      const totalExpense = txExpenseTotal + totalDiarias + billingOnlyDespesas;
-      const netResult = effectiveRevenue - totalExpense;
-      const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
-
       let enrichedBilling = billingRow;
       if (billingRow && !billingRow.fat_acionamento && Number(billingRow.fat_total || 0) > 0) {
         try {
@@ -9520,17 +9495,89 @@ Regras:
             const kmExc = nb(billingRow.km_excedente);
             const horasMissao = nb(billingRow.horas_trabalhadas || billingRow.horas_missao);
             const horasExcedentes = franquiaHoras > 0 ? Math.max(0, horasMissao - franquiaHoras) : 0;
+            const fatAcionamento = Math.round(valorAcionamento * 100) / 100;
+            const fatHoraExtra = Math.round(horasExcedentes * valorHoraExtra * 100) / 100;
+            const fatKm = Math.round(kmExc * valorKmExtra * 100) / 100;
+            const recalcFatTotal = fatAcionamento + fatKm + fatHoraExtra + effectivePedagio + missionCostReceitas;
             enrichedBilling = {
               ...billingRow,
-              fat_acionamento: Math.round(valorAcionamento * 100) / 100,
-              fat_hora_extra: Math.round(horasExcedentes * valorHoraExtra * 100) / 100,
-              fat_km: Math.round(kmExc * valorKmExtra * 100) / 100,
+              fat_acionamento: fatAcionamento,
+              fat_hora_extra: fatHoraExtra,
+              fat_km: fatKm,
+              fat_total: Math.max(Number(billingRow.fat_total || 0), recalcFatTotal),
               franquia_horas: franquiaHoras,
               franquia_km: franquiaKm,
             };
           }
         } catch (_e) { /* keep original billing */ }
       }
+
+      const billingFatTotal = Number(enrichedBilling?.fat_total || 0);
+
+      const billingRevenueItems: any[] = [];
+      if (enrichedBilling) {
+        const bFatAcion = Number(enrichedBilling.fat_acionamento || 0);
+        const bFatKm = Number(enrichedBilling.fat_km || 0);
+        const bFatHoraExtra = Number(enrichedBilling.fat_hora_extra || 0);
+        const bFatAdicNoturno = Number(enrichedBilling.fat_adicional_noturno || 0);
+        const bFatEstadia = Number(enrichedBilling.fat_estadia || 0);
+        const bFatPernoite = Number(enrichedBilling.fat_pernoite || 0);
+        if (bFatAcion > 0) billingRevenueItems.push({ id: "billing-acionamento", description: "Acionamento", amount: bFatAcion, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (bFatKm > 0) billingRevenueItems.push({ id: "billing-km", description: "KM Excedente", amount: bFatKm, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (bFatHoraExtra > 0) billingRevenueItems.push({ id: "billing-hora-extra", description: "Hora Extra", amount: bFatHoraExtra, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (bFatAdicNoturno > 0) billingRevenueItems.push({ id: "billing-adic-noturno", description: "Adicional Noturno", amount: bFatAdicNoturno, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (bFatEstadia > 0) billingRevenueItems.push({ id: "billing-estadia", description: "Estadia", amount: bFatEstadia, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (bFatPernoite > 0) billingRevenueItems.push({ id: "billing-pernoite", description: "Pernoite", amount: bFatPernoite, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        if (billingRevenueItems.length === 0 && billingFatTotal > 0) {
+          billingRevenueItems.push({ id: "billing-total", description: "Faturamento Escolta", amount: billingFatTotal, type: "INCOME", category_name: "Faturamento", origin_type: "billing_component" });
+        }
+      }
+
+      const txRevenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
+      const pedagioAsRevenue = effectivePedagio;
+      if (pedagioAsRevenue > 0) {
+        missionCostRevenueItems.push({
+          id: "pedagio-repasse",
+          description: "Reembolso de Pedágio",
+          amount: pedagioAsRevenue,
+          type: "INCOME",
+          category_name: "Pedágio",
+          origin_type: "pedagio_repasse",
+        });
+      }
+
+      const billingComponentsTotal = billingRevenueItems.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const totalTxRevenue = txRevenue.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+
+      let revenue: any[];
+      let effectiveRevenue: number;
+      let revenueSource: string;
+
+      if (billingComponentsTotal > 0) {
+        revenue = [...billingRevenueItems, ...missionCostRevenueItems];
+        effectiveRevenue = billingComponentsTotal + missionCostReceitas + pedagioAsRevenue;
+        revenueSource = "billing_components";
+      } else if (totalTxRevenue > 0 || missionCostReceitas > 0 || pedagioAsRevenue > 0) {
+        revenue = [...txRevenue, ...missionCostRevenueItems];
+        effectiveRevenue = totalTxRevenue + missionCostReceitas + pedagioAsRevenue;
+        revenueSource = missionCostReceitas > 0 ? "transaction+receitas" : "transaction";
+      } else if (billingFatTotal > 0) {
+        revenue = [{ id: "billing-fallback", description: "Faturamento (Billing)", amount: billingFatTotal, type: "INCOME", category_name: "Faturamento", origin_type: "billing_fallback" }];
+        effectiveRevenue = billingFatTotal;
+        revenueSource = "billing";
+      } else {
+        const estimadoFallback = (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
+        revenue = estimadoFallback > 0 ? [{ id: "estimado", description: "Valor Estimado", amount: estimadoFallback, type: "INCOME", category_name: "Estimado", origin_type: "estimado" }] : [];
+        effectiveRevenue = estimadoFallback;
+        revenueSource = estimadoFallback > 0 ? "estimado" : "none";
+      }
+
+      const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const missionCostInTx = uniqueExpenses.filter((t: any) => t.origin_type === "mission_cost").reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const billingOnlyDespesas = Math.max(0, billingDespesasTotal - missionCostInTx);
+      const totalExpense = txExpenseTotal + totalDiarias + billingOnlyDespesas;
+      const netResult = effectiveRevenue - totalExpense;
+      const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
 
       res.json({
         os: {
@@ -9560,15 +9607,15 @@ Regras:
           despesasBilling: billingDespesasTotal,
           outrosCustos: totalOtherExpenses + effectiveOutras,
           receitasOs: missionCostReceitas,
-          revenueSource: totalRevenue > 0 ? (missionCostReceitas > 0 ? "transaction+receitas" : "transaction") : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
+          revenueSource,
         },
         totals: {
           totalRevenue: effectiveRevenue,
           totalExpense,
           netResult,
           margemPct: Math.round(margemPct * 100) / 100,
-          usedEstimado: estimadoFallback > 0,
-          usedBilling: totalRevenue === 0 && billingFatTotal > 0,
+          usedEstimado: revenueSource === "estimado",
+          usedBilling: revenueSource === "billing" || revenueSource === "billing_components",
         },
       });
     } catch (err: any) {
