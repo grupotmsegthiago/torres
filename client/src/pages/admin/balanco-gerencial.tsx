@@ -321,8 +321,11 @@ export default function BalancoGerencialPage() {
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
+    const missionDesp = filtered.missions.reduce((a, m) => a + (m.despesas || 0), 0);
+    const missionDespPedagio = filtered.missions.reduce((a, m) => a + (m.despesas_pedagio || 0), 0);
     const despFin = filtered.expenses;
-    const despReais = despFin.total;
+    const despFinSemMissionCost = despFin.total - despFin.mission_cost;
+    const despReais = missionDesp + Math.max(0, despFinSemMissionCost);
     const custoTotal = pag + despReais + provisaoRH;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
@@ -331,7 +334,7 @@ export default function BalancoGerencialPage() {
     return {
       fat, pag, desp: despReais, lucro, margem, km, horas, total: filtered.missions.length,
       desp_combustivel: despFin.fueling,
-      desp_pedagio: despFin.mission_cost,
+      desp_pedagio: missionDespPedagio,
       desp_manutencao: despFin.maintenance,
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
@@ -536,11 +539,11 @@ function BalancoTab({ missions, vehicles, agents, totals, range, period, expense
       if (!d) return;
       if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };
       map[d].fat += m.fat_total;
-      map[d].custoReal += m.pag_total;
-      map[d].custo += m.pag_total;
+      map[d].custoReal += m.pag_total + (m.despesas || 0);
+      map[d].custo += m.pag_total + (m.despesas || 0);
       map[d].missions += 1;
     });
-    (periodExpenses || []).forEach(t => {
+    (periodExpenses || []).filter(t => t.origin_type !== "mission_cost").forEach(t => {
       const d = t.date?.split("T")[0];
       if (!d) return;
       if (!map[d]) map[d] = { date: d, fat: 0, custoReal: 0, custoRH: provisaoDiaria, custo: provisaoDiaria, missions: 0 };

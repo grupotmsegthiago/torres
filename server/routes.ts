@@ -9469,16 +9469,20 @@ Regras:
       const billingPedagio = Number(billingRow?.despesas_pedagio || 0);
       const billingCombustivel = Number(billingRow?.despesas_combustivel || 0);
       const billingOutras = Number(billingRow?.despesas_outras || 0);
-      const billingDespesasTotal = billingPedagio + billingCombustivel + billingOutras;
 
-      console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${missionCostPedagio} outros=${missionCostOutros} receitas=${missionCostReceitas} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
+      const effectivePedagio = Math.max(missionCostPedagio, billingPedagio);
+      const effectiveCombustivel = billingCombustivel;
+      const effectiveOutras = missionCostOutros > 0 ? missionCostOutros : billingOutras;
+      const billingDespesasTotal = effectivePedagio + effectiveCombustivel + effectiveOutras;
+
+      console.log(`[DRE-OS ${osId}] missionCosts=${osMissionCosts.length} pedagio=${effectivePedagio} outros=${effectiveOutras} receitas=${missionCostReceitas} fueling=${fuelingTx.length}/${totalFueling} direct=${directExpenses.length} diarias=${totalDiarias}`);
 
       const txRevenue = (txDirect || []).filter((t: any) => t.type === "INCOME");
-      const pedagioAsRevenue = missionCostPedagio + billingPedagio;
+      const pedagioAsRevenue = effectivePedagio;
       if (pedagioAsRevenue > 0) {
         missionCostRevenueItems.push({
           id: "pedagio-repasse",
-          description: "Pedágio (repasse ao cliente)",
+          description: "Reembolso de Pedágio",
           amount: pedagioAsRevenue,
           type: "INCOME",
           category_name: "Pedágio",
@@ -9491,7 +9495,8 @@ Regras:
       const billingFatTotal = Number(billingRow?.fat_total || 0);
       const estimadoFallback = totalRevenue === 0 && (so as any).valorEstimado ? Number((so as any).valorEstimado) : 0;
       const effectiveRevenue = totalRevenue > 0 ? totalRevenue : (billingFatTotal > 0 ? billingFatTotal : estimadoFallback);
-      const txExpenseTotal = uniqueExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+      const nonMissionCostExpenses = uniqueExpenses.filter((t: any) => t.origin_type !== "mission_cost");
+      const txExpenseTotal = nonMissionCostExpenses.reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
       const totalExpense = txExpenseTotal + totalDiarias + billingDespesasTotal;
       const netResult = effectiveRevenue - totalExpense;
       const margemPct = effectiveRevenue > 0 ? ((netResult / effectiveRevenue) * 100) : 0;
@@ -9551,13 +9556,13 @@ Regras:
         diarias,
         components: {
           receita: effectiveRevenue,
-          combustivel: totalFueling + billingCombustivel,
-          pedagio: missionCostPedagio + billingPedagio,
+          combustivel: totalFueling + effectiveCombustivel,
+          pedagio: effectivePedagio,
           pedagioRepasse: pedagioAsRevenue,
           diarias: totalDiarias,
-          custosMissao: missionCostPedagio + missionCostOutros,
+          custosMissao: effectivePedagio + effectiveOutras,
           despesasBilling: billingDespesasTotal,
-          outrosCustos: totalOtherExpenses + missionCostOutros + billingOutras,
+          outrosCustos: totalOtherExpenses + effectiveOutras,
           receitasOs: missionCostReceitas,
           revenueSource: totalRevenue > 0 ? (missionCostReceitas > 0 ? "transaction+receitas" : "transaction") : (billingFatTotal > 0 ? "billing" : (estimadoFallback > 0 ? "estimado" : "none")),
         },
@@ -9823,7 +9828,7 @@ Regras:
     if (isNoturno) {
       fat_adicional_noturno = (hasAcionamento ? (fat_acionamento + fat_km) : fat_km) * (n(contrato.adicional_noturno_km_pct) / 100);
     }
-    const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_total + receitas_os;
+    const fat_total = (hasAcionamento ? fat_acionamento : 0) + fat_km + fat_hora_extra + fat_estadia + fat_pernoite + fat_adicional_noturno + despesas_pedagio + receitas_os;
 
     let pag_vrp = n(contrato.vrp_base);
     let pag_periculosidade = 0;

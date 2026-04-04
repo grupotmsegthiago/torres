@@ -4338,8 +4338,11 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
               <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
                 <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita</span><span className="font-bold text-emerald-700">{fmtBRL(data.components.receita)}</span></div>
+                {(data.components.pedagioRepasse || 0) > 0 && (
+                  <div className="flex justify-between text-xs"><span className="text-neutral-500">(+) Reembolso de Pedágio</span><span className="font-bold text-emerald-600">{fmtBRL(data.components.pedagioRepasse)}</span></div>
+                )}
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Combustível</span><span className="font-bold text-red-600">{fmtBRL(data.components.combustivel)}</span></div>
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Pedágio</span><span className="font-bold text-red-600">{fmtBRL(data.components.pedagio || 0)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Gasto com Pedágio</span><span className="font-bold text-red-600">{fmtBRL(data.components.pedagio || 0)}</span></div>
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias</span><span className="font-bold text-red-600">{fmtBRL(data.components.diarias)}</span></div>
                 {data.components.outrosCustos > 0 && (
                   <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(data.components.outrosCustos)}</span></div>
