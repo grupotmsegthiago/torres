@@ -4198,7 +4198,7 @@ function ManageRefPointsDialog({ open, onClose, refPoints }: { open: boolean; on
   );
 }
 
-function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumber: string; open: boolean; onOpenChange: (o: boolean) => void }) {
+function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: number; osNumber: string; liveCost?: any; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data, isLoading, error } = useQuery<any>({
     queryKey: ["/api/financial/dre-operacao", osId],
     queryFn: async () => {
@@ -4211,6 +4211,18 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
 
   const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+  const lc = liveCost;
+  const n = (v: any) => Number(v) || 0;
+  const totalReceita = lc ? n(lc.faturamento) : n(data?.totals?.totalRevenue);
+  const custoCombustivel = lc ? n(lc.custo_combustivel) : n(data?.components?.combustivel);
+  const custoPedagio = lc ? n(lc.custo_pedagio) : n(data?.components?.pedagio);
+  const custoOutros = lc ? n(lc.custo_outros) : n(data?.components?.outrosCustos);
+  const custoDiarias = lc ? n(lc.pagamento) : n(data?.components?.diarias);
+  const totalDespesa = custoCombustivel + custoPedagio + custoOutros + custoDiarias;
+  const resultado = lc ? n(lc.resultado) : (totalReceita - totalDespesa);
+  const margem = totalReceita > 0 ? (resultado / totalReceita) * 100 : 0;
+  const hasLiveCost = !!lc;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -4220,142 +4232,167 @@ function DreModal({ osId, osNumber, open, onOpenChange }: { osId: number; osNumb
           </DialogTitle>
           <DialogDescription className="text-xs">Demonstrativo de Resultado por Operação</DialogDescription>
         </DialogHeader>
-        {isLoading ? (
+        {(!hasLiveCost && isLoading) ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
           </div>
-        ) : error ? (
+        ) : (!hasLiveCost && error) ? (
           <p className="text-sm text-red-500 py-4 text-center">Erro ao carregar DRE</p>
-        ) : data ? (
+        ) : (hasLiveCost || data) ? (
           <div className="space-y-4">
-            <div className="bg-neutral-50 rounded-lg p-3 space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Cliente</span>
-                <span className="font-bold text-neutral-900">{data.os.clientName}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Veículo</span>
-                <span className="font-bold text-neutral-900">{data.os.vehiclePlate}</span>
-              </div>
-              {data.os.employee1Name && (
+            {data?.os && (
+              <div className="bg-neutral-50 rounded-lg p-3 space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-neutral-500">Agente 1</span>
-                  <span className="font-medium text-neutral-700">{data.os.employee1Name}</span>
+                  <span className="text-neutral-500">Cliente</span>
+                  <span className="font-bold text-neutral-900">{data.os.clientName}</span>
                 </div>
-              )}
-              {data.os.employee2Name && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-neutral-500">Agente 2</span>
-                  <span className="font-medium text-neutral-700">{data.os.employee2Name}</span>
+                  <span className="text-neutral-500">Veículo</span>
+                  <span className="font-bold text-neutral-900">{data.os.vehiclePlate}</span>
                 </div>
-              )}
-              <div className="flex justify-between text-xs">
-                <span className="text-neutral-500">Status</span>
-                <span className="font-bold text-neutral-700">{data.os.status}</span>
+                {data.os.employee1Name && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-neutral-500">Agente 1</span>
+                    <span className="font-medium text-neutral-700">{data.os.employee1Name}</span>
+                  </div>
+                )}
+                {data.os.employee2Name && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-neutral-500">Agente 2</span>
+                    <span className="font-medium text-neutral-700">{data.os.employee2Name}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-500">Status</span>
+                  <span className="font-bold text-neutral-700">{data.os.status}</span>
+                </div>
+                {data.os.scheduledDate && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-neutral-500">Data</span>
+                    <span className="font-medium text-neutral-700">{new Date(data.os.scheduledDate).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                )}
+                {lc && (
+                  <>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-neutral-500">KM Total</span>
+                      <span className="font-bold text-neutral-700">{n(lc.km_total)} km</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-neutral-500">Horas Missão</span>
+                      <span className="font-bold text-neutral-700">{n(lc.horas_missao).toFixed(1)}h</span>
+                    </div>
+                  </>
+                )}
               </div>
-              {data.os.scheduledDate && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-neutral-500">Data</span>
-                  <span className="font-medium text-neutral-700">{new Date(data.os.scheduledDate).toLocaleDateString("pt-BR")}</span>
-                </div>
-              )}
-            </div>
+            )}
 
             <div>
-              <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receitas</h4>
-              {data.revenue && data.revenue.length > 0 ? (
-                <div className="space-y-1">
-                  {data.revenue.map((t: any) => (
+              <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receita</h4>
+              <div className="space-y-1">
+                {hasLiveCost ? (
+                  <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Faturamento Escolta</span>
+                      {lc.contrato_nome && <span className="text-[10px] text-neutral-400 uppercase font-semibold block">{lc.contrato_nome}</span>}
+                    </div>
+                    <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(totalReceita)}</span>
+                  </div>
+                ) : data?.revenue && data.revenue.length > 0 ? (
+                  data.revenue.map((t: any) => (
                     <div key={t.id} className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
                       <span className="text-neutral-700 truncate max-w-[250px]" title={t.description}>{t.description}</span>
                       <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(Number(t.amount))}</span>
                     </div>
-                  ))}
-                </div>
-              ) : data.totals?.usedBilling && data.billing ? (
-                <div className="space-y-1">
+                  ))
+                ) : (
                   <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
-                    <div className="min-w-0 flex-1">
-                      <span className="text-neutral-700">Faturamento do Billing</span>
-                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VIA BOLETIM DE MEDIÇÃO</span>
-                    </div>
-                    <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(Number(data.billing.fat_total || 0))}</span>
+                    <span className="text-neutral-700">Faturamento Escolta</span>
+                    <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(totalReceita)}</span>
                   </div>
-                </div>
-              ) : (
-                <p className="text-xs text-neutral-400 italic">Nenhuma receita registrada</p>
-              )}
+                )}
+              </div>
               <div className="flex justify-between items-center mt-1.5 px-2 py-1 bg-emerald-100 rounded font-bold text-xs">
                 <span className="text-emerald-800">Total Receitas</span>
-                <span className="text-emerald-900">{fmtBRL(data.totals.totalRevenue)}</span>
+                <span className="text-emerald-900">{fmtBRL(totalReceita)}</span>
               </div>
             </div>
 
             <div>
               <h4 className="text-xs font-black text-red-700 uppercase tracking-wide mb-1.5">Despesas</h4>
-              {(data.expenses && data.expenses.length > 0) || (data.diarias && data.diarias.length > 0) ? (
-                <div className="space-y-1">
-                  {(data.expenses || []).map((t: any) => (
-                    <div key={t.id} className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
-                      <div className="min-w-0 flex-1">
-                        <span className="text-neutral-700 truncate block max-w-[250px]" title={t.description}>{t.description}</span>
-                        {t.origin_type && (
-                          <span className="text-[10px] text-neutral-400 uppercase font-semibold">
-                            {t.origin_type === "fueling" ? "ABASTEC." : t.origin_type === "maintenance" ? "MANUT." : t.origin_type === "mission_cost" ? "MISSÃO" : t.origin_type}
-                          </span>
-                        )}
-                      </div>
-                      <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(Number(t.amount))}</span>
+              <div className="space-y-1">
+                {custoCombustivel > 0 && (
+                  <div className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Abastecimento</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">COMBUSTÍVEL</span>
                     </div>
-                  ))}
-                  {(data.diarias || []).map((d: any, i: number) => (
-                    <div key={`diaria-${i}`} className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
-                      <div className="min-w-0 flex-1">
-                        <span className="text-neutral-700">{d.agentName}</span>
-                        <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
-                      </div>
-                      <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(d.valor)}</span>
+                    <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(custoCombustivel)}</span>
+                  </div>
+                )}
+                {custoPedagio > 0 && (
+                  <div className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Pedágio</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">GASTO COM PEDÁGIO</span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-neutral-400 italic">Nenhuma despesa registrada</p>
-              )}
+                    <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(custoPedagio)}</span>
+                  </div>
+                )}
+                {custoOutros > 0 && (
+                  <div className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Outros Custos</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">MISSÃO</span>
+                    </div>
+                    <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(custoOutros)}</span>
+                  </div>
+                )}
+                {custoDiarias > 0 && (
+                  <div className="flex justify-between items-center text-xs bg-red-50 rounded px-2 py-1.5 border border-red-100">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-neutral-700">Diárias (VRP)</span>
+                      <span className="text-[10px] text-neutral-400 uppercase font-semibold block">VRP + PERICULOSIDADE</span>
+                    </div>
+                    <span className="font-bold text-red-700 whitespace-nowrap ml-2">{fmtBRL(custoDiarias)}</span>
+                  </div>
+                )}
+                {totalDespesa === 0 && (
+                  <p className="text-xs text-neutral-400 italic">Nenhuma despesa registrada</p>
+                )}
+              </div>
               <div className="flex justify-between items-center mt-1.5 px-2 py-1 bg-red-100 rounded font-bold text-xs">
                 <span className="text-red-800">Total Despesas</span>
-                <span className="text-red-900">{fmtBRL(data.totals.totalExpense)}</span>
+                <span className="text-red-900">{fmtBRL(totalDespesa)}</span>
               </div>
             </div>
 
-            {data.totals.usedEstimado && (
-              <p className="text-[10px] text-amber-600 font-semibold italic">* Receita baseada no valor estimado (sem faturamento registrado)</p>
-            )}
-            {data.totals.usedBilling && (
-              <p className="text-[10px] text-blue-600 font-semibold italic">* Receita baseada no faturamento do Boletim de Medição</p>
-            )}
+            <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
+              <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
+              <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita (Faturamento)</span><span className="font-bold text-emerald-700">{fmtBRL(totalReceita)}</span></div>
+              <div className="border-t border-neutral-200 my-1" />
+              {custoCombustivel > 0 && (
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Abastecimento</span><span className="font-bold text-red-600">{fmtBRL(custoCombustivel)}</span></div>
+              )}
+              {custoPedagio > 0 && (
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Pedágio</span><span className="font-bold text-red-600">{fmtBRL(custoPedagio)}</span></div>
+              )}
+              {custoDiarias > 0 && (
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias (VRP)</span><span className="font-bold text-red-600">{fmtBRL(custoDiarias)}</span></div>
+              )}
+              {custoOutros > 0 && (
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(custoOutros)}</span></div>
+              )}
+              <div className="border-t border-neutral-200 my-1" />
+              <div className="flex justify-between text-xs font-bold"><span className="text-neutral-700">= Resultado</span><span className={resultado >= 0 ? "text-blue-700" : "text-red-700"}>{fmtBRL(resultado)}</span></div>
+            </div>
 
-            {data.components && (
-              <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
-                <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita</span><span className="font-bold text-emerald-700">{fmtBRL(data.components.receita)}</span></div>
-                {(data.components.pedagioRepasse || 0) > 0 && (
-                  <div className="flex justify-between text-xs"><span className="text-neutral-500">(+) Reembolso de Pedágio</span><span className="font-bold text-emerald-600">{fmtBRL(data.components.pedagioRepasse)}</span></div>
-                )}
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Combustível</span><span className="font-bold text-red-600">{fmtBRL(data.components.combustivel)}</span></div>
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Gasto com Pedágio</span><span className="font-bold text-red-600">{fmtBRL(data.components.pedagio || 0)}</span></div>
-                <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Diárias</span><span className="font-bold text-red-600">{fmtBRL(data.components.diarias)}</span></div>
-                {data.components.outrosCustos > 0 && (
-                  <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Outros</span><span className="font-bold text-red-600">{fmtBRL(data.components.outrosCustos)}</span></div>
-                )}
-              </div>
-            )}
-
-            <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${data.totals.netResult >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
-              <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>Resultado Líquido</span>
+            <div className={`flex justify-between items-center px-3 py-2 rounded-lg font-black text-sm ${resultado >= 0 ? "bg-blue-50 border border-blue-200" : "bg-red-50 border border-red-200"}`}>
+              <span className={resultado >= 0 ? "text-blue-900" : "text-red-900"}>Resultado Líquido</span>
               <div className="flex items-center gap-2">
-                <span className={data.totals.netResult >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(data.totals.netResult)}</span>
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${data.totals.margemPct >= 0 ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800"}`}>
-                  {data.totals.margemPct?.toFixed(1)}%
+                <span className={resultado >= 0 ? "text-blue-900" : "text-red-900"}>{fmtBRL(resultado)}</span>
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${margem >= 0 ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800"}`}>
+                  {margem.toFixed(1)}%
                 </span>
               </div>
             </div>
@@ -4470,7 +4507,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
   const [rowForwardMsg, setRowForwardMsg] = useState("");
   const [rowSendingEmail, setRowSendingEmail] = useState(false);
   const [rowShowHistory, setRowShowHistory] = useState(false);
-  const [dreOs, setDreOs] = useState<{ id: number; osNumber: string } | null>(null);
+  const [dreOs, setDreOs] = useState<{ id: number; osNumber: string; liveCost?: any } | null>(null);
 
   const { data: unreadUpdates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -5130,7 +5167,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <TooltipTrigger>
                                       <button
                                         type="button"
-                                        onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber }); }}
+                                        onClick={(e) => { e.stopPropagation(); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: v.activeOs!.liveCost }); }}
                                         className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
                                         data-testid={`button-dre-${v.id}`}
                                       >
@@ -5824,7 +5861,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       </DialogContent>
     </Dialog>
     {dreOs && (
-      <DreModal osId={dreOs.id} osNumber={dreOs.osNumber} open={!!dreOs} onOpenChange={(o) => { if (!o) setDreOs(null); }} />
+      <DreModal osId={dreOs.id} osNumber={dreOs.osNumber} liveCost={dreOs.liveCost} open={!!dreOs} onOpenChange={(o) => { if (!o) setDreOs(null); }} />
     )}
     </>
   );
