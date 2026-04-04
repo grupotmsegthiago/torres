@@ -5108,7 +5108,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       }
     }
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const vehicleFuelCache = new Map<string, number>();
     try {
       const { data: allFuelToday } = await supabaseAdmin.from("financial_transactions")
@@ -5130,14 +5130,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     } catch (_e) {}
 
     const vehicleFuelFirstOS = new Map<string, number>();
+    const toDateBRT = (d: any) => d ? new Date(d).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : todayStr;
     for (const o of activeOrders) {
       if (!o.vehicleId) continue;
       const gv = gridVehicles.find(vv => vv.id === o.vehicleId);
       const vPlate = gv?.plate?.toUpperCase() || "";
       if (!vPlate) continue;
-      const oDate = o.scheduledDate
-        ? new Date(o.scheduledDate).toISOString().split("T")[0]
-        : todayStr;
+      const oDate = toDateBRT(o.scheduledDate);
       const fuelKey = `${vPlate}:${oDate}`;
       if (o.fuelAllocated === true) {
         vehicleFuelFirstOS.set(fuelKey, o.id);
@@ -5148,9 +5147,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const gv = gridVehicles.find(vv => vv.id === o.vehicleId);
       const vPlate = gv?.plate?.toUpperCase() || "";
       if (!vPlate) continue;
-      const oDate = o.scheduledDate
-        ? new Date(o.scheduledDate).toISOString().split("T")[0]
-        : todayStr;
+      const oDate = toDateBRT(o.scheduledDate);
       const fuelKey = `${vPlate}:${oDate}`;
       if (!vehicleFuelFirstOS.has(fuelKey) && o.fuelAllocated !== false) {
         vehicleFuelFirstOS.set(fuelKey, o.id);
@@ -5326,9 +5323,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               }
 
               if (o.vehicleId) {
-                const oDate = o.scheduledDate
-                  ? new Date(o.scheduledDate).toISOString().split("T")[0]
-                  : todayStr;
+                const oDate = toDateBRT(o.scheduledDate);
                 const vPlate = vehicle?.plate?.toUpperCase() || "";
                 if (vPlate) {
                   const fuelKey = `${vPlate}:${oDate}`;
@@ -5350,7 +5345,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             let fuelAllocatedHint: string | null = null;
             if (custoCombustivel === 0 && o.vehicleId) {
               const vPlate2 = vehicle?.plate?.toUpperCase() || "";
-              const oDate2 = o.scheduledDate ? new Date(o.scheduledDate).toISOString().split("T")[0] : todayStr;
+              const oDate2 = toDateBRT(o.scheduledDate);
               const fk2 = `${vPlate2}:${oDate2}`;
               const ownerOsId = vehicleFuelFirstOS.get(fk2);
               if (ownerOsId && ownerOsId !== o.id) {
