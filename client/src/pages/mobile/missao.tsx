@@ -2,8 +2,8 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { logAuditAction } from "@/hooks/use-audit";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { titleCase } from "@/lib/utils";
+import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
+import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError } from "@/lib/offlineQueue";
@@ -13,6 +13,7 @@ import {
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
   WifiOff, History, ChevronRight, Calendar, Clock, MessageSquare,
+  CircleDollarSign, Receipt,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -384,12 +385,90 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   handleTransitAdvance: () => void;
   getPosition: () => Promise<{ lat: string; lng: string } | null>;
 }) {
+  const { toast } = useToast();
   const [confirmArrival, setConfirmArrival] = useState(false);
   const [nearOrigin, setNearOrigin] = useState(false);
   const [distanceInfo, setDistanceInfo] = useState<string | null>(null);
   const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
   const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [tollOpen, setTollOpen] = useState(false);
+  const [tollAmount, setTollAmount] = useState("");
+  const [tollPhoto, setTollPhoto] = useState("");
+  const [tollCameraMode, setTollCameraMode] = useState(false);
+  const [tollSubmitted, setTollSubmitted] = useState(false);
+  const tollVideoRef = useRef<HTMLVideoElement>(null);
+  const tollCanvasRef = useRef<HTMLCanvasElement>(null);
+  const tollStreamRef = useRef<MediaStream | null>(null);
+
+  const startTollCamera = useCallback(async () => {
+    setTollCameraMode(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: 1280, height: 960 } });
+      tollStreamRef.current = stream;
+      if (tollVideoRef.current) { tollVideoRef.current.srcObject = stream; tollVideoRef.current.play(); }
+    } catch {
+      toast({ title: "Erro ao acessar câmera", variant: "destructive" });
+      setTollCameraMode(false);
+    }
+  }, [toast]);
+
+  const stopTollCamera = useCallback(() => {
+    tollStreamRef.current?.getTracks().forEach(t => t.stop());
+    tollStreamRef.current = null;
+    setTollCameraMode(false);
+  }, []);
+
+  const captureTollPhoto = useCallback(() => {
+    if (!tollVideoRef.current || !tollCanvasRef.current) return;
+    const cv = tollCanvasRef.current;
+    const video = tollVideoRef.current;
+    cv.width = Math.min(video.videoWidth, 1280);
+    cv.height = Math.min(video.videoHeight, 1280);
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, cv.width, cv.height);
+    setTollPhoto(cv.toDataURL("image/jpeg", 0.7));
+    stopTollCamera();
+  }, [stopTollCamera]);
+
+  const tollMutation = useMutation({
+    mutationFn: async () => {
+      const pos = await getPosition();
+      const res = await authFetch("/api/mobile/pedagio-missao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceOrderId: mission.serviceOrderId,
+          amount: parseBRL(tollAmount),
+          photoUrl: tollPhoto,
+          latitude: pos?.lat || null,
+          longitude: pos?.lng || null,
+        }),
+      });
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { data = { message: text }; }
+      if (!res.ok) throw new Error(data.message || "Erro ao registrar pedágio");
+      return data;
+    },
+    onSuccess: (data) => {
+      setTollSubmitted(true);
+      invalidateRelatedQueries("financial");
+      invalidateRelatedQueries("mission-cost");
+      toast({ title: `Pedágio R$ ${tollAmount} registrado!`, description: `OS ${data.osNumber} · Reembolso + Custo` });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao registrar pedágio", description: err.message, variant: "destructive" }),
+  });
+
+  const resetToll = () => {
+    setTollOpen(false);
+    setTollAmount("");
+    setTollPhoto("");
+    setTollSubmitted(false);
+    setTollCameraMode(false);
+  };
 
   const isAtDestination = currentStep === "chegada_destino";
   const isGoingToOrigin = currentStep === "em_transito_origem";
@@ -627,6 +706,96 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
             Cancelar
           </button>
           <p className="text-[10px] text-neutral-400 text-center">Esta mensagem será enviada ao admin. Não avança a etapa.</p>
+        </div>
+      )}
+
+      {!tollOpen && !tollCameraMode && !tollSubmitted && (
+        <button
+          onClick={() => setTollOpen(true)}
+          className="w-full h-12 bg-amber-500 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] shadow-md shadow-amber-200"
+          data-testid="button-open-toll"
+        >
+          <CircleDollarSign className="w-5 h-5" />
+          + Lançar Pedágio
+        </button>
+      )}
+
+      {tollCameraMode && (
+        <div className="bg-white rounded-2xl border-2 border-amber-300 p-4 space-y-3" data-testid="toll-camera-view">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Foto do Comprovante</span>
+            <button onClick={stopTollCamera} className="text-xs text-neutral-500 font-bold" data-testid="button-toll-camera-back">Voltar</button>
+          </div>
+          <div className="bg-black rounded-xl overflow-hidden relative">
+            <video ref={tollVideoRef} autoPlay playsInline muted className="w-full aspect-[4/3] object-cover" />
+            <div className="absolute bottom-0 left-0 right-0 p-3">
+              <button onClick={captureTollPhoto} className="w-full h-12 bg-white rounded-xl flex items-center justify-center gap-2 font-black text-neutral-900 uppercase tracking-wider text-sm active:bg-neutral-200" data-testid="button-toll-capture">
+                <Camera className="w-5 h-5" /> Capturar
+              </button>
+            </div>
+          </div>
+          <canvas ref={tollCanvasRef} className="hidden" />
+        </div>
+      )}
+
+      {tollOpen && !tollCameraMode && (
+        <div className="bg-amber-50 rounded-2xl border-2 border-amber-300 p-4 space-y-4" data-testid="toll-modal">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CircleDollarSign className="w-5 h-5 text-amber-600" />
+              <span className="text-sm font-black text-amber-900 uppercase tracking-wider">Pedágio</span>
+            </div>
+            <button onClick={resetToll} className="text-xs text-neutral-500 font-bold" data-testid="button-toll-close">Fechar</button>
+          </div>
+          <div className="bg-white/70 rounded-xl px-3 py-2">
+            <p className="text-[11px] text-amber-800">O valor será lançado como <span className="font-bold">Custo + Reembolso</span> nesta missão (impacto zero no lucro).</p>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider block mb-1">Valor (R$)</label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={tollAmount}
+                onChange={(e) => setTollAmount(maskBRL(e.target.value))}
+                className="w-full h-12 pl-9 pr-4 border border-amber-200 rounded-xl text-lg font-bold text-neutral-900 bg-white focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none"
+                data-testid="input-toll-amount"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider block mb-1">Comprovante</label>
+            {tollPhoto ? (
+              <div className="relative">
+                <img src={tollPhoto} alt="Comprovante" className="w-full aspect-[4/3] object-cover rounded-xl border border-amber-200" data-testid="img-toll-receipt" />
+                <button onClick={() => { setTollPhoto(""); startTollCamera(); }} className="absolute top-2 right-2 bg-white/90 rounded-lg px-2 py-1 text-xs font-bold text-neutral-700 border" data-testid="button-toll-retake">Refazer</button>
+              </div>
+            ) : (
+              <button onClick={startTollCamera} className="w-full h-20 border-2 border-dashed border-amber-300 rounded-xl flex flex-col items-center justify-center gap-1 active:bg-amber-100/50" data-testid="button-toll-camera">
+                <Camera className="w-5 h-5 text-amber-500" />
+                <span className="text-xs font-bold text-amber-600 uppercase">Tirar Foto</span>
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => tollMutation.mutate()}
+            disabled={parseBRL(tollAmount) <= 0 || !tollPhoto || tollMutation.isPending}
+            className="w-full h-12 bg-amber-600 text-white rounded-xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-40"
+            data-testid="button-toll-submit"
+          >
+            {tollMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Registrando...</> : <><Receipt className="w-4 h-4" /> Confirmar Pedágio</>}
+          </button>
+        </div>
+      )}
+
+      {tollSubmitted && (
+        <div className="bg-emerald-50 rounded-2xl border-2 border-emerald-300 p-4 text-center space-y-3" data-testid="toll-success">
+          <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+          <p className="text-sm font-black text-emerald-900 uppercase tracking-wider">Pedágio Registrado!</p>
+          <p className="text-xs text-emerald-700">R$ {tollAmount} · Custo + Reembolso na OS</p>
+          <button onClick={resetToll} className="h-10 px-6 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]" data-testid="button-toll-done">OK</button>
         </div>
       )}
 

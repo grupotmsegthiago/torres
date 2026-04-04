@@ -11677,6 +11677,105 @@ Regras:
     }
   });
 
+  // ─── MOBILE: Pedágio com Missão (Reembolso = Custo + Receita) ──────
+  app.post("/api/mobile/pedagio-missao", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.status(400).json({ message: "Funcionário não identificado" });
+
+      const { serviceOrderId, amount, photoUrl, latitude, longitude } = req.body;
+      const parsedAmount = Number(amount);
+      if (!serviceOrderId) return res.status(400).json({ message: "ID da missão obrigatório" });
+      if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ message: "Valor do pedágio obrigatório" });
+      if (!photoUrl || typeof photoUrl !== "string" || !photoUrl.startsWith("data:image/"))
+        return res.status(400).json({ message: "Foto do comprovante obrigatória" });
+
+      const os = await storage.getServiceOrder(Number(serviceOrderId));
+      if (!os) return res.status(404).json({ message: "OS não encontrada" });
+
+      const activeStatuses = ["ativa", "em_andamento", "em_transito", "em trânsito"];
+      if (!activeStatuses.includes((os.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())) {
+        return res.status(400).json({ message: "OS não está ativa ou em andamento" });
+      }
+
+      const isAssigned = os.assignedEmployeeId === employeeId || os.assignedEmployee2Id === employeeId;
+      if (!isAssigned) {
+        return res.status(403).json({ message: "Você não está designado para esta missão" });
+      }
+
+      const vehicleId = os.vehicleId || null;
+      let vehiclePlate = "Sem viatura";
+      if (vehicleId) {
+        const { data: vData } = await supabaseAdmin.from("vehicles").select("plate").eq("id", vehicleId).limit(1).single();
+        vehiclePlate = vData?.plate || "Desconhecida";
+      }
+      const { data: empData } = await supabaseAdmin.from("employees").select("name").eq("id", employeeId).limit(1).single();
+      const empName = empData?.name || "Agente";
+      const osNum = os.osNumber || `OS-${serviceOrderId}`;
+
+      const { data: costRecord, error: costErr } = await supabaseAdmin.from("mission_costs").insert({
+        service_order_id: Number(serviceOrderId),
+        vehicle_id: vehicleId,
+        employee_id: employeeId,
+        category: "Pedágio",
+        description: `Pedágio Reembolso - ${empName} (${vehiclePlate})`,
+        amount: parsedAmount.toFixed(2),
+        cost_type: "expense",
+        photo_url: photoUrl,
+        latitude: latitude ? String(latitude) : null,
+        longitude: longitude ? String(longitude) : null,
+      }).select().single();
+      if (costErr) throw new Error(costErr.message);
+
+      const { data: revRecord, error: revErr } = await supabaseAdmin.from("mission_costs").insert({
+        service_order_id: Number(serviceOrderId),
+        vehicle_id: vehicleId,
+        employee_id: employeeId,
+        category: "Reembolso de Pedágio",
+        description: `Reembolso Pedágio - ${empName} (${vehiclePlate})`,
+        amount: parsedAmount.toFixed(2),
+        cost_type: "revenue",
+        photo_url: photoUrl,
+        latitude: latitude ? String(latitude) : null,
+        longitude: longitude ? String(longitude) : null,
+      }).select().single();
+      if (revErr) {
+        await supabaseAdmin.from("mission_costs").delete().eq("id", costRecord.id);
+        throw new Error("Falha ao criar registro de reembolso: " + revErr.message);
+      }
+
+      const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      await createAutoTransaction({
+        description: `CUSTO MISSÃO ${osNum} - PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
+        amount: parsedAmount,
+        type: "EXPENSE",
+        due_date: todayBRT,
+        origin_type: "mission_cost",
+        origin_id: String(costRecord.id),
+        category_name: "Custos de Missão",
+        entity_name: vehiclePlate,
+        created_by: "SISTEMA",
+      });
+      await createAutoTransaction({
+        description: `RECEITA MISSÃO ${osNum} - REEMBOLSO PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
+        amount: parsedAmount,
+        type: "INCOME",
+        due_date: todayBRT,
+        origin_type: "mission_cost",
+        origin_id: String(revRecord?.id || costRecord.id),
+        category_name: "Receitas de Missão",
+        entity_name: vehiclePlate,
+        created_by: "SISTEMA",
+      });
+
+      console.log(`[pedagio-missao] Agent ${empName} registered R$${parsedAmount.toFixed(2)} toll reimbursement for OS ${osNum} (${vehiclePlate})`);
+      res.status(201).json({ success: true, costRecord, revRecord, vehiclePlate, osNumber: osNum });
+    } catch (err: any) {
+      console.error("[pedagio-missao] Error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─── MOBILE: Pedágio Vazio (deslocamento sem OS) ──────────────────
   app.post("/api/mobile/pedagio-vazio", requireAuth, async (req: any, res) => {
     try {
