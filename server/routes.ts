@@ -6264,6 +6264,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const photos = await storage.getMissionPhotosByOS(active.id);
       const completedSteps = photos.map((p) => p.step);
 
+      let agentLocation: { lat: string; lng: string } | null = null;
+      if (active.assignedEmployeeId) {
+        const { data: loc } = await supabaseAdmin
+          .from("agent_locations")
+          .select("latitude, longitude")
+          .eq("employee_id", active.assignedEmployeeId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (loc) agentLocation = { lat: String(loc.latitude), lng: String(loc.longitude) };
+      }
+
       return res.json({
         ...active,
         serviceOrderId: active.id,
@@ -6281,6 +6293,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         origin: active.origin || null,
         destination: active.destination || null,
         route: active.route || null,
+        agentLocation,
         scheduledMissions: [],
       });
     }

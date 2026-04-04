@@ -158,20 +158,31 @@ function CameraCapture({ label, onCapture, captured, hint }: { label: string; on
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
-function WazeIcon({ className }: { className?: string }) {
+function WazeLogo({ size = 28 }: { size?: number }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M20.54 6.63c-1.19-4.1-5.58-6.2-9.8-5.71C6.44 1.42 3.25 4.57 2.67 8.78c-.56 3.83 1.13 7.17 4.28 8.79-.27.86-.7 1.66-1.27 2.36-.35.43-.16.64.12.69 1.67.27 3.41-.08 4.83-.94 .62.12 1.25.18 1.88.18 4.78 0 9.09-3.58 9.56-8.17.19-1.81-.2-3.5-1.02-4.91-.08-.05-.18-.08-.51-.15zm-13.3 5.3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-    </svg>
+    <img
+      src="https://www.waze.com/favicon.ico"
+      alt="Waze"
+      width={size}
+      height={size}
+      className="rounded"
+      style={{ imageRendering: "auto" }}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+    />
   );
 }
 
-function GoogleMapsIcon({ className }: { className?: string }) {
+function GoogleMapsLogo({ size = 28 }: { size?: number }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="currentColor"/>
-      <circle cx="12" cy="9" r="2.5" fill="white"/>
-    </svg>
+    <img
+      src="https://maps.google.com/favicon.ico"
+      alt="Google Maps"
+      width={size}
+      height={size}
+      className="rounded"
+      style={{ imageRendering: "auto" }}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+    />
   );
 }
 
@@ -263,22 +274,22 @@ function RouteInfoCard({ origin, destination, route, currentStep }: { origin?: s
             href={googleMapsNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-12 bg-[#4285F4] text-white rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider"
+            className="flex items-center justify-center gap-2 h-12 bg-white border-2 border-neutral-200 rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider text-neutral-800"
             data-testid="button-navigate-gmaps"
             title="Google Maps"
           >
-            <GoogleMapsIcon className="w-5 h-5" />
-            Maps
+            <GoogleMapsLogo size={24} />
+            Google Maps
           </a>
           <a
             href={wazeNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-12 bg-[#33ccff] text-white rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider"
+            className="flex items-center justify-center gap-2 h-12 bg-white border-2 border-neutral-200 rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider text-neutral-800"
             data-testid="button-navigate-waze"
             title="Waze"
           >
-            <WazeIcon className="w-5 h-5" />
+            <WazeLogo size={24} />
             Waze
           </a>
         </div>
@@ -416,7 +427,7 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
   );
 }
 
-function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, submitting, handleSendStatusUpdate, handleTransitAdvance, getPosition }: {
+function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, submitting, handleSendStatusUpdate, handleTransitAdvance, getPosition, isReadOnly }: {
   currentStep: string;
   mission: any;
   statusUpdate: string;
@@ -425,6 +436,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   handleSendStatusUpdate: (photoDataUrl?: string) => Promise<boolean>;
   handleTransitAdvance: () => void;
   getPosition: () => Promise<{ lat: string; lng: string } | null>;
+  isReadOnly?: boolean;
 }) {
   const { toast } = useToast();
   const [nearOrigin, setNearOrigin] = useState(false);
@@ -527,7 +539,12 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
     if (!targetLat || !targetLng) return;
 
     const checkProximity = async () => {
-      const pos = await getPosition();
+      let pos: { lat: string; lng: string } | null = null;
+      if (isReadOnly && mission.agentLocation) {
+        pos = mission.agentLocation;
+      } else {
+        pos = await getPosition();
+      }
       if (!pos) return;
 
       const lat1 = parseFloat(pos.lat);
@@ -550,7 +567,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
     checkProximity();
     const interval = setInterval(checkProximity, 30000);
     return () => clearInterval(interval);
-  }, [targetLat, targetLng, getPosition, currentStep]);
+  }, [targetLat, targetLng, getPosition, currentStep, isReadOnly, mission.agentLocation]);
 
   const getSuggestions = () => {
     const suggestions: string[] = [];
@@ -610,7 +627,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         </p>
         {distanceInfo && (
           <p className="text-xs text-neutral-400 mt-1">
-            Distância até {targetLabel}: <span className="font-bold text-neutral-700">{distanceInfo}</span>
+            Distância até {targetLabel}{isReadOnly ? " (agente)" : ""}: <span className="font-bold text-neutral-700">{distanceInfo}</span>
           </p>
         )}
       </div>
@@ -1853,6 +1870,7 @@ export default function MobileMissaoPage() {
             handleSendStatusUpdate={handleSendStatusUpdate}
             handleTransitAdvance={handleTransitAdvance}
             getPosition={getPosition}
+            isReadOnly={isReadOnly}
           />
         )}
 
