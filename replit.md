@@ -28,6 +28,7 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 - **`data_missao` must be stored as a full ISO timestamp** (e.g., `"2026-04-02T11:00:00"`) — never a date-only string (`"2026-04-02"`). PostgreSQL stores date-only strings as UTC midnight, which shifts the BRT date by one day back.
 - **Fuso Horário Brasília (UTC-3):** Todo registro de data/hora e cálculos de duração devem operar em BRT (America/Sao_Paulo). O banco armazena timestamps sem timezone em UTC. No frontend, usar `parseUTCTimestamp()` para garantir parsing correto como UTC antes de calcular diferenças. Nunca usar `new Date(timestamp)` diretamente em timestamps sem 'Z' — isso interpreta como hora local do navegador.
 - **`missionStartedAt` é setado no primeiro checkout** (checkout_armamento), não no em_transito_origem. Isso garante que o cronômetro reflita o tempo real da jornada completa.
+- **Billing hora extra usa `inicioConsiderado`** = max(scheduledDate, missionStartedAt). O timer operacional usa missionStartedAt (tempo real de jornada), mas o faturamento de hora extra usa o inicio de cobrança (o mais tardio entre agendado e real). Esse cálculo é consistente entre Grid liveCost, DRE endpoint e CRON billing.
 - **CRON billing** MUST use `supabaseAdmin.from("service_orders")` (REST API with snake_case columns) — NEVER `storage.getServiceOrders()`. Only recalculates active missions; concluded missions are never touched.
 
 ### Regras de Persistência Financeira

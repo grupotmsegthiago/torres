@@ -5290,10 +5290,17 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
 
             const n2 = (v: any) => Number(v) || 0;
             const franquiaHoras = n2(contrato.franquia_horas);
+            const scheduledDateGrid = o.scheduledDate ? new Date(o.scheduledDate) : null;
+            const inicioConsideradoDate = (() => {
+              if (!scheduledDateGrid && !missionStartDate) return null;
+              if (!scheduledDateGrid) return missionStartDate;
+              if (!missionStartDate) return scheduledDateGrid;
+              return missionStartDate.getTime() > scheduledDateGrid.getTime() ? missionStartDate : scheduledDateGrid;
+            })();
             let horasCalcRaw = 0;
-            if (missionStartDate) {
+            if (inicioConsideradoDate) {
               const endRef = missionEndDate || nowDate;
-              const diffMs = endRef.getTime() - missionStartDate.getTime();
+              const diffMs = endRef.getTime() - inicioConsideradoDate.getTime();
               horasCalcRaw = diffMs > 0 ? diffMs / 3600000 : 0;
             }
 
@@ -5425,8 +5432,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
               km_total: useFrozen ? ((o as any).km_total_calculado ?? frozenKm) : frozenKm,
               horas_missao: useFrozen ? (Number((o as any).horas_missao_calculadas) || frozenHoras) : frozenHoras,
               faturamento: useFrozen ? (Number((o as any).fat_calculado) || frozenFat) : frozenFat,
+              fat_acionamento: hasAcionamento ? Math.round(valorAcionamento * 100) / 100 : 0,
               fat_hora_extra: Math.round(fatHoraExtra * 100) / 100,
               fat_km_extra: Math.round(fatKmExtra * 100) / 100,
+              horas_excedentes: franquiaHoras > 0 ? Math.round(Math.max(0, horasCalcRaw - franquiaHoras) * 100) / 100 : 0,
               pagamento: useFrozen ? (Number((o as any).custo_pagamento_alocado) || frozenPag) : frozenPag,
               custo_combustivel: useFrozen ? (Number((o as any).custo_combustivel_alocado) || frozenComb) : frozenComb,
               custo_pedagio: useFrozen ? (Number((o as any).custo_pedagio_alocado) || frozenPed) : frozenPed,
@@ -9360,9 +9369,16 @@ Regras:
           const kmFinalP = missionPhotos.find((p: any) => p.step === "km_final");
           const kmInicial = Number(kmChegadaP?.kmValue || 0);
           const kmFinal = Number(kmFinalP?.kmValue || 0);
-          const startedAt = so.missionStartedAt || so.scheduledDate;
+          const missionStartDre = so.missionStartedAt ? new Date(so.missionStartedAt as string) : null;
+          const scheduledDre = so.scheduledDate ? new Date(so.scheduledDate) : null;
+          const inicioConsideradoDre = (() => {
+            if (!scheduledDre && !missionStartDre) return null;
+            if (!scheduledDre) return missionStartDre;
+            if (!missionStartDre) return scheduledDre;
+            return missionStartDre.getTime() > scheduledDre.getTime() ? missionStartDre : scheduledDre;
+          })();
           const now = new Date();
-          const horasMissao = startedAt ? Math.max(0, (now.getTime() - new Date(startedAt).getTime()) / 3600000) : 0;
+          const horasMissao = inicioConsideradoDre ? Math.max(0, (now.getTime() - inicioConsideradoDre.getTime()) / 3600000) : 0;
           const nb = (v: any) => Number(v) || 0;
           const franquiaKm = nb(contrato.franquia_km || contrato.franquia_minima_km);
           const km_carregado = Math.max(0, kmFinal - kmInicial);
@@ -9383,8 +9399,8 @@ Regras:
             const resultado = calcularEscolta({
               km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
               horas_missao: horasMissao, horas_estadia: 0,
-              teve_pernoite: false, horario_inicio: startedAt ? new Date(startedAt).toTimeString().slice(0,5) : "08:00",
-              horario_fim: now.toTimeString().slice(0,5), horario_agendado: null,
+              teve_pernoite: false, horario_inicio: inicioConsideradoDre ? inicioConsideradoDre.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) : "08:00",
+              horario_fim: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) , horario_agendado: scheduledDre ? scheduledDre.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) : undefined,
               despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
             });
             fat_total = resultado.fat_total;

@@ -324,8 +324,10 @@ interface GridItem {
     km_total: number;
     horas_missao: number;
     faturamento: number;
+    fat_acionamento: number;
     fat_hora_extra: number;
     fat_km_extra: number;
+    horas_excedentes: number;
     pagamento: number;
     custo_combustivel: number;
     custo_pedagio: number;
@@ -4481,19 +4483,19 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
               </div>
             </div>
 
-            {data?.billing && (() => {
-              const b = data.billing;
-              const kmTotal = Number(b.km_total || 0);
-              const kmExc = Number(b.km_excedente || 0);
-              const kmFranquia = Number(b.km_franquia || 0);
-              const horas = Number(b.horas_trabalhadas || 0);
-              const fatAcionamento = Number(b.fat_acionamento || 0);
-              const fatKm = Number(b.fat_km || b.valor_km_extra || 0);
-              const fatHoraExtra = Number(b.fat_hora_extra || 0);
-              const fatAdicNoturno = Number(b.fat_adicional_noturno || 0);
-              const fatEstadia = Number(b.fat_estadia || 0);
-              const fatPernoite = Number(b.fat_pernoite || 0);
-              const fatTotal = Number(b.fat_total || 0);
+            {(data?.billing || lc) && (() => {
+              const b = data?.billing;
+              const kmTotal = Number(b?.km_total || lc?.km_total || 0);
+              const kmExc = Number(b?.km_excedente || 0);
+              const kmFranquia = Number(b?.km_franquia || lc?.contrato_valores?.franquia_km || 0);
+              const horas = Number(b?.horas_trabalhadas || lc?.horas_missao || 0);
+              const fatAcionamento = Number(b?.fat_acionamento || lc?.fat_acionamento || 0);
+              const fatKm = Number(b?.fat_km || b?.valor_km_extra || lc?.fat_km_extra || 0);
+              const fatHoraExtra = Number(b?.fat_hora_extra || lc?.fat_hora_extra || 0);
+              const fatAdicNoturno = Number(b?.fat_adicional_noturno || 0);
+              const fatEstadia = Number(b?.fat_estadia || 0);
+              const fatPernoite = Number(b?.fat_pernoite || 0);
+              const fatTotal = Number(b?.fat_total || lc?.faturamento || 0);
               return (
                 <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
                   <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-2">Dados do Faturamento</h4>
@@ -4537,7 +4539,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                       {fatHoraExtra > 0 && horas > 0 && (
                         <tr className="border-b border-neutral-100">
                           <td className="py-1.5 text-neutral-600 pl-3">↳ Hora Extra</td>
-                          <td className="py-1.5 text-center font-semibold text-amber-700">{(() => { const franquiaH = Number(b.franquia_horas || 0); return franquiaH > 0 ? `${(horas - franquiaH).toFixed(1)}h` : "—"; })()}</td>
+                          <td className="py-1.5 text-center font-semibold text-amber-700">{(() => { const franquiaH = Number(b?.franquia_horas || lc?.contrato_valores?.franquia_horas || 0); return franquiaH > 0 ? `${(horas - franquiaH).toFixed(1)}h` : "—"; })()}</td>
                           <td className="py-1.5 text-right font-bold text-amber-700">{fmtBRL(fatHoraExtra)}</td>
                         </tr>
                       )}
@@ -4551,7 +4553,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                       {fatEstadia > 0 && (
                         <tr className="border-b border-neutral-100">
                           <td className="py-1.5 text-neutral-600">Estadia</td>
-                          <td className="py-1.5 text-center font-semibold text-neutral-700">{Number(b.horas_estadia || 0).toFixed(1)}h</td>
+                          <td className="py-1.5 text-center font-semibold text-neutral-700">{Number(b?.horas_estadia || 0).toFixed(1)}h</td>
                           <td className="py-1.5 text-right font-bold text-neutral-800">{fmtBRL(fatEstadia)}</td>
                         </tr>
                       )}
@@ -5188,6 +5190,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         const hora = (g.missionStartedAt || g.scheduledDate) ? new Date((g.missionStartedAt || g.scheduledDate)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                                         const he = g.liveCost?.fat_hora_extra || 0;
                                         const ke = g.liveCost?.fat_km_extra || 0;
+                                        const heHours = g.liveCost?.horas_excedentes || 0;
+                                        const franqH = g.liveCost?.contrato_valores?.franquia_horas || 0;
+                                        const valorHE = g.liveCost?.contrato_valores?.valor_hora_extra || 0;
                                         return (
                                           <div key={g.id}>
                                             <p className="flex items-center gap-1">
@@ -5198,8 +5203,13 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                             </p>
                                             {(he > 0 || ke > 0) && (
                                               <p className="pl-4 text-[10px] text-amber-600 font-bold">
-                                                {he > 0 && <span>HE: {fmtBRL(he)} </span>}
+                                                {he > 0 && <span>HE: {fmtBRL(he)} ({heHours.toFixed(1)}h × {fmtBRL(valorHE)}/h) </span>}
                                                 {ke > 0 && <span>KM exc: {fmtBRL(ke)}</span>}
+                                              </p>
+                                            )}
+                                            {he === 0 && franqH > 0 && (g.liveCost?.horas_missao || 0) > 0 && (
+                                              <p className="pl-4 text-[10px] text-neutral-400">
+                                                Franquia: {(g.liveCost?.horas_missao || 0).toFixed(1)}h / {franqH}h
                                               </p>
                                             )}
                                           </div>
