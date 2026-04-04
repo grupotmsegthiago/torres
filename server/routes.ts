@@ -10500,39 +10500,9 @@ Regras:
 
       const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id));
 
-      const calcHorasBRT = (startDate: Date, endDate: Date): number => {
-        const startTime = startDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-        const endTime = endDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-        const [sh, sm] = startTime.split(":").map(Number);
-        const [eh, em] = endTime.split(":").map(Number);
-        let startMin = sh * 60 + sm;
-        let endMin = eh * 60 + em;
-        if (endMin < startMin) endMin += 24 * 60;
-        return (endMin - startMin) / 60;
-      };
-
       for (const so of todayEscoltaOs) {
         try {
           const nb = (v: any) => Number(v) || 0;
-          const existingBilling = (billings || []).find((b: any) => b.service_order_id === so.id);
-
-          if (existingBilling) {
-            let receitasOs = nb(existingBilling.receitas_os);
-            if (receitasOs === 0) {
-              try {
-                const osMC = await storage.getMissionCostsByOS(so.id);
-                for (const mc of osMC) {
-                  if ((mc as any).costType === "revenue") receitasOs += Number(mc.amount) || 0;
-                }
-              } catch (_e) {}
-            }
-            const billingFatTotal = nb(existingBilling.fat_acionamento) + nb(existingBilling.fat_km) +
-              nb(existingBilling.fat_hora_extra) + nb(existingBilling.fat_adicional_noturno) +
-              nb(existingBilling.despesas_pedagio) + receitasOs;
-            const finalFatTotal = Math.max(nb(existingBilling.fat_total), billingFatTotal);
-            items.push({ ...existingBilling, fat_total: Math.round(finalFatTotal * 100) / 100, receitas_os: receitasOs });
-            continue;
-          }
 
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
           if (so.escortContractId) {
@@ -10544,40 +10514,19 @@ Regras:
           }
           const photos = await storage.getMissionPhotosByOS(so.id);
           const kmChegadaP = photos.find((p: any) => p.step === "km_chegada");
+          const kmSaidaP = photos.find((p: any) => p.step === "km_saida");
           const kmFinalP = photos.find((p: any) => p.step === "km_final");
-          const kmInicial = nb(kmChegadaP?.kmValue);
+          const kmInicial = nb(kmChegadaP?.kmValue) || nb(kmSaidaP?.kmValue);
           const kmAtual = nb(kmFinalP?.kmValue || kmInicial);
-          const km_carregado = Math.max(0, kmAtual - kmInicial);
 
-          const stepLogsDash = (so.stepLogs || []) as any[];
-          const getLogTimeDash = (steps: string[]) => {
-            for (const s of steps) {
-              const entry = [...stepLogsDash].reverse().find((l: any) => l.step === s && l.timestamp);
-              if (entry) return entry.timestamp;
-            }
-            return null;
-          };
-          const horaChegadaOrigemDash = (so as any).hora_chegada_origem || getLogTimeDash(["checkin_chegada_km", "em_transito_origem"]);
-          const horaFimMissaoDash = (so as any).hora_fim_missao || so.completedDate || getLogTimeDash(["encerrada", "finalizada", "checkout_km_final"]);
-          const startRef = horaChegadaOrigemDash ? new Date(horaChegadaOrigemDash) : (so.missionStartedAt ? new Date(so.missionStartedAt) : null);
-          const endRef = horaFimMissaoDash ? new Date(horaFimMissaoDash) : null;
-          const horasMissao = startRef && endRef ? calcHorasBRT(startRef, endRef) : 0;
+          const horasMissao = await getHorasElapsedFromDB(so.id);
 
-          const franquiaKm = nb(contrato.franquia_km) || nb(contrato.franquia_minima_km);
-          const km_excedente = Math.max(0, km_carregado - franquiaKm);
-          const hasAcion = nb(contrato.valor_acionamento) > 0;
-          const franquiaHoras = nb(contrato.franquia_horas);
-          let fat_acionamento = 0, fat_km = 0, fat_hora_extra = 0;
-          if (hasAcion) {
-            fat_acionamento = nb(contrato.valor_acionamento);
-            fat_km = km_excedente * (nb(contrato.valor_km_extra) || nb(contrato.valor_km_carregado));
-            if (franquiaHoras > 0 && horasMissao > franquiaHoras) {
-              fat_hora_extra = (horasMissao - franquiaHoras) * nb(contrato.valor_hora_extra);
-            }
-          } else {
-            const km_faturado = Math.max(km_carregado, franquiaKm);
-            fat_km = km_faturado * nb(contrato.valor_km_carregado);
-          }
+          const billing = calcularFaturamentoLive({
+            horasMissao,
+            kmInicial,
+            kmFinal: kmAtual,
+            contrato,
+          });
 
           let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0;
           let receitasOs = 0;
@@ -10595,7 +10544,7 @@ Regras:
             if (pedEstimado > 0 && despesas_pedagio === 0) despesas_pedagio = pedEstimado;
           } catch (_e) {}
 
-          const fat_total = fat_acionamento + fat_km + fat_hora_extra + despesas_pedagio + receitasOs;
+          const fat_total = billing.fat_total + despesas_pedagio + receitasOs;
           const r = (v: number) => Math.round(v * 100) / 100;
           const client = so.clientId ? await storage.getClient(so.clientId) : null;
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
@@ -10606,11 +10555,11 @@ Regras:
             client_id: so.clientId, client_name: client?.name || "--",
             contract_id: contrato.id || null,
             km_inicial: kmInicial, km_final: kmAtual, km_vazio: 0,
-            km_carregado: r(km_carregado), km_total: r(km_carregado),
-            km_faturado: r(Math.max(km_carregado, franquiaKm)), km_franquia: r(franquiaKm),
-            km_excedente: r(km_excedente),
+            km_carregado: r(billing.km_total), km_total: r(billing.km_total),
+            km_faturado: r(Math.max(billing.km_total, billing.franquia_km)), km_franquia: r(billing.franquia_km),
+            km_excedente: r(billing.km_excedente),
             horas_missao: r(horasMissao), horas_trabalhadas: r(horasMissao),
-            fat_acionamento: r(fat_acionamento), fat_km: r(fat_km), fat_hora_extra: r(fat_hora_extra), fat_total: r(fat_total),
+            fat_acionamento: billing.fat_acionamento, fat_km: billing.fat_km, fat_hora_extra: billing.fat_hora_extra, fat_total: r(fat_total),
             receitas_os: r(receitasOs),
             pag_vrp: r(nb(contrato.vrp_base)), pag_total: r(nb(contrato.vrp_base)),
             resultado_bruto: r(fat_total - nb(contrato.vrp_base)),
@@ -10674,7 +10623,7 @@ Regras:
         missionsByDay[d].push(b);
       });
 
-      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
 
       const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
 
