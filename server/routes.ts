@@ -5112,18 +5112,21 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const vehicleFuelCache = new Map<string, number>();
     try {
-      const { data: allFuelToday } = await supabaseAdmin.from("financial_transactions")
-        .select("amount, description")
+      const { data: allFuelRecords } = await supabaseAdmin.from("financial_transactions")
+        .select("amount, description, created_at")
         .eq("origin_type", "fueling")
-        .gte("due_date", todayStr)
-        .lte("due_date", todayStr);
-      if (allFuelToday) {
-        for (const fr of allFuelToday) {
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (allFuelRecords) {
+        const seenPlates = new Set<string>();
+        for (const fr of allFuelRecords) {
           const desc = (fr.description || "").toUpperCase();
           for (const gv of gridVehicles) {
             const plate = gv.plate?.toUpperCase() || "";
-            if (plate && desc.includes(plate)) {
-              vehicleFuelCache.set(plate, (vehicleFuelCache.get(plate) || 0) + Number(fr.amount || 0));
+            if (!plate || seenPlates.has(plate)) continue;
+            if (desc.includes(plate)) {
+              vehicleFuelCache.set(plate, Number(fr.amount || 0));
+              seenPlates.add(plate);
             }
           }
         }

@@ -16,6 +16,7 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.
 - **`data_missao` must be stored as a full ISO timestamp** (e.g., `"2026-04-02T11:00:00"`) — never a date-only string (`"2026-04-02"`). PostgreSQL stores date-only strings as UTC midnight, which shifts the BRT date by one day back.
 - **CRON billing** MUST use `supabaseAdmin.from("service_orders")` (REST API with snake_case columns) — NEVER `storage.getServiceOrders()`. Only recalculates active missions; concluded missions are never touched.
+- **Fuel cost is persistent.** The Grid/DRE must show the vehicle's **last fueling cost** (most recent by `created_at DESC`), not just today's. It must remain on the DRE of the mission until that mission is finalized, independent of date change at midnight. Never filter fuel by `due_date = TODAY()`.
 
 ## System Architecture
 The system employs a modern web stack: React with TypeScript and Vite for the frontend, and Express with Supabase Auth for the backend. **Supabase (PostgreSQL) is the ONLY database**. Tailwind CSS is utilized for styling, maintaining a professional monochrome aesthetic (black/white) with Montserrat/Inter typography. UI components adhere to an "Enterprise UI" design, ensuring a consistent and polished user experience.
