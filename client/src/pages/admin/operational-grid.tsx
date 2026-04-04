@@ -4397,7 +4397,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
               </div>
             </div>
 
-            {data.billing && (() => {
+            {data?.billing && (() => {
               const b = data.billing;
               const kmTotal = Number(b.km_total || 0);
               const kmExc = Number(b.km_excedente || 0);
