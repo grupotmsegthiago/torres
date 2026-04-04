@@ -558,10 +558,41 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   return false;
 }
 
-async function shareReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "copied" | "cancelled" | false> {
-  const canShare = !!navigator.share;
+async function fetchImageAsPngBlob(url: string): Promise<Blob | null> {
+  try {
+    const resp = await fetch(url, { mode: "cors" });
+    if (!resp.ok) return null;
+    const srcBlob = await resp.blob();
+    return await new Promise<Blob>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const maxDim = 1280;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((b) => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(srcBlob);
+    });
+  } catch {
+    return null;
+  }
+}
 
-  if (canShare && photoUrl) {
+async function shareReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "copied" | "cancelled" | false> {
+  const isMobile = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
+
+  if (isMobile && navigator.share && photoUrl) {
     try {
       const resp = await fetch(photoUrl, { mode: "cors" });
       if (resp.ok) {
@@ -578,13 +609,28 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
     }
   }
 
-  if (canShare) {
+  if (isMobile && navigator.share) {
     try {
       await navigator.share({ text });
       return "shared";
     } catch (e: any) {
       if (e?.name === "AbortError") return "cancelled";
     }
+  }
+
+  if (!isMobile && photoUrl && navigator.clipboard && typeof ClipboardItem !== "undefined") {
+    try {
+      const pngBlob = await fetchImageAsPngBlob(photoUrl);
+      if (pngBlob) {
+        const textBlob = new Blob([text], { type: "text/plain" });
+        const item = new ClipboardItem({
+          "text/plain": textBlob,
+          "image/png": pngBlob,
+        });
+        await navigator.clipboard.write([item]);
+        return "copied";
+      }
+    } catch {}
   }
 
   const ok = await copyTextToClipboard(text);
@@ -3196,7 +3242,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   const photoSrc = photoModalUrl && photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
                   const result = await shareReportWithPhoto(reportText, photoSrc);
                   if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                  else if (result === "copied") toast({ title: "Formulário copiado!", description: "Texto copiado para a área de transferência." });
+                  else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
                   else if (result !== "cancelled") toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
                 }}
                 data-testid={`btn-copy-form-modal-${v.id}`}
@@ -4138,7 +4184,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     const photoSrc = photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
                     const result = await shareReportWithPhoto(reportText, photoSrc);
                     if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result === "copied") toast({ title: "Formulário copiado!" });
+                    else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
                     else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
                   }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Texto + Foto</button>
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
@@ -5942,7 +5988,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
                   const result = await shareReportWithPhoto(reportText, rowForwardUpdate.photoUrl);
                   if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                  else if (result === "copied") toast({ title: "Formulário copiado!" });
+                  else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
                   else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
                 }}
                 data-testid="btn-row-copy-form"
@@ -6432,7 +6478,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   if (result === "shared") {
                     toast({ title: "Relatório compartilhado!" });
                   } else if (result === "copied") {
-                    toast({ title: "Relatório copiado!" });
+                    toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
                   } else if (result !== "cancelled") {
                     toast({ title: "Erro ao copiar", variant: "destructive" });
                   }
@@ -6719,7 +6765,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                     const result = await shareReportWithPhoto(reportText, forwardUpdate.photoUrl);
                     if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result === "copied") toast({ title: "Formulário copiado!" });
+                    else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
                     else if (result !== "cancelled") toast({ title: "Erro ao copiar", variant: "destructive" });
                   }}
                   data-testid="btn-forward-copy-form"
