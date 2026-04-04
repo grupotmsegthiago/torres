@@ -7227,7 +7227,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     }
     const updates: any = { missionStatus: nextStep };
 
-    if (currentStep === "em_transito_origem" && !so.missionStartedAt) {
+    if (!so.missionStartedAt && ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep)) {
       const now = new Date();
       if (so.scheduledDate) {
         const scheduled = new Date(so.scheduledDate);
