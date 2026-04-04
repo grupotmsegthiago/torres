@@ -158,62 +158,101 @@ function CameraCapture({ label, onCapture, captured, hint }: { label: string; on
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
-function RouteInfoCard({ origin, destination, currentStep }: { origin?: string | null; destination?: string | null; currentStep: string }) {
-  if (!origin && !destination) return null;
+function WazeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.54 6.63c-1.19-4.1-5.58-6.2-9.8-5.71C6.44 1.42 3.25 4.57 2.67 8.78c-.56 3.83 1.13 7.17 4.28 8.79-.27.86-.7 1.66-1.27 2.36-.35.43-.16.64.12.69 1.67.27 3.41-.08 4.83-.94 .62.12 1.25.18 1.88.18 4.78 0 9.09-3.58 9.56-8.17.19-1.81-.2-3.5-1.02-4.91-.08-.05-.18-.08-.51-.15zm-13.3 5.3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+    </svg>
+  );
+}
+
+function GoogleMapsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="currentColor"/>
+      <circle cx="12" cy="9" r="2.5" fill="white"/>
+    </svg>
+  );
+}
+
+function parseRouteStops(route?: string | null, origin?: string | null, destination?: string | null) {
+  const stops: { label: string; name: string; color: string }[] = [];
+  if (route && route.includes("→")) {
+    const parts = route.split("→").map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      stops.push({ label: "Origem", name: parts[0], color: "green" });
+      for (let i = 1; i < parts.length - 1; i++) {
+        stops.push({ label: `Parada ${i}`, name: parts[i], color: "amber" });
+      }
+      stops.push({ label: "Destino", name: parts[parts.length - 1], color: "red" });
+      return stops;
+    }
+  }
+  if (origin) stops.push({ label: "Origem", name: origin, color: "green" });
+  if (destination) stops.push({ label: "Destino", name: destination, color: "red" });
+  return stops;
+}
+
+function RouteInfoCard({ origin, destination, route, currentStep }: { origin?: string | null; destination?: string | null; route?: string | null; currentStep: string }) {
+  if (!origin && !destination && !route) return null;
+
+  const stops = parseRouteStops(route, origin, destination);
+  const finalDest = stops.length > 0 ? stops[stops.length - 1].name : destination;
 
   const isGoingToOrigin = ["aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep);
-  const currentTarget = isGoingToOrigin ? origin : destination;
+  const currentTarget = isGoingToOrigin ? (stops[0]?.name || origin) : finalDest;
 
-  const encOrigin = encodeURIComponent(origin || "");
-  const encDest = encodeURIComponent(destination || "");
+  const encOrigin = encodeURIComponent(stops[0]?.name || origin || "");
+  const encDest = encodeURIComponent(finalDest || "");
   const encTarget = encodeURIComponent(currentTarget || "");
+  const waypoints = stops.slice(1, -1).map(s => encodeURIComponent(s.name)).join("|");
 
   const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${encTarget}&travelmode=driving`;
   const wazeNavUrl = `https://waze.com/ul?q=${encTarget}&navigate=yes`;
-  const googleMapsRouteUrl = `https://www.google.com/maps/dir/?api=1&origin=${encOrigin}&destination=${encDest}&travelmode=driving`;
+  const googleMapsRouteUrl = `https://www.google.com/maps/dir/?api=1&origin=${encOrigin}&destination=${encDest}${waypoints ? `&waypoints=${waypoints}` : ""}&travelmode=driving`;
+
+  const dotColor: Record<string, string> = {
+    green: "bg-green-500 border-green-600",
+    amber: "bg-amber-500 border-amber-600",
+    red: "bg-red-500 border-red-600",
+  };
+  const labelColor: Record<string, string> = {
+    green: "text-green-600",
+    amber: "text-amber-600",
+    red: "text-red-600",
+  };
 
   return (
     <div className="space-y-2">
       <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
         <div className="flex items-center gap-2 mb-1">
-          <Navigation className="w-4 h-4 text-neutral-700" />
+          <Route className="w-4 h-4 text-neutral-700" />
           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Rota da Missão</span>
         </div>
 
-        {origin && (
-          <div className="flex items-start gap-3">
+        {stops.map((stop, idx) => (
+          <div key={idx} className="flex items-start gap-3">
             <div className="flex flex-col items-center mt-0.5">
-              <div className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600" />
-              {destination && <div className="w-0.5 h-6 bg-neutral-200" />}
+              <div className={`w-3 h-3 rounded-full border-2 ${dotColor[stop.color] || "bg-neutral-400 border-neutral-500"}`} />
+              {idx < stops.length - 1 && <div className="w-0.5 h-6 bg-neutral-200" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Origem</p>
-              <p className="text-sm font-semibold text-neutral-800 leading-tight">{origin}</p>
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${labelColor[stop.color] || "text-neutral-500"}`}>{stop.label}</p>
+              <p className="text-sm font-semibold text-neutral-800 leading-tight">{stop.name}</p>
             </div>
           </div>
-        )}
+        ))}
 
-        {destination && (
-          <div className="flex items-start gap-3">
-            <div className="flex flex-col items-center mt-0.5">
-              <div className="w-3 h-3 rounded-full bg-red-500 border-2 border-red-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Destino</p>
-              <p className="text-sm font-semibold text-neutral-800 leading-tight">{destination}</p>
-            </div>
-          </div>
-        )}
-
-        {origin && destination && (
+        {stops.length >= 2 && (
           <a
             href={googleMapsRouteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center pt-1 border-t border-neutral-100"
+            className="flex items-center justify-center gap-2 pt-2 border-t border-neutral-100 text-blue-600"
             data-testid="link-ver-rota-completa"
           >
-            <ExternalLink className="w-4 h-4 text-blue-600" />
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Ver Rota Completa</span>
           </a>
         )}
       </div>
@@ -224,21 +263,23 @@ function RouteInfoCard({ origin, destination, currentStep }: { origin?: string |
             href={googleMapsNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center h-12 bg-blue-600 text-white rounded-2xl active:scale-[0.98]"
+            className="flex items-center justify-center gap-2 h-12 bg-[#4285F4] text-white rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider"
             data-testid="button-navigate-gmaps"
             title="Google Maps"
           >
-            <Navigation className="w-5 h-5" />
+            <GoogleMapsIcon className="w-5 h-5" />
+            Maps
           </a>
           <a
             href={wazeNavUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center h-12 bg-[#33ccff] text-white rounded-2xl active:scale-[0.98]"
+            className="flex items-center justify-center gap-2 h-12 bg-[#33ccff] text-white rounded-2xl active:scale-[0.98] font-bold text-xs uppercase tracking-wider"
             data-testid="button-navigate-waze"
             title="Waze"
           >
-            <Navigation className="w-5 h-5" />
+            <WazeIcon className="w-5 h-5" />
+            Waze
           </a>
         </div>
       )}
@@ -386,7 +427,6 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   getPosition: () => Promise<{ lat: string; lng: string } | null>;
 }) {
   const { toast } = useToast();
-  const [confirmArrival, setConfirmArrival] = useState(false);
   const [nearOrigin, setNearOrigin] = useState(false);
   const [distanceInfo, setDistanceInfo] = useState<string | null>(null);
   const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
@@ -481,7 +521,6 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   useEffect(() => {
     setNearOrigin(false);
     setDistanceInfo(null);
-    setConfirmArrival(false);
   }, [currentStep]);
 
   useEffect(() => {
@@ -799,49 +838,6 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         </div>
       )}
 
-      {!isAtDestination && (
-      <div className="border-t border-neutral-200 pt-4">
-        {!confirmArrival ? (
-          <button
-            onClick={() => setConfirmArrival(true)}
-            disabled={submitting}
-            className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-            data-testid="button-confirm-arrival"
-          >
-            <MapPin className="w-5 h-5" />
-            Confirmar Chegada
-          </button>
-        ) : (
-          <div className="space-y-3">
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-              <p className="text-xs font-bold text-amber-800">Tem certeza que chegou na {targetLabel}?</p>
-              <p className="text-[10px] text-amber-600 mt-0.5">Esta ação vai avançar para a próxima etapa da missão.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setConfirmArrival(false)}
-                className="h-12 bg-white border-2 border-neutral-300 text-neutral-700 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
-                data-testid="button-cancel-arrival"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  setConfirmArrival(false);
-                  handleTransitAdvance();
-                }}
-                disabled={submitting}
-                className="h-12 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                data-testid="button-confirm-arrival-yes"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                Sim, Cheguei
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      )}
     </div>
   );
 }
@@ -1502,7 +1498,7 @@ export default function MobileMissaoPage() {
           <HourlyAlertBanner startedAt={mission.missionStartedAt} />
         )}
 
-        <RouteInfoCard origin={mission.origin} destination={mission.destination} currentStep={currentStep} />
+        <RouteInfoCard origin={mission.origin} destination={mission.destination} route={mission.route} currentStep={currentStep} />
 
         {mission.escortedDriverName && ["em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno"].includes(currentStep) && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
