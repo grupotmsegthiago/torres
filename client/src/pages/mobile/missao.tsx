@@ -867,6 +867,7 @@ export default function MobileMissaoPage() {
 
   const urlParams = new URLSearchParams(window.location.search);
   const simulateOsId = urlParams.get("osId");
+  const isReadOnly = urlParams.get("readOnly") === "true";
 
   const { data: mission, isLoading } = useQuery<any>({
     queryKey: ["/api/mission/active", simulateOsId || "self"],
@@ -1399,7 +1400,28 @@ export default function MobileMissaoPage() {
 
   return (
     <MobileLayout>
-      <div className="p-4 space-y-4" data-testid="mobile-missao-page">
+      <div className={`p-4 space-y-4 ${isReadOnly ? "missao-readonly" : ""}`} data-testid="mobile-missao-page">
+        {isReadOnly && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-2 flex items-center gap-2">
+            <Eye className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Modo Observador — Somente Leitura</span>
+          </div>
+        )}
+        <style>{`
+          .missao-readonly button:not([data-testid="tab-missao"]):not([data-testid="tab-agendamentos"]),
+          .missao-readonly input,
+          .missao-readonly textarea,
+          .missao-readonly select {
+            pointer-events: none !important;
+            opacity: 0.45 !important;
+            cursor: not-allowed !important;
+          }
+          .missao-readonly a[href*="maps"],
+          .missao-readonly a[href*="waze"] {
+            pointer-events: auto !important;
+            opacity: 1 !important;
+          }
+        `}</style>
         <div className="flex bg-neutral-100 rounded-2xl p-1">
           <button
             onClick={() => setActiveTab("missao")}

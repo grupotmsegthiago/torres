@@ -308,7 +308,7 @@ export default function SimuladorMissaoPage() {
                   <iframe
                     key={selectedOS}
                     ref={iframeRef}
-                    src={`/mobile/missao?osId=${selectedOS}`}
+                    src={`/mobile/missao?osId=${selectedOS}&readOnly=true`}
                     className="w-full h-full border-0"
                     title="Tela do Agente"
                     data-testid="iframe-mobile-mission"
