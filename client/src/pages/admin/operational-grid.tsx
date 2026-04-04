@@ -4376,15 +4376,44 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
             <div>
               <h4 className="text-xs font-black text-emerald-700 uppercase tracking-wide mb-1.5">Receita</h4>
               <div className="space-y-1">
-                {hasLiveCost ? (
-                  <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
-                    <div className="min-w-0 flex-1">
-                      <span className="text-neutral-700">Faturamento Escolta</span>
-                      {lc.contrato_nome && <span className="text-[10px] text-neutral-400 uppercase font-semibold block">{lc.contrato_nome}</span>}
-                    </div>
-                    <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(totalReceita)}</span>
-                  </div>
-                ) : data?.revenue && data.revenue.length > 0 ? (
+                {hasLiveCost ? (() => {
+                  const recAcionamento = n(lc.fat_acionamento);
+                  const recHoraExtra = n(lc.fat_hora_extra);
+                  const recKmExtra = n(lc.fat_km_extra);
+                  const horasExc = n(lc.horas_excedentes);
+                  const recBase = recAcionamento > 0 ? recAcionamento : (totalReceita - recHoraExtra - recKmExtra);
+                  return (
+                    <>
+                      <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-neutral-700">{recAcionamento > 0 ? "Acionamento" : "Faturamento Escolta"}</span>
+                          {lc.contrato_nome && <span className="text-[10px] text-neutral-400 uppercase font-semibold block">{lc.contrato_nome}</span>}
+                        </div>
+                        <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(recBase)}</span>
+                      </div>
+                      {recKmExtra > 0 && (
+                        <div className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-neutral-700">KM Excedente</span>
+                            <span className="text-[10px] text-neutral-400 uppercase font-semibold block">RECEITA ADICIONAL</span>
+                          </div>
+                          <span className="font-bold text-emerald-700 whitespace-nowrap ml-2">{fmtBRL(recKmExtra)}</span>
+                        </div>
+                      )}
+                      {recHoraExtra > 0 && (
+                        <div className="flex justify-between items-center text-xs bg-amber-50 rounded px-2 py-1.5 border border-amber-200" data-testid="receita-hora-extra">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-amber-800 font-semibold">Hora Extra</span>
+                            <span className="text-[10px] text-amber-600 uppercase font-semibold block">
+                              {horasExc > 0 ? `${horasExc.toFixed(1)}h × R$ ${n(lc.contrato_valores?.valor_hora_extra || 0).toFixed(2)}` : "RECEITA ADICIONAL"}
+                            </span>
+                          </div>
+                          <span className="font-bold text-amber-700 whitespace-nowrap ml-2">{fmtBRL(recHoraExtra)}</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })() : data?.revenue && data.revenue.length > 0 ? (
                   data.revenue.map((t: any) => (
                     <div key={t.id} className="flex justify-between items-center text-xs bg-emerald-50 rounded px-2 py-1.5 border border-emerald-100">
                       <span className="text-neutral-700 truncate max-w-[250px]" title={t.description}>{t.description}</span>
@@ -4455,7 +4484,28 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
 
             <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 space-y-1">
               <h4 className="text-xs font-black text-neutral-600 uppercase tracking-wide mb-1">Composição DRE</h4>
-              <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita (Faturamento)</span><span className="font-bold text-emerald-700">{fmtBRL(totalReceita)}</span></div>
+              {hasLiveCost ? (() => {
+                const acion = n(lc.fat_acionamento);
+                const kmE = n(lc.fat_km_extra);
+                const heE = n(lc.fat_hora_extra);
+                const baseReceita = acion > 0 ? acion : (totalReceita - heE - kmE);
+                return (
+                  <>
+                    <div className="flex justify-between text-xs"><span className="text-neutral-500">{acion > 0 ? "Acionamento" : "Faturamento Base"}</span><span className="font-bold text-emerald-700">{fmtBRL(baseReceita)}</span></div>
+                    {kmE > 0 && (
+                      <div className="flex justify-between text-xs"><span className="text-neutral-500">(+) KM Excedente</span><span className="font-bold text-emerald-700">{fmtBRL(kmE)}</span></div>
+                    )}
+                    {heE > 0 && (
+                      <div className="flex justify-between text-xs"><span className="text-neutral-500">(+) Hora Extra</span><span className="font-bold text-amber-700">{fmtBRL(heE)}</span></div>
+                    )}
+                    {(kmE > 0 || heE > 0) && (
+                      <div className="flex justify-between text-xs font-semibold border-t border-neutral-200 pt-1"><span className="text-emerald-800">= Receita Total</span><span className="font-bold text-emerald-700">{fmtBRL(totalReceita)}</span></div>
+                    )}
+                  </>
+                );
+              })() : (
+                <div className="flex justify-between text-xs"><span className="text-neutral-500">Receita (Faturamento)</span><span className="font-bold text-emerald-700">{fmtBRL(totalReceita)}</span></div>
+              )}
               <div className="border-t border-neutral-200 my-1" />
               {custoCombustivel > 0 && (
                 <div className="flex justify-between text-xs"><span className="text-neutral-500">(-) Abastecimento</span><span className="font-bold text-red-600">{fmtBRL(custoCombustivel)}</span></div>
@@ -4533,12 +4583,12 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                         <tr className="border-b border-neutral-100">
                           <td className="py-1.5 text-neutral-600">Horas Trabalhadas</td>
                           <td className="py-1.5 text-center font-semibold text-neutral-700">{horas.toFixed(1)}h</td>
-                          <td className="py-1.5 text-right font-bold text-neutral-800">{fatHoraExtra > 0 ? fmtBRL(fatHoraExtra) : "—"}</td>
+                          <td className="py-1.5 text-right font-bold text-neutral-400">—</td>
                         </tr>
                       )}
                       {fatHoraExtra > 0 && horas > 0 && (
-                        <tr className="border-b border-neutral-100">
-                          <td className="py-1.5 text-neutral-600 pl-3">↳ Hora Extra</td>
+                        <tr className="border-b border-amber-100 bg-amber-50/50">
+                          <td className="py-1.5 text-amber-800 pl-3 font-semibold">↳ Hora Extra (receita)</td>
                           <td className="py-1.5 text-center font-semibold text-amber-700">{(() => { const franquiaH = Number(b?.franquia_horas || lc?.contrato_valores?.franquia_horas || 0); return franquiaH > 0 ? `${(horas - franquiaH).toFixed(1)}h` : "—"; })()}</td>
                           <td className="py-1.5 text-right font-bold text-amber-700">{fmtBRL(fatHoraExtra)}</td>
                         </tr>
@@ -5203,7 +5253,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                             </p>
                                             {(he > 0 || ke > 0) && (
                                               <p className="pl-4 text-[10px] text-amber-600 font-bold">
-                                                {he > 0 && <span>HE: {fmtBRL(he)} ({heHours.toFixed(1)}h × {fmtBRL(valorHE)}/h) </span>}
+                                                {he > 0 && <span>HE (receita): {fmtBRL(he)} ({heHours.toFixed(1)}h × {fmtBRL(valorHE)}/h) </span>}
                                                 {ke > 0 && <span>KM exc: {fmtBRL(ke)}</span>}
                                               </p>
                                             )}
