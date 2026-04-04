@@ -6,17 +6,34 @@ This project delivers an institutional landing page and an internal management s
 ## User Preferences
 I prefer clear and direct communication. When making changes, prioritize iterative development with clear explanations for each step. For any significant architectural or design decisions, please ask for my approval before proceeding. Ensure all code is well-documented and follows modern TypeScript and React best practices. I value a clean, maintainable codebase.
 
-## ⛔ CRITICAL Rules — READ FIRST
+## ⛔ REGRAS CRÍTICAS — LEIA PRIMEIRO
+
+### Diretrizes Obrigatórias de Desenvolvimento
+
+1. **Idioma e Comunicação:** Código documentado em português. Variáveis e comentários em português quando possível.
+2. **Verificação de Banco (Supabase):** Antes de qualquer alteração de lógica, verificar se as tabelas (financial_transactions, service_orders, mission_costs, etc.) existem e se os campos são persistentes. É proibido usar memória temporária ou localStorage para dados financeiros.
+3. **Sincronismo Global (Realtime):** Qualquer atualização (Pedágio, Abastecimento, Status) deve usar `supabase.channel` para atualizar todas as abas abertas simultaneamente sem necessidade de F5.
+4. **Prevenção de Erros Futuros:** O código deve ser escalável. A lógica de data (created_at) NÃO pode esconder custos de ontem no DRE de hoje. Custos de abastecimento devem ser persistentes até o fim da missão.
+5. **Memória de Regras:** Ler este arquivo antes de cada commit. Se o código violar uma regra de negócio (como o pedágio ser custo e receita ao mesmo tempo), abortar e corrigir.
+6. **Saúde do Sistema:** Não implementar soluções hardcoded (valores fixos no código). Tudo deve vir de consultas dinâmicas ao banco.
+7. **Verificação Grid ↔ DRE:** Antes de finalizar qualquer alteração financeira, verificar se o dado reflete tanto no Grid Operacional quanto no DRE ao mesmo tempo.
+
+### Regras de Dados e Acesso
 
 - **O banco local do Replit (DATABASE_URL) NÃO é usado.** TODO acesso a dados usa Supabase — via REST API (`supabaseAdmin`) ou via conexão PostgreSQL direta (`SUPABASE_DATABASE_URL` com Drizzle ORM).
-- **The local Replit database (DATABASE_URL) is UNUSED.** ALL data access goes through Supabase — either via REST API (`supabaseAdmin`) or direct PostgreSQL connection (`SUPABASE_DATABASE_URL` via Drizzle ORM).
 - **Data Access Paths:** `storage.*` methods use Supabase REST API (supabaseAdmin) with automatic snake_case↔camelCase conversion. Direct `db.*` calls in routes.ts use Drizzle ORM connected to `SUPABASE_DATABASE_URL`. Both hit the SAME Supabase PostgreSQL database.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.
 - **`data_missao` must be stored as a full ISO timestamp** (e.g., `"2026-04-02T11:00:00"`) — never a date-only string (`"2026-04-02"`). PostgreSQL stores date-only strings as UTC midnight, which shifts the BRT date by one day back.
 - **CRON billing** MUST use `supabaseAdmin.from("service_orders")` (REST API with snake_case columns) — NEVER `storage.getServiceOrders()`. Only recalculates active missions; concluded missions are never touched.
-- **Fuel cost is persistent.** The Grid/DRE must show the vehicle's **last fueling cost** (most recent by `created_at DESC`), not just today's. It must remain on the DRE of the mission until that mission is finalized, independent of date change at midnight. Never filter fuel by `due_date = TODAY()`.
+
+### Regras de Persistência Financeira
+
+- **Custo de abastecimento é persistente.** O Grid/DRE deve mostrar o **último abastecimento** da viatura (mais recente por `created_at DESC`), não apenas o de hoje. O valor deve permanecer no DRE da missão até que ela seja finalizada, independente da virada de data à meia-noite. NUNCA filtrar combustível por `due_date = TODAY()`.
+- **Pedágio com missão = Custo + Receita (Reembolso).** Se `service_order_id` tiver valor, o sistema cria AMBOS os registros (expense + revenue) em `mission_costs` e `financial_transactions`. Impacto zero no lucro.
+- **Pedágio sem missão (Vazio) = apenas Despesa.** Se `service_order_id` for null, o valor entra apenas como despesa da viatura (abate o lucro direto). Categoria: "Custos Fixos/Deslocamento Extra".
+- **Valores financeiros são imutáveis após gravação.** Uma vez que um custo foi atribuído a uma missão, ele deve ser gravado como valor fixo. O sistema não deve recalcular ou filtrar esse valor pela data atual do servidor.
 
 ## System Architecture
 The system employs a modern web stack: React with TypeScript and Vite for the frontend, and Express with Supabase Auth for the backend. **Supabase (PostgreSQL) is the ONLY database**. Tailwind CSS is utilized for styling, maintaining a professional monochrome aesthetic (black/white) with Montserrat/Inter typography. UI components adhere to an "Enterprise UI" design, ensuring a consistent and polished user experience.

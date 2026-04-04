@@ -210,6 +210,12 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "financial_transactions" }, () => {
         _invalidateLocal("financial");
+        _invalidateLocal("mission-cost");
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "vehicle_fueling" }, () => {
+        _invalidateLocal("vehicle");
+        _invalidateLocal("financial");
+        _invalidateLocal("mission-cost");
       })
       .subscribe();
   } catch {}
