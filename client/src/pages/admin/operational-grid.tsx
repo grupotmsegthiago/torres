@@ -6374,19 +6374,28 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 </a>
               )}
               <button
-                onClick={() => {
-                  setForwardUpdate(u);
+                onClick={async () => {
+                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                   const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                  const client = gridItem?.clientName ? clients.find((c: any) => c.name === gridItem.clientName) : null;
-                  setForwardEmail(client?.email || "");
-                  setForwardCustomMsg("");
-                  setShowHistory(false);
+                  let reportText = "";
+                  if (matchedVehicle) {
+                    reportText = await generateReportAsync(matchedVehicle, gridItem || null);
+                  } else {
+                    const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
+                    reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                  }
+                  if (u.latitude && u.longitude) {
+                    const link = `https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`;
+                    if (!reportText.includes(link)) reportText += `\n\n📌 *LOCALIZAÇÃO:*\n${link}`;
+                  }
+                  const ok = await copyTextToClipboard(reportText);
+                  toast(ok ? { title: "Relatório copiado!" } : { title: "Erro ao copiar", variant: "destructive" });
                 }}
                 className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
-                data-testid={`btn-forward-client-${u.id}`}
+                data-testid={`btn-copy-report-${u.id}`}
               >
-                <Send className="w-3 h-3" />
-                Encaminhar para o Cliente
+                <Copy className="w-3 h-3" />
+                Copiar Relatório
               </button>
             </div>
             <button
