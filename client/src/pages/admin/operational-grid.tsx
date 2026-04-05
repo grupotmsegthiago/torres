@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import html2canvas from "-ohtml2canvas";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
@@ -6377,7 +6377,6 @@ function NearbyVehiclesPanel({ vehicles, selectedVehicleId, onClose, onFocusVehi
 
 function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; clients: any[] }) {
   const { toast } = useToast();
-  const [expanded, setExpanded] = useState(false);
   const [forwardUpdate, setForwardUpdate] = useState<any>(null);
   const [forwardEmail, setForwardEmail] = useState("");
   const [forwardCustomMsg, setForwardCustomMsg] = useState("");
@@ -6423,6 +6422,48 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     },
   });
 
+  const vtrGroups = useMemo(() => {
+    const map = new Map<string, { osNumber: string; plate: string; agentName: string; updates: any[] }>();
+    for (const u of updates) {
+      const key = u.osNumber || `unknown-${u.id}`;
+      if (!map.has(key)) {
+        const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+        const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+        const plate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
+        map.set(key, { osNumber: key, plate, agentName: titleCase(u.employeeName || "—"), updates: [] });
+      }
+      map.get(key)!.updates.push(u);
+    }
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => {
+      const aTime = new Date(a.updates[0]?.createdAt || 0).getTime();
+      const bTime = new Date(b.updates[0]?.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+    return groups;
+  }, [updates, vehicles, gridData]);
+
+  const [expandedVtrs, setExpandedVtrs] = useState<Set<string>>(new Set());
+  const [flashVtrs, setFlashVtrs] = useState<Set<string>>(new Set());
+  const prevVtrTopRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const newFlash = new Set<string>();
+    for (const g of vtrGroups) {
+      const latestId = g.updates[0]?.id;
+      const prev = prevVtrTopRef.current.get(g.osNumber);
+      if (prev !== undefined && latestId !== prev) {
+        newFlash.add(g.osNumber);
+      }
+      prevVtrTopRef.current.set(g.osNumber, latestId);
+    }
+    if (newFlash.size > 0) {
+      setFlashVtrs(newFlash);
+      const timer = setTimeout(() => setFlashVtrs(new Set()), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [vtrGroups]);
+
   if (updates.length === 0) return (
     <div className="flex justify-end" data-testid="sound-toggle-idle">
       <Tooltip>
@@ -6442,10 +6483,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     </div>
   );
 
-  const displayUpdates = expanded ? updates : updates.slice(0, 3);
-
   return (
-    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden animate-pulse-slow" data-testid="mission-updates-alert">
+    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden" data-testid="mission-updates-alert">
       <div className="px-4 py-3 flex items-center justify-between bg-amber-100/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center">
@@ -6453,9 +6492,9 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           </div>
           <div>
             <p className="text-sm font-bold text-amber-900">
-              {updates.length} atualização{updates.length > 1 ? "ões" : ""} dos agentes
+              {vtrGroups.length} viatura{vtrGroups.length > 1 ? "s" : ""} com atualizações
             </p>
-            <p className="text-[10px] text-amber-600">Mensagens em tempo real das missões em andamento</p>
+            <p className="text-[10px] text-amber-600">Monitoramento por viatura • {updates.length} msg no total</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -6486,121 +6525,156 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           </Button>
         </div>
       </div>
-      <div className="divide-y divide-amber-200">
-        {displayUpdates.map((u: any) => (
-          <div key={u.id} className="px-4 py-3 flex items-start gap-3 hover:bg-amber-50/80" data-testid={`update-${u.id}`}>
-            <div className="w-7 h-7 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Bell className="w-3.5 h-3.5 text-amber-700" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-amber-900">{titleCase(u.employeeName)}</span>
-                {u.osNumber && (
-                  <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">{u.osNumber}</span>
-                )}
-                <span className="text-[10px] text-amber-500">
-                  {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                  {" · "}
-                  {new Date(u.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                </span>
-              </div>
-              <p className="text-sm text-amber-800 mt-0.5">{u.message}</p>
-              {u.photoUrl && (
-                <div className="mt-1.5">
-                  <a href={u.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-block">
-                    <img src={u.photoUrl} alt="Foto da atualização" className="w-20 h-20 rounded-lg object-cover border-2 border-amber-300 shadow-sm hover:shadow-md transition-shadow cursor-pointer" />
-                  </a>
+      <div className="p-3 grid gap-2">
+        {vtrGroups.map((group) => {
+          const isExpanded = expandedVtrs.has(group.osNumber);
+          const isFlashing = flashVtrs.has(group.osNumber);
+          const latest = group.updates[0];
+          const latestTime = latest?.createdAt ? new Date(latest.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+          const gridItem = gridData.find((g: GridItem) => g.osNumber === group.osNumber);
+          const statusLabel = latest?.missionStep ? getMissionLabel(latest.missionStep) : (gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—");
+
+          return (
+            <div
+              key={group.osNumber}
+              className={`rounded-lg border overflow-hidden transition-all duration-300 ${isFlashing ? "border-amber-500 bg-amber-100 ring-2 ring-amber-400 animate-pulse" : "border-amber-200 bg-white"}`}
+              data-testid={`vtr-card-${group.osNumber}`}
+            >
+              <button
+                className="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-amber-50/80 transition-colors text-left"
+                onClick={() => setExpandedVtrs(prev => {
+                  const next = new Set(prev);
+                  if (next.has(group.osNumber)) next.delete(group.osNumber);
+                  else next.add(group.osNumber);
+                  return next;
+                })}
+                data-testid={`vtr-toggle-${group.osNumber}`}
+              >
+                <div className="w-7 h-7 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0">
+                  <Car className="w-3.5 h-3.5 text-amber-700" />
                 </div>
-              )}
-              {u.latitude && u.longitude && (
-                <a
-                  href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 w-fit"
-                  data-testid={`link-location-${u.id}`}
-                >
-                  <MapPin className="w-3 h-3" />
-                  📌 Ver localização fixa no Google Maps
-                </a>
-              )}
-              {IS_MOBILE ? (
-                <button
-                  onClick={async () => {
-                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
-                    const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                    let reportText = "";
-                    if (matchedVehicle) {
-                      reportText = await generateReportAsync(matchedVehicle, gridItem || null);
-                    } else {
-                      const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
-                      reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
-                    }
-                    const result = await shareMobileReportWithPhoto(reportText, u.photoUrl);
-                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
-                  }}
-                  className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
-                  data-testid={`btn-share-report-${u.id}`}
-                >
-                  <Send className="w-3 h-3" /> Compartilhar
-                </button>
-              ) : (
-                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                  {u.photoUrl && (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-amber-900">{group.osNumber}</span>
+                    <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">{group.plate}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 truncate mt-0.5">
+                    {titleCase(group.agentName)} • {statusLabel} • {latestTime}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">{group.updates.length}</span>
+                  {isExpanded ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <ChevronDown className="w-4 h-4 text-amber-500" />}
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="border-t border-amber-200 divide-y divide-amber-100">
+                  {group.updates.slice(0, 3).map((u: any) => (
+                    <div key={u.id} className="px-3 py-2.5 flex items-start gap-2.5" data-testid={`update-${u.id}`}>
+                      <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Bell className="w-2.5 h-2.5 text-amber-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-bold text-amber-900">{titleCase(u.employeeName)}</span>
+                          <span className="text-[10px] text-amber-500">
+                            {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            {" · "}
+                            {new Date(u.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-800 mt-0.5">{u.message}</p>
+                        {u.photoUrl && (
+                          <div className="mt-1.5">
+                            <a href={u.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-block">
+                              <img src={u.photoUrl} alt="Foto da atualização" className="w-16 h-16 rounded-lg object-cover border-2 border-amber-300 shadow-sm hover:shadow-md transition-shadow cursor-pointer" />
+                            </a>
+                          </div>
+                        )}
+                        {u.latitude && u.longitude && (
+                          <a
+                            href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 w-fit"
+                            data-testid={`link-location-${u.id}`}
+                          >
+                            <MapPin className="w-3 h-3" />
+                            Ver localização no Maps
+                          </a>
+                        )}
+                        {IS_MOBILE ? (
+                          <button
+                            onClick={async () => {
+                              const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+                              const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                              let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                              const result = await shareMobileReportWithPhoto(reportText, u.photoUrl);
+                              if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                              else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
+                            }}
+                            className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                            data-testid={`btn-share-report-${u.id}`}
+                          >
+                            <Send className="w-2.5 h-2.5" /> Compartilhar
+                          </button>
+                        ) : (
+                          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                            {u.photoUrl && (
+                              <button
+                                onClick={async () => {
+                                  const ok = await copyPhotoToClipboard(u.photoUrl);
+                                  toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                                data-testid={`btn-copy-photo-${u.id}`}
+                              >
+                                <Camera className="w-2.5 h-2.5" /> Copiar Foto
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => {
+                                const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+                                const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                                let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                                const ok = await copyTextToClipboard(reportText);
+                                toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                              data-testid={`btn-copy-text-${u.id}`}
+                            >
+                              <FileText className="w-2.5 h-2.5" /> Copiar Texto
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => markReadMutation.mutate([u.id])}
+                        className="text-amber-400 hover:text-amber-600 flex-shrink-0 mt-1"
+                        title="Marcar como lida"
+                        data-testid={`button-dismiss-${u.id}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {group.updates.length > 3 && (
                     <button
-                      onClick={async () => {
-                        const ok = await copyPhotoToClipboard(u.photoUrl);
-                        toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
-                      data-testid={`btn-copy-photo-${u.id}`}
+                      onClick={() => setForwardUpdate(group.updates[0])}
+                      className="w-full py-1.5 text-center text-[10px] font-bold text-amber-700 hover:bg-amber-50 flex items-center justify-center gap-1"
+                      data-testid={`btn-history-${group.osNumber}`}
                     >
-                      <Camera className="w-3 h-3" /> Copiar Foto
+                      <Clock className="w-3 h-3" />
+                      Histórico Completo ({group.updates.length} msgs)
                     </button>
                   )}
-                  <button
-                    onClick={async () => {
-                      const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
-                      const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                      let reportText = "";
-                      if (matchedVehicle) {
-                        reportText = await generateReportAsync(matchedVehicle, gridItem || null);
-                      } else {
-                        const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
-                        reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
-                      }
-                      const ok = await copyTextToClipboard(reportText);
-                      toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
-                    data-testid={`btn-copy-text-${u.id}`}
-                  >
-                    <FileText className="w-3 h-3" /> Copiar Texto
-                  </button>
                 </div>
               )}
             </div>
-            <button
-              onClick={() => markReadMutation.mutate([u.id])}
-              className="text-amber-400 hover:text-amber-600 flex-shrink-0 mt-1"
-              title="Marcar como lida"
-              data-testid={`button-dismiss-${u.id}`}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      {updates.length > 3 && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-100 border-t border-amber-200"
-          data-testid="button-toggle-updates"
-        >
-          {expanded ? "Mostrar menos" : `Ver todas (${updates.length})`}
-        </button>
-      )}
 
       <Dialog open={!!forwardUpdate} onOpenChange={() => {}}>
         <DialogContent
