@@ -4681,9 +4681,10 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       const plateStr = vehicle?.plate || "";
       const driverEmp = parsed.data.driverId ? await storage.getEmployee(parsed.data.driverId) : null;
       const agentStr = driverEmp?.name ? ` - Agente: ${driverEmp.name}` : "";
+      const fuelAmount = Number(parsed.data.totalCost);
       await createAutoTransaction({
-        description: `ABASTECIMENTO ${plateStr}${agentStr} - ${parsed.data.fuelType || "diesel"} ${parsed.data.liters}L`.toUpperCase().trim(),
-        amount: Number(parsed.data.totalCost),
+        description: `ABASTECIMENTO ${plateStr}${agentStr} - ${parsed.data.fuelType || "gasolina"} ${parsed.data.liters}L`.toUpperCase().trim(),
+        amount: fuelAmount,
         type: "EXPENSE",
         due_date: parsed.data.date || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
         origin_type: "fueling",
@@ -4692,6 +4693,28 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         entity_name: [plateStr, driverEmp?.name, parsed.data.station].filter(Boolean).join(" | ") || null,
         created_by: "SISTEMA",
       });
+
+      if (parsed.data.vehicleId) {
+        const { data: activeOs } = await supabaseAdmin.from("service_orders")
+          .select("id, os_number")
+          .eq("vehicle_id", parsed.data.vehicleId)
+          .in("status", ["ativa", "em_andamento", "em andamento"])
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const linkedOsId = activeOs?.[0]?.id || null;
+        if (linkedOsId) {
+          await supabaseAdmin.from("mission_costs").insert({
+            service_order_id: linkedOsId,
+            vehicle_id: parsed.data.vehicleId,
+            employee_id: parsed.data.driverId || null,
+            category: "Combustível",
+            description: `Abastecimento ${plateStr} - ${parsed.data.fuelType || "gasolina"} ${parsed.data.liters}L`,
+            amount: fuelAmount.toFixed(2),
+            cost_type: "expense",
+          });
+          console.log(`[Fueling→DRE] Admin linked fueling #${data.id} R$${fuelAmount.toFixed(2)} to OS #${activeOs[0].os_number}`);
+        }
+      }
     }
 
     res.status(201).json(data);
@@ -9488,6 +9511,7 @@ Regras:
       }
 
       let missionCostPedagio = 0;
+      let missionCostCombustivel = 0;
       let missionCostOutros = 0;
       let missionCostReceitas = 0;
       const missionCostExpenses: any[] = [];
@@ -9509,6 +9533,8 @@ Regras:
         }
         if (cat.includes("pedágio") || cat.includes("pedagio")) {
           missionCostPedagio += amt;
+        } else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) {
+          missionCostCombustivel += amt;
         } else {
           missionCostOutros += amt;
         }
@@ -9577,7 +9603,14 @@ Regras:
       const totalDiarias = diarias.reduce((s, d) => s + d.valor, 0);
 
       const directExpenses = (txDirect || []).filter((t: any) => t.type === "EXPENSE");
-      const proratedFuelingTx = fuelingTx.map((t: any) => ({
+
+      const hasMissionCostFuel = osMissionCosts.some((mc: any) => {
+        const cat = ((mc as any).category || "").toLowerCase();
+        return (mc as any).costType !== "revenue" && (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento"));
+      });
+
+      const effectiveFuelingTx = hasMissionCostFuel ? [] : fuelingTx;
+      const proratedFuelingTx = effectiveFuelingTx.map((t: any) => ({
         ...t,
         amount: Math.round((Number(t.amount || 0) / fuelProrateDivisor) * 100) / 100,
         originalAmount: Number(t.amount || 0),
@@ -9598,7 +9631,7 @@ Regras:
       const billingOutras = Number(billingRow?.despesas_outras || 0);
 
       const effectivePedagio = Math.max(missionCostPedagio, billingPedagio);
-      const effectiveCombustivel = billingCombustivel;
+      const effectiveCombustivel = missionCostCombustivel > 0 ? missionCostCombustivel : (totalFueling > 0 ? totalFueling : billingCombustivel);
       const effectiveOutras = missionCostOutros > 0 ? missionCostOutros : billingOutras;
       const billingDespesasTotal = effectivePedagio + effectiveCombustivel + effectiveOutras;
 
@@ -11740,6 +11773,28 @@ Regras:
           entity_name: [plateStr, driverEmp?.name, station].filter(Boolean).join(" | ") || null,
           created_by: "SISTEMA",
         });
+
+        const { data: activeOs } = await supabaseAdmin.from("service_orders")
+          .select("id, os_number")
+          .eq("vehicle_id", vehicleId)
+          .in("status", ["ativa", "em_andamento", "em andamento"])
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const linkedOsId = activeOs?.[0]?.id || null;
+        if (linkedOsId) {
+          await supabaseAdmin.from("mission_costs").insert({
+            service_order_id: linkedOsId,
+            vehicle_id: vehicleId,
+            employee_id: employeeId,
+            category: "Combustível",
+            description: `Abastecimento ${plateStr} - ${fuelType || "gasolina"} ${liters}L (${station || "posto"})`,
+            amount: derivedTotal.toFixed(2),
+            cost_type: "expense",
+            latitude: latitude ? String(latitude) : null,
+            longitude: longitude ? String(longitude) : null,
+          });
+          console.log(`[Fueling→DRE] Linked fueling #${fueling.id} R$${derivedTotal.toFixed(2)} to OS #${activeOs[0].os_number} (id=${linkedOsId})`);
+        }
       }
 
       const oilKm = vehicle[0]?.lastOilChangeKm || 0;
