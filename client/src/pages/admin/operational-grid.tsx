@@ -599,10 +599,12 @@ async function imageSourceToPngBlob(src: string): Promise<Blob | null> {
   });
 }
 
-async function shareReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "copied" | "copied_text_only" | "cancelled" | false> {
-  const isMobile = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
+const IS_MOBILE = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
 
-  if (isMobile && navigator.share && photoUrl) {
+async function shareMobileReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "cancelled" | false> {
+  if (!navigator.share) return false;
+
+  if (photoUrl) {
     try {
       let blob: Blob | null = null;
       if (photoUrl.startsWith("data:")) {
@@ -625,41 +627,26 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
     }
   }
 
-  if (isMobile && navigator.share) {
-    try {
-      await navigator.share({ text });
-      return "shared";
-    } catch (e: any) {
-      if (e?.name === "AbortError") return "cancelled";
-    }
+  try {
+    await navigator.share({ text });
+    return "shared";
+  } catch (e: any) {
+    if (e?.name === "AbortError") return "cancelled";
   }
+  return false;
+}
 
-  if (!isMobile && photoUrl && navigator.clipboard && typeof ClipboardItem !== "undefined") {
-    try {
-      const pngBlob = await imageSourceToPngBlob(photoUrl);
-      if (pngBlob) {
-        const textBlob = new Blob([text], { type: "text/plain" });
-        const htmlContent = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
-        const htmlBlob = new Blob([`<meta charset="utf-8"><div style="white-space:pre-wrap">${htmlContent}</div>`], { type: "text/html" });
-        await navigator.clipboard.writeText(text);
-        await new Promise(r => setTimeout(r, 50));
-        const item = new ClipboardItem({
-          "text/plain": textBlob,
-          "text/html": htmlBlob,
-          "image/png": pngBlob,
-        });
-        await navigator.clipboard.write([item]);
-        return "copied";
-      }
-    } catch (err) {
-      console.error("[clipboard] Erro ao copiar imagem:", err);
-    }
-    const ok = await copyTextToClipboard(text);
-    return ok ? "copied_text_only" : false;
+async function copyPhotoToClipboard(photoUrl: string): Promise<boolean> {
+  if (!photoUrl) return false;
+  try {
+    const pngBlob = await imageSourceToPngBlob(photoUrl);
+    if (!pngBlob) return false;
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+    return true;
+  } catch (err) {
+    console.error("[clipboard] Erro ao copiar foto:", err);
+    return false;
   }
-
-  const ok = await copyTextToClipboard(text);
-  return ok ? "copied" : false;
 }
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
@@ -3239,23 +3226,47 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           })()}
           <div className="px-4 pb-4 flex flex-col items-center gap-3">
             <div className="flex justify-center gap-2 flex-wrap">
-              <button
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                onClick={async () => {
-                  const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                  const reportText = await generateReportAsync(v, gridItem || null);
-                  const photoSrc = photoModalUrl && photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
-                  const result = await shareReportWithPhoto(reportText, photoSrc);
-                  if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                  else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
-                  else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado.", variant: "default" });
-                  else if (result !== "cancelled") toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
-                }}
-                data-testid={`btn-copy-form-modal-${v.id}`}
-              >
-                <Copy className="w-4 h-4" />
-                Copiar Texto + Foto
-              </button>
+              {IS_MOBILE ? (
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                  onClick={async () => {
+                    const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                    const reportText = await generateReportAsync(v, gridItem || null);
+                    const photoSrc = photoModalUrl && photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
+                    const result = await shareMobileReportWithPhoto(reportText, photoSrc);
+                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                    else if (result !== "cancelled") toast({ title: "Erro", description: "Não foi possível compartilhar.", variant: "destructive" });
+                  }}
+                  data-testid={`btn-share-modal-${v.id}`}
+                >
+                  <Send className="w-4 h-4" /> Compartilhar
+                </button>
+              ) : (<>
+                {photoModalUrl && photoModalUrl !== "__no_photo__" && (
+                  <button
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      const ok = await copyPhotoToClipboard(photoModalUrl);
+                      toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                    }}
+                    data-testid={`btn-copy-photo-modal-${v.id}`}
+                  >
+                    <Camera className="w-4 h-4" /> Copiar Foto
+                  </button>
+                )}
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={async () => {
+                    const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                    const reportText = await generateReportAsync(v, gridItem || null);
+                    const ok = await copyTextToClipboard(reportText);
+                    toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                  }}
+                  data-testid={`btn-copy-text-modal-${v.id}`}
+                >
+                  <FileText className="w-4 h-4" /> Copiar Texto
+                </button>
+              </>)}
               <button
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                 onClick={async () => {
@@ -4183,17 +4194,32 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             })()}
             <div className="px-4 pb-4 flex flex-col items-center gap-3">
               <div className="flex justify-center gap-2 flex-wrap">
-                <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                  onClick={async () => {
-                    const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
-                    const reportText = await generateReportAsync(v, gridItem || null);
-                    const photoSrc = photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
-                    const result = await shareReportWithPhoto(reportText, photoSrc);
-                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
-                    else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
-                    else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
-                  }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Texto + Foto</button>
+                {IS_MOBILE ? (
+                  <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                      const reportText = await generateReportAsync(v, gridItem || null);
+                      const photoSrc = photoModalUrl !== "__no_photo__" ? photoModalUrl : null;
+                      const result = await shareMobileReportWithPhoto(reportText, photoSrc);
+                      if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                      else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
+                    }} data-testid={`ctx-share-${v.id}`}><Send className="w-4 h-4" /> Compartilhar</button>
+                ) : (<>
+                  {photoModalUrl && photoModalUrl !== "__no_photo__" && (
+                    <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                      onClick={async () => {
+                        const ok = await copyPhotoToClipboard(photoModalUrl);
+                        toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                      }} data-testid={`ctx-copy-photo-${v.id}`}><Camera className="w-4 h-4" /> Copiar Foto</button>
+                  )}
+                  <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
+                    onClick={async () => {
+                      const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
+                      const reportText = await generateReportAsync(v, gridItem || null);
+                      const ok = await copyTextToClipboard(reportText);
+                      toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                    }} data-testid={`ctx-copy-text-${v.id}`}><FileText className="w-4 h-4" /> Copiar Texto</button>
+                </>)}
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
                   onClick={async () => {
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
@@ -5986,23 +6012,50 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 {rowSendingEmail ? "Enviando..." : "Enviar por Email"}
               </button>
 
-              <button
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
-                onClick={async () => {
-                  if (!rowForwardUpdate) return;
-                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
-                  const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                  const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  const result = await shareReportWithPhoto(reportText, rowForwardUpdate.photoUrl);
-                  if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                  else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
-                  else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
-                  else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
-                }}
-                data-testid="btn-row-copy-form"
-              >
-                <Copy className="w-4 h-4" /> Copiar Texto + Foto
-              </button>
+              {IS_MOBILE ? (
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
+                  onClick={async () => {
+                    if (!rowForwardUpdate) return;
+                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
+                    const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
+                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                    const result = await shareMobileReportWithPhoto(reportText, rowForwardUpdate.photoUrl);
+                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                    else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
+                  }}
+                  data-testid="btn-row-share"
+                >
+                  <Send className="w-4 h-4" /> Compartilhar
+                </button>
+              ) : (<>
+                {rowForwardUpdate?.photoUrl && (
+                  <button
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      const ok = await copyPhotoToClipboard(rowForwardUpdate.photoUrl!);
+                      toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                    }}
+                    data-testid="btn-row-copy-photo"
+                  >
+                    <Camera className="w-4 h-4" /> Copiar Foto
+                  </button>
+                )}
+                <button
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={async () => {
+                    if (!rowForwardUpdate) return;
+                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
+                    const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
+                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
+                    const ok = await copyTextToClipboard(reportText);
+                    toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                  }}
+                  data-testid="btn-row-copy-text"
+                >
+                  <FileText className="w-4 h-4" /> Copiar Texto
+                </button>
+              </>)}
 
               <button
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-green-600 text-white hover:bg-green-700"
@@ -6471,34 +6524,62 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   📌 Ver localização fixa no Google Maps
                 </a>
               )}
-              <button
-                onClick={async () => {
-                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
-                  const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                  let reportText = "";
-                  if (matchedVehicle) {
-                    reportText = await generateReportAsync(matchedVehicle, gridItem || null);
-                  } else {
-                    const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
-                    reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
-                  }
-                  const result = await shareReportWithPhoto(reportText, u.photoUrl);
-                  if (result === "shared") {
-                    toast({ title: "Relatório compartilhado!" });
-                  } else if (result === "copied") {
-                    toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
-                  } else if (result === "copied_text_only") {
-                    toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
-                  } else if (result !== "cancelled") {
-                    toast({ title: "Erro ao copiar", variant: "destructive" });
-                  }
-                }}
-                className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
-                data-testid={`btn-copy-report-${u.id}`}
-              >
-                <Copy className="w-3 h-3" />
-                Copiar Relatório
-              </button>
+              {IS_MOBILE ? (
+                <button
+                  onClick={async () => {
+                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+                    const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                    let reportText = "";
+                    if (matchedVehicle) {
+                      reportText = await generateReportAsync(matchedVehicle, gridItem || null);
+                    } else {
+                      const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
+                      reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                    }
+                    const result = await shareMobileReportWithPhoto(reportText, u.photoUrl);
+                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                    else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
+                  }}
+                  className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                  data-testid={`btn-share-report-${u.id}`}
+                >
+                  <Send className="w-3 h-3" /> Compartilhar
+                </button>
+              ) : (
+                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                  {u.photoUrl && (
+                    <button
+                      onClick={async () => {
+                        const ok = await copyPhotoToClipboard(u.photoUrl);
+                        toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                      data-testid={`btn-copy-photo-${u.id}`}
+                    >
+                      <Camera className="w-3 h-3" /> Copiar Foto
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+                      const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                      let reportText = "";
+                      if (matchedVehicle) {
+                        reportText = await generateReportAsync(matchedVehicle, gridItem || null);
+                      } else {
+                        const osStatus = gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—";
+                        reportText = `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${osStatus}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                      }
+                      const ok = await copyTextToClipboard(reportText);
+                      toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                    data-testid={`btn-copy-text-${u.id}`}
+                  >
+                    <FileText className="w-3 h-3" /> Copiar Texto
+                  </button>
+                </div>
+              )}
             </div>
             <button
               onClick={() => markReadMutation.mutate([u.id])}
@@ -6768,21 +6849,46 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   {sendingEmail ? "Enviando..." : "Enviar por Email"}
                 </button>
 
-                <button
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
-                  onClick={async () => {
-                    if (!forwardUpdate) return;
-                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
-                    const result = await shareReportWithPhoto(reportText, forwardUpdate.photoUrl);
-                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
-                    else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
-                    else if (result !== "cancelled") toast({ title: "Erro ao copiar", variant: "destructive" });
-                  }}
-                  data-testid="btn-forward-copy-form"
-                >
-                  <Copy className="w-4 h-4" /> Copiar Texto + Foto
-                </button>
+                {IS_MOBILE ? (
+                  <button
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                    onClick={async () => {
+                      if (!forwardUpdate) return;
+                      const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                      const result = await shareMobileReportWithPhoto(reportText, forwardUpdate.photoUrl);
+                      if (result === "shared") toast({ title: "Relatório compartilhado!" });
+                      else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
+                    }}
+                    data-testid="btn-forward-share"
+                  >
+                    <Send className="w-4 h-4" /> Compartilhar
+                  </button>
+                ) : (<>
+                  {forwardUpdate?.photoUrl && (
+                    <button
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
+                      onClick={async () => {
+                        const ok = await copyPhotoToClipboard(forwardUpdate.photoUrl!);
+                        toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                      }}
+                      data-testid="btn-forward-copy-photo"
+                    >
+                      <Camera className="w-4 h-4" /> Copiar Foto
+                    </button>
+                  )}
+                  <button
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
+                    onClick={async () => {
+                      if (!forwardUpdate) return;
+                      const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
+                      const ok = await copyTextToClipboard(reportText);
+                      toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
+                    }}
+                    data-testid="btn-forward-copy-text"
+                  >
+                    <FileText className="w-4 h-4" /> Copiar Texto
+                  </button>
+                </>)}
 
                 <button
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
