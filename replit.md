@@ -128,6 +128,8 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Alerta VTR Offline (5min):** Se uma viatura com missão ativa não envia update por >5 minutos, o card dela muda para VERMELHO com badge "SEM SINAL Xmin" piscante e ícone WifiOff. Um alarme sonoro distinto (3 bipes curtos em onda quadrada, 660/440Hz) é disparado quando uma VTR recém-entra em estado offline. Debounce de 30s para evitar alarmes repetitivos.
 - **Som de Notificação:** Beep curto (880Hz sine wave) ao receber qualquer nova atualização de agente. Toggle persistido em localStorage.
 
+-   **Selo de Auditoria (Copy Audit Stamp):** When any admin clicks "Copiar Texto" or "Copiar Foto" on a mission update, the system records `copiado_por` (admin name) and `copiado_em` (BRT timestamp) on the `mission_updates` row. Visual stamp "Copiado por: [Nome] às [DD/MM HH:MM]" appears below copy buttons in all contexts (alert modal, feed cards, forward dialog, context menu). If another admin tries to copy the same update within 2 minutes, a confirmation dialog warns: "Este relatório já foi copiado por [Nome] há X minuto(s). Deseja copiar novamente?". The stamp syncs in real-time across all admin browsers via Supabase Realtime UPDATE listener on `mission_updates`. API: `POST /api/mission/updates/:id/copy-audit`. Schema: `mission_updates.copiado_por` (text), `mission_updates.copiado_em` (timestamp).
+
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.
 -   **OpenAI Vision:** Used for OCR capabilities in document processing.

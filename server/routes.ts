@@ -5455,6 +5455,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             photoUrl: lastUpdate[0].photoUrl || null,
             latitude: lastUpdate[0].latitude || null,
             longitude: lastUpdate[0].longitude || null,
+            copiadoPor: lastUpdate[0].copiadoPor || null,
+            copiadoEm: lastUpdate[0].copiadoEm || null,
           } : null,
           recentUpdates: recentUpdates.map(u => ({
             id: u.id,
@@ -5765,6 +5767,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                     photoUrl: lastUpd[0].photoUrl || null,
                     latitude: lastUpd[0].latitude || null,
                     longitude: lastUpd[0].longitude || null,
+                    copiadoPor: lastUpd[0].copiadoPor || null,
+                    copiadoEm: lastUpd[0].copiadoEm || null,
                   } : null,
                   recentUpdates: recentUpds.map(u => ({
                     id: u.id,
@@ -6498,6 +6502,35 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       await db.update(missionUpdates).set({ readByAdmin: 1 }).where(eq(missionUpdates.readByAdmin, 0));
     }
     res.json({ success: true });
+  });
+
+  app.post("/api/mission/updates/:id/copy-audit", requireAuth, requireAdminRole, async (req: any, res) => {
+    try {
+      const updateId = Number(req.params.id);
+      const userName = req.user?.name || req.user?.email || "Admin";
+      const confirmDuplicate = req.body?.confirmDuplicate === true;
+      const now = new Date();
+      const [existing] = await db.select({ copiadoPor: missionUpdates.copiadoPor, copiadoEm: missionUpdates.copiadoEm })
+        .from(missionUpdates).where(eq(missionUpdates.id, updateId)).limit(1);
+      if (!existing) return res.status(404).json({ error: "Update não encontrado" });
+
+      if (existing.copiadoPor && existing.copiadoEm) {
+        const diffMs = now.getTime() - new Date(existing.copiadoEm).getTime();
+        if (diffMs < 2 * 60 * 1000 && !confirmDuplicate) {
+          return res.status(409).json({
+            duplicateRecent: true,
+            por: existing.copiadoPor,
+            em: existing.copiadoEm.toISOString(),
+          });
+        }
+      }
+
+      await db.update(missionUpdates).set({ copiadoPor: userName, copiadoEm: now }).where(eq(missionUpdates.id, updateId));
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("copy-audit error:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.post("/api/mission/updates/:id/forward", requireAuth, requireAdminRole, async (req: any, res) => {

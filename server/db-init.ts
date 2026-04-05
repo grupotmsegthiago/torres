@@ -513,6 +513,9 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
 
+    await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_por TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_em TIMESTAMP`).catch(() => {});
+
     console.log("[db-init] Schema verified OK");
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));

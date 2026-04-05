@@ -239,6 +239,10 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_updates" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
         _invalidateLocal("service-order");
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mission_updates" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+        _invalidateLocal("service-order");
       });
   }
 

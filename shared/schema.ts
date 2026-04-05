@@ -737,6 +737,8 @@ export const missionUpdates = pgTable("mission_updates", {
   longitude: text("longitude"),
   photoUrl: text("photo_url"),
   readByAdmin: integer("read_by_admin").default(0),
+  copiadoPor: text("copiado_por"),
+  copiadoEm: timestamp("copiado_em"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

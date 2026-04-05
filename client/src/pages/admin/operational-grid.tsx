@@ -217,6 +217,7 @@ interface TrackedVehicle {
     status: string;
     missionStatus: string;
     lastAgentUpdate?: {
+      id?: number;
       message: string;
       missionStep: string | null;
       agentName: string | null;
@@ -224,6 +225,8 @@ interface TrackedVehicle {
       photoUrl?: string | null;
       latitude?: string | null;
       longitude?: string | null;
+      copiadoPor?: string | null;
+      copiadoEm?: string | null;
     } | null;
     recentUpdates?: Array<{
       id: number;
@@ -293,6 +296,7 @@ interface GridItem {
   escortedDriverPhone?: string | null;
   escortedVehiclePlate?: string | null;
   lastAgentUpdate?: {
+    id?: number;
     message: string;
     missionStep: string | null;
     agentName: string | null;
@@ -300,6 +304,8 @@ interface GridItem {
     photoUrl?: string | null;
     latitude?: string | null;
     longitude?: string | null;
+    copiadoPor?: string | null;
+    copiadoEm?: string | null;
   } | null;
   employee1: (GridEmployee & { fullName?: string }) | null;
   employee2: (GridEmployee & { fullName?: string }) | null;
@@ -658,6 +664,60 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function handleCopyAudit(
+  updateId: number | undefined | null,
+  toast: (opts: any) => void
+): Promise<boolean> {
+  if (!updateId) return true;
+  try {
+    const res = await authFetch(`/api/mission/updates/${updateId}/copy-audit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.status === 409) {
+      const data = await res.json();
+      if (data.duplicateRecent) {
+        const dt = new Date(data.em);
+        const diffMin = Math.max(1, Math.round((Date.now() - dt.getTime()) / 60000));
+        const confirmed = window.confirm(
+          `Este relatório já foi copiado por ${data.por} há ${diffMin} minuto(s). Deseja copiar novamente?`
+        );
+        if (!confirmed) return false;
+        const confirmRes = await authFetch(`/api/mission/updates/${updateId}/copy-audit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmDuplicate: true }),
+        });
+        if (!confirmRes.ok) {
+          toast({ title: "Erro ao registrar cópia", variant: "destructive" });
+          return false;
+        }
+      }
+    } else if (!res.ok) {
+      toast({ title: "Erro ao registrar cópia", variant: "destructive" });
+      return false;
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+    return true;
+  } catch {
+    toast({ title: "Erro ao registrar cópia", variant: "destructive" });
+    return false;
+  }
+}
+
+function CopyAuditStamp({ copiadoPor, copiadoEm }: { copiadoPor?: string | null; copiadoEm?: string | null }) {
+  if (!copiadoPor || !copiadoEm) return null;
+  const dt = new Date(copiadoEm);
+  const formatted = dt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+  return (
+    <span className="text-[9px] text-blue-400 italic" data-testid="copy-audit-stamp">
+      Copiado por: {copiadoPor} às {formatted}
+    </span>
+  );
 }
 
 const seenUpdateIds = new Set<number>();
@@ -3246,6 +3306,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   <button
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
                     onClick={async () => {
+                      const proceed = await handleCopyAudit(lastUpdateId, toast);
+                      if (!proceed) return;
                       const ok = await copyPhotoToClipboard(photoModalUrl);
                       toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
                     }}
@@ -3257,6 +3319,8 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 <button
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
                   onClick={async () => {
+                    const proceed = await handleCopyAudit(lastUpdateId, toast);
+                    if (!proceed) return;
                     const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                     const reportText = await generateReportAsync(v, gridItem || null);
                     const ok = await copyTextToClipboard(reportText);
@@ -3282,6 +3346,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                 Enviar WhatsApp
               </button>
             </div>
+            <CopyAuditStamp copiadoPor={v.activeOs?.lastAgentUpdate?.copiadoPor} copiadoEm={v.activeOs?.lastAgentUpdate?.copiadoEm} />
             <button
               className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
               onClick={() => {
@@ -4208,12 +4273,16 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                   {photoModalUrl && photoModalUrl !== "__no_photo__" && (
                     <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
                       onClick={async () => {
+                        const proceed = await handleCopyAudit(lastUpdateId, toast);
+                        if (!proceed) return;
                         const ok = await copyPhotoToClipboard(photoModalUrl);
                         toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
                       }} data-testid={`ctx-copy-photo-${v.id}`}><Camera className="w-4 h-4" /> Copiar Foto</button>
                   )}
                   <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
                     onClick={async () => {
+                      const proceed = await handleCopyAudit(lastUpdateId, toast);
+                      if (!proceed) return;
                       const gridItem = gridData?.find((g: GridItem) => g.osNumber === v.activeOs?.osNumber);
                       const reportText = await generateReportAsync(v, gridItem || null);
                       const ok = await copyTextToClipboard(reportText);
@@ -4227,6 +4296,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     await copyTextToClipboard(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank");
                   }} data-testid={`ctx-whatsapp-form-${v.id}`}><SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp</button>
               </div>
+              <CopyAuditStamp copiadoPor={v.activeOs?.lastAgentUpdate?.copiadoPor} copiadoEm={v.activeOs?.lastAgentUpdate?.copiadoEm} />
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
                 onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); }).catch(() => {}); } }}
                 data-testid={`ctx-finalize-alert-${v.id}`}><CheckCircle2 className="w-3.5 h-3.5" /> Finalizar Aviso</button>
@@ -6033,6 +6103,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   <button
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
                     onClick={async () => {
+                      const proceed = await handleCopyAudit(rowForwardUpdate?.id, toast);
+                      if (!proceed) return;
                       const ok = await copyPhotoToClipboard(rowForwardUpdate.photoUrl!);
                       toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
                     }}
@@ -6045,6 +6117,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-blue-600 text-white hover:bg-blue-700"
                   onClick={async () => {
                     if (!rowForwardUpdate) return;
+                    const proceed = await handleCopyAudit(rowForwardUpdate.id, toast);
+                    if (!proceed) return;
                     const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
                     const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
                     const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
@@ -6071,6 +6145,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp
               </button>
             </div>
+            <CopyAuditStamp copiadoPor={rowForwardUpdate?.copiadoPor || rowForwardUpdate?.copiado_por} copiadoEm={rowForwardUpdate?.copiadoEm || rowForwardUpdate?.copiado_em} />
 
             {rowForwardHistory.length > 0 && (
               <div className="mt-3">
@@ -6660,32 +6735,39 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             <Send className="w-2.5 h-2.5" /> Compartilhar
                           </button>
                         ) : (
-                          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                            {u.photoUrl && (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {u.photoUrl && (
+                                <button
+                                  onClick={async () => {
+                                    const proceed = await handleCopyAudit(u.id, toast);
+                                    if (!proceed) return;
+                                    const ok = await copyPhotoToClipboard(u.photoUrl);
+                                    toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
+                                  data-testid={`btn-copy-photo-${u.id}`}
+                                >
+                                  <Camera className="w-2.5 h-2.5" /> Copiar Foto
+                                </button>
+                              )}
                               <button
                                 onClick={async () => {
-                                  const ok = await copyPhotoToClipboard(u.photoUrl);
-                                  toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+                                  const proceed = await handleCopyAudit(u.id, toast);
+                                  if (!proceed) return;
+                                  const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
+                                  const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                                  const ok = await copyTextToClipboard(reportText);
+                                  toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
                                 }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors"
-                                data-testid={`btn-copy-photo-${u.id}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                                data-testid={`btn-copy-text-${u.id}`}
                               >
-                                <Camera className="w-2.5 h-2.5" /> Copiar Foto
+                                <FileText className="w-2.5 h-2.5" /> Copiar Texto
                               </button>
-                            )}
-                            <button
-                              onClick={async () => {
-                                const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
-                                const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                                let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
-                                const ok = await copyTextToClipboard(reportText);
-                                toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
-                              data-testid={`btn-copy-text-${u.id}`}
-                            >
-                              <FileText className="w-2.5 h-2.5" /> Copiar Texto
-                            </button>
+                            </div>
+                            <CopyAuditStamp copiadoPor={u.copiadoPor || u.copiado_por} copiadoEm={u.copiadoEm || u.copiado_em} />
                           </div>
                         )}
                       </div>
@@ -6982,6 +7064,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     <button
                       className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-amber-500 text-white hover:bg-amber-600"
                       onClick={async () => {
+                        const proceed = await handleCopyAudit(forwardUpdate?.id, toast);
+                        if (!proceed) return;
                         const ok = await copyPhotoToClipboard(forwardUpdate.photoUrl!);
                         toast({ title: ok ? "Foto Copiada!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
                       }}
@@ -6994,6 +7078,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors bg-blue-600 text-white hover:bg-blue-700"
                     onClick={async () => {
                       if (!forwardUpdate) return;
+                      const proceed = await handleCopyAudit(forwardUpdate.id, toast);
+                      if (!proceed) return;
                       const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${forwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${forwardUpdate.message?.toUpperCase()}`;
                       const ok = await copyTextToClipboard(reportText);
                       toast({ title: ok ? "Texto Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
@@ -7018,6 +7104,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   <SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp
                 </button>
               </div>
+              <CopyAuditStamp copiadoPor={forwardUpdate?.copiadoPor || forwardUpdate?.copiado_por} copiadoEm={forwardUpdate?.copiadoEm || forwardUpdate?.copiado_em} />
 
               {forwardHistory.length > 0 && (
                 <div className="mt-3">
