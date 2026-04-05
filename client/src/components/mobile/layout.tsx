@@ -3,9 +3,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
 import { titleCase } from "@/lib/utils";
-import { useMemo } from "react";
-import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield, CloudOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { subscribeQueue } from "@/lib/offlineQueue";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
 
 const navItems = [
@@ -55,6 +56,27 @@ function Watermark({ name }: { name: string }) {
         ))}
       </svg>
     </div>
+  );
+}
+
+function PendingBadge() {
+  const [count, setCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => {
+    return subscribeQueue((info) => {
+      setCount(info.pendingCount);
+      setSyncing(info.status === "syncing");
+    });
+  }, []);
+  if (count === 0) return null;
+  return (
+    <span
+      className={`relative flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-white ${syncing ? "bg-amber-500" : "bg-red-500"}`}
+      data-testid="badge-pending-sync"
+    >
+      {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudOff className="w-3 h-3" />}
+      {count}
+    </span>
   );
 }
 
@@ -150,11 +172,14 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
           <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />
           <span className="text-sm font-black text-neutral-900 uppercase tracking-wider">Torres</span>
         </div>
-        {user && (
-          <span className="text-xs text-neutral-500 font-medium truncate max-w-[140px]" data-testid="text-mobile-user">
-            {titleCase(user.name?.split(" ")[0])}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <PendingBadge />
+          {user && (
+            <span className="text-xs text-neutral-500 font-medium truncate max-w-[140px]" data-testid="text-mobile-user">
+              {titleCase(user.name?.split(" ")[0])}
+            </span>
+          )}
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto pb-20">

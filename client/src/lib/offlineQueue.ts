@@ -2,8 +2,6 @@ import { supabase } from "./supabase";
 
 const QUEUE_KEY = "torres_offline_queue";
 const MAX_RETRIES = 12;
-const BASE_INTERVAL_MS = 5000;
-const MAX_INTERVAL_MS = 30000;
 
 type SyncStatus = "idle" | "syncing" | "pending" | "failed";
 
@@ -83,9 +81,11 @@ async function getAuthToken(): Promise<string | null> {
   }
 }
 
+const BACKOFF_STEPS_MS = [5000, 10000, 20000, 30000];
+
 function getBackoffMs(retries: number): number {
-  const ms = Math.min(BASE_INTERVAL_MS * Math.pow(1.5, retries), MAX_INTERVAL_MS);
-  return ms + Math.random() * 1000;
+  const idx = Math.min(retries, BACKOFF_STEPS_MS.length - 1);
+  return BACKOFF_STEPS_MS[idx] + Math.random() * 1000;
 }
 
 let flushing = false;

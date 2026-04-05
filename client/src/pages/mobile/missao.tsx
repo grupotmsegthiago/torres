@@ -960,12 +960,17 @@ export default function MobileMissaoPage() {
     window.addEventListener("offline", updateOnline);
 
     let lastSeenEventId = 0;
+    let wasIdle = true;
     const unsubscribe = subscribeQueue((info) => {
       setOfflinePending(info.pendingCount);
       setSyncStatus(info.status);
       if (info.status !== "syncing") {
         setManualRetrying(false);
       }
+      if (info.status === "syncing" && wasIdle && info.pendingCount > 0) {
+        toast({ title: "Enviando...", description: `${info.pendingCount} ação(ões) sendo sincronizada(s).` });
+      }
+      wasIdle = info.status !== "syncing";
       if (info.flushResult && info.flushResult.eventId > lastSeenEventId) {
         lastSeenEventId = info.flushResult.eventId;
         if (info.flushResult.sent > 0) {
