@@ -303,7 +303,7 @@ if (typeof window !== "undefined") {
 
   function _ensureRealtimeAlive() {
     const staleMs = Date.now() - _lastRealtimeEvent;
-    if (!_realtimeConnected || staleMs > 120_000) {
+    if (!_realtimeConnected || staleMs > 300_000) {
       console.log("[Realtime] heartbeat: reconnecting (connected:", _realtimeConnected, "stale:", Math.round(staleMs / 1000), "s)");
       _subscribeRealtime();
     }

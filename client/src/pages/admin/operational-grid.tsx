@@ -1040,6 +1040,34 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
   return `${h}h${m.toString().padStart(2, "0")}`;
 }
 
+function getTimeAgoUrgency(dateStr: string | null | undefined): { text: string; colorClass: string; minutesAgo: number } {
+  if (!dateStr) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
+  const diff = Date.now() - d.getTime();
+  if (diff < 0) return { text: "agora", colorClass: "text-green-600", minutesAgo: 0 };
+  const totalMin = Math.floor(diff / 60000);
+  let text: string;
+  if (totalMin < 1) text = "agora";
+  else if (totalMin < 60) text = `há ${totalMin} min`;
+  else {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    text = m === 0 ? `há ${h}h` : `há ${h}h${m.toString().padStart(2, "0")}`;
+  }
+  const colorClass = totalMin < 5 ? "text-green-600" : totalMin < 15 ? "text-amber-600" : "text-red-600";
+  return { text, colorClass, minutesAgo: totalMin };
+}
+
+function useTimeAgoTicker(intervalMs = 60000): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return tick;
+}
+
 function RouteProgressBar({ pct, distRemainingKm, distTotalKm, compact, noDistance }: { pct: number; distRemainingKm: number; distTotalKm: number; compact?: boolean; noDistance?: boolean }) {
   const fmtDist = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
   const carLeft = Math.min(Math.max(pct, 2), 98);
@@ -3255,8 +3283,13 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             <div className={`px-4 py-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
               <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
               <p className="text-[10px] mt-1 opacity-60">
-                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
               </p>
+              {(() => {
+                const mu = getTimeAgoUrgency(v.activeOs!.lastAgentUpdate!.createdAt);
+                if (!mu.text || mu.minutesAgo < 0) return null;
+                return <p className={`text-[10px] font-bold mt-0.5 ${mu.colorClass}`}>{mu.text}</p>;
+              })()}
             </div>
           )}
           {(v.activeOs?.recentUpdates?.length ?? 0) > 0 && (
@@ -3265,9 +3298,11 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               <div className="space-y-1">
                 {v.activeOs!.recentUpdates!.map((u) => (
                   <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`history-update-${u.id}`}>
-                    <span className="text-neutral-500 font-mono flex-shrink-0">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
-                    </span>
+                    {(() => {
+                      const hu2 = getTimeAgoUrgency(u.createdAt);
+                      const t2 = u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                      return <span className={`font-mono flex-shrink-0 font-bold ${hu2.colorClass}`} title={hu2.text}>{t2}</span>;
+                    })()}
                     <span className="text-neutral-400">—</span>
                     <span className="text-amber-400 font-semibold flex-shrink-0">
                       {u.missionStep ? getMissionLabel(u.missionStep) : "—"}
@@ -4242,9 +4277,15 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                 <div className="space-y-1">
                   {v.activeOs!.recentUpdates!.map((u) => (
                     <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`ctx-history-${u.id}`}>
-                      <span className={`font-mono flex-shrink-0 ${photoModalUrl !== "__no_photo__" ? "text-neutral-500" : "text-neutral-400"}`}>
-                        {u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
-                      </span>
+                      {(() => {
+                        const hu = getTimeAgoUrgency(u.createdAt);
+                        const tStr = u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                        return (
+                          <span className={`font-mono flex-shrink-0 font-bold ${hu.colorClass}`} title={hu.text}>
+                            {tStr}
+                          </span>
+                        );
+                      })()}
                       <span className={photoModalUrl !== "__no_photo__" ? "text-neutral-400" : "text-neutral-300"}>—</span>
                       <span className="text-amber-500 font-semibold flex-shrink-0">
                         {u.missionStep ? getMissionLabel(u.missionStep) : "—"}
@@ -4823,6 +4864,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
 
 function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients, monthlyHours, onCostDetail }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[]; monthlyHours?: Record<string, { totalHours: number; missions: number }>; onCostDetail?: (empId: number) => void }) {
   const { toast } = useToast();
+  const _timeAgoTick = useTimeAgoTicker(60000);
   const [expanded, setExpanded] = useState(true);
   const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
   const [nextOsDetail, setNextOsDetail] = useState<{ os: any; vehicle: TrackedVehicle } | null>(null);
@@ -5329,11 +5371,18 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <span className="text-xs px-2 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
                                   {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
                                 </span>
-                                {formatElapsedTime(v.activeOs.lastAgentUpdate.createdAt) && (
-                                  <span className="text-[10px] text-neutral-400 font-semibold" data-testid={`elapsed-${v.id}`}>
-                                    {formatElapsedTime(v.activeOs.lastAgentUpdate.createdAt)}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const urgency = getTimeAgoUrgency(v.activeOs.lastAgentUpdate.createdAt);
+                                  if (!urgency.text) return null;
+                                  const timeStr = v.activeOs.lastAgentUpdate.createdAt
+                                    ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+                                    : "";
+                                  return (
+                                    <span className={`text-[10px] font-bold ${urgency.colorClass}`} data-testid={`elapsed-${v.id}`}>
+                                      {timeStr} ({urgency.text})
+                                    </span>
+                                  );
+                                })()}
                               </>
                             ) : (
                               <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
@@ -5347,12 +5396,17 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <TooltipTrigger>
                                   <Info className="w-3.5 h-3.5 text-blue-500 cursor-help" />
                                 </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-[250px]">
+                                <TooltipContent side="bottom" className="max-w-[280px]">
                                   <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
                                   <p className="text-[10px] text-neutral-400 mt-0.5">
-                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
                                     {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷 Foto" : ""}
                                   </p>
+                                  {(() => {
+                                    const u2 = getTimeAgoUrgency(v.activeOs!.lastAgentUpdate!.createdAt);
+                                    if (!u2.text || u2.minutesAgo < 0) return null;
+                                    return <p className={`text-[10px] font-bold mt-0.5 ${u2.colorClass}`}>{u2.text}</p>;
+                                  })()}
                                 </TooltipContent>
                               </Tooltip>
                             )}
@@ -6479,6 +6533,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   const [sendingEmail, setSendingEmail] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const statusCardRef = useRef<HTMLDivElement>(null);
+  const _alertTick = useTimeAgoTicker(60000);
 
   const { data: updates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
@@ -6731,11 +6786,14 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[11px] font-bold text-amber-900">{titleCase(u.employeeName)}</span>
-                          <span className="text-[10px] text-amber-500">
-                            {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                            {" · "}
-                            {new Date(u.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                          </span>
+                          {(() => {
+                            const nu = getTimeAgoUrgency(u.createdAt);
+                            return (
+                              <span className={`text-[10px] font-bold ${nu.colorClass}`}>
+                                {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({nu.text})
+                              </span>
+                            );
+                          })()}
                         </div>
                         <p className="text-xs text-amber-800 mt-0.5">{u.message}</p>
                         {(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")) && (
@@ -7217,7 +7275,7 @@ function timeAgo(dateStr: string) {
 function AlertsTimeline() {
   const [open, setOpen] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
-  const [, forceUpdate] = useState(0);
+  const _timelineTick = useTimeAgoTicker(60000);
 
   const { data: allUpdates = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "timeline"],
@@ -7229,11 +7287,6 @@ function AlertsTimeline() {
     refetchInterval: open ? 15000 : 60000,
   });
 
-  useEffect(() => {
-    if (!open) return;
-    const interval = setInterval(() => forceUpdate(c => c + 1), 10000);
-    return () => clearInterval(interval);
-  }, [open]);
 
   const recentCount = allUpdates.filter(u => (Date.now() - new Date(u.createdAt).getTime()) < 600000).length;
 
@@ -7393,15 +7446,15 @@ function AlertsTimeline() {
                           )}
 
                           <div className="flex items-center gap-3 mt-2">
-                            <span className={`text-[11px] font-bold flex items-center gap-1 ${
-                              isCritical ? "text-red-600" : "text-neutral-500"
-                            }`}>
-                              <Clock className="w-3 h-3" />
-                              {timeAgo(u.createdAt)}
-                            </span>
-                            <span className="text-[10px] text-neutral-400">
-                              {new Date(u.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                            </span>
+                            {(() => {
+                              const tl = getTimeAgoUrgency(u.createdAt);
+                              return (
+                                <span className={`text-[11px] font-bold flex items-center gap-1 ${tl.colorClass}`}>
+                                  <Clock className="w-3 h-3" />
+                                  {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({tl.text})
+                                </span>
+                              );
+                            })()}
                             {u.latitude && u.longitude && (
                               <a
                                 href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
