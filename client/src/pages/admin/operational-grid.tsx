@@ -558,15 +558,12 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   return false;
 }
 
-async function fetchImageAsPngBlob(url: string): Promise<Blob | null> {
-  try {
-    const resp = await fetch(url, { mode: "cors" });
-    if (!resp.ok) return null;
-    const srcBlob = await resp.blob();
-    return await new Promise<Blob>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
+async function imageSourceToPngBlob(src: string): Promise<Blob | null> {
+  return new Promise<Blob | null>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
         const maxDim = 1280;
         let w = img.naturalWidth, h = img.naturalHeight;
         if (w > maxDim || h > maxDim) {
@@ -579,24 +576,43 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob | null> {
         canvas.height = h;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob((b) => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
-      };
-      img.onerror = reject;
-      img.src = URL.createObjectURL(srcBlob);
-    });
-  } catch {
-    return null;
-  }
+        canvas.toBlob((b) => resolve(b), "image/png");
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    if (src.startsWith("data:")) {
+      img.src = src;
+    } else {
+      fetch(src, { mode: "cors" })
+        .then(r => r.ok ? r.blob() : null)
+        .then(blob => {
+          if (blob) {
+            img.src = URL.createObjectURL(blob);
+          } else {
+            resolve(null);
+          }
+        })
+        .catch(() => resolve(null));
+    }
+  });
 }
 
-async function shareReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "copied" | "cancelled" | false> {
+async function shareReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "copied" | "copied_text_only" | "cancelled" | false> {
   const isMobile = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
 
   if (isMobile && navigator.share && photoUrl) {
     try {
-      const resp = await fetch(photoUrl, { mode: "cors" });
-      if (resp.ok) {
-        const blob = await resp.blob();
+      let blob: Blob | null = null;
+      if (photoUrl.startsWith("data:")) {
+        const res = await fetch(photoUrl);
+        blob = await res.blob();
+      } else {
+        const res = await fetch(photoUrl, { mode: "cors" });
+        if (res.ok) blob = await res.blob();
+      }
+      if (blob) {
         const ext = blob.type.includes("png") ? "png" : "jpg";
         const file = new File([blob], `relatorio.${ext}`, { type: blob.type });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -620,7 +636,7 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
 
   if (!isMobile && photoUrl && navigator.clipboard && typeof ClipboardItem !== "undefined") {
     try {
-      const pngBlob = await fetchImageAsPngBlob(photoUrl);
+      const pngBlob = await imageSourceToPngBlob(photoUrl);
       if (pngBlob) {
         const textBlob = new Blob([text], { type: "text/plain" });
         const item = new ClipboardItem({
@@ -630,7 +646,11 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
         await navigator.clipboard.write([item]);
         return "copied";
       }
-    } catch {}
+    } catch (err) {
+      console.error("[clipboard] Erro ao copiar imagem:", err);
+    }
+    const ok = await copyTextToClipboard(text);
+    return ok ? "copied_text_only" : false;
   }
 
   const ok = await copyTextToClipboard(text);
@@ -639,28 +659,8 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
 
 async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   try {
-    const pngBlob = await new Promise<Blob>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const maxW = 1280;
-        const maxH = 1280;
-        let w = img.naturalWidth;
-        let h = img.naturalHeight;
-        if (w > maxW || h > maxH) {
-          const ratio = Math.min(maxW / w, maxH / h);
-          w = Math.round(w * ratio);
-          h = Math.round(h * ratio);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob((b) => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
-      };
-      img.onerror = reject;
-      img.src = dataUrl;
-    });
+    const pngBlob = await imageSourceToPngBlob(dataUrl);
+    if (!pngBlob) return false;
     await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
     return true;
   } catch {
@@ -3243,6 +3243,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   const result = await shareReportWithPhoto(reportText, photoSrc);
                   if (result === "shared") toast({ title: "Relatório compartilhado!" });
                   else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
+                  else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado.", variant: "default" });
                   else if (result !== "cancelled") toast({ title: "Erro", description: "Não foi possível copiar.", variant: "destructive" });
                 }}
                 data-testid={`btn-copy-form-modal-${v.id}`}
@@ -4185,6 +4186,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     const result = await shareReportWithPhoto(reportText, photoSrc);
                     if (result === "shared") toast({ title: "Relatório compartilhado!" });
                     else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
+                    else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
                     else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
                   }} data-testid={`ctx-copy-form-${v.id}`}><Copy className="w-4 h-4" /> Copiar Texto + Foto</button>
                 <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors bg-green-600 text-white hover:bg-green-700"
@@ -5989,6 +5991,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   const result = await shareReportWithPhoto(reportText, rowForwardUpdate.photoUrl);
                   if (result === "shared") toast({ title: "Relatório compartilhado!" });
                   else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
+                  else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
                   else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
                 }}
                 data-testid="btn-row-copy-form"
@@ -6479,6 +6482,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     toast({ title: "Relatório compartilhado!" });
                   } else if (result === "copied") {
                     toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
+                  } else if (result === "copied_text_only") {
+                    toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
                   } else if (result !== "cancelled") {
                     toast({ title: "Erro ao copiar", variant: "destructive" });
                   }
@@ -6766,6 +6771,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     const result = await shareReportWithPhoto(reportText, forwardUpdate.photoUrl);
                     if (result === "shared") toast({ title: "Relatório compartilhado!" });
                     else if (result === "copied") toast({ title: "Relatório e Foto Copiados!", description: "Cole no WhatsApp Web com Ctrl+V." });
+                    else if (result === "copied_text_only") toast({ title: "Texto copiado, mas houve erro na foto", description: "Apenas o texto foi copiado." });
                     else if (result !== "cancelled") toast({ title: "Erro ao copiar", variant: "destructive" });
                   }}
                   data-testid="btn-forward-copy-form"
