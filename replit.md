@@ -113,8 +113,20 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 
 ## Real-Time Data Synchronization
 -   **Query Cache:** `staleTime: 30s` + `refetchOnWindowFocus: true` ensures data refreshes automatically when switching between pages/tabs.
--   **Centralized Invalidation:** `invalidateRelatedQueries(scope)` in `client/src/lib/queryClient.ts` provides cross-page cache invalidation. Scopes: `"vehicle"`, `"employee"`, `"billing"`, `"financial"`, `"service-order"`, `"mission-cost"`. Each scope cascades invalidations to all related queryKeys (e.g., changing a vehicle also invalidates dashboard, operational grid). **Supabase Realtime** channel (`realtime-costs`) listens for INSERT events on `mission_costs` and `financial_transactions` tables to auto-invalidate caches across all open tabs/devices.
+-   **Centralized Invalidation:** `invalidateRelatedQueries(scope)` in `client/src/lib/queryClient.ts` provides cross-page cache invalidation. Scopes: `"vehicle"`, `"employee"`, `"billing"`, `"financial"`, `"service-order"`, `"mission-cost"`. Each scope cascades invalidations to all related queryKeys (e.g., changing a vehicle also invalidates dashboard, operational grid). **Supabase Realtime** channel (`realtime-sync-*`) listens for INSERT events on `mission_costs`, `financial_transactions`, `vehicle_fueling`, and `mission_updates` tables + UPDATE on `service_orders` to auto-invalidate caches across all open tabs/devices. Channel uses exponential backoff reconnection (up to 30s delay, max 10 retries). On `online` event, all channels are re-subscribed and queries invalidated.
 -   **Financial Transaction Sync:** Billing approval creates financial transactions with `origin_type: "escort_billing"`. The approval flow removes any legacy `"service_order"` origin transactions before creating the correct one. Total = `fat_acionamento + fat_hora_extra + fat_km + despesas_pedagio`.
+
+### Conexão Infalível (Agent App Resilience)
+- **É proibido deslogar o usuário por inatividade ou expiração de token sem tentativa automática de renovação.** A integridade da comunicação entre App e Painel Admin é prioridade máxima.
+- **Token de Longa Duração:** Supabase Auth emite access_token (~1h) + refresh_token (~30 dias). O app renova o token proativamente a cada 45 minutos via `supabase.auth.refreshSession()`. Se um request retorna 401, tanto `apiRequest` quanto `offlineQueue.flushQueue` tentam refresh antes de falhar.
+- **Persistência Offline:** Quando o agente perde sinal, ações (fotos, avanço de etapa, atualizações de status) são enfileiradas em `localStorage` via `offlineQueue.ts`. O queue tenta sincronizar a cada 15s + no evento `online`. Cada ação tem até 5 retries.
+- **Reconexão Agressiva:** Quando detectado offline, um watchdog tenta reconectar a cada 5 segundos (via `/api/health` ping). Ao reconectar: refresh do token + invalidação de todas as queries. Banner visual mostra "Reconectando..." com spinner.
+
+### Ouvinte Imortal (Admin Grid Resilience)
+- **Monitoramento de Conexão Admin:** O Grid detecta `online`/`offline` events e exibe banner vermelho "Tentando reconectar..." quando offline. Ao reconectar, faz invalidação total de queries (Fetch Imediato).
+- **Supabase Realtime Push:** `mission_updates` INSERT events são recebidos em tempo real via Supabase Realtime, eliminando dependência exclusiva de polling (15s backup).
+- **Alerta VTR Offline (5min):** Se uma viatura com missão ativa não envia update por >5 minutos, o card dela muda para VERMELHO com badge "SEM SINAL Xmin" piscante e ícone WifiOff. Um alarme sonoro distinto (3 bipes curtos em onda quadrada, 660/440Hz) é disparado quando uma VTR recém-entra em estado offline. Debounce de 30s para evitar alarmes repetitivos.
+- **Som de Notificação:** Beep curto (880Hz sine wave) ao receber qualquer nova atualização de agente. Toggle persistido em localStorage.
 
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.

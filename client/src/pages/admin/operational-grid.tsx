@@ -26,7 +26,7 @@ import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryCli
 import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useNotificationSound } from "@/hooks/use-notification-sound";
+import { useNotificationSound, playAlarm } from "@/hooks/use-notification-sound";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -6464,6 +6464,30 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     }
   }, [vtrGroups]);
 
+  const prevOfflineVtrsRef = useRef<Set<string>>(new Set());
+  const [, forceTickUpdate] = useState(0);
+
+  useEffect(() => {
+    const tickTimer = setInterval(() => forceTickUpdate(n => n + 1), 60000);
+    return () => clearInterval(tickTimer);
+  }, []);
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    const currentOffline = new Set<string>();
+    for (const g of vtrGroups) {
+      const latestTs = g.updates[0]?.createdAt ? new Date(g.updates[0].createdAt).getTime() : 0;
+      if (nowMs - latestTs > 5 * 60 * 1000) {
+        currentOffline.add(g.osNumber);
+      }
+    }
+    const newlyOffline = [...currentOffline].filter(os => !prevOfflineVtrsRef.current.has(os));
+    prevOfflineVtrsRef.current = currentOffline;
+    if (newlyOffline.length > 0 && soundEnabled) {
+      playAlarm();
+    }
+  }, [vtrGroups, soundEnabled]);
+
   if (updates.length === 0) return (
     <div className="flex justify-end" data-testid="sound-toggle-idle">
       <Tooltip>
@@ -6533,15 +6557,24 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           const latestTime = latest?.createdAt ? new Date(latest.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
           const gridItem = gridData.find((g: GridItem) => g.osNumber === group.osNumber);
           const statusLabel = latest?.missionStep ? getMissionLabel(latest.missionStep) : (gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—");
+          const msSinceLastUpdate = latest?.createdAt ? Date.now() - new Date(latest.createdAt).getTime() : Infinity;
+          const isVtrOffline = msSinceLastUpdate > 5 * 60 * 1000;
+          const minSinceLast = Math.floor(msSinceLastUpdate / 60000);
+
+          const cardColor = isVtrOffline
+            ? "border-red-500 bg-red-50 ring-2 ring-red-400"
+            : isFlashing
+              ? "border-amber-500 bg-amber-100 ring-2 ring-amber-400 animate-pulse"
+              : "border-amber-200 bg-white";
 
           return (
             <div
               key={group.osNumber}
-              className={`rounded-lg border overflow-hidden transition-all duration-300 ${isFlashing ? "border-amber-500 bg-amber-100 ring-2 ring-amber-400 animate-pulse" : "border-amber-200 bg-white"}`}
+              className={`rounded-lg border overflow-hidden transition-all duration-300 ${cardColor}`}
               data-testid={`vtr-card-${group.osNumber}`}
             >
               <button
-                className="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-amber-50/80 transition-colors text-left"
+                className={`w-full px-3 py-2.5 flex items-center gap-3 transition-colors text-left ${isVtrOffline ? "hover:bg-red-100/80" : "hover:bg-amber-50/80"}`}
                 onClick={() => setExpandedVtrs(prev => {
                   const next = new Set(prev);
                   if (next.has(group.osNumber)) next.delete(group.osNumber);
@@ -6550,21 +6583,28 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 })}
                 data-testid={`vtr-toggle-${group.osNumber}`}
               >
-                <div className="w-7 h-7 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0">
-                  <Car className="w-3.5 h-3.5 text-amber-700" />
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${isVtrOffline ? "bg-red-200" : "bg-amber-200"}`}>
+                  {isVtrOffline ? (
+                    <WifiOff className="w-3.5 h-3.5 text-red-700" />
+                  ) : (
+                    <Car className="w-3.5 h-3.5 text-amber-700" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold text-amber-900">{group.osNumber}</span>
-                    <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">{group.plate}</span>
+                    <span className={`text-xs font-bold ${isVtrOffline ? "text-red-900" : "text-amber-900"}`}>{group.osNumber}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isVtrOffline ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"}`}>{group.plate}</span>
+                    {isVtrOffline && (
+                      <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold animate-pulse">SEM SINAL {minSinceLast}min</span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-amber-700 truncate mt-0.5">
+                  <p className={`text-[11px] truncate mt-0.5 ${isVtrOffline ? "text-red-700" : "text-amber-700"}`}>
                     {titleCase(group.agentName)} • {statusLabel} • {latestTime}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">{group.updates.length}</span>
-                  {isExpanded ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <ChevronDown className="w-4 h-4 text-amber-500" />}
+                  <span className={`text-[10px] text-white px-1.5 py-0.5 rounded-full font-bold ${isVtrOffline ? "bg-red-500" : "bg-amber-500"}`}>{group.updates.length}</span>
+                  {isExpanded ? <ChevronUp className={`w-4 h-4 ${isVtrOffline ? "text-red-500" : "text-amber-500"}`} /> : <ChevronDown className={`w-4 h-4 ${isVtrOffline ? "text-red-500" : "text-amber-500"}`} />}
                 </div>
               </button>
 
@@ -7464,6 +7504,27 @@ export default function OperationalGridPage() {
     return () => window.removeEventListener("mirror-vehicle", handler);
   }, [handleMirrorVehicle]);
 
+  const [adminOnline, setAdminOnline] = useState(navigator.onLine);
+  const [adminReconnecting, setAdminReconnecting] = useState(false);
+
+  useEffect(() => {
+    const onOnline = () => {
+      setAdminOnline(true);
+      setAdminReconnecting(false);
+      queryClient.invalidateQueries();
+    };
+    const onOffline = () => {
+      setAdminOnline(false);
+      setAdminReconnecting(true);
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
   const countdown = useCountdown(REFRESH_INTERVAL_MS, lastRefresh);
   const isFetching = fetchingVehicles || fetchingGrid;
   const isLoading = loadingVehicles || loadingGrid;
@@ -7487,6 +7548,15 @@ export default function OperationalGridPage() {
     <OpNotifProvider>
     <AdminLayout>
       <div className="space-y-4">
+        {!adminOnline && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl px-4 py-3 flex items-center gap-3 animate-pulse" data-testid="admin-offline-banner">
+            <Loader2 className="w-5 h-5 text-red-600 animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-red-800">Tentando reconectar...</p>
+              <p className="text-[10px] text-red-600">Conexão perdida. O sistema vai reconectar automaticamente.</p>
+            </div>
+          </div>
+        )}
         <div className="rounded-xl overflow-hidden shadow-lg" style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #2C3E50 100%)" }}>
           <div className="px-6 py-5">
             <div className="flex items-center justify-between flex-wrap gap-4">

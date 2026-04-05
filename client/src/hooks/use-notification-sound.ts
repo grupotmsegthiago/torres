@@ -54,6 +54,35 @@ function playBeep() {
   } catch (_e) {}
 }
 
+let lastAlarmTime = 0;
+const ALARM_DEBOUNCE_MS = 30000;
+
+export function playAlarm() {
+  const now = Date.now();
+  if (now - lastAlarmTime < ALARM_DEBOUNCE_MS) return;
+  if (!getSnapshot()) return;
+  lastAlarmTime = now;
+  try {
+    const AudioCtx = window.AudioContext || ((window as Record<string, unknown>).webkitAudioContext as typeof AudioContext);
+    const ctx = new AudioCtx();
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      osc.connect(gain);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(660, ctx.currentTime + i * 0.4);
+      osc.frequency.setValueAtTime(440, ctx.currentTime + i * 0.4 + 0.15);
+      osc.start(ctx.currentTime + i * 0.4);
+      osc.stop(ctx.currentTime + i * 0.4 + 0.3);
+    }
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.3);
+    setTimeout(() => ctx.close(), 1500);
+  } catch (_e) {}
+}
+
 export function useNotificationSound(updates: UpdateItem[]) {
   const enabled = useSyncExternalStore(subscribe, getSnapshot);
 

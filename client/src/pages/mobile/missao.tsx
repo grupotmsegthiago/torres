@@ -7,6 +7,7 @@ import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError } from "@/lib/offlineQueue";
+import { supabase } from "@/lib/supabase";
 import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
@@ -942,9 +943,17 @@ export default function MobileMissaoPage() {
 
   const [offlinePending, setOfflinePending] = useState(getPendingCount());
   const [online, setOnline] = useState(isOnline());
+  const [reconnecting, setReconnecting] = useState(false);
 
   useEffect(() => {
-    const updateOnline = () => setOnline(navigator.onLine);
+    const updateOnline = () => {
+      const isOn = navigator.onLine;
+      setOnline(isOn);
+      if (isOn) {
+        setReconnecting(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+      }
+    };
     window.addEventListener("online", updateOnline);
     window.addEventListener("offline", updateOnline);
     startOfflineSync((result) => {
@@ -954,9 +963,52 @@ export default function MobileMissaoPage() {
         setOfflinePending(getPendingCount());
       }
     });
+
+    let reconnectTimer: ReturnType<typeof setInterval> | null = null;
+    const startReconnectWatchdog = () => {
+      if (reconnectTimer) return;
+      setReconnecting(true);
+      reconnectTimer = setInterval(async () => {
+        if (navigator.onLine) {
+          setReconnecting(false);
+          if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+          try {
+            await supabase.auth.refreshSession();
+          } catch {}
+          queryClient.invalidateQueries();
+          return;
+        }
+        try {
+          const ctrl = new AbortController();
+          setTimeout(() => ctrl.abort(), 4000);
+          await fetch("/api/health", { signal: ctrl.signal });
+          setOnline(true);
+          setReconnecting(false);
+          if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+          queryClient.invalidateQueries();
+        } catch {}
+      }, 5000);
+    };
+
+    const handleOffline = () => startReconnectWatchdog();
+    window.addEventListener("offline", handleOffline);
+    if (!navigator.onLine) startReconnectWatchdog();
+
+    const tokenRefreshTimer = setInterval(async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) {
+          await supabase.auth.refreshSession();
+        }
+      } catch {}
+    }, 45 * 60 * 1000);
+
     return () => {
       window.removeEventListener("online", updateOnline);
       window.removeEventListener("offline", updateOnline);
+      window.removeEventListener("offline", handleOffline);
+      if (reconnectTimer) clearInterval(reconnectTimer);
+      clearInterval(tokenRefreshTimer);
     };
   }, []);
 
@@ -1509,10 +1561,20 @@ export default function MobileMissaoPage() {
 
         {!online && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-3 flex items-center gap-3" data-testid="alert-offline">
-            <WifiOff className="w-5 h-5 text-red-500 shrink-0" />
+            {reconnecting ? (
+              <Loader2 className="w-5 h-5 text-red-500 shrink-0 animate-spin" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-red-500 shrink-0" />
+            )}
             <div>
-              <p className="text-xs font-bold text-red-700 uppercase">Sem conexão</p>
-              <p className="text-[10px] text-red-500">Ações serão salvas e enviadas quando o sinal voltar.</p>
+              <p className="text-xs font-bold text-red-700 uppercase">
+                {reconnecting ? "Reconectando..." : "Sem conexão"}
+              </p>
+              <p className="text-[10px] text-red-500">
+                {reconnecting
+                  ? "Tentando reconectar a cada 5 segundos. Ações ficam salvas localmente."
+                  : "Ações serão salvas e enviadas quando o sinal voltar."}
+              </p>
             </div>
             {offlinePending > 0 && (
               <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{offlinePending}</span>
