@@ -1199,20 +1199,37 @@ export default function MobileMissaoPage() {
     setSubmitting(true);
     try {
       const pos = await getPosition();
-      await apiRequest("POST", "/api/mission/update", {
+      const payload = {
         serviceOrderId: mission.serviceOrderId,
         message: statusUpdate.trim(),
         missionStep: currentStep,
         latitude: pos?.lat || null,
         longitude: pos?.lng || null,
         photoUrl: photoDataUrl || null,
-      });
+      };
+      if (!navigator.onLine) throw new Error("offline");
+      await apiRequest("POST", "/api/mission/update", payload);
       logAuditAction("mission_status_update", "/mobile/missao", `Status: ${statusUpdate.trim()} | Etapa: ${currentStep} | OS #${mission.serviceOrderId}`);
       toast({ title: "Atualização enviada!", description: "A central foi notificada, obrigado." });
       setStatusUpdate("");
       return true;
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      if (isNetworkError(err)) {
+        const pos = await getPosition().catch(() => null);
+        enqueueAction("/api/mission/update", "POST", {
+          serviceOrderId: mission.serviceOrderId,
+          message: statusUpdate.trim(),
+          missionStep: currentStep,
+          latitude: pos?.lat || null,
+          longitude: pos?.lng || null,
+          photoUrl: photoDataUrl || null,
+        });
+        setOfflinePending(getPendingCount());
+        toast({ title: "Salvo offline", description: "A atualização será enviada quando o sinal voltar." });
+        setStatusUpdate("");
+        return true;
+      }
+      toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
       return false;
     } finally {
       setSubmitting(false);

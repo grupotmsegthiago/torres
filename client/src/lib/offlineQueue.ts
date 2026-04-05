@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 const QUEUE_KEY = "torres_offline_queue";
 
 interface QueuedAction {
@@ -39,9 +41,21 @@ export function getPendingCount(): number {
   return getQueue().length;
 }
 
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function flushQueue(): Promise<{ sent: number; failed: number }> {
   const queue = getQueue();
   if (!queue.length) return { sent: 0, failed: 0 };
+
+  const token = await getAuthToken();
+  if (!token) return { sent: 0, failed: 0 };
 
   let sent = 0;
   let failed = 0;
@@ -51,12 +65,30 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
     try {
       const res = await fetch(action.url, {
         method: action.method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify(action.body),
       });
       if (res.ok) {
         sent++;
+      } else if (res.status === 401) {
+        const { data } = await supabase.auth.refreshSession();
+        if (data?.session?.access_token) {
+          const retry = await fetch(action.url, {
+            method: action.method,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${data.session.access_token}`,
+            },
+            body: JSON.stringify(action.body),
+          });
+          if (retry.ok) { sent++; continue; }
+        }
+        action.retries++;
+        if (action.retries < 5) remaining.push(action);
+        else failed++;
       } else {
         action.retries++;
         if (action.retries < 5) remaining.push(action);

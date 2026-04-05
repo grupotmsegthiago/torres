@@ -56,6 +56,22 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
   });
 
+  if (res.status === 401) {
+    const { data: refreshData } = await supabase.auth.refreshSession();
+    if (refreshData?.session?.access_token) {
+      const retryRes = await fetch(url, {
+        method,
+        headers: {
+          "Authorization": `Bearer ${refreshData.session.access_token}`,
+          ...(data ? { "Content-Type": "application/json" } : {}),
+        },
+        body: data ? JSON.stringify(data) : undefined,
+      });
+      await throwIfResNotOk(retryRes);
+      return retryRes;
+    }
+  }
+
   await throwIfResNotOk(res);
   return res;
 }
