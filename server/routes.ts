@@ -5568,7 +5568,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
             missionStep: lastUpdate[0].missionStep,
             agentName: lastUpdate[0].employeeName,
             createdAt: lastUpdate[0].createdAt,
-            photoUrl: lastUpdate[0].photoUrl || null,
+            photoUrl: lastUpdate[0].photoUrl && typeof lastUpdate[0].photoUrl === "string" && lastUpdate[0].photoUrl.startsWith("data:") ? "[has_photo]" : (lastUpdate[0].photoUrl || null),
+            hasPhoto: !!lastUpdate[0].photoUrl,
             latitude: lastUpdate[0].latitude || null,
             longitude: lastUpdate[0].longitude || null,
             copiadoPor: lastUpdate[0].copiadoPor || null,
@@ -5880,7 +5881,8 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                     missionStep: lastUpd[0].missionStep,
                     agentName: lastUpd[0].employeeName,
                     createdAt: lastUpd[0].createdAt,
-                    photoUrl: lastUpd[0].photoUrl || null,
+                    photoUrl: lastUpd[0].photoUrl && typeof lastUpd[0].photoUrl === "string" && lastUpd[0].photoUrl.startsWith("data:") ? "[has_photo]" : (lastUpd[0].photoUrl || null),
+                    hasPhoto: !!lastUpd[0].photoUrl,
                     latitude: lastUpd[0].latitude || null,
                     longitude: lastUpd[0].longitude || null,
                     copiadoPor: lastUpd[0].copiadoPor || null,
@@ -6578,6 +6580,13 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
       missionResults = await db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
     }
 
+    const stripBase64 = (m: any) => {
+      if (m.photoUrl && typeof m.photoUrl === "string" && m.photoUrl.startsWith("data:")) {
+        return { ...m, photoUrl: "[has_photo]", hasPhoto: true };
+      }
+      return { ...m, hasPhoto: !!m.photoUrl };
+    };
+
     if (!unreadOnly) {
       const telEvents = await db.select().from(telemetryEvents).orderBy(desc(telemetryEvents.createdAt)).limit(limit);
       const telAsMission = telEvents.map(t => ({
@@ -6591,6 +6600,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         latitude: t.latitude ? String(t.latitude) : null,
         longitude: t.longitude ? String(t.longitude) : null,
         photoUrl: null,
+        hasPhoto: false,
         readByAdmin: 1,
         createdAt: t.createdAt,
         _type: "telemetry",
@@ -6599,13 +6609,21 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
         _value: t.value,
         _address: t.address,
       }));
-      const merged = [...missionResults.map(m => ({ ...m, _type: "mission" })), ...telAsMission]
+      const merged = [...missionResults.map(m => stripBase64({ ...m, _type: "mission" })), ...telAsMission]
         .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
         .slice(0, limit);
       return res.json(merged);
     }
 
-    res.json(missionResults);
+    res.json(missionResults.map(stripBase64));
+  });
+
+  app.get("/api/mission/updates/:id/photo", requireAuth, requireAdminRole, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
+    const [row] = await db.select({ photoUrl: missionUpdates.photoUrl }).from(missionUpdates).where(eq(missionUpdates.id, id)).limit(1);
+    if (!row) return res.status(404).json({ message: "Atualização não encontrada" });
+    res.json({ photoUrl: row.photoUrl });
   });
 
   app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {

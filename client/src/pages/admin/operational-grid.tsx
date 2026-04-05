@@ -605,6 +605,52 @@ async function imageSourceToPngBlob(src: string): Promise<Blob | null> {
   });
 }
 
+function LazyUpdatePhoto({ updateId, photoUrl }: { updateId: number | string; photoUrl?: string | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadPhoto = useCallback(async () => {
+    if (src || loading) return;
+    if (photoUrl && photoUrl !== "[has_photo]") {
+      setSrc(photoUrl);
+      return;
+    }
+    if (typeof updateId === "string") return;
+    setLoading(true);
+    try {
+      const res = await authFetch(`/api/mission/updates/${updateId}/photo`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.photoUrl) setSrc(data.photoUrl);
+      }
+    } catch {}
+    setLoading(false);
+  }, [updateId, photoUrl, src, loading]);
+
+  if (src) {
+    return (
+      <div className="mt-1.5">
+        <a href={src} target="_blank" rel="noopener noreferrer" className="inline-block">
+          <img src={src} alt="Foto da atualização" className="w-16 h-16 rounded-lg object-cover border-2 border-amber-300 shadow-sm hover:shadow-md transition-shadow cursor-pointer" />
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={loadPhoto}
+        className="text-[10px] text-amber-700 bg-amber-100 border border-amber-200 px-2 py-1 rounded-md flex items-center gap-1 hover:bg-amber-200 transition-colors"
+        data-testid={`btn-load-photo-${updateId}`}
+      >
+        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+        {loading ? "Carregando..." : "Ver foto"}
+      </button>
+    </div>
+  );
+}
+
 const IS_MOBILE = /iP(hone|ad|od)|Android/i.test(navigator.userAgent);
 
 async function shareMobileReportWithPhoto(text: string, photoUrl?: string | null): Promise<"shared" | "cancelled" | false> {
@@ -3149,7 +3195,13 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             disabled={!v.activeOs?.lastAgentUpdate}
             onClick={(e) => {
               e.stopPropagation();
-              setPhotoModalUrl(v.activeOs?.lastAgentUpdate?.photoUrl || "__no_photo__");
+              const rawUrl = v.activeOs?.lastAgentUpdate?.photoUrl;
+              const updateId = v.activeOs?.lastAgentUpdate?.id;
+              if (rawUrl === "[has_photo]" && updateId) {
+                authFetch(`/api/mission/updates/${updateId}/photo`).then(r => r.json()).then(d => setPhotoModalUrl(d.photoUrl || "__no_photo__")).catch(() => setPhotoModalUrl("__no_photo__"));
+              } else {
+                setPhotoModalUrl(rawUrl || "__no_photo__");
+              }
               if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); }
             }}
             data-testid={`btn-copy-report-${v.id}`}
@@ -4013,7 +4065,13 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
           {v.activeOs?.lastAgentUpdate && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
               onClick={() => {
-                setPhotoModalUrl(v.activeOs?.lastAgentUpdate?.photoUrl || "__no_photo__");
+                const rawUrl = v.activeOs?.lastAgentUpdate?.photoUrl;
+                const updateId = v.activeOs?.lastAgentUpdate?.id;
+                if (rawUrl === "[has_photo]" && updateId) {
+                  authFetch(`/api/mission/updates/${updateId}/photo`).then(r => r.json()).then(d => setPhotoModalUrl(d.photoUrl || "__no_photo__")).catch(() => setPhotoModalUrl("__no_photo__"));
+                } else {
+                  setPhotoModalUrl(rawUrl || "__no_photo__");
+                }
                 if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); }
               }}
               data-testid={`ctx-report-${v.id}`}>
@@ -5293,7 +5351,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
                                   <p className="text-[10px] text-neutral-400 mt-0.5">
                                     {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
-                                    {v.activeOs.lastAgentUpdate.photoUrl ? " · 📷 Foto" : ""}
+                                    {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷 Foto" : ""}
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -6002,8 +6060,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           <div className="px-4">
             <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
               <div className="flex items-start gap-3">
-                {rowForwardUpdate.photoUrl && (
-                  <img src={rowForwardUpdate.photoUrl} alt="Foto" className="w-20 h-20 rounded-lg object-cover border border-neutral-200 flex-shrink-0" />
+                {(rowForwardUpdate.hasPhoto || (rowForwardUpdate.photoUrl && rowForwardUpdate.photoUrl !== "[has_photo]")) && (
+                  <LazyUpdatePhoto updateId={rowForwardUpdate.id} photoUrl={rowForwardUpdate.photoUrl} />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-neutral-800">"{rowForwardUpdate.message}"</p>
@@ -6680,12 +6738,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                           </span>
                         </div>
                         <p className="text-xs text-amber-800 mt-0.5">{u.message}</p>
-                        {u.photoUrl && (
-                          <div className="mt-1.5">
-                            <a href={u.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-block">
-                              <img src={u.photoUrl} alt="Foto da atualização" className="w-16 h-16 rounded-lg object-cover border-2 border-amber-300 shadow-sm hover:shadow-md transition-shadow cursor-pointer" />
-                            </a>
-                          </div>
+                        {(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")) && (
+                          <LazyUpdatePhoto updateId={u.id} photoUrl={u.photoUrl} />
                         )}
                         {u.latitude && u.longitude && (
                           <a
@@ -6705,7 +6759,11 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                               const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                               const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
                               let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
-                              const result = await shareMobileReportWithPhoto(reportText, u.photoUrl);
+                              let sharePhoto = u.photoUrl;
+                              if (sharePhoto === "[has_photo]" && typeof u.id === "number") {
+                                try { const r = await authFetch(`/api/mission/updates/${u.id}/photo`); const d = await r.json(); sharePhoto = d.photoUrl || null; } catch { sharePhoto = null; }
+                              }
+                              const result = await shareMobileReportWithPhoto(reportText, sharePhoto);
                               if (result === "shared") toast({ title: "Relatório compartilhado!" });
                               else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
                             }}
@@ -6717,10 +6775,15 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                         ) : (
                           <div className="mt-1.5 flex flex-col gap-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              {u.photoUrl && (
+                              {(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")) && (
                                 <button
                                   onClick={async () => {
-                                    const ok = await copyPhotoToClipboard(u.photoUrl);
+                                    let photo = u.photoUrl;
+                                    if (photo === "[has_photo]" && typeof u.id === "number") {
+                                      try { const r = await authFetch(`/api/mission/updates/${u.id}/photo`); const d = await r.json(); photo = d.photoUrl || null; } catch { photo = null; }
+                                    }
+                                    if (!photo) { toast({ title: "Foto não disponível", variant: "destructive" }); return; }
+                                    const ok = await copyPhotoToClipboard(photo);
                                     toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
                                     fireCopyAudit(u.id);
                                   }}
@@ -6960,9 +7023,9 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     />
                   </a>
                 )}
-                {forwardUpdate.photoUrl && (
+                {(forwardUpdate.hasPhoto || (forwardUpdate.photoUrl && forwardUpdate.photoUrl !== "[has_photo]")) && (
                   <div className="mt-3">
-                    <img src={forwardUpdate.photoUrl} alt="Foto" className="w-full h-40 object-cover rounded-lg border-2 border-white/20" />
+                    <LazyUpdatePhoto updateId={forwardUpdate.id} photoUrl={forwardUpdate.photoUrl} />
                   </div>
                 )}
               </div>
@@ -7222,7 +7285,7 @@ function AlertsTimeline() {
                 const ageMs = Date.now() - new Date(u.createdAt).getTime();
                 const isCritical = ageMs < 600000;
                 const isNewest = idx === 0;
-                const hasPhoto = !!u.photoUrl;
+                const hasPhoto = u.hasPhoto || (!!u.photoUrl && u.photoUrl !== "[has_photo]");
                 const isTelemetry = u._type === "telemetry";
                 const isSpeedAlert = isTelemetry && u._eventType === "excesso_velocidade";
                 const isIdleAlert = isTelemetry && (u._eventType === "motor_ocioso" || u._eventType === "parada_prolongada");
@@ -7326,23 +7389,7 @@ function AlertsTimeline() {
                           )}
 
                           {hasPhoto && (
-                            <div className="mt-2">
-                              <button
-                                onClick={() => setExpandedPhoto(expandedPhoto === u.photoUrl ? null : u.photoUrl)}
-                                className="group relative rounded-lg overflow-hidden border border-neutral-200 hover:border-neutral-400 transition-all"
-                                data-testid={`button-expand-photo-${u.id}`}
-                              >
-                                <img
-                                  src={u.photoUrl}
-                                  alt="Evidência"
-                                  className="w-20 h-20 object-cover"
-                                  loading="lazy"
-                                />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
-                                  <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
-                                </div>
-                              </button>
-                            </div>
+                            <LazyUpdatePhoto updateId={u.id} photoUrl={u.photoUrl} />
                           )}
 
                           <div className="flex items-center gap-3 mt-2">

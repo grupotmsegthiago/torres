@@ -109,9 +109,10 @@ export const GLOBAL_QUERY_KEYS = {
   weaponKits: ["/api/weapon-kits"],
   vehicleTracking: ["/api/vehicle-tracking"],
   fueling: ["/api/fueling"],
+  missionUpdates: ["/api/mission/updates"],
 };
 
-type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost";
+type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update";
 
 const _channel: BroadcastChannel | null = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("torres-sync")
@@ -173,6 +174,7 @@ function _invalidateLocal(scope: InvalidationScope) {
     inv(keys.financialResumo);
     inv(keys.weaponKits);
     inv(keys.vehicleTracking);
+    inv(keys.missionUpdates);
   }
   if (scope === "mission-cost") {
     inv(keys.serviceOrders);
@@ -182,6 +184,12 @@ function _invalidateLocal(scope: InvalidationScope) {
     inv(keys.financialResumo);
     inv(keys.financialDashboard);
     inv(keys.operationalGrid);
+  }
+  if (scope === "mission-update") {
+    inv(keys.missionUpdates);
+    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+    inv(keys.operationalGrid);
+    inv(keys.serviceOrders);
   }
 }
 
@@ -195,7 +203,7 @@ export function invalidateAllQueries() {
   _channel?.postMessage({ type: "invalidate-all" });
 }
 
-const AUTO_REFRESH_MS = 60_000;
+const AUTO_REFRESH_MS = 30_000;
 let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startAutoRefresh() {
@@ -214,12 +222,14 @@ export function stopAutoRefresh() {
 
 if (typeof window !== "undefined") {
   startAutoRefresh();
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopAutoRefresh();
     } else {
       queryClient.invalidateQueries();
       startAutoRefresh();
+      _ensureRealtimeAlive();
     }
   });
 
@@ -238,50 +248,76 @@ if (typeof window !== "undefined") {
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "service_orders" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
         _invalidateLocal("service-order");
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_updates" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
-        _invalidateLocal("service-order");
+        _invalidateLocal("mission-update");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mission_updates" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
-        _invalidateLocal("service-order");
+        _invalidateLocal("mission-update");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
+        _invalidateLocal("billing");
       });
   }
 
-  let _realtimeRetryCount = 0;
-  const MAX_REALTIME_RETRIES = 10;
+  let _realtimeGeneration = 0;
+  let _activeChannel: ReturnType<typeof supabase.channel> | null = null;
+  let _realtimeConnected = false;
+  let _lastRealtimeEvent = Date.now();
 
   function _subscribeRealtime() {
+    if (_activeChannel) {
+      try { supabase.removeChannel(_activeChannel); } catch {}
+      _activeChannel = null;
+    }
+    _realtimeConnected = false;
+    _realtimeGeneration++;
+    const gen = _realtimeGeneration;
+
     try {
-      const ch = _buildRealtimeChannel(`realtime-sync-${_realtimeRetryCount}`)
+      const ch = _buildRealtimeChannel(`realtime-sync-${gen}-${Date.now()}`)
         .subscribe((status, err) => {
+          if (gen !== _realtimeGeneration) return;
+
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("[Realtime] channel error, will retry:", err?.message ?? status);
+            console.warn("[Realtime] channel error, retrying in 3s:", err?.message ?? status);
+            _realtimeConnected = false;
             try { supabase.removeChannel(ch); } catch {}
-            if (_realtimeRetryCount < MAX_REALTIME_RETRIES) {
-              _realtimeRetryCount++;
-              const delay = Math.min(1000 * Math.pow(2, _realtimeRetryCount), 30000);
-              setTimeout(_subscribeRealtime, delay);
+            if (gen === _realtimeGeneration) {
+              setTimeout(_subscribeRealtime, 3000);
             }
           }
           if (status === "SUBSCRIBED") {
-            _realtimeRetryCount = 0;
+            console.log("[Realtime] connected OK");
+            _realtimeConnected = true;
+            _lastRealtimeEvent = Date.now();
+            _activeChannel = ch;
           }
         });
-    } catch {}
+    } catch {
+      setTimeout(_subscribeRealtime, 5000);
+    }
+  }
+
+  function _ensureRealtimeAlive() {
+    const staleMs = Date.now() - _lastRealtimeEvent;
+    if (!_realtimeConnected || staleMs > 120_000) {
+      console.log("[Realtime] heartbeat: reconnecting (connected:", _realtimeConnected, "stale:", Math.round(staleMs / 1000), "s)");
+      _subscribeRealtime();
+    }
   }
 
   _subscribeRealtime();
+
+  setInterval(_ensureRealtimeAlive, 60_000);
 
   window.addEventListener("online", () => {
     console.log("[Network] Online detected, refreshing all queries");
     queryClient.invalidateQueries();
     startAutoRefresh();
-    _realtimeRetryCount = 0;
-    _subscribeRealtime();
+    setTimeout(_subscribeRealtime, 1000);
   });
 
   window.addEventListener("offline", () => {
