@@ -34,7 +34,9 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 ### Regras de Persistência Financeira
 
-- **Custo de abastecimento é persistente.** O Grid/DRE deve mostrar o **último abastecimento** da viatura (mais recente por `created_at DESC`), não apenas o de hoje. O valor deve permanecer no DRE da missão até que ela seja finalizada, independente da virada de data à meia-noite. NUNCA filtrar combustível por `due_date = TODAY()`.
+- **Custos operacionais devem ser calculados dinamicamente no banco** (`mission_costs` table) e refletidos via Realtime no Grid e DRE. É proibido usar campos totalizadores estáticos ou cache de servidor que gerem dessincronia.
+- **Custo de abastecimento = mission_cost vinculado à OS.** Toda vez que um fueling é registrado (mobile ou admin), o backend cria um `mission_cost` (category "Combustível", cost_type "expense") vinculado à OS ativa daquela viatura. O Grid e DRE leem custos via `getMissionCostsByOS()` — fonte única de verdade. O `vehicleFuelCache` (financial_transactions) é apenas fallback quando não há mission_costs. Startup sync (`syncFuelingMissionCosts`) garante que fuelings anteriores sejam backfillados.
+- **Custo de abastecimento é persistente.** O Grid/DRE deve mostrar TODOS os abastecimentos da viatura durante a missão (soma total), não apenas o mais recente. O valor deve permanecer no DRE da missão até que ela seja finalizada, independente da virada de data à meia-noite. NUNCA filtrar combustível por `due_date = TODAY()`.
 - **Pedágio com missão = Custo + Receita (Reembolso).** Se `service_order_id` tiver valor, o sistema cria AMBOS os registros (expense + revenue) em `mission_costs` e `financial_transactions`. Impacto zero no lucro.
 - **Pedágio sem missão (Vazio) = apenas Despesa.** Se `service_order_id` for null, o valor entra apenas como despesa da viatura (abate o lucro direto). Categoria: "Custos Fixos/Deslocamento Extra".
 - **Valores financeiros são imutáveis após gravação.** Uma vez que um custo foi atribuído a uma missão, ele deve ser gravado como valor fixo. O sistema não deve recalcular ou filtrar esse valor pela data atual do servidor.
