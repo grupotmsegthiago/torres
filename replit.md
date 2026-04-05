@@ -144,6 +144,12 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Omissão no App Mobile:** App de abastecimento mostra apenas dados operacionais (litros, km, relação etanol/gasolina). Nenhum dado de faturamento, lucro, margem ou DRE é acessível via rotas mobile.
 - **REGRA INVIOLÁVEL:** É terminantemente proibido exibir dados financeiros para perfis de agentes. O acesso web é restrito a administradores. Agentes operam exclusivamente via App Mobile.
 
+### Identidade Tática (Tactical Identity)
+- **Reverse Geocoding:** `GET /api/reverse-geocode?lat=X&lng=Y` usa Nominatim (OpenStreetMap) para converter coordenadas GPS em endereço completo (rua, número, bairro, cidade/UF). Cache client-side em `_reverseGeocodeCache`.
+- **Componente `ReverseGeocodeAddress`:** Exibe endereço completo com ícone `ShieldCheck` (verde esmeralda) + link "Ver no mapa". Usado no feed de notificações (MissionUpdatesAlert) e na AlertsTimeline.
+- **Ícone Shield:** Nas atualizações de missão, `ShieldCheck` substitui `MapPin` para reforçar identidade tática/segurança patrimonial.
+- **Nominatim Rate Limit:** 1 req/seg. Cache evita chamadas duplicadas. Endereços formatados: "Rua X, 123, Bairro, Cidade/UF".
+
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.
 -   **OpenAI Vision:** Used for OCR capabilities in document processing.

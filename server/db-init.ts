@@ -536,6 +536,37 @@ export async function ensureDbSchema() {
   }
 }
 
+export async function nominatimReverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const resp = await fetch(url, { headers: { "User-Agent": "TorresVP/1.0" }, signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    const data = await resp.json() as any;
+    if (!data || !data.address) return null;
+    const a = data.address;
+    const road = a.road || a.highway || a.pedestrian || "";
+    const number = a.house_number || "";
+    const suburb = a.suburb || a.neighbourhood || "";
+    const city = a.city || a.town || a.municipality || a.county || "";
+    const state = a.state || "";
+    const stateCode = state.length === 2 ? state : (
+      { "São Paulo": "SP", "Rio de Janeiro": "RJ", "Minas Gerais": "MG", "Bahia": "BA", "Paraná": "PR",
+        "Rio Grande do Sul": "RS", "Pernambuco": "PE", "Ceará": "CE", "Pará": "PA", "Maranhão": "MA",
+        "Santa Catarina": "SC", "Goiás": "GO", "Paraíba": "PB", "Espírito Santo": "ES", "Amazonas": "AM",
+        "Rio Grande do Norte": "RN", "Alagoas": "AL", "Piauí": "PI", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
+        "Distrito Federal": "DF", "Sergipe": "SE", "Rondônia": "RO", "Tocantins": "TO", "Acre": "AC",
+        "Amapá": "AP", "Roraima": "RR" }[state] || state
+    );
+    let parts: string[] = [];
+    if (road) parts.push(number ? `${road}, ${number}` : road);
+    if (suburb && !road.includes(suburb)) parts.push(suburb);
+    if (city) parts.push(`${city}/${stateCode}`);
+    return parts.length > 0 ? parts.join(", ") : (data.display_name || null);
+  } catch {
+    return null;
+  }
+}
+
 export async function nominatimGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=br&limit=1`;

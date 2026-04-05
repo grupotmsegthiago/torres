@@ -18,7 +18,7 @@ import {
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
-  CircleFadingPlus, Eye, Fuel, Gauge,
+  CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
@@ -603,6 +603,47 @@ async function imageSourceToPngBlob(src: string): Promise<Blob | null> {
         .catch(() => resolve(null));
     }
   });
+}
+
+const _reverseGeocodeCache: Record<string, string> = {};
+function useReverseGeocode(lat: number | null | undefined, lng: number | null | undefined): string | null {
+  const key = lat && lng ? `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}` : "";
+  const [addr, setAddr] = useState<string | null>(key ? (_reverseGeocodeCache[key] || null) : null);
+
+  useEffect(() => {
+    if (!key || _reverseGeocodeCache[key]) { setAddr(_reverseGeocodeCache[key] || null); return; }
+    let cancelled = false;
+    authFetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.address) { _reverseGeocodeCache[key] = d.address; setAddr(d.address); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [key]);
+  return addr;
+}
+
+function ReverseGeocodeAddress({ lat, lng }: { lat: number; lng: number }) {
+  const addr = useReverseGeocode(lat, lng);
+  const mapsLink = `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR`;
+  return (
+    <div className="mt-1 space-y-0.5">
+      {addr && (
+        <p className="text-[10px] font-bold text-neutral-700 flex items-center gap-1" data-testid="text-full-address">
+          <ShieldCheck className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+          {addr}
+        </p>
+      )}
+      <a
+        href={mapsLink}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 w-fit"
+      >
+        <ShieldCheck className="w-3 h-3" />
+        Ver no mapa
+      </a>
+    </div>
+  );
 }
 
 function LazyUpdatePhoto({ updateId, photoUrl }: { updateId: number | string; photoUrl?: string | null }) {
@@ -6800,16 +6841,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                           <LazyUpdatePhoto updateId={u.id} photoUrl={u.photoUrl} />
                         )}
                         {u.latitude && u.longitude && (
-                          <a
-                            href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 mt-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 w-fit"
-                            data-testid={`link-location-${u.id}`}
-                          >
-                            <MapPin className="w-3 h-3" />
-                            Ver localização no Maps
-                          </a>
+                          <ReverseGeocodeAddress lat={u.latitude} lng={u.longitude} />
                         )}
                         {IS_MOBILE ? (
                           <button
@@ -7041,10 +7073,23 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 )}
                 {locationAddr !== "—" && (
                   <div className="mt-2 flex items-start gap-1.5 text-[10px] opacity-80">
-                    <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                    <ShieldCheck className="w-3 h-3 flex-shrink-0 mt-0.5" />
                     <span>{locationAddr}</span>
                   </div>
                 )}
+                {lat && lng && (() => {
+                  const rgKey = `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`;
+                  const cachedAddr = _reverseGeocodeCache[rgKey];
+                  if (cachedAddr && cachedAddr !== locationAddr) {
+                    return (
+                      <div className="mt-1 flex items-start gap-1.5 text-[10px] font-bold opacity-90">
+                        <ShieldCheck className="w-3 h-3 flex-shrink-0 mt-0.5 text-emerald-300" />
+                        <span>{cachedAddr}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {(() => {
                   const dLat = matchedVehicle?.activeOs?.destinationLat;
                   const dLng = matchedVehicle?.activeOs?.destinationLng;
@@ -7437,8 +7482,11 @@ function AlertsTimeline() {
 
                           {isTelemetry && u._address && (
                             <p className="text-xs text-neutral-500 mt-0.5 flex items-center gap-1">
-                              <MapPin className="w-3 h-3 flex-shrink-0" /> {u._address}
+                              <ShieldCheck className="w-3 h-3 flex-shrink-0 text-emerald-600" /> {u._address}
                             </p>
+                          )}
+                          {u.latitude && u.longitude && (
+                            <ReverseGeocodeAddress lat={u.latitude} lng={u.longitude} />
                           )}
 
                           {hasPhoto && (
@@ -7455,17 +7503,7 @@ function AlertsTimeline() {
                                 </span>
                               );
                             })()}
-                            {u.latitude && u.longitude && (
-                              <a
-                                href={`https://www.google.com/maps?q=${u.latitude},${u.longitude}&z=17&hl=pt-BR`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
-                                data-testid={`link-map-${u.id}`}
-                              >
-                                <MapPin className="w-3 h-3" /> Mapa
-                              </a>
-                            )}
+                            
                           </div>
                         </div>
                       </div>

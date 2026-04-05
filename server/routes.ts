@@ -27,7 +27,7 @@ import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
 import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
-import { nominatimGeocode } from "./db-init";
+import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import OpenAI from "openai";
 
@@ -3382,6 +3382,18 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
   });
 
   const _roadDistCache: Record<string, { distKm: number; durationMin: number; ts: number }> = {};
+  app.get("/api/reverse-geocode", requireAuth, async (req, res) => {
+    try {
+      const lat = parseFloat(req.query.lat as string);
+      const lng = parseFloat(req.query.lng as string);
+      if (isNaN(lat) || isNaN(lng)) return res.status(400).json({ message: "Missing lat/lng" });
+      const address = await nominatimReverseGeocode(lat, lng);
+      res.json({ address: address || null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/road-distance", requireAuth, async (req, res) => {
     try {
       const { originLat, originLng, destLat, destLng, waypoints: wps } = req.body;
