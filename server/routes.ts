@@ -5159,7 +5159,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-    const todayLogs = logs.filter(l => l.createdAt && l.createdAt.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === today);
+    const todayLogs = logs.filter(l => l.createdAt && new Date(l.createdAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === today);
     const byEndpoint: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
     for (const l of logs) {
