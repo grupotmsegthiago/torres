@@ -138,6 +138,12 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 
 -   **Selo de Auditoria (Copy Audit Stamp — Produtividade Livre):** Copy buttons ("Copiar Texto", "Copiar Foto") ALWAYS execute the copy immediately — never block, never show `alert()` or `confirm()`. The stamp "(Copiado por: [Nome] às [DD/MM HH:MM])" is purely informational, displayed below the copy buttons. Each click: (1) copies to clipboard first, (2) shows "Relatório Copiado!" toast, (3) fires `POST /api/mission/updates/:id/copy-audit` in background to update stamp. Stamp syncs in real-time via Supabase Realtime UPDATE listener. The audit log is for history only and must NEVER impede subsequent clicks. Schema: `mission_updates.copiado_por` (text), `mission_updates.copiado_em` (timestamp).
 
+### Segregação de Funções (Security Level 1)
+- **Barreira Web para Agentes:** `ProtectedRoute` em `App.tsx` verifica `user.role === "funcionario"` e redireciona para tela "Acesso Negado" (`access-denied.tsx`). Agentes só acessam `/mobile/*`. Login por CPF no `/admin` redireciona automaticamente para `/mobile`.
+- **Blindagem Financeira (API):** Todas as rotas `/api/financial/*`, `/api/escort/billings/*`, `/api/escort/contracts`, `/api/employees/:id/salary-*` exigem `requireAdminRole` (role `admin` ou `diretoria`). Agentes recebem 403 Forbidden.
+- **Omissão no App Mobile:** App de abastecimento mostra apenas dados operacionais (litros, km, relação etanol/gasolina). Nenhum dado de faturamento, lucro, margem ou DRE é acessível via rotas mobile.
+- **REGRA INVIOLÁVEL:** É terminantemente proibido exibir dados financeiros para perfis de agentes. O acesso web é restrito a administradores. Agentes operam exclusivamente via App Mobile.
+
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.
 -   **OpenAI Vision:** Used for OCR capabilities in document processing.

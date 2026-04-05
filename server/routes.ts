@@ -1060,7 +1060,7 @@ export async function registerRoutes(
     res.json({ message: "Registro salarial removido" });
   });
 
-  app.get("/api/employees/:id/salary-discounts", requireAuth, async (req, res) => {
+  app.get("/api/employees/:id/salary-discounts", requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const empId = Number(req.params.id);
     const month = req.query.month ? Number(req.query.month) : new Date().getMonth() + 1;
@@ -1071,7 +1071,7 @@ export async function registerRoutes(
     res.json(rows);
   });
 
-  app.post("/api/employees/:id/salary-discounts", requireAuth, async (req, res) => {
+  app.post("/api/employees/:id/salary-discounts", requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const empId = Number(req.params.id);
     const { month, year, type, description, amount } = req.body;
@@ -1089,7 +1089,7 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
-  app.get("/api/employees/:id/salary-summary", requireAuth, async (req, res) => {
+  app.get("/api/employees/:id/salary-summary", requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     try {
       const empId = Number(req.params.id);
@@ -9145,7 +9145,7 @@ Regras:
   // ==================== FINANCIAL MODULE ====================
 
   // Financial Categories
-  app.get("/api/financial/categories", requireAuth, async (req, res) => {
+  app.get("/api/financial/categories", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("financial_categories").select("*").order("name");
       if (error) throw error;
@@ -9178,7 +9178,7 @@ Regras:
   });
 
   // Financial Accounts
-  app.get("/api/financial/accounts", requireAuth, async (req, res) => {
+  app.get("/api/financial/accounts", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("financial_accounts").select("*").order("name");
       if (error) throw error;
@@ -9222,7 +9222,7 @@ Regras:
   });
 
   // Financial Transactions
-  app.get("/api/financial/transactions", requireAuth, async (req, res) => {
+  app.get("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
       const { type, status, from, to, search } = req.query;
       let query = supabaseAdmin.from("financial_transactions").select("*").order("due_date", { ascending: false });
@@ -9403,7 +9403,7 @@ Regras:
     }
   });
 
-  app.get("/api/financial/audit-logs", requireAuth, async (req, res) => {
+  app.get("/api/financial/audit-logs", requireAdminRole, async (req, res) => {
     try {
       const { target_table, target_id, limit: lim } = req.query as any;
       let query = supabaseAdmin.from("financial_audit_logs").select("*").order("created_at", { ascending: false }).limit(Number(lim) || 100);
@@ -9430,7 +9430,7 @@ Regras:
     }
   });
 
-  app.get("/api/financial/summary", requireAuth, async (req, res) => {
+  app.get("/api/financial/summary", requireAdminRole, async (req, res) => {
     try {
       const { data: all, error } = await supabaseAdmin.from("financial_transactions").select("*");
       if (error) throw error;
@@ -9864,7 +9864,7 @@ Regras:
     }
   });
 
-  app.get("/api/financial/resumo", requireAuth, async (req, res) => {
+  app.get("/api/financial/resumo", requireAdminRole, async (req, res) => {
     try {
       const { from, to } = req.query;
 
@@ -10163,7 +10163,7 @@ Regras:
   }
 
   // Escort Contracts CRUD
-  app.get("/api/escort/contracts", requireAuth, async (req, res) => {
+  app.get("/api/escort/contracts", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("escort_contracts").select("*").order("client_name");
       if (error) throw error;
@@ -10267,7 +10267,7 @@ Regras:
   });
 
   // Escort Billings - List
-  app.get("/api/escort/billings", requireAuth, async (req, res) => {
+  app.get("/api/escort/billings", requireAdminRole, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
       let query = supabaseAdmin.from("escort_billings").select("*").order("created_at", { ascending: false });
@@ -10341,7 +10341,7 @@ Regras:
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/escort/billings/submit-os", requireAuth, async (req, res) => {
+  app.post("/api/escort/billings/submit-os", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
       const body = req.body;
