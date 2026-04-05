@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -62,6 +62,7 @@ const menuItems: MenuItem[] = [
     adminOnly: true,
     children: [
       { path: "/admin/financeiro", label: "Contas", icon: Wallet },
+      { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
       { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
       { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
     ],

@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { initCronJobs } from "./cron";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
+import { registerAsaasRoutes } from "./asaas";
 
 const app = express();
 const httpServer = createServer(app);
@@ -72,6 +73,7 @@ app.use((req, res, next) => {
   await ensureDbSchema();
   await ensureCalcMissionRPC();
   await registerRoutes(httpServer, app);
+  registerAsaasRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

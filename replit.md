@@ -156,5 +156,13 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 -   **TrucksControl / NewRastreamentoOnline:** SOAP webservice for real-time vehicle tracking data, remote commands, and vehicle mirroring functionalities.
 -   **BrasilAPI:** Utilized for CPF lookup functionality.
 -   **Google Maps Platform:** Provides mapping services, Places API for autocomplete, and location functionalities.
+-   **Asaas:** Gateway de pagamentos brasileiro para geração de boletos, PIX e cobranças. Integração via `server/asaas.ts`. Requer `ASAAS_API_KEY` (secret) e `ASAAS_API_URL` (env var, default produção). Webhook: `POST /api/asaas/webhook`.
 -   **Framer Motion:** Used for frontend animations.
 -   **Lucide React / React Icons:** Icon libraries for the user interface.
+
+### Controle de Faturas (Módulo Asaas)
+- **Tabela `invoices`:** Armazena faturas localmente com vínculo opcional ao Asaas (`asaas_payment_id`, `asaas_customer_id`).
+- **Rotas API (`server/asaas.ts`):** `GET/POST /api/invoices`, `PATCH/DELETE /api/invoices/:id`, `POST /api/invoices/:id/sync`, `POST /api/invoices/:id/resend`, `GET /api/invoices/:id/pix`, `GET /api/asaas/status`, `GET /api/asaas/customers`, `POST /api/asaas/webhook`.
+- **Todas rotas protegidas por `requireAdminRole`** (exceto webhook que é público para receber eventos do Asaas).
+- **Frontend:** `/admin/faturas` — Painel de criação, visualização, sincronização, cancelamento e confirmação de pagamento de faturas. Acessível via sidebar Financeiro > Faturas / Cobranças.
+- **Funciona sem Asaas:** Se `ASAAS_API_KEY` não estiver configurada, faturas são registradas apenas localmente sem geração de boleto/PIX.

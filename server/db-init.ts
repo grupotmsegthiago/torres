@@ -528,6 +528,34 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_por TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_em TIMESTAMP`).catch(() => {});
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER,
+        client_name TEXT NOT NULL,
+        client_cpf_cnpj TEXT,
+        asaas_customer_id TEXT,
+        asaas_payment_id TEXT,
+        service_order_id INTEGER,
+        description TEXT NOT NULL,
+        value DECIMAL(12,2) NOT NULL,
+        net_value DECIMAL(12,2),
+        due_date TEXT NOT NULL,
+        billing_type TEXT NOT NULL DEFAULT 'BOLETO',
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        invoice_url TEXT,
+        bank_slip_url TEXT,
+        pix_qr_code TEXT,
+        pix_copia_e_cola TEXT,
+        payment_date TEXT,
+        external_reference TEXT,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));

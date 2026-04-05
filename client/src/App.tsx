@@ -34,6 +34,7 @@ import RelatorioFaturamentoPage from "@/pages/admin/relatorio-faturamento";
 import BalancoGerencialPage from "@/pages/admin/balanco-gerencial";
 import SimuladorMissaoPage from "@/pages/admin/simulador-missao";
 import CotacaoGastoPage from "@/pages/admin/cotacao-gasto";
+import FaturasPage from "@/pages/admin/faturas";
 import MobileHomePage from "@/pages/mobile/home";
 import MobileMissaoPage from "@/pages/mobile/missao";
 import MobileChecklistPage from "@/pages/mobile/checklist";
@@ -160,6 +161,7 @@ function Router() {
       <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>
       <Route path="/admin/financeiro">{() => <ProtectedRoute component={FinanceiroPage} />}</Route>
       <Route path="/admin/balanco-gerencial">{() => <ProtectedRoute component={BalancoGerencialPage} />}</Route>
+      <Route path="/admin/faturas">{() => <ProtectedRoute component={FaturasPage} />}</Route>
 
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>

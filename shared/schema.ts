@@ -839,3 +839,33 @@ export const systemSettings = pgTable("system_settings", {
 export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({ id: true, updatedAt: true });
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
+
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id"),
+  clientName: text("client_name").notNull(),
+  clientCpfCnpj: text("client_cpf_cnpj"),
+  asaasCustomerId: text("asaas_customer_id"),
+  asaasPaymentId: text("asaas_payment_id"),
+  serviceOrderId: integer("service_order_id"),
+  description: text("description").notNull(),
+  value: decimal("value", { precision: 12, scale: 2 }).notNull(),
+  netValue: decimal("net_value", { precision: 12, scale: 2 }),
+  dueDate: text("due_date").notNull(),
+  billingType: text("billing_type").notNull().default("BOLETO"),
+  status: text("status").notNull().default("PENDING"),
+  invoiceUrl: text("invoice_url"),
+  bankSlipUrl: text("bank_slip_url"),
+  pixQrCode: text("pix_qr_code"),
+  pixCopiaECola: text("pix_copia_e_cola"),
+  paymentDate: text("payment_date"),
+  externalReference: text("external_reference"),
+  notes: text("notes"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type Invoice = typeof invoices.$inferSelect;
