@@ -6,7 +6,7 @@ import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/
 import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError } from "@/lib/offlineQueue";
+import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError, forceFlush, subscribeQueue } from "@/lib/offlineQueue";
 import { supabase } from "@/lib/supabase";
 import {
   Camera, CheckCircle2, Car, Crosshair, Truck, User,
@@ -14,7 +14,7 @@ import {
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
   WifiOff, History, ChevronRight, Calendar, Clock, MessageSquare,
-  CircleDollarSign, Receipt,
+  CircleDollarSign, Receipt, RefreshCw,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -944,6 +944,8 @@ export default function MobileMissaoPage() {
   const [offlinePending, setOfflinePending] = useState(getPendingCount());
   const [online, setOnline] = useState(isOnline());
   const [reconnecting, setReconnecting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "pending" | "failed">("idle");
+  const [manualRetrying, setManualRetrying] = useState(false);
 
   useEffect(() => {
     const updateOnline = () => {
@@ -956,13 +958,27 @@ export default function MobileMissaoPage() {
     };
     window.addEventListener("online", updateOnline);
     window.addEventListener("offline", updateOnline);
-    startOfflineSync((result) => {
-      if (result.sent > 0) {
-        toast({ title: `${result.sent} ação(ões) sincronizada(s)`, description: "Dados enviados com sucesso." });
-        queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
-        setOfflinePending(getPendingCount());
+
+    let lastSeenEventId = 0;
+    const unsubscribe = subscribeQueue((info) => {
+      setOfflinePending(info.pendingCount);
+      setSyncStatus(info.status);
+      if (info.status !== "syncing") {
+        setManualRetrying(false);
+      }
+      if (info.flushResult && info.flushResult.eventId > lastSeenEventId) {
+        lastSeenEventId = info.flushResult.eventId;
+        if (info.flushResult.sent > 0) {
+          toast({ title: `${info.flushResult.sent} atualização(ões) enviada(s)!`, description: "Sincronizado com sucesso." });
+          queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+        }
+        if (info.flushResult.failed > 0) {
+          toast({ title: "Falha no envio", description: `${info.flushResult.failed} ação(ões) não puderam ser enviadas. Tente novamente.`, variant: "destructive" });
+        }
       }
     });
+
+    startOfflineSync();
 
     let reconnectTimer: ReturnType<typeof setInterval> | null = null;
     const startReconnectWatchdog = () => {
@@ -1067,6 +1083,7 @@ export default function MobileMissaoPage() {
       if (reconnectTimer) clearInterval(reconnectTimer);
       clearInterval(tokenRefreshTimer);
       if (wakeLock) { wakeLock.release().catch(() => {}); }
+      unsubscribe();
     };
   }, []);
 
@@ -1089,8 +1106,7 @@ export default function MobileMissaoPage() {
     } catch (err) {
       if (isNetworkError(err)) {
         enqueueAction("/api/mission/photo", "POST", payload);
-        setOfflinePending(getPendingCount());
-        toast({ title: "Salvo offline", description: "A foto será enviada quando o sinal voltar." });
+        toast({ title: "Foto salva localmente", description: "Será reenviada automaticamente quando o servidor responder." });
         logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""} (offline)`);
       } else {
         throw err;
@@ -1112,8 +1128,7 @@ export default function MobileMissaoPage() {
     } catch (err) {
       if (isNetworkError(err)) {
         enqueueAction("/api/mission/advance", "POST", payload);
-        setOfflinePending(getPendingCount());
-        toast({ title: "Salvo offline", description: "A etapa será avançada quando o sinal voltar." });
+        toast({ title: "Avanço salvo localmente", description: "Será reenviado automaticamente quando o servidor responder." });
       } else {
         throw err;
       }
@@ -1334,8 +1349,7 @@ export default function MobileMissaoPage() {
           longitude: pos?.lng || null,
           photoUrl: photoDataUrl || null,
         });
-        setOfflinePending(getPendingCount());
-        toast({ title: "Salvo offline", description: "A atualização será enviada quando o sinal voltar." });
+        toast({ title: "Atualização salva localmente", description: "Será reenviada automaticamente quando o servidor responder." });
         setStatusUpdate("");
         return true;
       }
@@ -1642,11 +1656,29 @@ export default function MobileMissaoPage() {
 
         {online && offlinePending > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center gap-3" data-testid="alert-syncing">
-            <Loader2 className="w-5 h-5 text-amber-500 shrink-0 animate-spin" />
-            <div>
-              <p className="text-xs font-bold text-amber-700 uppercase">Sincronizando...</p>
-              <p className="text-[10px] text-amber-500">{offlinePending} ação(ões) pendente(s)</p>
+            {syncStatus === "syncing" || manualRetrying ? (
+              <Loader2 className="w-5 h-5 text-amber-500 shrink-0 animate-spin" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-amber-700 uppercase">
+                {syncStatus === "syncing" || manualRetrying ? "Sincronizando..." : "Envio pendente"}
+              </p>
+              <p className="text-[10px] text-amber-500">
+                {offlinePending} ação(ões) · será reenviado automaticamente
+              </p>
             </div>
+            {syncStatus !== "syncing" && !manualRetrying && (
+              <button
+                onClick={() => { setManualRetrying(true); forceFlush(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider shrink-0 active:scale-95 transition-transform"
+                data-testid="button-retry-sync"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Reenviar
+              </button>
+            )}
           </div>
         )}
 

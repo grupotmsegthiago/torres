@@ -1,6 +1,11 @@
 import { supabase } from "./supabase";
 
 const QUEUE_KEY = "torres_offline_queue";
+const MAX_RETRIES = 12;
+const BASE_INTERVAL_MS = 5000;
+const MAX_INTERVAL_MS = 30000;
+
+type SyncStatus = "idle" | "syncing" | "pending" | "failed";
 
 interface QueuedAction {
   id: string;
@@ -9,6 +14,31 @@ interface QueuedAction {
   body: any;
   createdAt: string;
   retries: number;
+}
+
+interface SyncEvent {
+  pendingCount: number;
+  status: SyncStatus;
+  flushResult?: { sent: number; failed: number; eventId: number };
+}
+
+type QueueListener = (info: SyncEvent) => void;
+
+const listeners = new Set<QueueListener>();
+let currentStatus: SyncStatus = "idle";
+let flushEventCounter = 0;
+let latestFlushResult: { sent: number; failed: number; eventId: number } | undefined;
+
+function notify(flushResult?: { sent: number; failed: number; eventId: number }) {
+  const count = getQueue().length;
+  const info: SyncEvent = { pendingCount: count, status: currentStatus, flushResult };
+  listeners.forEach((fn) => fn(info));
+}
+
+export function subscribeQueue(fn: QueueListener): () => void {
+  listeners.add(fn);
+  fn({ pendingCount: getQueue().length, status: currentStatus });
+  return () => { listeners.delete(fn); };
 }
 
 function getQueue(): QueuedAction[] {
@@ -35,6 +65,9 @@ export function enqueueAction(url: string, method: string, body: any) {
     retries: 0,
   });
   saveQueue(queue);
+  currentStatus = "pending";
+  notify();
+  scheduleImmediateFlush();
 }
 
 export function getPendingCount(): number {
@@ -50,12 +83,35 @@ async function getAuthToken(): Promise<string | null> {
   }
 }
 
+function getBackoffMs(retries: number): number {
+  const ms = Math.min(BASE_INTERVAL_MS * Math.pow(1.5, retries), MAX_INTERVAL_MS);
+  return ms + Math.random() * 1000;
+}
+
+let flushing = false;
+
 export async function flushQueue(): Promise<{ sent: number; failed: number }> {
+  if (flushing) return { sent: 0, failed: 0 };
+  flushing = true;
+
   const queue = getQueue();
-  if (!queue.length) return { sent: 0, failed: 0 };
+  if (!queue.length) {
+    flushing = false;
+    currentStatus = "idle";
+    notify();
+    return { sent: 0, failed: 0 };
+  }
 
   const token = await getAuthToken();
-  if (!token) return { sent: 0, failed: 0 };
+  if (!token) {
+    flushing = false;
+    currentStatus = "pending";
+    notify();
+    return { sent: 0, failed: 0 };
+  }
+
+  currentStatus = "syncing";
+  notify();
 
   let sent = 0;
   let failed = 0;
@@ -87,56 +143,87 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
           if (retry.ok) { sent++; continue; }
         }
         action.retries++;
-        if (action.retries < 5) remaining.push(action);
+        if (action.retries < MAX_RETRIES) remaining.push(action);
         else failed++;
       } else {
         action.retries++;
-        if (action.retries < 5) remaining.push(action);
+        if (action.retries < MAX_RETRIES) remaining.push(action);
         else failed++;
       }
     } catch {
       action.retries++;
-      if (action.retries < 5) remaining.push(action);
+      if (action.retries < MAX_RETRIES) remaining.push(action);
       else failed++;
     }
   }
 
   saveQueue(remaining);
+  const eventId = ++flushEventCounter;
+  latestFlushResult = { sent, failed, eventId };
+  currentStatus = remaining.length > 0 ? "pending" : (failed > 0 ? "failed" : "idle");
+  flushing = false;
+  notify(latestFlushResult);
   return { sent, failed };
 }
 
-let syncInterval: ReturnType<typeof setInterval> | null = null;
-let currentSyncMs = 15000;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let immediateTimer: ReturnType<typeof setTimeout> | null = null;
+let syncStarted = false;
 
-function setSyncInterval(ms: number, trySync: () => Promise<void>) {
-  if (currentSyncMs === ms && syncInterval) return;
-  currentSyncMs = ms;
-  if (syncInterval) clearInterval(syncInterval);
-  syncInterval = setInterval(trySync, ms);
+function scheduleImmediateFlush() {
+  if (immediateTimer) return;
+  immediateTimer = setTimeout(async () => {
+    immediateTimer = null;
+    if (!navigator.onLine) return;
+    await flushQueue();
+  }, 800);
+}
+
+function scheduleNextSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  const queue = getQueue();
+  if (!queue.length) {
+    syncTimer = setTimeout(scheduleNextSync, 15000);
+    return;
+  }
+  const maxRetries = Math.max(...queue.map((a) => a.retries), 0);
+  const delay = getBackoffMs(maxRetries);
+  syncTimer = setTimeout(async () => {
+    if (navigator.onLine && getQueue().length > 0) {
+      await flushQueue();
+    }
+    scheduleNextSync();
+  }, delay);
 }
 
 export function startOfflineSync(onSync?: (result: { sent: number; failed: number }) => void) {
-  if (syncInterval) return;
+  if (syncStarted) return;
+  syncStarted = true;
 
-  const trySync = async () => {
-    const wantedMs = navigator.onLine ? 15000 : 5000;
-    if (wantedMs !== currentSyncMs) setSyncInterval(wantedMs, trySync);
-    if (!navigator.onLine) return;
-    const count = getPendingCount();
-    if (count === 0) return;
-    const result = await flushQueue();
-    if (onSync) onSync(result);
-  };
+  if (onSync) {
+    subscribeQueue((info) => {
+      if (info.flushResult && info.flushResult.sent > 0) {
+        onSync(info.flushResult);
+      }
+    });
+  }
 
   window.addEventListener("online", () => {
-    setSyncInterval(15000, trySync);
-    trySync();
+    if (getQueue().length > 0) scheduleImmediateFlush();
   });
-  window.addEventListener("offline", () => {
-    setSyncInterval(5000, trySync);
-  });
-  syncInterval = setInterval(trySync, navigator.onLine ? 15000 : 5000);
-  trySync();
+
+  if (navigator.onLine && getQueue().length > 0) {
+    scheduleImmediateFlush();
+  }
+  scheduleNextSync();
+}
+
+export function forceFlush(): void {
+  if (immediateTimer) { clearTimeout(immediateTimer); immediateTimer = null; }
+  immediateTimer = setTimeout(async () => {
+    immediateTimer = null;
+    await flushQueue();
+  }, 100);
 }
 
 export function isOnline(): boolean {
@@ -148,5 +235,11 @@ export function isNetworkError(error: unknown): boolean {
   if (error instanceof TypeError && error.message.toLowerCase().includes("fetch")) return true;
   if (error instanceof TypeError && error.message.toLowerCase().includes("network")) return true;
   if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("502") || msg.includes("503") || msg.includes("504")) return true;
+    if (msg.includes("bad gateway") || msg.includes("service unavailable")) return true;
+    if (msg.includes("failed to fetch") || msg.includes("load failed")) return true;
+  }
   return false;
 }
