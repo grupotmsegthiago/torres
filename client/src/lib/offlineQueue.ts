@@ -84,7 +84,7 @@ async function getAuthToken(): Promise<string | null> {
 const BACKOFF_STEPS_MS = [5000, 10000, 20000, 30000];
 
 function getBackoffMs(retries: number): number {
-  const idx = Math.min(retries, BACKOFF_STEPS_MS.length - 1);
+  const idx = Math.min(Math.max(retries - 1, 0), BACKOFF_STEPS_MS.length - 1);
   return BACKOFF_STEPS_MS[idx] + Math.random() * 1000;
 }
 
