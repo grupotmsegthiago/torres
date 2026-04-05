@@ -5385,6 +5385,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 if ((mc as any).costType === "revenue") { receitasOsGrid += amt; continue; }
                 const cat = ((mc as any).category || "").toLowerCase();
                 if (cat.includes("pedágio") || cat.includes("pedagio")) custoPedagio += amt;
+                else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) custoCombustivel += amt;
                 else custoOutros += amt;
               }
               if (custoPedagio === 0 && (o as any).pedagioEstimado) {
@@ -5397,7 +5398,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
                 vehicleVazioCosts.delete(o.vehicleId);
               }
 
-              if (o.vehicleId) {
+              if (custoCombustivel === 0 && o.vehicleId) {
                 const oDate = toDateBRT(o.scheduledDate);
                 const vPlate = vehicle?.plate?.toUpperCase() || "";
                 if (vPlate) {
