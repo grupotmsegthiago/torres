@@ -11724,6 +11724,24 @@ Regras:
 
       await db.update(vehicles).set({ km, lastKmUpdate: new Date() }).where(eq(vehicles.id, vehicleId));
 
+      const derivedTotal = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
+      if (fueling && derivedTotal > 0) {
+        const plateStr = vehicle[0]?.plate || "";
+        const { data: driverEmp } = await supabaseAdmin.from("employees").select("name").eq("id", employeeId).limit(1).single();
+        const agentStr = driverEmp?.name ? ` - Agente: ${driverEmp.name}` : "";
+        await createAutoTransaction({
+          description: `ABASTECIMENTO ${plateStr}${agentStr} - ${fuelType || "gasolina"} ${liters}L`.toUpperCase().trim(),
+          amount: derivedTotal,
+          type: "EXPENSE",
+          due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+          origin_type: "fueling",
+          origin_id: String(fueling.id),
+          category_name: "Combustível",
+          entity_name: [plateStr, driverEmp?.name, station].filter(Boolean).join(" | ") || null,
+          created_by: "SISTEMA",
+        });
+      }
+
       const oilKm = vehicle[0]?.lastOilChangeKm || 0;
       const kmSinceOil = km - oilKm;
       let oilAlert = null;

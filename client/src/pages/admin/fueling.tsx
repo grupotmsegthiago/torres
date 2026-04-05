@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { parseBRL, maskBRL } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -244,8 +244,9 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("vehicle");
+      invalidateRelatedQueries("financial");
+      invalidateRelatedQueries("mission-cost");
       toast({ title: fueling ? "Abastecimento atualizado" : "Abastecimento registrado" });
       onClose();
     },
@@ -574,8 +575,9 @@ export default function FuelingPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fueling/${id}`); },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      invalidateRelatedQueries("vehicle");
+      invalidateRelatedQueries("financial");
+      invalidateRelatedQueries("mission-cost");
       toast({ title: "Abastecimento removido" });
     },
   });

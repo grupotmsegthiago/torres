@@ -2,7 +2,7 @@ import { parseBRL, maskBRL } from "@/lib/utils";
 import MobileLayout from "@/components/mobile/layout";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { authFetch, queryClient } from "@/lib/queryClient";
+import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin, Car, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
@@ -170,6 +170,9 @@ export default function MobileAbastecimentoPage() {
       setSubmitted(true);
       if (data.oilAlert) setOilAlert(data.oilAlert);
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/abastecimento/vehicles"] });
+      invalidateRelatedQueries("vehicle");
+      invalidateRelatedQueries("financial");
+      invalidateRelatedQueries("mission-cost");
       toast({ title: "Abastecimento registrado!" });
     },
     onError: (err: Error) => toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" }),

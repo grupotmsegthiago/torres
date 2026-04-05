@@ -108,6 +108,7 @@ export const GLOBAL_QUERY_KEYS = {
   financialDashboard: ["/api/financial/dashboard"],
   weaponKits: ["/api/weapon-kits"],
   vehicleTracking: ["/api/vehicle-tracking"],
+  fueling: ["/api/fueling"],
 };
 
 type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost";
@@ -133,8 +134,12 @@ function _invalidateLocal(scope: InvalidationScope) {
 
   if (scope === "vehicle") {
     inv(keys.vehicles);
+    inv(keys.fueling);
     inv(keys.financialDashboard);
+    inv(keys.financialResumo);
+    inv(keys.financialTx);
     inv(keys.operationalGrid);
+    inv(keys.serviceOrders);
   }
   if (scope === "employee") {
     inv(keys.employees);
