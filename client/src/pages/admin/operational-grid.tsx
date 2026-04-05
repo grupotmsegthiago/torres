@@ -639,8 +639,13 @@ async function shareReportWithPhoto(text: string, photoUrl?: string | null): Pro
       const pngBlob = await imageSourceToPngBlob(photoUrl);
       if (pngBlob) {
         const textBlob = new Blob([text], { type: "text/plain" });
+        const htmlContent = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+        const htmlBlob = new Blob([`<meta charset="utf-8"><div style="white-space:pre-wrap">${htmlContent}</div>`], { type: "text/html" });
+        await navigator.clipboard.writeText(text);
+        await new Promise(r => setTimeout(r, 50));
         const item = new ClipboardItem({
           "text/plain": textBlob,
+          "text/html": htmlBlob,
           "image/png": pngBlob,
         });
         await navigator.clipboard.write([item]);
