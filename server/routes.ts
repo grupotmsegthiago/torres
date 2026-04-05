@@ -460,6 +460,42 @@ export async function registerRoutes(
 
   app.get("/api/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
+  const tokenFailureRateMap = new Map<string, number>();
+  app.post("/api/auth/token-failure", async (req, res) => {
+    try {
+      const clientIp = req.ip || "unknown";
+      const now = Date.now();
+      const lastCall = tokenFailureRateMap.get(clientIp) || 0;
+      if (now - lastCall < 10000) {
+        return res.status(429).json({ ok: false, error: "rate_limited" });
+      }
+      tokenFailureRateMap.set(clientIp, now);
+      if (tokenFailureRateMap.size > 5000) {
+        const oldest = [...tokenFailureRateMap.entries()].sort((a, b) => a[1] - b[1]).slice(0, 2500);
+        for (const [k] of oldest) tokenFailureRateMap.delete(k);
+      }
+
+      const { employeeId, employeeName, error: errMsg } = req.body || {};
+      const errorStr = String(errMsg || "unknown").slice(0, 500);
+      const { error: insertErr } = await supabaseAdmin.from("token_failure_logs").insert({
+        employee_id: employeeId || null,
+        employee_name: employeeName ? String(employeeName).slice(0, 100) : "unknown",
+        error_message: errorStr,
+        user_agent: (req.headers["user-agent"] || "").slice(0, 300),
+        ip_address: clientIp,
+        created_at: new Date().toISOString(),
+      });
+      if (insertErr) {
+        console.error("[token-failure-log] insert error:", insertErr.message);
+        return res.status(500).json({ ok: false });
+      }
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      console.error("[token-failure-log]", e);
+      res.status(500).json({ ok: false });
+    }
+  });
+
   await ensureSystemSettingsTable();
 
   try {

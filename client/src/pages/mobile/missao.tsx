@@ -998,17 +998,75 @@ export default function MobileMissaoPage() {
       try {
         const { data } = await supabase.auth.getSession();
         if (data?.session) {
-          await supabase.auth.refreshSession();
+          const { error } = await supabase.auth.refreshSession();
+          if (error) {
+            fetch("/api/auth/token-failure", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ error: error.message, trigger: "proactive_45min" }),
+            }).catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        fetch("/api/auth/token-failure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ error: err?.message || "unknown", trigger: "proactive_45min" }),
+        }).catch(() => {});
+      }
+    }, 45 * 60 * 1000);
+
+    let wakeLock: WakeLockSentinel | null = null;
+    const requestWakeLock = async () => {
+      if (wakeLock) return;
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request("screen");
+          wakeLock?.addEventListener("release", () => { wakeLock = null; });
         }
       } catch {}
-    }, 45 * 60 * 1000);
+    };
+    requestWakeLock();
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        requestWakeLock();
+        try {
+          const ctrl = new AbortController();
+          setTimeout(() => ctrl.abort(), 4000);
+          const res = await fetch("/api/health", { signal: ctrl.signal });
+          if (res.ok) {
+            setOnline(true);
+            setReconnecting(false);
+            if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+          }
+        } catch {}
+        try {
+          const { data } = await supabase.auth.getSession();
+          if (data?.session) {
+            const { error } = await supabase.auth.refreshSession();
+            if (error) {
+              fetch("/api/auth/token-failure", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ error: error.message, trigger: "visibility_change" }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        queryClient.invalidateQueries();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("online", updateOnline);
       window.removeEventListener("offline", updateOnline);
       window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (reconnectTimer) clearInterval(reconnectTimer);
       clearInterval(tokenRefreshTimer);
+      if (wakeLock) { wakeLock.release().catch(() => {}); }
     };
   }, []);
 

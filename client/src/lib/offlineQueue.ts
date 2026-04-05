@@ -106,11 +106,21 @@ export async function flushQueue(): Promise<{ sent: number; failed: number }> {
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
+let currentSyncMs = 15000;
+
+function setSyncInterval(ms: number, trySync: () => Promise<void>) {
+  if (currentSyncMs === ms && syncInterval) return;
+  currentSyncMs = ms;
+  if (syncInterval) clearInterval(syncInterval);
+  syncInterval = setInterval(trySync, ms);
+}
 
 export function startOfflineSync(onSync?: (result: { sent: number; failed: number }) => void) {
   if (syncInterval) return;
 
   const trySync = async () => {
+    const wantedMs = navigator.onLine ? 15000 : 5000;
+    if (wantedMs !== currentSyncMs) setSyncInterval(wantedMs, trySync);
     if (!navigator.onLine) return;
     const count = getPendingCount();
     if (count === 0) return;
@@ -118,8 +128,14 @@ export function startOfflineSync(onSync?: (result: { sent: number; failed: numbe
     if (onSync) onSync(result);
   };
 
-  window.addEventListener("online", trySync);
-  syncInterval = setInterval(trySync, 15000);
+  window.addEventListener("online", () => {
+    setSyncInterval(15000, trySync);
+    trySync();
+  });
+  window.addEventListener("offline", () => {
+    setSyncInterval(5000, trySync);
+  });
+  syncInterval = setInterval(trySync, navigator.onLine ? 15000 : 5000);
   trySync();
 }
 

@@ -26,7 +26,7 @@ import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryCli
 import { titleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useNotificationSound, playAlarm } from "@/hooks/use-notification-sound";
+import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -6547,18 +6547,29 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     return () => clearInterval(tickTimer);
   }, []);
 
+  const prevCriticalVtrsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const nowMs = Date.now();
     const currentOffline = new Set<string>();
+    const currentCritical = new Set<string>();
     for (const g of vtrGroups) {
       const latestTs = g.updates[0]?.createdAt ? new Date(g.updates[0].createdAt).getTime() : 0;
-      if (nowMs - latestTs > 5 * 60 * 1000) {
+      const elapsed = nowMs - latestTs;
+      if (elapsed > 15 * 60 * 1000) {
+        currentCritical.add(g.osNumber);
+        currentOffline.add(g.osNumber);
+      } else if (elapsed > 5 * 60 * 1000) {
         currentOffline.add(g.osNumber);
       }
     }
+    const newlyCritical = [...currentCritical].filter(os => !prevCriticalVtrsRef.current.has(os));
     const newlyOffline = [...currentOffline].filter(os => !prevOfflineVtrsRef.current.has(os));
     prevOfflineVtrsRef.current = currentOffline;
-    if (newlyOffline.length > 0 && soundEnabled) {
+    prevCriticalVtrsRef.current = currentCritical;
+    if (newlyCritical.length > 0 && soundEnabled) {
+      playCriticalAlarm();
+    } else if (newlyOffline.length > 0 && soundEnabled) {
       playAlarm();
     }
   }, [vtrGroups, soundEnabled]);
@@ -6634,13 +6645,16 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           const statusLabel = latest?.missionStep ? getMissionLabel(latest.missionStep) : (gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—");
           const msSinceLastUpdate = latest?.createdAt ? Date.now() - new Date(latest.createdAt).getTime() : Infinity;
           const isVtrOffline = msSinceLastUpdate > 5 * 60 * 1000;
+          const isVtrCritical = msSinceLastUpdate > 15 * 60 * 1000;
           const minSinceLast = Math.floor(msSinceLastUpdate / 60000);
 
-          const cardColor = isVtrOffline
-            ? "border-red-500 bg-red-50 ring-2 ring-red-400"
-            : isFlashing
-              ? "border-amber-500 bg-amber-100 ring-2 ring-amber-400 animate-pulse"
-              : "border-amber-200 bg-white";
+          const cardColor = isVtrCritical
+            ? "border-red-700 bg-red-100 ring-4 ring-red-600 shadow-lg shadow-red-200"
+            : isVtrOffline
+              ? "border-red-500 bg-red-50 ring-2 ring-red-400"
+              : isFlashing
+                ? "border-amber-500 bg-amber-100 ring-2 ring-amber-400 animate-pulse"
+                : "border-amber-200 bg-white";
 
           return (
             <div
@@ -6669,7 +6683,10 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs font-bold ${isVtrOffline ? "text-red-900" : "text-amber-900"}`}>{group.osNumber}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isVtrOffline ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"}`}>{group.plate}</span>
-                    {isVtrOffline && (
+                    {isVtrCritical && (
+                      <span className="text-[9px] bg-red-800 text-white px-2 py-0.5 rounded font-black animate-pulse flex items-center gap-1"><WifiOff className="w-2.5 h-2.5" /> PERDA DE SINAL {minSinceLast}min</span>
+                    )}
+                    {isVtrOffline && !isVtrCritical && (
                       <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold animate-pulse">SEM SINAL {minSinceLast}min</span>
                     )}
                   </div>

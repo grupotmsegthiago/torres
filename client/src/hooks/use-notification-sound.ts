@@ -83,6 +83,36 @@ export function playAlarm() {
   } catch (_e) {}
 }
 
+let lastCriticalAlarmTime = 0;
+const CRITICAL_ALARM_DEBOUNCE_MS = 30000;
+
+export function playCriticalAlarm() {
+  const now = Date.now();
+  if (now - lastCriticalAlarmTime < CRITICAL_ALARM_DEBOUNCE_MS) return;
+  if (!getSnapshot()) return;
+  lastCriticalAlarmTime = now;
+  try {
+    const AudioCtx = window.AudioContext || ((window as Record<string, unknown>).webkitAudioContext as typeof AudioContext);
+    const ctx = new AudioCtx();
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.35, ctx.currentTime);
+
+    for (let i = 0; i < 5; i++) {
+      const osc = ctx.createOscillator();
+      osc.connect(gain);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(880, ctx.currentTime + i * 0.35);
+      osc.frequency.setValueAtTime(660, ctx.currentTime + i * 0.35 + 0.1);
+      osc.frequency.setValueAtTime(440, ctx.currentTime + i * 0.35 + 0.2);
+      osc.start(ctx.currentTime + i * 0.35);
+      osc.stop(ctx.currentTime + i * 0.35 + 0.3);
+    }
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+    setTimeout(() => ctx.close(), 2200);
+  } catch (_e) {}
+}
+
 export function useNotificationSound(updates: UpdateItem[]) {
   const enabled = useSyncExternalStore(subscribe, getSnapshot);
 
