@@ -646,6 +646,27 @@ function ReverseGeocodeAddress({ lat, lng }: { lat: number; lng: number }) {
   );
 }
 
+function AgentLocationLine({ label, lat, lng, updatedAt, colorClass }: { label: string; lat: number; lng: number; updatedAt?: string; colorClass: string }) {
+  const addr = useReverseGeocode(lat, lng);
+  const noSignal = updatedAt ? getLastPositionInfo(updatedAt).noSignal : false;
+  const mapsLink = `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR`;
+  return (
+    <a
+      href={mapsLink}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${noSignal ? "text-red-500" : colorClass}`}
+      title={addr || `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`}
+      data-testid={`agent-location-line-${label}`}
+    >
+      <ShieldCheck className="w-2.5 h-2.5 inline mr-0.5 flex-shrink-0" />
+      {label}: {addr || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}
+      {noSignal ? " (Sem sinal)" : ""}
+    </a>
+  );
+}
+
 function LazyUpdatePhoto({ updateId, photoUrl }: { updateId: number | string; photoUrl?: string | null }) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -5148,7 +5169,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           className={`flex items-start gap-1.5 group text-left w-full max-w-full overflow-hidden ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
                           data-testid={`link-map-${v.id}`}
                         >
-                          <MapPin className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${posInfo.noSignal ? "text-red-500" : hasLocation ? "text-neutral-500 group-hover:text-neutral-700" : "text-neutral-300"}`} />
+                          <ShieldCheck className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${posInfo.noSignal ? "text-red-500" : hasLocation ? "text-emerald-600 group-hover:text-emerald-700" : "text-neutral-300"}`} />
                           <div className="min-w-0">
                             <span className={`text-xs font-medium leading-tight block truncate ${posInfo.noSignal ? "text-red-600" : hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
                               {v.tracker.address}
@@ -5159,18 +5180,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               </span>
                             )}
                             {v.activeOs?.agentLocation && (
-                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} title={`GPS Agente: ${v.activeOs.agentLocation.latitude?.toFixed(5)}, ${v.activeOs.agentLocation.longitude?.toFixed(5)} — Clique para abrir no Google Maps`} data-testid={`agent-location-${v.id}`}>
-                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                                Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
-                                {(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? " (Sem sinal)" : ""; })()}
-                              </a>
+                              <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
                             )}
                             {v.activeOs?.agentLocation2 && (
-                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} title={`GPS Agente 2: ${v.activeOs.agentLocation2.latitude?.toFixed(5)}, ${v.activeOs.agentLocation2.longitude?.toFixed(5)} — Clique para abrir no Google Maps`} data-testid={`agent-location2-${v.id}`}>
-                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                                Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
-                                {(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? " (Sem sinal)" : ""; })()}
-                              </a>
+                              <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
                             )}
                           </div>
                         </button>
@@ -5183,20 +5196,14 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         >
                           <div>
                             <div className="flex items-center gap-1">
-                              <MapPin className="w-3.5 h-3.5" />
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                               Ver no mapa
                             </div>
                             {v.activeOs?.agentLocation && (
-                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} data-testid={`agent-location-${v.id}`}>
-                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                                Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
-                              </a>
+                              <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
                             )}
                             {v.activeOs?.agentLocation2 && (
-                              <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} data-testid={`agent-location2-${v.id}`}>
-                                <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                                Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
-                              </a>
+                              <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
                             )}
                           </div>
                         </button>
@@ -5204,16 +5211,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <div>
                           <span className="text-neutral-300 text-xs">—</span>
                           {v.activeOs?.agentLocation && (
-                            <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation.latitude},${v.activeOs.agentLocation.longitude}`} target="_blank" rel="noopener noreferrer" className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation.updatedAt); return ai.noSignal ? "text-red-500" : "text-blue-600"; })()}`} data-testid={`agent-location-${v.id}`}>
-                              <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                              Agente 1: {v.activeOs.agentLocation.latitude?.toFixed(4)}, {v.activeOs.agentLocation.longitude?.toFixed(4)}
-                            </a>
+                            <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
                           )}
                           {v.activeOs?.agentLocation2 && (
-                            <a href={`https://www.google.com/maps?q=${v.activeOs.agentLocation2.latitude},${v.activeOs.agentLocation2.longitude}`} target="_blank" rel="noopener noreferrer" className={`text-[10px] leading-tight block mt-0.5 hover:underline ${(() => { const ai = getLastPositionInfo(v.activeOs.agentLocation2.updatedAt); return ai.noSignal ? "text-red-500" : "text-teal-600"; })()}`} data-testid={`agent-location2-${v.id}`}>
-                              <Users className="w-2.5 h-2.5 inline mr-0.5" />
-                              Agente 2: {v.activeOs.agentLocation2.latitude?.toFixed(4)}, {v.activeOs.agentLocation2.longitude?.toFixed(4)}
-                            </a>
+                            <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
                           )}
                         </div>
                       )}
