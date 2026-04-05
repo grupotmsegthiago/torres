@@ -42,7 +42,12 @@ export default function MobileAbastecimentoPage() {
     const e = parseBRL(etanolPrice);
     if (g <= 0 || e <= 0) return;
     const ratio = e / g;
-    setFuelType(ratio <= 0.7 ? "etanol" : "gasolina");
+    const recommended = ratio <= 0.7 ? "etanol" : "gasolina";
+    setFuelType(recommended);
+    const selectedPrice = recommended === "etanol" ? etanolPrice : gasolinaPrice;
+    if (parseBRL(selectedPrice) > 0) {
+      setCostPerLiter(selectedPrice);
+    }
   }, [gasolinaPrice, etanolPrice]);
   const [oilAlert, setOilAlert] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -133,16 +138,26 @@ export default function MobileAbastecimentoPage() {
   const submitMutation = useMutation({
     mutationFn: async () => {
       const coords = await requestFreshGeo();
-      const totalCost = liters && costPerLiter ? (parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2) : undefined;
+      const parsedCostPerLiter = parseBRL(costPerLiter) || 0;
+      const parsedLiters = parseBRL(liters) || 0;
+      const totalCost = parsedLiters > 0 && parsedCostPerLiter > 0 ? (parsedLiters * parsedCostPerLiter).toFixed(2) : undefined;
+      const gPrice = parseBRL(gasolinaPrice);
+      const ePrice = parseBRL(etanolPrice);
+      const ratio = gPrice > 0 && ePrice > 0 ? ePrice / gPrice : null;
+      const recommendation = ratio !== null ? (ratio <= 0.7 ? "etanol" : "gasolina") : null;
       const res = await authFetch("/api/mobile/abastecimento", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicleId: selectedVehicle.id, km: parseInt(km), liters: parseBRL(liters) || 0,
-          costPerLiter: parseBRL(costPerLiter) || undefined, totalCost,
+          vehicleId: selectedVehicle.id, km: parseInt(km), liters: parsedLiters,
+          costPerLiter: parsedCostPerLiter || undefined, totalCost,
           fuelType, station, ...photos, platePhoto,
           latitude: coords.lat.toString(), longitude: coords.lng.toString(),
           address: geoAddress || undefined,
+          gasolinePrice: gPrice || undefined,
+          ethanolPrice: ePrice || undefined,
+          fuelRecommendation: recommendation,
+          recommendationFollowed: recommendation ? fuelType === recommendation : undefined,
         }),
       });
       const text = await res.text();
@@ -342,14 +357,20 @@ export default function MobileAbastecimentoPage() {
               <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Tipo de Combustível</p>
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setFuelType("gasolina")}
+                  onClick={() => {
+                    setFuelType("gasolina");
+                    if (parseBRL(gasolinaPrice) > 0) setCostPerLiter(gasolinaPrice);
+                  }}
                   data-testid="btn-fuel-gasolina"
                   className={`py-3 rounded-xl font-black text-sm uppercase tracking-wider border-2 transition-all ${fuelType === "gasolina" ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 bg-white text-neutral-400"}`}
                 >
                   ⛽ Gasolina
                 </button>
                 <button
-                  onClick={() => setFuelType("etanol")}
+                  onClick={() => {
+                    setFuelType("etanol");
+                    if (parseBRL(etanolPrice) > 0) setCostPerLiter(etanolPrice);
+                  }}
                   data-testid="btn-fuel-etanol"
                   className={`py-3 rounded-xl font-black text-sm uppercase tracking-wider border-2 transition-all ${fuelType === "etanol" ? "border-green-500 bg-green-50 text-green-700" : "border-neutral-200 bg-white text-neutral-400"}`}
                 >
