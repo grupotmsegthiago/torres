@@ -6544,22 +6544,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     try {
       const updateId = Number(req.params.id);
       const userName = req.user?.name || req.user?.email || "Admin";
-      const confirmDuplicate = req.body?.confirmDuplicate === true;
       const now = new Date();
-      const [existing] = await db.select({ copiadoPor: missionUpdates.copiadoPor, copiadoEm: missionUpdates.copiadoEm })
-        .from(missionUpdates).where(eq(missionUpdates.id, updateId)).limit(1);
-      if (!existing) return res.status(404).json({ error: "Update não encontrado" });
-
-      if (existing.copiadoPor && existing.copiadoEm) {
-        const diffMs = now.getTime() - new Date(existing.copiadoEm).getTime();
-        if (diffMs < 2 * 60 * 1000 && !confirmDuplicate) {
-          return res.status(409).json({
-            duplicateRecent: true,
-            por: existing.copiadoPor,
-            em: existing.copiadoEm.toISOString(),
-          });
-        }
-      }
 
       await db.update(missionUpdates).set({ copiadoPor: userName, copiadoEm: now }).where(eq(missionUpdates.id, updateId));
       res.json({ success: true });
