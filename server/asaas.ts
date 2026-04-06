@@ -386,5 +386,137 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  app.post("/api/boletim-medicao/gerar-fatura/:clientId", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const clientId = parseInt(req.params.clientId);
+      if (!clientId) return res.status(400).json({ message: "clientId inválido" });
+
+      const { billingType, sendToAsaas, dueDate } = req.body;
+      const user = (req as any).user;
+
+      const { data: billings, error: billErr } = await supabaseAdmin
+        .from("escort_billings")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("status", "APROVADA");
+
+      if (billErr) throw billErr;
+      if (!billings || billings.length === 0) {
+        return res.status(400).json({ message: "Nenhuma OS aprovada encontrada para este cliente" });
+      }
+
+      const clientName = billings[0].client_name || "Cliente";
+
+      const osDescriptions: string[] = [];
+      let totalValue = 0;
+      const billingIds: string[] = [];
+
+      for (const b of billings) {
+        const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+        totalValue += fat;
+        billingIds.push(b.id);
+
+        const osRef = b.boletim_numero || `OS-${b.service_order_id}`;
+        const route = [b.origem, b.destino].filter(Boolean).join(" → ");
+        const dataMissao = b.data_missao ? new Date(b.data_missao).toLocaleDateString("pt-BR") : "";
+        osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
+      }
+
+      const now = new Date();
+      const invoiceDueDate = dueDate || new Date(now.getFullYear(), now.getMonth() + 1, 15).toISOString().split("T")[0];
+      const description = `Faturamento Consolidado - ${clientName}\n${billings.length} missão(ões)\n\n${osDescriptions.join("\n")}`;
+
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf").eq("id", clientId).single();
+      const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
+
+      let asaasCustomerId: string | null = null;
+      let asaasPaymentId: string | null = null;
+      let invoiceUrl: string | null = null;
+      let bankSlipUrl: string | null = null;
+      let pixQrCode: string | null = null;
+      let pixCopiaECola: string | null = null;
+      let invoiceStatus = "PENDING";
+
+      if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
+        try {
+          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj);
+          const payment = await asaasRequest("POST", "/payments", {
+            customer: asaasCustomerId,
+            billingType: billingType || "BOLETO",
+            value: totalValue,
+            dueDate: invoiceDueDate,
+            description: description.substring(0, 500),
+            externalReference: `FATURA-${clientId}-${now.getTime()}`,
+          });
+          asaasPaymentId = payment.id;
+          invoiceUrl = payment.invoiceUrl;
+          bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
+          invoiceStatus = payment.status || "PENDING";
+          if (billingType === "PIX" || billingType === "UNDEFINED") {
+            try {
+              const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
+              pixQrCode = pixData.encodedImage;
+              pixCopiaECola = pixData.payload;
+            } catch {}
+          }
+        } catch (asaasErr: any) {
+          console.error("[asaas] Erro ao gerar cobrança:", asaasErr.message);
+        }
+      }
+
+      const { data: invoice, error: invErr } = await supabaseAdmin.from("invoices").insert({
+        client_id: clientId,
+        client_name: clientName,
+        client_cpf_cnpj: cpfCnpj || null,
+        asaas_customer_id: asaasCustomerId,
+        asaas_payment_id: asaasPaymentId,
+        description,
+        value: totalValue,
+        due_date: invoiceDueDate,
+        billing_type: billingType || "BOLETO",
+        status: invoiceStatus,
+        invoice_url: invoiceUrl,
+        bank_slip_url: bankSlipUrl,
+        pix_qr_code: pixQrCode,
+        pix_copia_e_cola: pixCopiaECola,
+        notes: `Gerada do Boletim de Medição. ${billings.length} OS(s) consolidada(s). IDs: ${billingIds.join(", ")}`,
+        external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
+        created_by: user?.id,
+      }).select().single();
+
+      if (invErr) throw invErr;
+
+      const { error: updateErr } = await supabaseAdmin
+        .from("escort_billings")
+        .update({
+          status: "FATURADO",
+          faturado_em: new Date().toISOString(),
+          faturado_por: user?.name || "Sistema",
+          invoice_id: invoice.id,
+        })
+        .in("id", billingIds);
+
+      if (updateErr) {
+        console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+      }
+
+      console.log(`[billing] Fatura gerada: ${clientName} — ${billings.length} OS — ${fmt(totalValue)} — Invoice #${invoice.id}`);
+
+      res.json({
+        invoice,
+        billingIds,
+        totalValue,
+        missionsCount: billings.length,
+      });
+    } catch (err: any) {
+      console.error("[billing] Erro ao gerar fatura:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   console.log("[asaas] Rotas de faturamento Asaas registradas");
+}
+
+function fmt(val: number) {
+  return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
