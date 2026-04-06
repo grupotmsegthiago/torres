@@ -323,7 +323,7 @@ import type { Express } from "express";
         vehicle_id: vehicleId,
         employee_id: employeeId,
         category: "Pedágio",
-        description: `Pedágio Reembolso - ${empName} (${vehiclePlate})`,
+        description: `Pedágio - ${empName} (${vehiclePlate})`,
         amount: parsedAmount.toFixed(2),
         cost_type: "expense",
         photo_url: photoUrl,
@@ -336,8 +336,8 @@ import type { Express } from "express";
         service_order_id: Number(serviceOrderId),
         vehicle_id: vehicleId,
         employee_id: employeeId,
-        category: "Reembolso de Pedágio",
-        description: `Reembolso Pedágio - ${empName} (${vehiclePlate})`,
+        category: "Pedágio",
+        description: `Pedágio - ${empName} (${vehiclePlate})`,
         amount: parsedAmount.toFixed(2),
         cost_type: "revenue",
         photo_url: photoUrl,
@@ -362,7 +362,7 @@ import type { Express } from "express";
         created_by: "SISTEMA",
       });
       await createAutoTransaction({
-        description: `RECEITA MISSÃO ${osNum} - REEMBOLSO PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
+        description: `RECEITA MISSÃO ${osNum} - PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
         amount: parsedAmount,
         type: "INCOME",
         due_date: todayBRT,

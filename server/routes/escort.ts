@@ -645,7 +645,7 @@ import type { Express } from "express";
       if (pedagioAsRevenue > 0) {
         missionCostRevenueItems.push({
           id: "pedagio-repasse",
-          description: "Reembolso de Pedágio",
+          description: "Pedágio",
           amount: pedagioAsRevenue,
           type: "INCOME",
           category_name: "Pedágio",

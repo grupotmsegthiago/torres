@@ -356,7 +356,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                     {isRevenue ? "Receita" : "Despesa"}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{cost.category}</td>
+                <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{(cost.category || "").replace("Reembolso de Pedágio", "Pedágio")}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
                 <td className={`px-3.5 py-2.5 text-right font-mono font-semibold text-sm ${isRevenue ? "text-emerald-700" : "text-red-700"}`}>
                   {isRevenue ? "+" : "-"}R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
