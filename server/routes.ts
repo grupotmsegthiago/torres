@@ -10434,34 +10434,120 @@ Regras:
 
   app.patch("/api/escort/billings/:id/salvar", requireAdminRole, async (req, res) => {
     try {
-      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("status").eq("id", req.params.id).single();
+      const user = req.user!;
+      const { data: existing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !existing) return res.status(404).json({ message: "Registro não encontrado" });
 
-      const LOCKED_STATUSES = ["APROVADA", "FATURADO", "PAGO"];
+      const LOCKED_STATUSES = ["FATURADO", "PAGO"];
       if (LOCKED_STATUSES.includes(existing.status)) {
-        return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
+        return res.status(403).json({ message: "Boletim faturado — valores travados. Não é possível alterar." });
       }
 
-      const { observacoes, despesas_pedagio } = req.body;
+      const {
+        observacoes, despesas_pedagio, fat_acionamento, fat_km,
+        km_inicial, km_final, horario_inicio, horario_termino,
+        receitas_os, recalcular,
+      } = req.body;
+
       const updateData: any = {};
       if (observacoes !== undefined) updateData.observacoes = observacoes;
       if (despesas_pedagio !== undefined) updateData.despesas_pedagio = Number(despesas_pedagio) || 0;
+      if (fat_acionamento !== undefined) updateData.fat_acionamento = Number(fat_acionamento) || 0;
+      if (fat_km !== undefined) updateData.fat_km = Number(fat_km) || 0;
+      if (km_inicial !== undefined) updateData.km_inicial = Number(km_inicial) || 0;
+      if (km_final !== undefined) updateData.km_final = Number(km_final) || 0;
+      if (horario_inicio !== undefined) updateData.horario_inicio = horario_inicio;
+      if (horario_termino !== undefined) updateData.horario_fim = horario_termino;
+      if (receitas_os !== undefined) updateData.receitas_os = Number(receitas_os) || 0;
+
+      if (recalcular && existing.contract_id) {
+        const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
+        if (contrato) {
+          const kmI = km_inicial !== undefined ? Number(km_inicial) : Number(existing.km_inicial || 0);
+          const kmF = km_final !== undefined ? Number(km_final) : Number(existing.km_final || 0);
+          const hInicio = horario_inicio !== undefined ? horario_inicio : existing.horario_inicio;
+          const hFim = horario_termino !== undefined ? horario_termino : existing.horario_fim;
+          const pedagio = despesas_pedagio !== undefined ? Number(despesas_pedagio) : Number(existing.despesas_pedagio || 0);
+          const recOs = receitas_os !== undefined ? Number(receitas_os) : Number(existing.receitas_os || 0);
+          try {
+            const resultado = calcularEscolta({
+              km_inicial: kmI, km_final: Math.max(kmI, kmF), km_vazio: Number(existing.km_vazio || 0),
+              horas_missao: Number(existing.horas_missao || 0), horas_estadia: Number(existing.horas_estadia || 0),
+              teve_pernoite: !!existing.teve_pernoite,
+              horario_inicio: hInicio || undefined, horario_fim: hFim || undefined,
+              horario_agendado: existing.horario_agendado || undefined,
+              despesas_pedagio: pedagio, despesas_combustivel: Number(existing.despesas_combustivel || 0),
+              despesas_outras: Number(existing.despesas_outras || 0),
+              receitas_os: recOs, contrato,
+            });
+            Object.assign(updateData, {
+              km_inicial: kmI, km_final: Math.max(kmI, kmF),
+              km_total: resultado.km_total, km_carregado: resultado.km_carregado,
+              km_faturado: resultado.km_faturado, km_franquia: resultado.km_franquia,
+              km_excedente: resultado.km_excedente, valor_franquia: resultado.valor_franquia,
+              valor_km_extra: resultado.valor_km_extra,
+              fat_acionamento: resultado.fat_acionamento, fat_hora_extra: resultado.fat_hora_extra,
+              fat_km: resultado.fat_km || resultado.faturamento?.fat_km || 0,
+              fat_total: resultado.faturamento?.fat_total || 0,
+              horas_trabalhadas: resultado.horas_trabalhadas,
+              horario_inicio_considerado: resultado.horario_inicio_considerado,
+              despesas_pedagio: pedagio, receitas_os: recOs,
+              resultado_bruto: resultado.faturamento?.resultado_bruto || 0,
+              resultado_liquido: resultado.faturamento?.resultado_liquido || 0,
+              margem_pct: resultado.faturamento?.margem_pct || 0,
+            });
+            if (hInicio) updateData.horario_inicio = hInicio;
+            if (hFim) updateData.horario_fim = hFim;
+          } catch {}
+        }
+      }
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();
       if (error) throw error;
 
-      if (data && despesas_pedagio !== undefined) {
-        const fatTotal = Number(data.fat_total || 0);
-        const pagTotal = Number(data.pag_total || 0);
+      if (data && !recalcular) {
+        const fatAcion = Number(data.fat_acionamento || 0);
+        const fatHoraExtra = Number(data.fat_hora_extra || 0);
+        const fatKm = Number(data.fat_km || 0);
         const pedagio = Number(data.despesas_pedagio || 0);
-        const combustivel = Number(data.despesas_combustivel || 0);
-        const outras = Number(data.despesas_outras || 0);
-        const despTotal = pedagio + combustivel + outras;
-        const resultado = fatTotal - pagTotal - despTotal;
-        await supabaseAdmin.from("escort_billings").update({ resultado_liquido: resultado, resultado_bruto: fatTotal - pagTotal }).eq("id", req.params.id);
+        const recOs = Number(data.receitas_os || 0);
+        const fatTotal = fatAcion + fatHoraExtra + fatKm + pedagio + recOs;
+        const pagTotal = Number(data.pag_total || 0);
+        const resultado = fatTotal - pagTotal;
+        await supabaseAdmin.from("escort_billings").update({
+          fat_total: fatTotal, resultado_bruto: fatTotal - pagTotal, resultado_liquido: resultado,
+        }).eq("id", req.params.id);
+        data.fat_total = fatTotal;
         data.resultado_liquido = resultado;
         data.resultado_bruto = fatTotal - pagTotal;
       }
+
+      if (existing.service_order_id) {
+        const fatAcion = Number(data?.fat_acionamento || 0);
+        const fatHoraExtra = Number(data?.fat_hora_extra || 0);
+        const fatKm = Number(data?.fat_km || 0);
+        const pedagio = Number(data?.despesas_pedagio || 0);
+        const recOs = Number(data?.receitas_os || 0);
+        const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + recOs;
+        await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id).then(() => {});
+      }
+
+      const changes: string[] = [];
+      if (km_inicial !== undefined) changes.push(`KM Inicial: ${existing.km_inicial}→${km_inicial}`);
+      if (km_final !== undefined) changes.push(`KM Final: ${existing.km_final}→${km_final}`);
+      if (fat_acionamento !== undefined) changes.push(`Acionamento: ${existing.fat_acionamento}→${fat_acionamento}`);
+      if (despesas_pedagio !== undefined) changes.push(`Pedágio: ${existing.despesas_pedagio}→${despesas_pedagio}`);
+      if (horario_inicio !== undefined) changes.push(`Hora Início: ${existing.horario_inicio}→${horario_inicio}`);
+      if (horario_termino !== undefined) changes.push(`Hora Fim: ${existing.horario_fim}→${horario_termino}`);
+      if (changes.length > 0) {
+        await logSystemAudit({
+          userId: user.id, userName: user.name, userRole: user.role,
+          action: "EDITAR_MEDICAO", targetId: req.params.id, targetType: "escort_billing",
+          details: `OS #${existing.service_order_id} editada. ${changes.join("; ")}`,
+          ipAddress: req.ip,
+        });
+      }
+
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

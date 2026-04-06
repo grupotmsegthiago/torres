@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -58,6 +58,12 @@ export default function BoletimMedicaoPage() {
   const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
   const [periodFilter, setPeriodFilter] = useState<string | null>(null);
+  const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
+  const [editBilling, setEditBilling] = useState<{
+    km_inicial: string; km_final: string; fat_acionamento: string;
+    despesas_pedagio: string; horario_inicio: string; horario_termino: string;
+    receitas_os: string;
+  }>({ km_inicial: "", km_final: "", fat_acionamento: "", despesas_pedagio: "", horario_inicio: "", horario_termino: "", receitas_os: "" });
   const [faturaDialog, setFaturaDialog] = useState<{ clientId: number; clientName: string; approvedCount: number; total: number; billingIds: string[] } | null>(null);
   const [faturaBillingType, setFaturaBillingType] = useState("BOLETO");
   const [faturaDueDate, setFaturaDueDate] = useState(() => {
@@ -132,6 +138,19 @@ export default function BoletimMedicaoPage() {
       toast({ title: "Reaberta", description: "OS voltou para 'A Verificar'. Agora pode ser editada." });
     },
     onError: (err: Error) => toast({ title: "Erro ao reabrir", description: err.message, variant: "destructive" }),
+  });
+
+  const salvarMedicaoMutation = useMutation({
+    mutationFn: async (payload: { billingId: string; [key: string]: any }) => {
+      const { billingId, ...data } = payload;
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { ...data, recalcular: true });
+    },
+    onSuccess: () => {
+      invalidateAllRelated();
+      toast({ title: "Medição Salva", description: "Valores recalculados e salvos no banco." });
+      setEditingBillingId(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro ao salvar medição", description: err.message, variant: "destructive" }),
   });
 
   const salvarBillingMutation = useMutation({
@@ -437,8 +456,11 @@ export default function BoletimMedicaoPage() {
                               const status = getBillingStatus(os);
                               const b = os.billing;
                               const kmTotal = computeKm(os);
+                              const isEditing = editingBillingId === b?.id;
+                              const canEdit = b && !["FATURADO", "PAGO"].includes(b.status);
                               return (
-                                <tr key={os.id} className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""}`} data-testid={`row-os-${os.id}`}>
+                                <Fragment key={os.id}>
+                                <tr className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""} ${isEditing ? "bg-blue-50/40" : ""}`} data-testid={`row-os-${os.id}`}>
                                   <td className="px-4 py-3.5">
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-mono font-black text-neutral-800 text-[13px]">{os.osNumber}</span>
@@ -495,6 +517,31 @@ export default function BoletimMedicaoPage() {
                                           <Calculator size={15} className={b?.status === "REJEITADA" ? "text-red-500" : isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
                                         </button>
                                       )}
+                                      {canEdit && (
+                                        <button
+                                          onClick={() => {
+                                            if (isEditing) {
+                                              setEditingBillingId(null);
+                                            } else {
+                                              setEditingBillingId(b.id);
+                                              setEditBilling({
+                                                km_inicial: String(b.km_inicial || 0),
+                                                km_final: String(b.km_final || 0),
+                                                fat_acionamento: String(b.fat_acionamento || 0),
+                                                despesas_pedagio: String(b.despesas_pedagio || 0),
+                                                horario_inicio: b.horario_inicio || "",
+                                                horario_termino: b.horario_fim || "",
+                                                receitas_os: String(b.receitas_os || 0),
+                                              });
+                                            }
+                                          }}
+                                          className={`p-1.5 rounded-lg border border-transparent transition-all ${isEditing ? "bg-blue-100 border-blue-300 text-blue-700" : "hover:bg-amber-50 hover:border-amber-200"}`}
+                                          title="Editar Medição"
+                                          data-testid={`button-editar-medicao-${os.id}`}
+                                        >
+                                          <Pencil size={15} className={isEditing ? "text-blue-600" : "text-amber-500"} />
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => { setSelectedOs(os); setPedagioValue(b?.despesas_pedagio || (os as any).pedagioEstimado || "0"); setObservacoesValue(b?.observacoes || ""); }}
                                         className="p-1.5 rounded-lg hover:bg-neutral-100 border border-transparent hover:border-neutral-200 transition-all"
@@ -505,6 +552,102 @@ export default function BoletimMedicaoPage() {
                                     </div>
                                   </td>
                                 </tr>
+                                {b && (
+                                  <tr className={`border-b ${isEditing ? "bg-blue-50/60" : "bg-neutral-50/60"}`}>
+                                    <td colSpan={10} className="px-4 py-2">
+                                      {isEditing ? (
+                                        <div className="space-y-3" data-testid={`edit-billing-${os.id}`}>
+                                          <div className="grid grid-cols-7 gap-2">
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Acionamento (R$)</label>
+                                              <input type="number" step="0.01" value={editBilling.fat_acionamento} onChange={e => setEditBilling(p => ({ ...p, fat_acionamento: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-acionamento" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">KM Inicial</label>
+                                              <input type="number" value={editBilling.km_inicial} onChange={e => setEditBilling(p => ({ ...p, km_inicial: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-km-inicial" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">KM Final</label>
+                                              <input type="number" value={editBilling.km_final} onChange={e => setEditBilling(p => ({ ...p, km_final: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-km-final" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Pedágio (R$)</label>
+                                              <input type="number" step="0.01" value={editBilling.despesas_pedagio} onChange={e => setEditBilling(p => ({ ...p, despesas_pedagio: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-pedagio" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Hora Início</label>
+                                              <input type="time" value={editBilling.horario_inicio} onChange={e => setEditBilling(p => ({ ...p, horario_inicio: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-hora-inicio" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Hora Fim</label>
+                                              <input type="time" value={editBilling.horario_termino} onChange={e => setEditBilling(p => ({ ...p, horario_termino: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-hora-fim" />
+                                            </div>
+                                            <div>
+                                              <label className="text-[9px] font-bold text-neutral-500 uppercase block mb-1">Receitas OS</label>
+                                              <input type="number" step="0.01" value={editBilling.receitas_os} onChange={e => setEditBilling(p => ({ ...p, receitas_os: e.target.value }))}
+                                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-blue-300 outline-none" data-testid="input-edit-receitas-os" />
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[9px] font-bold text-neutral-400 uppercase">Franquia: {b.km_franquia || 0} km</span>
+                                              <span className="text-[9px] text-neutral-300">|</span>
+                                              <span className="text-[9px] font-bold text-neutral-400 uppercase">Viatura: {os.vehiclePlate}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <Button variant="outline" size="sm" onClick={() => setEditingBillingId(null)} className="text-[10px] font-bold uppercase h-8" data-testid="button-cancelar-medicao">
+                                                Cancelar
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                onClick={() => {
+                                                  salvarMedicaoMutation.mutate({
+                                                    billingId: b.id,
+                                                    km_inicial: Number(editBilling.km_inicial) || 0,
+                                                    km_final: Number(editBilling.km_final) || 0,
+                                                    fat_acionamento: Number(editBilling.fat_acionamento) || 0,
+                                                    despesas_pedagio: Number(editBilling.despesas_pedagio) || 0,
+                                                    horario_inicio: editBilling.horario_inicio || undefined,
+                                                    horario_termino: editBilling.horario_termino || undefined,
+                                                    receitas_os: Number(editBilling.receitas_os) || 0,
+                                                  });
+                                                }}
+                                                disabled={salvarMedicaoMutation.isPending}
+                                                className="bg-blue-600 hover:bg-blue-700 text-[10px] font-bold uppercase h-8 gap-1.5"
+                                                data-testid="button-salvar-medicao"
+                                              >
+                                                {salvarMedicaoMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                                                Salvar Medição
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-3 text-[10px] text-neutral-500 flex-wrap">
+                                          <span><strong className="text-neutral-700">Acionamento:</strong> {fmt(Number(b.fat_acionamento || 0))}</span>
+                                          <span className="text-neutral-300">|</span>
+                                          <span><strong className="text-neutral-700">Franquia:</strong> {Number(b.km_franquia || 0).toLocaleString("pt-BR")} / {Number(b.km_faturado || b.km_franquia || 0).toLocaleString("pt-BR")} km</span>
+                                          <span className="text-neutral-300">|</span>
+                                          <span><strong className="text-neutral-700">KM Excedente:</strong> {Number(b.km_excedente || 0)} km — {fmt(Number(b.fat_km || 0))}</span>
+                                          {Number(b.fat_hora_extra || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Hora Extra:</strong> {fmtHoras(Number(b.horas_trabalhadas || 0))} — {fmt(Number(b.fat_hora_extra || 0))}</span></>)}
+                                          {Number(b.despesas_pedagio || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Pedágio:</strong> {fmt(Number(b.despesas_pedagio || 0))}</span></>)}
+                                          <span className="text-neutral-300">|</span>
+                                          <span><strong className="text-neutral-700">KM Inicial:</strong> {Number(b.km_inicial || 0).toLocaleString("pt-BR")}</span>
+                                          <span><strong className="text-neutral-700">KM Total:</strong> {Number(b.km_total || 0).toLocaleString("pt-BR")}</span>
+                                          <span className="text-neutral-300">|</span>
+                                          <span><strong className="text-neutral-700">Viatura:</strong> {os.vehiclePlate || "—"}</span>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                                </Fragment>
                               );
                             })}
                           </tbody>
