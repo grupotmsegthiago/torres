@@ -339,34 +339,34 @@ export default function BoletimMedicaoPage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white border border-neutral-200 rounded-xl p-4" data-testid="stat-total">
+          <button onClick={() => setStatusFilter("ALL")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ALL" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-total">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><FileText size={14} className="text-neutral-500" /></div>
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total OS</span>
             </div>
             <p className="text-2xl font-black text-neutral-900 mt-1">{totalOs}</p>
-          </div>
-          <div className="bg-white border border-amber-200 rounded-xl p-4" data-testid="stat-pendentes">
+          </button>
+          <button onClick={() => setStatusFilter("PENDENTE")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "PENDENTE" ? "ring-2 ring-amber-500 border-amber-500" : "border-amber-200"}`} data-testid="stat-pendentes">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><AlertTriangle size={14} className="text-amber-600" /></div>
               <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Pendentes</span>
             </div>
             <p className="text-2xl font-black text-amber-700 mt-1">{pendingCount}</p>
-          </div>
-          <div className="bg-white border border-emerald-200 rounded-xl p-4" data-testid="stat-aprovadas">
+          </button>
+          <button onClick={() => setStatusFilter("APROVADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "APROVADA" ? "ring-2 ring-emerald-500 border-emerald-500" : "border-emerald-200"}`} data-testid="stat-aprovadas">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><CheckCircle2 size={14} className="text-emerald-600" /></div>
               <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Aprovadas</span>
             </div>
             <p className="text-2xl font-black text-emerald-700 mt-1">{approvedCount}</p>
-          </div>
-          <div className="bg-white border border-neutral-200 rounded-xl p-4" data-testid="stat-faturamento">
+          </button>
+          <button onClick={() => setStatusFilter("FATURADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "FATURADA" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-faturamento">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><DollarSign size={14} className="text-neutral-500" /></div>
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Faturamento</span>
             </div>
             <p className="text-lg font-black text-neutral-900 mt-1">{fmt(totalFaturamento)}</p>
-          </div>
+          </button>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap" data-testid="filter-status">
