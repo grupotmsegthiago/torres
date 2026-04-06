@@ -380,7 +380,7 @@ export default function LoginPage() {
                 <UserPlus className="w-6 h-6 text-white/60" />
               </div>
             ) : (
-              <img src="/logo-torres.svg" alt="Torres Vigilância Patrimonial" style={{ width: 112, height: 112 }} className="object-contain rounded-xl" data-testid="img-login-logo" />
+              <img src="/logo-torres-dark.jpeg" alt="Torres Vigilância Patrimonial" style={{ width: 112, height: 112 }} className="object-contain rounded-xl" data-testid="img-login-logo" />
             )}
           </div>
           <h1 className="text-xl font-bold text-white" data-testid="text-login-title">
