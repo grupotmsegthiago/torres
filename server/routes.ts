@@ -1660,6 +1660,7 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           clientName: client?.name || "—",
           clientCnpj: client?.cnpj || null,
           clientBillingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || null,
+          clientPrazoAprovacaoDias: (client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || null,
           clientPaymentTermsDays: (client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || null,
           clientBillingCutoffDay: (client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || null,
           vehiclePlate: vehicle?.plate || null,

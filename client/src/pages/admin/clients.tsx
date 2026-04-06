@@ -142,6 +142,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     zip: client?.zip || "",
     notes: client?.notes || "",
     billingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || "",
+    prazoAprovacaoDias: String((client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || ""),
     paymentTermsDays: String((client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || ""),
     billingCutoffDay: String((client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || ""),
   });
@@ -186,6 +187,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     mutationFn: async (data: typeof form) => {
       const payload = {
         ...data,
+        prazoAprovacaoDias: data.prazoAprovacaoDias ? Number(data.prazoAprovacaoDias) : null,
         paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : null,
         billingCutoffDay: data.billingCutoffDay ? Number(data.billingCutoffDay) : null,
         billingCycle: data.billingCycle || null,
@@ -289,9 +291,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         </div>
         <div className="md:col-span-2 border-t border-neutral-200 pt-4 mt-2">
           <p className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" /> Ciclo Financeiro</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo de Ciclo</label>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Ciclo de Faturamento</label>
               <select value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" data-testid="select-billing-cycle">
                 <option value="">Não definido</option>
                 <option value="por_missao">Por Missão</option>
@@ -300,14 +302,19 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
               </select>
             </div>
             <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Dias para Vencimento</label>
-              <Input type="number" min="0" max="90" value={form.paymentTermsDays} onChange={(e) => setForm({ ...form, paymentTermsDays: e.target.value })} placeholder="Ex: 15" data-testid="input-payment-terms" />
-              <p className="text-[10px] text-neutral-400 mt-1">Dias após faturamento (D+N)</p>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Prazo de Aprovação (Dias)</label>
+              <Input type="number" min="1" max="30" value={form.prazoAprovacaoDias} onChange={(e) => setForm({ ...form, prazoAprovacaoDias: e.target.value })} placeholder="10" data-testid="input-prazo-aprovacao" />
+              <p className="text-[10px] text-neutral-400 mt-1">Dias após fechamento para aprovar (padrão 10)</p>
             </div>
             <div>
-              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Dia de Fechamento</label>
-              <Input type="number" min="1" max="31" value={form.billingCutoffDay} onChange={(e) => setForm({ ...form, billingCutoffDay: e.target.value })} placeholder="Ex: 15 ou 30" data-testid="input-cutoff-day" />
-              <p className="text-[10px] text-neutral-400 mt-1">Dia do mês para corte</p>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Prazo de Pagamento (Dias)</label>
+              <Input type="number" min="0" max="90" value={form.paymentTermsDays} onChange={(e) => setForm({ ...form, paymentTermsDays: e.target.value })} placeholder="30" data-testid="input-payment-terms" />
+              <p className="text-[10px] text-neutral-400 mt-1">Dias após faturamento para pagar (D+N)</p>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Data Limite de Emissão</label>
+              <Input type="number" min="1" max="31" value={form.billingCutoffDay} onChange={(e) => setForm({ ...form, billingCutoffDay: e.target.value })} placeholder="25" data-testid="input-cutoff-day" />
+              <p className="text-[10px] text-neutral-400 mt-1">Dia do mês em que o lote trava e avisa se algo ficou fora</p>
             </div>
           </div>
         </div>

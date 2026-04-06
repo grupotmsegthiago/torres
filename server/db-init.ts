@@ -340,6 +340,9 @@ export async function ensureDbSchema() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cycle TEXT
     `);
     await db.execute(sql`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS prazo_aprovacao_dias INTEGER
+    `);
+    await db.execute(sql`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER
     `);
     await db.execute(sql`

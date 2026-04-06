@@ -41,7 +41,7 @@ const computeKm = (os: any) => {
   return Math.max(0, kmFim - kmChegada);
 };
 
-type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA";
+type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA" | "FORA_CICLO";
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
@@ -268,6 +268,18 @@ export default function BoletimMedicaoPage() {
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
+    else if (statusFilter === "FORA_CICLO") {
+      orders = orders.filter(o => {
+        if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
+        const bStatus = o.billing?.status;
+        if (bStatus === "FATURADO" || bStatus === "PAGO") return false;
+        if (!o.billing?.data_missao && !o.completedDate) return false;
+        const mDate = new Date(o.billing?.data_missao || o.completedDate);
+        const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
+        const prazoAprovacao = Number(o.clientPrazoAprovacaoDias) || 10;
+        return daysSince > prazoAprovacao;
+      });
+    }
     if (periodFilter) {
       const { start, end } = getPeriodRange(periodFilter);
       orders = orders.filter(o => {
@@ -283,6 +295,15 @@ export default function BoletimMedicaoPage() {
   const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
   const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
   const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
+  const foraCicloCount = osConcluidas.filter(o => {
+    if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
+    const bStatus = o.billing?.status;
+    if (bStatus === "FATURADO" || bStatus === "PAGO") return false;
+    if (!o.billing?.data_missao && !o.completedDate) return false;
+    const mDate = new Date(o.billing?.data_missao || o.completedDate);
+    const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
+    return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
+  }).length;
   const totalFaturamento = osConcluidas.reduce((acc, o) => {
     const b = o.billing;
     return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
@@ -346,12 +367,12 @@ export default function BoletimMedicaoPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap" data-testid="filter-status">
-          {([["ALL", "Todas"], ["EM_ANDAMENTO", `Em Andamento (${liveCount})`], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"]] as [StatusFilter, string][]).map(([val, label]) => (
+          {([["ALL", "Todas"], ["EM_ANDAMENTO", `Em Andamento (${liveCount})`], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"], ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : [])] as [StatusFilter, string][]).map(([val, label]) => (
             <button
               key={val}
               onClick={() => setStatusFilter(val)}
               className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                statusFilter === val ? "bg-neutral-900 text-white shadow-sm" : "bg-white text-neutral-500 hover:bg-neutral-100 border border-neutral-200"
+                statusFilter === val && val === "FORA_CICLO" ? "bg-red-600 text-white shadow-sm" : statusFilter === val ? "bg-neutral-900 text-white shadow-sm" : val === "FORA_CICLO" ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100" : "bg-white text-neutral-500 hover:bg-neutral-100 border border-neutral-200"
               }`}
               data-testid={`filter-${val.toLowerCase()}`}
             >
@@ -384,18 +405,25 @@ export default function BoletimMedicaoPage() {
 
         {billingAlerts.length > 0 && (
           <div className="space-y-2 mb-4">
-            {billingAlerts.map((alert: any) => (
-              <div key={alert.id} className={`flex items-start gap-3 p-3 rounded-lg border ${alert.alert_type === "ATRASO_FATURAMENTO" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`} data-testid={`billing-alert-${alert.id}`}>
-                <AlertTriangle size={16} className={alert.alert_type === "ATRASO_FATURAMENTO" ? "text-red-600 mt-0.5 shrink-0" : "text-amber-600 mt-0.5 shrink-0"} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-bold ${alert.alert_type === "ATRASO_FATURAMENTO" ? "text-red-800" : "text-amber-800"}`}>{alert.message}</p>
-                  {alert.period_start && <p className="text-[10px] text-neutral-500 mt-0.5">Período: {alert.period_start} a {alert.period_end}</p>}
+            {billingAlerts.map((alert: any) => {
+              const isRed = ["ATRASO_APROVACAO", "VENCIMENTO_EMISSAO", "OS_ESQUECIDA"].includes(alert.alert_type);
+              const isAmber = ["ANTECIPACAO_APROVACAO", "PENDENTE_FATURAMENTO"].includes(alert.alert_type);
+              const bg = isRed ? "bg-red-50 border-red-200" : isAmber ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200";
+              const iconColor = isRed ? "text-red-600" : isAmber ? "text-amber-600" : "text-blue-600";
+              const textColor = isRed ? "text-red-800" : isAmber ? "text-amber-800" : "text-blue-800";
+              return (
+                <div key={alert.id} className={`flex items-start gap-3 p-3 rounded-lg border ${bg}`} data-testid={`billing-alert-${alert.id}`}>
+                  <AlertTriangle size={16} className={`${iconColor} mt-0.5 shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-bold ${textColor}`}>{alert.message}</p>
+                    {alert.period_start && <p className="text-[10px] text-neutral-500 mt-0.5">Período: {alert.period_start} a {alert.period_end}</p>}
+                  </div>
+                  <button onClick={() => resolveAlertMutation.mutate(alert.id)} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 whitespace-nowrap px-2 py-1 rounded hover:bg-white/50" data-testid={`resolve-alert-${alert.id}`}>
+                    Resolver
+                  </button>
                 </div>
-                <button onClick={() => resolveAlertMutation.mutate(alert.id)} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 whitespace-nowrap px-2 py-1 rounded hover:bg-white/50" data-testid={`resolve-alert-${alert.id}`}>
-                  Resolver
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

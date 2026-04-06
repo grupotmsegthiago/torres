@@ -50,6 +50,7 @@ export const clients = pgTable("clients", {
   zip: text("zip"),
   notes: text("notes"),
   billingCycle: text("billing_cycle"),
+  prazoAprovacaoDias: integer("prazo_aprovacao_dias"),
   paymentTermsDays: integer("payment_terms_days"),
   billingCutoffDay: integer("billing_cutoff_day"),
   createdAt: timestamp("created_at").defaultNow(),

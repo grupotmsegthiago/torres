@@ -295,7 +295,7 @@ export function initCronJobs() {
   });
 
   cron.schedule("0 6 * * *", async () => {
-    log("CRON BillingAlerts: Verificando pendências de faturamento", "cron");
+    log("CRON BillingAlerts: Verificando linha do tempo de cobrança", "cron");
     try {
       const now = new Date();
       const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
@@ -309,92 +309,102 @@ export function initCronJobs() {
       const clientsWithCycle = allClients.filter((c: any) => c.billing_cycle && c.billing_cycle !== "por_missao");
       let alertsCreated = 0;
 
+      const insertAlert = async (clientId: number, clientName: string, alertType: string, message: string, osNumbers: string, billingIds: string, periodStart: string, periodEnd: string) => {
+        const { data: existing } = await supabaseAdmin.from("billing_alerts")
+          .select("id").eq("client_id", clientId).eq("alert_type", alertType)
+          .eq("period_start", periodStart).eq("period_end", periodEnd).eq("resolved", false).limit(1);
+        if (existing?.length) return false;
+        await supabaseAdmin.from("billing_alerts").insert({
+          client_id: clientId, client_name: clientName, alert_type: alertType,
+          message, billing_ids: billingIds, os_numbers: osNumbers,
+          period_start: periodStart, period_end: periodEnd,
+        });
+        return true;
+      };
+
       for (const client of clientsWithCycle) {
         const cycle = client.billing_cycle;
-        const cutoffDay = client.billing_cutoff_day || 15;
+        const prazoAprovacao = client.prazo_aprovacao_dias || 10;
+        const limiteEmissao = client.billing_cutoff_day || 25;
 
-        let isCutoffDay = false;
-        let periodStart = "";
-        let periodEnd = "";
+        let periods: { start: string; end: string; cutoff: number }[] = [];
 
         if (cycle === "quinzenal") {
-          if (brDay === 1 || brDay === 16) {
-            isCutoffDay = true;
-            if (brDay === 1) {
-              const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
-              const prevYear = brMonth === 1 ? brYear - 1 : brYear;
-              periodStart = `${prevYear}-${String(prevMonth).padStart(2, "0")}-16`;
-              const lastDay = new Date(prevYear, prevMonth, 0).getDate();
-              periodEnd = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`;
-            } else {
-              periodStart = `${brYear}-${String(brMonth).padStart(2, "0")}-01`;
-              periodEnd = `${brYear}-${String(brMonth).padStart(2, "0")}-15`;
-            }
-          }
+          periods = [
+            { start: `${brYear}-${String(brMonth).padStart(2, "0")}-01`, end: `${brYear}-${String(brMonth).padStart(2, "0")}-15`, cutoff: 15 },
+          ];
+          const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
+          const prevYear = brMonth === 1 ? brYear - 1 : brYear;
+          const lastDay = new Date(prevYear, prevMonth, 0).getDate();
+          periods.push({ start: `${prevYear}-${String(prevMonth).padStart(2, "0")}-16`, end: `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`, cutoff: lastDay });
         } else if (cycle === "mensal") {
-          if (brDay === 1) {
-            isCutoffDay = true;
-            const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
-            const prevYear = brMonth === 1 ? brYear - 1 : brYear;
-            const lastDay = new Date(prevYear, prevMonth, 0).getDate();
-            periodStart = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
-            periodEnd = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`;
-          }
+          const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
+          const prevYear = brMonth === 1 ? brYear - 1 : brYear;
+          const lastDay = new Date(prevYear, prevMonth, 0).getDate();
+          periods = [
+            { start: `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`, end: `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`, cutoff: lastDay },
+          ];
         }
 
-        if (!isCutoffDay) continue;
+        for (const period of periods) {
+          const periodCutoffDate = new Date(period.end);
+          const daysSinceCutoff = Math.floor((now.getTime() - periodCutoffDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysSinceCutoff < 1 || daysSinceCutoff > 60) continue;
 
-        const { data: pendingBillings } = await supabaseAdmin.from("escort_billings")
-          .select("id, service_order_id, os_number, status, data_missao")
-          .eq("client_id", client.id)
-          .in("status", ["A_VERIFICAR", "APROVADA"])
-          .is("invoice_id", null);
+          const { data: pendingBillings } = await supabaseAdmin.from("escort_billings")
+            .select("id, service_order_id, os_number, status, data_missao")
+            .eq("client_id", client.id)
+            .is("invoice_id", null);
 
-        if (!pendingBillings?.length) continue;
+          if (!pendingBillings?.length) continue;
 
-        const missionsInPeriod = pendingBillings.filter((b: any) => {
-          if (!b.data_missao) return false;
-          const mDate = b.data_missao.split("T")[0];
-          return mDate >= periodStart && mDate <= periodEnd;
-        });
+          const missionsInPeriod = pendingBillings.filter((b: any) => {
+            if (!b.data_missao) return false;
+            const mDate = b.data_missao.split("T")[0];
+            return mDate >= period.start && mDate <= period.end;
+          });
 
-        if (!missionsInPeriod.length) continue;
+          if (!missionsInPeriod.length) continue;
 
-        const osNumbers = missionsInPeriod.map((b: any) => b.os_number).filter(Boolean).join(", ");
-        const billingIds = missionsInPeriod.map((b: any) => b.id).join(",");
+          const notApproved = missionsInPeriod.filter((b: any) => b.status === "A_VERIFICAR");
+          const approvedNotInvoiced = missionsInPeriod.filter((b: any) => b.status === "APROVADA");
+          const osNums = (arr: any[]) => arr.map((b: any) => b.os_number).filter(Boolean).join(", ");
+          const bIds = (arr: any[]) => arr.map((b: any) => b.id).join(",");
 
-        const alertType = missionsInPeriod.some((b: any) => b.status === "A_VERIFICAR")
-          ? "ATRASO_FATURAMENTO"
-          : "PENDENTE_FATURAMENTO";
+          const approvalDeadline = prazoAprovacao;
+          const anticipation = Math.max(0, approvalDeadline - 5);
 
-        const message = alertType === "ATRASO_FATURAMENTO"
-          ? `URGENTE: ${client.name} possui ${missionsInPeriod.length} missão(ões) do período ${periodStart} a ${periodEnd} sem aprovação. OS: ${osNumbers}`
-          : `Faturamento Incompleto: ${client.name} possui ${missionsInPeriod.length} missão(ões) aprovada(s) pendente(s) do ciclo anterior (${periodStart} a ${periodEnd}). OS: ${osNumbers}`;
+          if (notApproved.length > 0 && daysSinceCutoff >= anticipation) {
+            const isUrgent = daysSinceCutoff >= approvalDeadline;
+            const alertType = isUrgent ? "ATRASO_APROVACAO" : "ANTECIPACAO_APROVACAO";
+            const msg = isUrgent
+              ? `⚠️ Pendência de Faturamento: ${client.name} possui ${notApproved.length} missão(ões) ainda não autorizadas pelo cliente. OS: ${osNums(notApproved)}. Período: ${period.start} a ${period.end}`
+              : `Alerta de Antecipação: ${client.name} — faltam ${approvalDeadline - daysSinceCutoff} dia(s) para o fim do prazo de aprovação. ${notApproved.length} OS pendente(s): ${osNums(notApproved)}`;
 
-        const { data: existing } = await supabaseAdmin.from("billing_alerts")
-          .select("id")
-          .eq("client_id", client.id)
-          .eq("alert_type", alertType)
-          .eq("period_start", periodStart)
-          .eq("period_end", periodEnd)
-          .eq("resolved", false)
-          .limit(1);
+            if (await insertAlert(client.id, client.name, alertType, msg, osNums(notApproved), bIds(notApproved), period.start, period.end)) {
+              alertsCreated++;
+              log(`CRON BillingAlerts: ${alertType} → ${client.name}`, "cron");
+            }
+          }
 
-        if (existing?.length) continue;
+          if (daysSinceCutoff >= limiteEmissao - period.cutoff || daysSinceCutoff >= 25) {
+            const allUnfatured = missionsInPeriod.filter((b: any) => !["FATURADO", "PAGO"].includes(b.status));
+            if (allUnfatured.length > 0) {
+              const msg = `🔴 URGENTE: ${client.name} — ${allUnfatured.length} OS do ciclo ${period.start} a ${period.end} ainda não faturada(s)! O prazo de emissão vence hoje. OS: ${osNums(allUnfatured)}`;
+              if (await insertAlert(client.id, client.name, "VENCIMENTO_EMISSAO", msg, osNums(allUnfatured), bIds(allUnfatured), period.start, period.end)) {
+                alertsCreated++;
+                log(`CRON BillingAlerts: VENCIMENTO_EMISSAO → ${client.name}`, "cron");
+              }
+            }
+          }
 
-        await supabaseAdmin.from("billing_alerts").insert({
-          client_id: client.id,
-          client_name: client.name,
-          alert_type: alertType,
-          message,
-          billing_ids: billingIds,
-          os_numbers: osNumbers,
-          period_start: periodStart,
-          period_end: periodEnd,
-        });
-
-        alertsCreated++;
-        log(`CRON BillingAlerts: Alerta criado para ${client.name}: ${alertType}`, "cron");
+          if (approvedNotInvoiced.length > 0 && daysSinceCutoff >= 1) {
+            const msg = `Faturamento Pendente: ${client.name} possui ${approvedNotInvoiced.length} missão(ões) aprovada(s) do ciclo ${period.start} a ${period.end} aguardando fatura. OS: ${osNums(approvedNotInvoiced)}`;
+            if (await insertAlert(client.id, client.name, "PENDENTE_FATURAMENTO", msg, osNums(approvedNotInvoiced), bIds(approvedNotInvoiced), period.start, period.end)) {
+              alertsCreated++;
+            }
+          }
+        }
       }
 
       const { data: allBillings } = await supabaseAdmin.from("escort_billings")
@@ -409,25 +419,17 @@ export function initCronJobs() {
           const daysSince = Math.floor((now.getTime() - mDate.getTime()) / (1000 * 60 * 60 * 24));
           if (daysSince <= 30) continue;
 
-          const clientRow = allClients.find((c: any) => c.id === billing.client_id);
-          const cycle = clientRow?.billing_cycle;
-          if (cycle === "por_missao" || !cycle) continue;
-
           const { data: existingAlert } = await supabaseAdmin.from("billing_alerts")
-            .select("id")
-            .eq("client_id", billing.client_id)
-            .eq("alert_type", "ATRASO_FATURAMENTO")
-            .eq("resolved", false)
-            .ilike("os_numbers", `%${billing.os_number}%`)
-            .limit(1);
-
+            .select("id").eq("client_id", billing.client_id).eq("alert_type", "OS_ESQUECIDA")
+            .eq("resolved", false).ilike("os_numbers", `%${billing.os_number}%`).limit(1);
           if (existingAlert?.length) continue;
 
+          const clientRow = allClients.find((c: any) => c.id === billing.client_id);
           await supabaseAdmin.from("billing_alerts").insert({
             client_id: billing.client_id,
             client_name: billing.client_name || clientRow?.name,
-            alert_type: "ATRASO_FATURAMENTO",
-            message: `Atenção: OS ${billing.os_number} ficou fora do faturamento! Missão de ${billing.data_missao?.split("T")[0]} há ${daysSince} dias sem faturar.`,
+            alert_type: "OS_ESQUECIDA",
+            message: `🔴 OS ${billing.os_number} ficou fora do faturamento! Missão de ${billing.data_missao?.split("T")[0]} há ${daysSince} dias sem faturar. Incluir agora?`,
             os_numbers: billing.os_number,
           });
           alertsCreated++;
