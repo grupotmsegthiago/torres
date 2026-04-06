@@ -949,10 +949,10 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
 
   const { data: serviceContracts = [] } = useQuery<ServiceContract[]>({ queryKey: ["/api/service-contracts", client.id], queryFn: async () => { const r = await authFetch(`/api/service-contracts?client_id=${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: priceContracts = [] } = useQuery<EscortContract[]>({ queryKey: ["/api/escort/contracts"] });
-  const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await fetch(`/api/escort/routes?client_id=${client.id}`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
+  const { data: clientRoutes = [] } = useQuery<EscortRoute[]>({ queryKey: ["/api/escort/routes", { client_id: client.id }], queryFn: async () => { const r = await authFetch(`/api/escort/routes?client_id=${client.id}`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
   const { data: allBillings = [] } = useQuery<EscortBilling[]>({ queryKey: ["/api/escort/billings"] });
-  const { data: clientVehiclesList = [] } = useQuery<ClientVehicle[]>({ queryKey: ["/api/clients", client.id, "vehicles"], queryFn: async () => { const r = await fetch(`/api/clients/${client.id}/vehicles`, { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
-  const { data: allServiceOrders = [] } = useQuery<any[]>({ queryKey: ["/api/service-orders"], queryFn: async () => { const r = await fetch("/api/service-orders", { credentials: "include" }); const d = await r.json(); return Array.isArray(d) ? d : []; } });
+  const { data: clientVehiclesList = [] } = useQuery<ClientVehicle[]>({ queryKey: ["/api/clients", client.id, "vehicles"], queryFn: async () => { const r = await authFetch(`/api/clients/${client.id}/vehicles`); const d = await r.json(); return Array.isArray(d) ? d : []; } });
+  const { data: allServiceOrders = [] } = useQuery<any[]>({ queryKey: ["/api/service-orders"], queryFn: async () => { const r = await authFetch("/api/service-orders"); const d = await r.json(); return Array.isArray(d) ? d : []; } });
 
   const clientPrices = priceContracts.filter(c => c.client_id === client.id);
   const clientBillings = allBillings.filter(b => b.client_id === client.id);
