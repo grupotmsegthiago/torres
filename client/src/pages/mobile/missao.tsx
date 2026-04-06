@@ -518,7 +518,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
       setTollSubmitted(true);
       invalidateRelatedQueries("financial");
       invalidateRelatedQueries("mission-cost");
-      toast({ title: `Pedágio R$ ${tollAmount} registrado!`, description: `OS ${data.osNumber} · Reembolso + Custo` });
+      toast({ title: `Pedágio R$ ${tollAmount} registrado!`, description: `OS ${data.osNumber} · Custo + Cobrança` });
     },
     onError: (err: Error) => toast({ title: "Erro ao registrar pedágio", description: err.message, variant: "destructive" }),
   });
@@ -813,7 +813,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
             <button onClick={resetToll} className="text-xs text-neutral-500 font-bold" data-testid="button-toll-close">Fechar</button>
           </div>
           <div className="bg-white/70 rounded-xl px-3 py-2">
-            <p className="text-[11px] text-amber-800">O valor será lançado como <span className="font-bold">Custo + Reembolso</span> nesta missão (impacto zero no lucro).</p>
+            <p className="text-[11px] text-amber-800">O valor será lançado como <span className="font-bold">Custo + Cobrança</span> nesta missão (repasse ao cliente).</p>
           </div>
           <div>
             <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider block mb-1">Valor (R$)</label>
@@ -859,7 +859,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         <div className="bg-emerald-50 rounded-2xl border-2 border-emerald-300 p-4 text-center space-y-3" data-testid="toll-success">
           <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
           <p className="text-sm font-black text-emerald-900 uppercase tracking-wider">Pedágio Registrado!</p>
-          <p className="text-xs text-emerald-700">R$ {tollAmount} · Custo + Reembolso na OS</p>
+          <p className="text-xs text-emerald-700">R$ {tollAmount} · Custo + Cobrança na OS</p>
           <button onClick={resetToll} className="h-10 px-6 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider active:scale-[0.98]" data-testid="button-toll-done">OK</button>
         </div>
       )}

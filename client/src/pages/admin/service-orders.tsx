@@ -356,7 +356,7 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
                     {isRevenue ? "Receita" : "Despesa"}
                   </span>
                 </td>
-                <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{(cost.category || "").replace("Reembolso de Pedágio", "Pedágio")}</td>
+                <td className="px-3.5 py-2.5 font-semibold text-neutral-900 text-sm">{(cost.category || "").replace("Reembolso de Pedágio", "Pedágio").replace("Pedágio Reembolso", "Pedágio")}</td>
                 <td className="px-3.5 py-2.5 text-neutral-600 text-sm">{cost.description || "—"}</td>
                 <td className={`px-3.5 py-2.5 text-right font-mono font-semibold text-sm ${isRevenue ? "text-emerald-700" : "text-red-700"}`}>
                   {isRevenue ? "+" : "-"}R$ {parseBRL(cost.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
@@ -614,6 +614,18 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     queryKey: ["/api/escort/contracts"],
   });
 
+  const { data: osCosts = [] } = useQuery<MissionCost[]>({
+    queryKey: ["/api/service-orders", order?.id, "costs"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: !!order?.id,
+  });
+  const pedagioAutoSum = osCosts
+    .filter(c => {
+      const cat = ((c as any).category || "").toLowerCase();
+      return (cat.includes("pedágio") || cat.includes("pedagio")) && (c as any).costType !== "revenue";
+    })
+    .reduce((sum, c) => sum + parseBRL(c.amount), 0);
+
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
@@ -755,7 +767,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
-    pedagioEstimado: data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null,
+    pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
@@ -1081,10 +1093,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: maskBRL(e.target.value) })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
               </div>
               <div>
-                <FieldLabel>Pedágio (R$) {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 ? "✓" : ""}</FieldLabel>
+                <FieldLabel>Pedágio (R$) {pedagioAutoSum > 0 ? "✓" : ""}</FieldLabel>
                 <div className="relative">
-                  <Input type="text" inputMode="decimal" value={form.pedagioEstimado} onChange={(e) => setForm({ ...form, pedagioEstimado: maskBRL(e.target.value) })} placeholder="0,00" className={`text-sm font-mono ${form.pedagioEstimado && parseBRL(String(form.pedagioEstimado)) > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
-                  {tollInfo && !tollInfo.loading && tollInfo.totalIdaVolta > 0 && (
+                  <Input type="text" readOnly value={pedagioAutoSum > 0 ? pedagioAutoSum.toFixed(2).replace(".", ",") : (form.pedagioEstimado || "0,00")} className={`text-sm font-mono bg-neutral-100 cursor-not-allowed ${pedagioAutoSum > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
+                  {pedagioAutoSum > 0 && (
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">AUTO</span>
                   )}
                 </div>
