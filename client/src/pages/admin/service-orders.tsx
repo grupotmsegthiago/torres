@@ -20,7 +20,8 @@ type StepLogEntry = { step: string; completedAt: string; agentName?: string; age
 
 function utcToLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
-  const d = new Date(iso);
+  const safe = ensureUTC(iso) || iso;
+  const d = new Date(safe);
   if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "";
   const sp = d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" });
   return sp.replace(" ", "T").slice(0, 16);
