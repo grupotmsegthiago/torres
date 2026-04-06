@@ -66,6 +66,7 @@ const menuItems: MenuItem[] = [
       { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
       { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
       { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
+      { path: "/admin/calculadora-jornada", label: "Calculadora Jornada", icon: Clock },
     ],
   },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },

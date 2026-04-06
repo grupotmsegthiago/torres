@@ -1139,5 +1139,103 @@ ${empNames}`
     res.json({ ok: true });
   });
 
+  app.get("/api/jornada-calculos", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const { mes } = req.query;
+      let query = supabaseAdmin.from("jornada_calculos").select("*").order("created_at", { ascending: false });
+      if (mes) query = query.eq("mes_referencia", mes);
+      const { data, error } = await query;
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/jornada-calculos/:id", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("jornada_calculos").select("*").eq("id", req.params.id).single();
+      if (error) return res.status(404).json({ message: "Cálculo não encontrado" });
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/jornada-calculos", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const { employee_id, service_order_id, inicio_missao, fim_missao, pct_ativo, salario_base, mes_referencia } = req.body;
+      if (!employee_id || !inicio_missao || !fim_missao || pct_ativo == null || !salario_base || !mes_referencia) {
+        return res.status(400).json({ message: "Campos obrigatórios: employee_id, inicio_missao, fim_missao, pct_ativo, salario_base, mes_referencia" });
+      }
+
+      const start = new Date(inicio_missao);
+      const end = new Date(fim_missao);
+      const totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+      if (totalHours <= 0) return res.status(400).json({ message: "fim_missao deve ser posterior a inicio_missao" });
+
+      const pctAtivo = Math.max(0, Math.min(100, Number(pct_ativo)));
+      const horasAtivo = totalHours * (pctAtivo / 100);
+      const horasSobreaviso = totalHours - horasAtivo;
+
+      let horasNoturnas = 0;
+      const cursor = new Date(start);
+      while (cursor < end) {
+        const brHour = Number(cursor.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+        if (brHour >= 22 || brHour < 5) {
+          const nextMin = new Date(cursor.getTime() + 60000);
+          const effective = nextMin > end ? (end.getTime() - cursor.getTime()) / 3600000 : 1 / 60;
+          horasNoturnas += effective;
+        }
+        cursor.setTime(cursor.getTime() + 60000);
+      }
+
+      const salBase = Number(salario_base);
+      const horaNormal = salBase / 220;
+      const valorSobreaviso = horaNormal / 3;
+      const periculosidade = salBase * 0.30;
+
+      const { data: existingMonth } = await supabaseAdmin
+        .from("jornada_calculos")
+        .select("horas_ativo")
+        .eq("employee_id", employee_id)
+        .eq("mes_referencia", mes_referencia);
+      const horasAcumuladas = (existingMonth || []).reduce((sum: number, r: any) => sum + Number(r.horas_ativo), 0);
+      const horasExtras = Math.max(0, (horasAcumuladas + horasAtivo) - 220);
+
+      const valorAtivo = horasAtivo * horaNormal;
+      const valorSobreavisoTotal = horasSobreaviso * valorSobreaviso;
+      const adicionalNoturno = horasNoturnas * horaNormal * 0.20;
+      const valorHoraExtra = horasExtras * (horaNormal * 1.5);
+      const totalBruto = valorAtivo + valorSobreavisoTotal + adicionalNoturno + valorHoraExtra + periculosidade;
+
+      const record = {
+        employee_id,
+        service_order_id: service_order_id || null,
+        inicio_missao: start.toISOString(),
+        fim_missao: end.toISOString(),
+        horas_ativo: horasAtivo.toFixed(2),
+        horas_sobreaviso: horasSobreaviso.toFixed(2),
+        horas_noturnas: horasNoturnas.toFixed(2),
+        horas_extras: horasExtras.toFixed(2),
+        valor_hora_normal: horaNormal.toFixed(2),
+        valor_sobreaviso: valorSobreavisoTotal.toFixed(2),
+        valor_noturno: adicionalNoturno.toFixed(2),
+        valor_extra: valorHoraExtra.toFixed(2),
+        total_bruto: totalBruto.toFixed(2),
+        mes_referencia,
+        created_by: req.user?.name || "diretoria",
+      };
+
+      const { data, error } = await supabaseAdmin.from("jornada_calculos").insert(record).select().single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.status(201).json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/jornada-calculos/:id", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const { error } = await supabaseAdmin.from("jornada_calculos").delete().eq("id", req.params.id);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   }
   

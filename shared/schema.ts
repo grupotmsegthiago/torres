@@ -917,3 +917,27 @@ export const invoices = pgTable("invoices", {
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
+
+export const jornadaCalculos = pgTable("jornada_calculos", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  serviceOrderId: integer("service_order_id"),
+  inicioMissao: timestamp("inicio_missao").notNull(),
+  fimMissao: timestamp("fim_missao").notNull(),
+  horasAtivo: decimal("horas_ativo", { precision: 8, scale: 2 }).notNull(),
+  horasSobreaviso: decimal("horas_sobreaviso", { precision: 8, scale: 2 }).notNull(),
+  horasNoturnas: decimal("horas_noturnas", { precision: 8, scale: 2 }).notNull(),
+  horasExtras: decimal("horas_extras", { precision: 8, scale: 2 }).notNull(),
+  valorHoraNormal: decimal("valor_hora_normal", { precision: 10, scale: 2 }).notNull(),
+  valorSobreaviso: decimal("valor_sobreaviso", { precision: 10, scale: 2 }).notNull(),
+  valorNoturno: decimal("valor_noturno", { precision: 10, scale: 2 }).notNull(),
+  valorExtra: decimal("valor_extra", { precision: 10, scale: 2 }).notNull(),
+  totalBruto: decimal("total_bruto", { precision: 12, scale: 2 }).notNull(),
+  mesReferencia: text("mes_referencia").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"),
+});
+
+export const insertJornadaCalculoSchema = createInsertSchema(jornadaCalculos).omit({ id: true, createdAt: true });
+export type InsertJornadaCalculo = z.infer<typeof insertJornadaCalculoSchema>;
+export type JornadaCalculo = typeof jornadaCalculos.$inferSelect;
