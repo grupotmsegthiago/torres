@@ -377,10 +377,19 @@ function MissionCostsSection({ orderId }: { orderId: number }) {
             })}
           </tbody>
           <tfoot>
-            <tr className="bg-neutral-50 border-t border-neutral-200">
-              <td colSpan={2} className="px-3.5 py-2.5 text-sm font-bold text-neutral-700 uppercase">Saldo</td>
-              <td className="px-3.5 py-2.5 text-sm font-bold text-neutral-500 uppercase">Receitas - Despesas</td>
-              <td className={`px-3.5 py-2.5 text-right font-mono font-bold text-sm ${totalRevenue - totalExpenses >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+            <tr className="border-t border-neutral-200">
+              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Receitas</td>
+              <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-emerald-700">+R$ {totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colSpan={3} className="px-3.5 py-2 text-xs font-bold text-neutral-500 uppercase">Total Despesas</td>
+              <td className="px-3.5 py-2 text-right font-mono font-bold text-sm text-red-700">-R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+              <td></td>
+            </tr>
+            <tr className="bg-neutral-50 border-t border-neutral-300">
+              <td colSpan={3} className="px-3.5 py-2.5 text-sm font-black text-neutral-700 uppercase">Saldo Líquido</td>
+              <td className={`px-3.5 py-2.5 text-right font-mono font-black text-sm ${totalRevenue - totalExpenses >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 R$ {(totalRevenue - totalExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </td>
               <td></td>
