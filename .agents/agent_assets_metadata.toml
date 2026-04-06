@@ -24,3 +24,9 @@ id = "JW72bFXV8NoC1EJuL2l3x"
 uri = "file://lovable_backup_completo.tar.gz"
 type = "unspecified"
 title = "Backup Completo Torres - Para Lovable"
+
+[[outputs]]
+id = "5bZsRtctqKmdXOI8-PwiJ"
+uri = "file://SYSTEM_OVERVIEW.md"
+type = "text"
+title = "SYSTEM_OVERVIEW.md — Documentação Completa do Sistema"
