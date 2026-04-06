@@ -380,7 +380,7 @@ export default function LoginPage() {
                 <UserPlus className="w-6 h-6 text-white/60" />
               </div>
             ) : (
-              <img src="/favicon.jpg" alt="Torres Vigilância Patrimonial" className="w-24 h-24 object-contain rounded-lg" data-testid="img-login-logo" />
+              <img src="/logo-torres-dark.jpeg" alt="Torres Vigilância Patrimonial" className="w-28 h-28 object-contain rounded-xl" data-testid="img-login-logo" />
             )}
           </div>
           <h1 className="text-xl font-bold text-white" data-testid="text-login-title">
