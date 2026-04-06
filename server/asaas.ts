@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
+import { logSystemAudit } from "./audit";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
@@ -500,7 +501,12 @@ export function registerAsaasRoutes(app: Express) {
         console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
       }
 
-      console.log(`[billing] Fatura gerada: ${clientName} — ${billings.length} OS — ${fmt(totalValue)} — Invoice #${invoice.id}`);
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "GERAR_FATURA", targetId: String(invoice.id), targetType: "invoice",
+        details: `Fatura consolidada para ${clientName}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}. IDs: ${billingIds.join(", ")}. Asaas: ${asaasPaymentId || "não enviado"}`,
+        ipAddress: (req as any).ip,
+      });
 
       res.json({
         invoice,

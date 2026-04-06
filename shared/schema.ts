@@ -695,6 +695,23 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: tru
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 
+export const systemAuditLogs = pgTable("system_audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id"),
+  userName: text("user_name"),
+  userRole: text("user_role"),
+  action: text("action").notNull(),
+  targetId: text("target_id"),
+  targetType: text("target_type"),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertSystemAuditLogSchema = createInsertSchema(systemAuditLogs).omit({ id: true, createdAt: true });
+export type InsertSystemAuditLog = z.infer<typeof insertSystemAuditLogSchema>;
+export type SystemAuditLog = typeof systemAuditLogs.$inferSelect;
+
 export const companyDocuments = pgTable("company_documents", {
   id: serial("id").primaryKey(),
   docType: text("doc_type").notNull(),

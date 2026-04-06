@@ -337,6 +337,21 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS longitude REAL`).catch(() => {});
 
     await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS system_audit_logs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        user_name TEXT,
+        user_role TEXT,
+        action TEXT NOT NULL,
+        target_id TEXT,
+        target_type TEXT,
+        details TEXT,
+        ip_address TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS token_failure_logs (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER,

@@ -16,7 +16,7 @@ import {
   employees, serviceOrders,
   employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
   employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
-  auditLogs, users, loginSelfies, employeeSalaryDiscounts,
+  auditLogs, users, loginSelfies, employeeSalaryDiscounts, systemAuditLogs,
   companyDocuments, homologationLogs, missionUpdates, telemetryEvents,
   referencePoints, insertReferencePointSchema,
   missionPositions, missionPhotos,
@@ -28,6 +28,7 @@ import * as truckscontrol from "./truckscontrol";
 import { generateContractPDF } from "./contract-pdf";
 import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
+import { logSystemAudit } from "./audit";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
 import OpenAI from "openai";
 
@@ -10511,11 +10512,26 @@ Regras:
             created_by: user.name,
           });
         }
+        if (data.service_order_id) {
+          await supabaseAdmin.from("service_orders").update({ status: "concluida" }).eq("id", data.service_order_id);
+        }
+        await logSystemAudit({
+          userId: user.id, userName: user.name, userRole: user.role,
+          action: "APROVAR_MISSAO", targetId: req.params.id, targetType: "escort_billing",
+          details: `OS #${data.service_order_id} aprovada. Boletim ${data.boletim_numero}. Valor: R$${totalFat.toFixed(2)}. Cliente: ${data.client_name}`,
+          ipAddress: req.ip,
+        });
       }
 
       if (acao === "REJEITADA") {
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(billing.service_order_id));
+        await logSystemAudit({
+          userId: user.id, userName: user.name, userRole: user.role,
+          action: "REJEITAR_MISSAO", targetId: req.params.id, targetType: "escort_billing",
+          details: `OS #${billing.service_order_id} rejeitada. Motivo: ${motivo_rejeicao || "N/A"}. Cliente: ${billing.client_name}`,
+          ipAddress: req.ip,
+        });
       }
 
       res.json(data);
@@ -10539,7 +10555,15 @@ Regras:
 
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
-      console.log(`[Billing] OS reaberta por ${user.name}: billing ${req.params.id}`);
+      if (billing.service_order_id) {
+        await supabaseAdmin.from("service_orders").update({ status: "em_andamento" }).eq("id", billing.service_order_id);
+      }
+      await logSystemAudit({
+        userId: user.id, userName: user.name, userRole: user.role,
+        action: "REABRIR_MISSAO", targetId: req.params.id, targetType: "escort_billing",
+        details: `OS #${billing.service_order_id} reaberta. Cliente: ${billing.client_name}`,
+        ipAddress: req.ip,
+      });
 
       res.json(data);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -10548,6 +10572,19 @@ Regras:
   app.get("/api/escort/billings/pendentes", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("escort_billings").select("*").eq("status", "A_VERIFICAR").order("created_at", { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/system-audit-logs", requireAdminRole, async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const { data, error } = await supabaseAdmin
+        .from("system_audit_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit);
       if (error) throw error;
       res.json(data || []);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
