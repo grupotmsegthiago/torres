@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { employees, employeeTimesheets, employeeOccurrences, vehicles, vehicleFueling, referencePoints, insertReferencePointSchema } from "@shared/schema";
   import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
-  import { haversineDist } from "./_helpers";
+  import { haversineDist, createAutoTransaction } from "./_helpers";
 
   const HQ_FALLBACK_LAT = -23.4822;
   const HQ_FALLBACK_LNG = -46.7232;
