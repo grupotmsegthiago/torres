@@ -421,7 +421,7 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
               </div>
               <div className="pb-2 flex-1 min-w-0">
                 <p className="text-[11px] font-bold text-neutral-800 leading-tight">{MOBILE_STEP_LABELS[log.step] || log.step}</p>
-                <p className="text-[10px] text-neutral-400 font-mono">{dateStr} {timeStr} — {titleCase(log.agentName)}</p>
+                <p className="text-[10px] text-neutral-500 font-mono">{dateStr} {timeStr} — {titleCase(log.agentName)}</p>
               </div>
             </div>
           );
