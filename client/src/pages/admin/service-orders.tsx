@@ -1569,8 +1569,6 @@ export default function ServiceOrdersPage() {
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
   const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
-  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
-  const [pdfViewerTitle, setPdfViewerTitle] = useState("");
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -2086,11 +2084,11 @@ export default function ServiceOrdersPage() {
                           try {
                             const res = await authFetch(`/api/service-orders/${o.id}/pdf`);
                             if (!res.ok) throw new Error("Falha ao gerar PDF");
-                            const rawBlob = await res.blob();
-                            const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
-                            const url = URL.createObjectURL(pdfBlob);
-                            setPdfViewerUrl(url);
-                            setPdfViewerTitle(`OS ${o.osNumber}`);
+                            const arrayBuffer = await res.arrayBuffer();
+                            const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+                            const url = URL.createObjectURL(blob);
+                            window.open(url, "_blank");
+                            setTimeout(() => URL.revokeObjectURL(url), 10000);
                           } catch {
                             toast({ title: "Erro ao visualizar PDF", variant: "destructive" });
                           }
@@ -2100,11 +2098,11 @@ export default function ServiceOrdersPage() {
                             try {
                               const res = await authFetch(`/api/service-orders/${o.id}/relatorio-missao`);
                               if (!res.ok) throw new Error("Falha ao gerar relatório");
-                              const rawBlob = await res.blob();
-                              const pdfBlob = new Blob([rawBlob], { type: "application/pdf" });
-                              const url = URL.createObjectURL(pdfBlob);
-                              setPdfViewerUrl(url);
-                              setPdfViewerTitle(`Relatório Missão ${o.osNumber}`);
+                              const arrayBuffer = await res.arrayBuffer();
+                              const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, "_blank");
+                              setTimeout(() => URL.revokeObjectURL(url), 10000);
                             } catch {
                               toast({ title: "Erro ao gerar relatório", variant: "destructive" });
                             }
@@ -2168,53 +2166,6 @@ export default function ServiceOrdersPage() {
         })()}
       </Card>
 
-      {pdfViewerUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="overlay-pdf-viewer">
-          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl w-[95vw] max-w-5xl h-[92vh] flex flex-col overflow-hidden border border-neutral-200" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 shrink-0">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-blue-600" />
-                <h3 className="font-bold text-sm text-neutral-900 dark:text-white" data-testid="text-pdf-viewer-title">{pdfViewerTitle}</h3>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
-                  const a = document.createElement("a");
-                  a.href = pdfViewerUrl;
-                  a.download = `${pdfViewerTitle.replace(/\s+/g, "_")}.pdf`;
-                  a.click();
-                }} data-testid="button-download-from-viewer">
-                  <Download className="w-3.5 h-3.5 mr-1" /> Baixar
-                </Button>
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
-                  window.open(pdfViewerUrl, "_blank");
-                }} data-testid="button-open-new-tab">
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Nova Aba
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { URL.revokeObjectURL(pdfViewerUrl); setPdfViewerUrl(null); }} data-testid="button-close-pdf-viewer">
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-hidden bg-neutral-100" id="pdf-canvas-container" data-testid="iframe-pdf-viewer">
-              <object
-                data={pdfViewerUrl}
-                type="application/pdf"
-                width="100%"
-                height="100%"
-                style={{ border: 'none', borderRadius: '0 0 8px 8px' }}
-              >
-                <iframe
-                  src={pdfViewerUrl}
-                  width="100%"
-                  height="100%"
-                  style={{ border: 'none' }}
-                  title="OS PDF"
-                />
-              </object>
-            </div>
-          </div>
-        </div>
-      )}
     </AdminLayout>
   );
 }
