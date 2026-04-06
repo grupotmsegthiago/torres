@@ -313,6 +313,16 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS salario_base REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos REAL`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS data_pagamento TEXT`).catch(() => {});
+    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS financial_transaction_id INTEGER`).catch(() => {});
+
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_user_agent TEXT`).catch(() => {});

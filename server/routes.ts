@@ -8280,16 +8280,247 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     res.json(rows);
   });
 
+  app.get("/api/payslips", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const month = req.query.month ? Number(req.query.month) : undefined;
+      const year = req.query.year ? Number(req.query.year) : undefined;
+      let conditions: any[] = [];
+      if (month) conditions.push(eq(employeePayslips.month, month));
+      if (year) conditions.push(eq(employeePayslips.year, year));
+      const rows = conditions.length > 0
+        ? await db.select().from(employeePayslips).where(and(...conditions)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month), desc(employeePayslips.id))
+        : await db.select().from(employeePayslips).orderBy(desc(employeePayslips.year), desc(employeePayslips.month), desc(employeePayslips.id));
+      const allEmps = await storage.getEmployees();
+      const enriched = rows.map((r: any) => {
+        const emp = allEmps.find((e: any) => e.id === r.employeeId);
+        return { ...r, employeeName: emp?.name || "—", employeeRole: emp?.role || "" };
+      });
+      res.json(enriched);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/payslips/suggestion", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const employeeId = Number(req.query.employeeId);
+      const month = Number(req.query.month);
+      const year = Number(req.query.year);
+      if (!employeeId || !month || !year) return res.status(400).json({ message: "employeeId, month, year required" });
+
+      const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const CCT = { salarioBase: 2432.50, periculosidadePct: 30 };
+      const salarioBase = CCT.salarioBase;
+      const periculosidade = +(salarioBase * (CCT.periculosidadePct / 100)).toFixed(2);
+
+      const { data: timesheets } = await supabaseAdmin.from("employee_timesheets")
+        .select("*").eq("employee_id", employeeId);
+      const monthTimesheets = (timesheets || []).filter((t: any) => {
+        const d = new Date(t.date);
+        return d.getMonth() + 1 === month && d.getFullYear() === year;
+      });
+      const totalOvertime = monthTimesheets.reduce((s: number, t: any) => s + (Number(t.overtime) || 0), 0);
+      const horasExtrasValor = +(totalOvertime * (salarioBase / 220) * 1.5).toFixed(2);
+
+      let adicionalNoturno = 0;
+      for (const ts of monthTimesheets) {
+        if (!ts.clock_in || !ts.clock_out) continue;
+        const cin = ts.clock_in.split(":").map(Number);
+        const cout = ts.clock_out.split(":").map(Number);
+        const cinMinutes = cin[0] * 60 + (cin[1] || 0);
+        const coutMinutes = cout[0] * 60 + (cout[1] || 0);
+        let nightMinutes = 0;
+        const nightStart = 22 * 60, nightEnd = 5 * 60;
+        if (coutMinutes < cinMinutes) {
+          if (cinMinutes >= nightStart) nightMinutes += (24 * 60 - cinMinutes);
+          nightMinutes += Math.min(coutMinutes, nightEnd);
+        } else {
+          if (cinMinutes < nightEnd) nightMinutes += Math.min(coutMinutes, nightEnd) - cinMinutes;
+          if (coutMinutes > nightStart) nightMinutes += coutMinutes - Math.max(cinMinutes, nightStart);
+        }
+        adicionalNoturno += (nightMinutes / 60) * (salarioBase / 220) * 0.2;
+      }
+      adicionalNoturno = +adicionalNoturno.toFixed(2);
+
+      const discounts = await db.select().from(employeeSalaryDiscounts)
+        .where(and(eq(employeeSalaryDiscounts.employeeId, employeeId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
+      const totalDescontos = +discounts.reduce((s, d) => s + Number(d.amount), 0).toFixed(2);
+
+      const { data: missions } = await supabaseAdmin.from("service_orders")
+        .select("id, scheduled_date, completed_date, employee1_id, employee2_id")
+        .or(`employee1_id.eq.${employeeId},employee2_id.eq.${employeeId}`);
+      const monthMissions = (missions || []).filter((m: any) => {
+        const d = new Date(m.scheduled_date || m.completed_date);
+        return d.getMonth() + 1 === month && d.getFullYear() === year;
+      });
+
+      res.json({
+        salarioBase,
+        periculosidade,
+        horasExtras: horasExtrasValor,
+        horasExtrasHoras: +totalOvertime.toFixed(1),
+        adicionalNoturno,
+        descontos: totalDescontos,
+        discountsDetail: discounts,
+        diasTrabalhados: monthTimesheets.length,
+        missoes: monthMissions.length,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/employees/:id/payslips", requireAuth, requireAdmin, async (req, res) => {
-    const employeeId = Number(req.params.id);
-    const data = { ...req.body, employeeId };
-    const [row] = await db.insert(employeePayslips).values(data).returning();
-    res.status(201).json(row);
+    try {
+      const employeeId = Number(req.params.id);
+      const body = req.body;
+      const salarioBase = Number(body.salarioBase) || 0;
+      const horasExtras = Number(body.horasExtras) || 0;
+      const adicionalNoturno = Number(body.adicionalNoturno) || 0;
+      const periculosidade = Number(body.periculosidade) || 0;
+      const beneficios = Number(body.beneficios) || 0;
+      const descontos = Number(body.descontos) || 0;
+      const grossSalary = +(salarioBase + horasExtras + adicionalNoturno + periculosidade + beneficios).toFixed(2);
+      const netSalary = +(grossSalary - descontos).toFixed(2);
+
+      const data = {
+        employeeId,
+        month: Number(body.month),
+        year: Number(body.year),
+        salarioBase, horasExtras, adicionalNoturno, periculosidade, beneficios, descontos,
+        grossSalary, netSalary,
+        deductions: descontos, benefits: beneficios,
+        status: body.status || "pendente",
+        dataPagamento: body.dataPagamento || null,
+        documentUrl: body.documentUrl || null,
+        notes: body.notes || null,
+      };
+
+      const [row] = await db.insert(employeePayslips).values(data).returning();
+
+      if (data.status === "pago") {
+        const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
+        const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+        const mesLabel = MESES[data.month - 1];
+        const originId = `holerite-${row.id}`;
+        const tx = await createAutoTransaction({
+          description: `HOLERITE - ${emp?.name?.toUpperCase()} - ${mesLabel.toUpperCase()}/${data.year}`,
+          amount: Math.max(0, netSalary),
+          type: "EXPENSE",
+          due_date: data.dataPagamento || `${data.year}-${String(data.month).padStart(2, "0")}-05`,
+          origin_type: "holerite",
+          origin_id: originId,
+          category_name: "Recursos Humanos",
+          entity_name: emp?.name || "",
+          created_by: req.user!.name || req.user!.username || "SISTEMA",
+        });
+        if (tx) {
+          await db.update(employeePayslips).set({ financialTransactionId: tx.id }).where(eq(employeePayslips.id, row.id));
+          row.financialTransactionId = tx.id;
+        }
+      }
+
+      await logSystemAudit({
+        userId: req.user!.id, userName: req.user!.name || req.user!.username,
+        userRole: req.user!.role, action: "CRIAR_HOLERITE",
+        details: `Holerite criado para funcionário #${employeeId} - ${body.month}/${body.year} - Líquido: R$ ${netSalary}`,
+      });
+
+      res.status(201).json(row);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/payslips/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const [existing] = await db.select().from(employeePayslips).where(eq(employeePayslips.id, id));
+      if (!existing) return res.status(404).json({ message: "Holerite não encontrado" });
+
+      const body = req.body;
+      const updates: any = {};
+      if (body.status !== undefined) updates.status = body.status;
+      if (body.dataPagamento !== undefined) updates.dataPagamento = body.dataPagamento;
+      if (body.documentUrl !== undefined) updates.documentUrl = body.documentUrl;
+      if (body.notes !== undefined) updates.notes = body.notes;
+
+      if (body.status === "pago" && existing.status !== "pago") {
+        const emp = (await storage.getEmployees()).find((e: any) => e.id === existing.employeeId);
+        const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+        const mesLabel = MESES[(existing.month || 1) - 1];
+        const netSalary = Number(existing.netSalary) || 0;
+        const originId = `holerite-${id}`;
+
+        const { data: existingTx } = await supabaseAdmin.from("financial_transactions")
+          .select("id").eq("origin_type", "holerite").eq("origin_id", originId).limit(1);
+        if (!existingTx?.length) {
+          const tx = await createAutoTransaction({
+            description: `HOLERITE - ${emp?.name?.toUpperCase()} - ${mesLabel.toUpperCase()}/${existing.year}`,
+            amount: Math.max(0, netSalary),
+            type: "EXPENSE",
+            due_date: body.dataPagamento || `${existing.year}-${String(existing.month).padStart(2, "0")}-05`,
+            origin_type: "holerite",
+            origin_id: originId,
+            category_name: "Recursos Humanos",
+            entity_name: emp?.name || "",
+            created_by: req.user!.name || req.user!.username || "SISTEMA",
+          });
+          if (tx) updates.financialTransactionId = tx.id;
+        }
+
+        if (!updates.dataPagamento) {
+          const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+          updates.dataPagamento = brDate;
+        }
+      }
+
+      const [row] = await db.update(employeePayslips).set(updates).where(eq(employeePayslips.id, id)).returning();
+
+      await logSystemAudit({
+        userId: req.user!.id, userName: req.user!.name || req.user!.username,
+        userRole: req.user!.role, action: "ATUALIZAR_HOLERITE",
+        details: `Holerite #${id} atualizado: ${JSON.stringify(updates)}`,
+      });
+
+      res.json(row);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.delete("/api/payslips/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await db.delete(employeePayslips).where(eq(employeePayslips.id, Number(req.params.id)));
+    const id = Number(req.params.id);
+    const [existing] = await db.select().from(employeePayslips).where(eq(employeePayslips.id, id));
+    if (existing?.financialTransactionId) {
+      await supabaseAdmin.from("financial_transactions").update({ status: "CANCELLED" }).eq("id", existing.financialTransactionId);
+    }
+    await db.delete(employeePayslips).where(eq(employeePayslips.id, id));
+    await logSystemAudit({
+      userId: req.user!.id, userName: req.user!.name || req.user!.username,
+      userRole: req.user!.role, action: "EXCLUIR_HOLERITE",
+      details: `Holerite #${id} excluído`,
+    });
     res.json({ ok: true });
+  });
+
+  app.get("/api/payslips/employee-report/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.id);
+      const year = Number(req.query.year) || new Date().getFullYear();
+      const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const rows = await db.select().from(employeePayslips)
+        .where(and(eq(employeePayslips.employeeId, employeeId), eq(employeePayslips.year, year)))
+        .orderBy(employeePayslips.month);
+
+      const totalBruto = rows.reduce((s, r) => s + (Number(r.grossSalary) || 0), 0);
+      const totalLiquido = rows.reduce((s, r) => s + (Number(r.netSalary) || 0), 0);
+      const totalDescontos = rows.reduce((s, r) => s + (Number(r.descontos) || 0), 0);
+      const totalHorasExtras = rows.reduce((s, r) => s + (Number(r.horasExtras) || 0), 0);
+
+      res.json({
+        employee: { id: emp.id, name: emp.name, role: emp.role },
+        year,
+        payslips: rows,
+        totals: { bruto: +totalBruto.toFixed(2), liquido: +totalLiquido.toFixed(2), descontos: +totalDescontos.toFixed(2), horasExtras: +totalHorasExtras.toFixed(2) },
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // ====================== TESTAR TODAS APIs ======================

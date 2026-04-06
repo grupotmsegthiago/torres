@@ -29,6 +29,7 @@ const menuItems: MenuItem[] = [
     children: [
       { path: "/admin/employees", label: "Cadastro", icon: Users },
       { path: "/admin/timesheets", label: "Folha de Ponto", icon: Clock },
+      { path: "/admin/holerites", label: "Holerites", icon: Receipt, adminOnly: true },
       { path: "/admin/ponto-operacional", label: "Ponto Operacional", icon: Play },
       { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
     ],
@@ -125,7 +126,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </button>
                   {isOpen && (
                     <div className="ml-4 space-y-1 mt-1">
-                      {item.children.map((child) => (
+                      {item.children.filter(child => !child.adminOnly || user?.role === "admin" || user?.role === "diretoria").map((child) => (
                         <Link key={child.path} href={child.path!}>
                           <span
                             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm cursor-pointer transition-colors ${
