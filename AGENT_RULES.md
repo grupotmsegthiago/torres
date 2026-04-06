@@ -43,5 +43,9 @@ REGRAS GERAIS:
 - Realtime: 6 canais com event: "*". No reconnect → queryClient.invalidateQueries()
 - Schema: shared/schema.ts (Drizzle + Zod). Supabase usa snake_case.
 - Auth: Supabase Auth JWT. Roles: admin, vigilante, gerente, diretoria.
-- server/routes.ts tem 6000+ linhas. Ao editar, vá direto na linha correta. Não abra o arquivo inteiro.
+- server/routes.ts (~1400 linhas) contém rotas core (auth, users, weapons, docs, settings, system).
+- server/routes/ contém 11 módulos + _helpers.ts com funções compartilhadas.
+- Módulos: clients, employees, vehicles, service-orders, fleet, consultas, operational, mission, hr, escort, mobile.
+- _helpers.ts exporta: SMTP helpers, geo functions (haversineDist, decodePolyline, etc.), MISSION_STEPS, STEP_REQUIRED_PHOTOS, toSafeUser, logFinancialAudit, createAutoTransaction, removeAutoTransaction.
+- Ao adicionar rota nova, adicionar no módulo correto em server/routes/.
 - Leia SYSTEM_OVERVIEW.md para arquitetura completa do sistema.
