@@ -23,7 +23,7 @@ import {
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase } from "@/lib/utils";
+import { titleCase, formatDateBRT } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
@@ -1576,7 +1576,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _movTime = _ignT || "";
         const _agent1 = v.activeOs?.employee1?.name || "—";
         const _agent2 = v.activeOs?.employee2?.name || "—";
-        const _dateStr = v.tracker.lastPositionTime ? new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR") : "—";
+        const _dateStr = v.tracker.lastPositionTime ? formatDateBRT(v.tracker.lastPositionTime) : "—";
         const _timeStr = v.tracker.lastPositionTime ? new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 
         const _plateFormatted = v.plate.replace(/^(.{3})(.+)$/, "$1-$2");
@@ -2511,7 +2511,7 @@ function VehicleInfoTooltip({ v }: { v: TrackedVehicle }) {
         {v.renavam && <p><span className="text-neutral-500">Renavam:</span> <span className="font-mono">{v.renavam}</span></p>}
         {(v.initialKm != null && v.initialKm > 0) && <p><span className="text-neutral-500">KM Inicial:</span> {v.initialKm.toLocaleString("pt-BR")}</p>}
         {v.km != null && v.km > 0 && <p><span className="text-neutral-500">KM Atual:</span> <span className="font-bold">{v.km.toLocaleString("pt-BR")}</span></p>}
-        {v.lastKmUpdate && <p><span className="text-neutral-500">Atualizado:</span> {new Date(v.lastKmUpdate).toLocaleDateString("pt-BR")}</p>}
+        {v.lastKmUpdate && <p><span className="text-neutral-500">Atualizado:</span> {formatDateBRT(v.lastKmUpdate)}</p>}
         <hr className="border-neutral-200 my-1" />
         <p><span className="text-neutral-500">Rastreador:</span> {v.trackerType === "truckscontrol" ? "TrucksControl" : v.trackerType === "custom" ? "API Custom" : v.trackerType === "none" ? "Nenhum" : v.trackerType || "Nenhum"}</p>
         {v.trackerId && <p><span className="text-neutral-500">ID:</span> <span className="font-mono">{v.trackerId}</span></p>}
@@ -4669,7 +4669,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                 {data.os.scheduledDate && (
                   <div className="flex justify-between text-xs">
                     <span className="text-neutral-500">Data</span>
-                    <span className="font-medium text-neutral-700">{new Date(data.os.scheduledDate).toLocaleDateString("pt-BR")}</span>
+                    <span className="font-medium text-neutral-700">{formatDateBRT(data.os.scheduledDate)}</span>
                   </div>
                 )}
                 {lc && (

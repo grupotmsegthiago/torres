@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { formatBRT } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { authFetch, getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -88,7 +89,7 @@ export default function SimuladorMissaoPage() {
   const veh = selectedOrder?.vehicleId ? vehicles.find(v => v.id === selectedOrder.vehicleId) : null;
 
   const addLog = (msg: string, type: "info" | "success" | "error" = "info") => {
-    const time = new Date().toLocaleTimeString("pt-BR");
+    const time = new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" });
     setLogs(prev => [{ time, msg, type }, ...prev].slice(0, 100));
   };
 

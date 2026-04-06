@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { parseBRL, maskBRL } from "@/lib/utils";
+import { parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -778,7 +778,7 @@ export default function FuelingPage() {
                                 const authUser = (orig as any).createdByUserId ? allUsers.find((u: any) => u.id === (orig as any).createdByUserId) : null;
                                 return (
                                   <tr key={h.id} className="border-b border-neutral-50 hover:bg-neutral-50">
-                                    <td className="px-4 py-2.5 text-neutral-900">{new Date(h.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
+                                    <td className="px-4 py-2.5 text-neutral-900">{formatDateBRT(h.date + "T12:00:00")}</td>
                                     <td className="px-4 py-2.5 text-neutral-900 font-medium">{h.km.toLocaleString("pt-BR")}</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{h.liters.toFixed(2)}L</td>
                                     <td className="px-4 py-2.5 text-neutral-600">{orig.totalCost ? `R$ ${Number(orig.totalCost).toFixed(2)}` : "-"}</td>
@@ -857,7 +857,7 @@ export default function FuelingPage() {
                     const isFirst = fIdx === 0;
                     return (
                       <tr key={f.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-fueling-${f.id}`}>
-                        <td className="px-4 py-3 text-neutral-900">{new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
+                        <td className="px-4 py-3 text-neutral-900">{formatDateBRT(f.date + "T12:00:00")}</td>
                         <td className="px-4 py-3 font-medium text-neutral-900">{v?.plate || "-"}</td>
                         <td className="px-4 py-3 text-neutral-900 font-medium">{f.km.toLocaleString("pt-BR")}</td>
                         <td className="px-4 py-3 text-neutral-600">{Number(f.liters).toFixed(2)}L</td>

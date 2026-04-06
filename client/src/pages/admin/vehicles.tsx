@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { formatBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -519,7 +520,7 @@ function VehicleAssignmentModal({ vehicle, open, onClose }: { vehicle: Vehicle; 
                       {h.notes && <span className="text-xs text-neutral-400 ml-1">- {h.notes}</span>}
                     </div>
                     <span className="text-xs text-neutral-500 shrink-0">
-                      {h.createdAt ? new Date(h.createdAt).toLocaleDateString("pt-BR") + " " + new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      {h.createdAt ? formatBRT(h.createdAt) : ""}
                     </span>
                   </div>
                 ))}

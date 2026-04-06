@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
+import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -972,7 +972,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <InfoCell label="CNH" className="border-r border-neutral-100">{emp.cnhNumber || "—"}</InfoCell>
               <InfoCell label="Val. CNH" className="border-r border-neutral-100">
                 <span className="flex items-center gap-1.5">
-                  {emp.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "—"}
+                  {emp.cnhExpiry ? formatDateBRT(emp.cnhExpiry) : "—"}
                   {isDocExpiringSoon(emp.cnhExpiry) === "expired" && <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid={`badge-cnh-expired-${label}`}>Vencida</Badge>}
                   {isDocExpiringSoon(emp.cnhExpiry) === "warning" && <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white text-[10px] px-1.5 py-0" data-testid={`badge-cnh-warning-${label}`}>Vence em breve</Badge>}
                 </span>
@@ -983,13 +983,13 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <InfoCell label="CNV" className="border-r border-neutral-100">{emp.cnvNumber || "—"}</InfoCell>
               <InfoCell label="Val. CNV" className="border-r border-neutral-100">
                 <span className="flex items-center gap-1.5">
-                  {emp.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "—"}
+                  {emp.cnvExpiry ? formatDateBRT(emp.cnvExpiry) : "—"}
                   {isDocExpiringSoon(emp.cnvExpiry) === "expired" && <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid={`badge-cnv-expired-${label}`}>Vencida</Badge>}
                   {isDocExpiringSoon(emp.cnvExpiry) === "warning" && <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white text-[10px] px-1.5 py-0" data-testid={`badge-cnv-warning-${label}`}>Vence em breve</Badge>}
                 </span>
               </InfoCell>
               <InfoCell label="Colete" className="border-r border-neutral-100">{(emp as any).vestNumber || "—"}</InfoCell>
-              <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${new Date((emp as any).vestExpiry).toLocaleDateString("pt-BR")}` : ""}</InfoCell>
+              <InfoCell label="Proteção / Val.">{(emp as any).vestProtection || "—"}{(emp as any).vestExpiry ? ` · ${formatDateBRT((emp as any).vestExpiry)}` : ""}</InfoCell>
             </div>
           </div>
         </div>

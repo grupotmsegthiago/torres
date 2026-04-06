@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase, parseBRL } from "@/lib/utils";
+import { titleCase, parseBRL, formatDateBRT } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -386,7 +386,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
           <tr><td>Matrícula</td><td>${esc(employee.matricula)}</td></tr>
           <tr><td>Cargo</td><td>${esc(employee.role)}</td></tr>
           <tr><td>Categoria</td><td>${employee.category ? esc(employee.category) : "Mensalista"}</td></tr>
-          <tr><td>Data de Admissão</td><td>${employee.hireDate ? esc(employee.hireDate) : new Date().toLocaleDateString("pt-BR")}</td></tr>
+          <tr><td>Data de Admissão</td><td>${employee.hireDate ? esc(employee.hireDate) : formatDateBRT(new Date())}</td></tr>
         </table>
         <p>Doravante denominado(a) <span class="field">EMPREGADO(A)</span>, têm entre si, justo e contratado, o presente contrato de trabalho, que se regerá pelas cláusulas e condições a seguir estipuladas:</p>
       </div>
@@ -511,7 +511,7 @@ function DocumentsModal({ employee, open, onClose }: { employee: Employee; open:
                               "bg-green-100 text-green-700"
                             }`}>
                               {status === "expired" ? "VENCIDO " : status === "warning" ? "VENCE EM BREVE " : "Val. "}
-                              {new Date(d.expiryDate).toLocaleDateString("pt-BR")}
+                              {formatDateBRT(d.expiryDate)}
                             </span>
                           )}
                         </div>
@@ -1341,7 +1341,7 @@ function HRDialog({ employee, open, onClose }: { employee: Employee; open: boole
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "payslips"] }); toast({ title: "Holerite removido" }); },
   });
 
-  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "-";
+  const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "-";
   const fmtCurrency = (v: number | null) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-";
 
   return (
@@ -2105,7 +2105,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => {
-                      const dateStr = discountForm.occurrenceDate ? ` em ${new Date(discountForm.occurrenceDate + "T12:00:00").toLocaleDateString("pt-BR")}` : "";
+                      const dateStr = discountForm.occurrenceDate ? ` em ${formatDateBRT(discountForm.occurrenceDate + "T12:00:00")}` : "";
                       const desc = `${discountForm.numFaltas} falta(s)${dateStr} — Dia + DSR proporcional`;
                       discountForm.description = desc;
                       addDiscountMut.mutate();
@@ -2384,7 +2384,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] }); toast({ title: "Registro removido" }); },
   });
 
-  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "-";
+  const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "-";
   const fmtCurrency = (v: number | null) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-";
   const docExpiryStatus = (dateStr: string | null): "expired" | "warning" | "ok" => {
     if (!dateStr) return "ok";
@@ -2398,7 +2398,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
 
   const generateContract = () => {
     const esc = (s: string | null | undefined) => (s || "N/A").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const contractHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato - ${esc(employee.name)}</title><style>body{font-family:'Times New Roman',serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.8;color:#000}h1{text-align:center;font-size:18px;margin-bottom:30px;text-transform:uppercase}h2{text-align:center;font-size:14px;margin-bottom:20px}.header{text-align:center;margin-bottom:40px;border-bottom:2px solid #000;padding-bottom:20px}.header h3{margin:0}p{text-align:justify;margin:10px 0;font-size:13px}.field{font-weight:bold}.section{margin-top:25px}.signatures{margin-top:60px;display:flex;justify-content:space-between}.sig-block{text-align:center;width:45%}.sig-line{border-top:1px solid #000;padding-top:5px;margin-top:60px;font-size:12px}table{width:100%;border-collapse:collapse;margin:15px 0}td{padding:6px 10px;border:1px solid #ccc;font-size:12px}td:first-child{font-weight:bold;background:#f5f5f5;width:35%}@media print{body{margin:0}}</style></head><body><div class="header"><h3>TORRES VIGILÂNCIA PATRIMONIAL LTDA</h3><p style="font-size:11px;text-align:center;">CNPJ: 36.982.392/0001-89</p></div><h1>CONTRATO DE TRABALHO</h1><h2>CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO INDETERMINADO</h2><div class="section"><p>Pelo presente instrumento particular de contrato individual de trabalho, de um lado <span class="field">TORRES VIGILÂNCIA PATRIMONIAL LTDA</span>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 36.982.392/0001-89, doravante denominada <span class="field">EMPREGADORA</span>, e de outro lado:</p><table><tr><td>Nome Completo</td><td>${esc(employee.name)}</td></tr><tr><td>CPF</td><td>${esc(employee.cpf)}</td></tr><tr><td>RG</td><td>${esc(employee.rg)}</td></tr><tr><td>CNH</td><td>${esc(employee.cnhNumber)}</td></tr><tr><td>Matrícula</td><td>${esc(employee.matricula)}</td></tr><tr><td>Cargo</td><td>${esc(employee.role)}</td></tr><tr><td>Categoria</td><td>${employee.category ? esc(employee.category) : "Mensalista"}</td></tr><tr><td>Data de Admissão</td><td>${employee.hireDate ? esc(employee.hireDate) : new Date().toLocaleDateString("pt-BR")}</td></tr></table></div><div class="signatures"><div class="sig-block"><div class="sig-line">TORRES VIGILÂNCIA PATRIMONIAL LTDA<br/>CNPJ: 36.982.392/0001-89</div></div><div class="sig-block"><div class="sig-line">${esc(employee.name)}<br/>CPF: ${esc(employee.cpf)}</div></div></div></body></html>`;
+    const contractHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato - ${esc(employee.name)}</title><style>body{font-family:'Times New Roman',serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.8;color:#000}h1{text-align:center;font-size:18px;margin-bottom:30px;text-transform:uppercase}h2{text-align:center;font-size:14px;margin-bottom:20px}.header{text-align:center;margin-bottom:40px;border-bottom:2px solid #000;padding-bottom:20px}.header h3{margin:0}p{text-align:justify;margin:10px 0;font-size:13px}.field{font-weight:bold}.section{margin-top:25px}.signatures{margin-top:60px;display:flex;justify-content:space-between}.sig-block{text-align:center;width:45%}.sig-line{border-top:1px solid #000;padding-top:5px;margin-top:60px;font-size:12px}table{width:100%;border-collapse:collapse;margin:15px 0}td{padding:6px 10px;border:1px solid #ccc;font-size:12px}td:first-child{font-weight:bold;background:#f5f5f5;width:35%}@media print{body{margin:0}}</style></head><body><div class="header"><h3>TORRES VIGILÂNCIA PATRIMONIAL LTDA</h3><p style="font-size:11px;text-align:center;">CNPJ: 36.982.392/0001-89</p></div><h1>CONTRATO DE TRABALHO</h1><h2>CONTRATO INDIVIDUAL DE TRABALHO POR PRAZO INDETERMINADO</h2><div class="section"><p>Pelo presente instrumento particular de contrato individual de trabalho, de um lado <span class="field">TORRES VIGILÂNCIA PATRIMONIAL LTDA</span>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 36.982.392/0001-89, doravante denominada <span class="field">EMPREGADORA</span>, e de outro lado:</p><table><tr><td>Nome Completo</td><td>${esc(employee.name)}</td></tr><tr><td>CPF</td><td>${esc(employee.cpf)}</td></tr><tr><td>RG</td><td>${esc(employee.rg)}</td></tr><tr><td>CNH</td><td>${esc(employee.cnhNumber)}</td></tr><tr><td>Matrícula</td><td>${esc(employee.matricula)}</td></tr><tr><td>Cargo</td><td>${esc(employee.role)}</td></tr><tr><td>Categoria</td><td>${employee.category ? esc(employee.category) : "Mensalista"}</td></tr><tr><td>Data de Admissão</td><td>${employee.hireDate ? esc(employee.hireDate) : formatDateBRT(new Date())}</td></tr></table></div><div class="signatures"><div class="sig-block"><div class="sig-line">TORRES VIGILÂNCIA PATRIMONIAL LTDA<br/>CNPJ: 36.982.392/0001-89</div></div><div class="sig-block"><div class="sig-line">${esc(employee.name)}<br/>CPF: ${esc(employee.cpf)}</div></div></div></body></html>`;
     const w = window.open("", "_blank");
     if (w) { w.document.write(contractHtml); w.document.close(); w.print(); }
   };

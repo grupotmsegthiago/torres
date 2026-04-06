@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
+import { formatDateBRT } from "@/lib/utils";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -125,7 +126,7 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 {nfLogs.slice(0, 3).map((l: any) => (
                   <div key={l.id} className="flex items-center justify-between text-xs" data-testid={`row-nf-${l.id}`}>
-                    <span className="text-neutral-600">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("pt-BR") : "-"}</span>
+                    <span className="text-neutral-600">{l.createdAt ? formatDateBRT(l.createdAt) : "-"}</span>
                     <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-xs">{l.responseStatus === 200 ? "Emitida" : "Erro"}</Badge>
                   </div>
                 ))}
@@ -145,7 +146,7 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 {processosLogs.slice(0, 3).map((l: any) => (
                   <div key={l.id} className="flex items-center justify-between text-xs" data-testid={`row-processo-${l.id}`}>
-                    <span className="text-neutral-600">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("pt-BR") : "-"}</span>
+                    <span className="text-neutral-600">{l.createdAt ? formatDateBRT(l.createdAt) : "-"}</span>
                     <Badge variant={l.responseStatus === 200 ? "secondary" : "destructive"} className="text-xs">{l.responseStatus}</Badge>
                   </div>
                 ))}

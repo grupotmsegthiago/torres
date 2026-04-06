@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { parseBRL } from "@/lib/utils";
+import { parseBRL, formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -1299,8 +1299,8 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Contratante</p><p className="text-xs font-bold text-neutral-800">{sc.contratante_razao || "—"}</p></div>
                   <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">CNPJ</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.contratante_cnpj || "—"}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Assinatura</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.data_assinatura ? new Date(sc.data_assinatura).toLocaleDateString("pt-BR") : "—"}</p></div>
-                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigência</p><p className="text-xs font-bold text-neutral-800">{sc.vigencia_tipo === "indeterminado" ? "Indeterminado" : `Até ${sc.vigencia_fim ? new Date(sc.vigencia_fim).toLocaleDateString("pt-BR") : "—"}`}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Assinatura</p><p className="text-xs font-mono font-bold text-neutral-800">{sc.data_assinatura ? formatDateBRT(sc.data_assinatura) : "—"}</p></div>
+                  <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigência</p><p className="text-xs font-bold text-neutral-800">{sc.vigencia_tipo === "indeterminado" ? "Indeterminado" : `Até ${sc.vigencia_fim ? formatDateBRT(sc.vigencia_fim) : "—"}`}</p></div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mt-3">
                   <div className="p-3 bg-neutral-50 rounded-lg"><p className="text-[9px] font-black text-neutral-400 uppercase">Vigilantes</p><p className="text-xs font-bold text-neutral-800">{sc.num_vigilantes}</p></div>
@@ -1352,7 +1352,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                   return (
                     <tr key={o.id} className="hover:bg-neutral-50 cursor-pointer" onClick={() => setSelectedMissionId(o.id)} data-testid={`row-mission-${o.id}`}>
                       <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{o.osNumber}</span></td>
-                      <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(o.completedDate || o.createdAt).toLocaleDateString("pt-BR")}</td>
+                      <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{formatDateBRT(o.completedDate || o.createdAt)}</td>
                       <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{o.origin && o.destination ? `${o.origin} → ${o.destination}` : "—"}</td>
                       <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-600">{o.escortedVehiclePlate || "—"}</td>
                       <td className="px-3 py-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${o.status === "concluida" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{o.status === "concluida" ? "Concluída" : o.status}</span></td>
@@ -1397,7 +1397,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                     {clientBillings.filter(b => !["FATURADO", "PAGO"].includes((b as any).status || "")).map(b => (
                       <tr key={b.id} className="hover:bg-neutral-50">
                         <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span></td>
-                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(b.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{formatDateBRT(b.created_at)}</td>
                         <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{b.origem && b.destino ? `${b.origem}→${b.destino}` : "—"}</td>
                         <td className="px-3 py-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${(b as any).status === "A_VERIFICAR" ? "bg-amber-100 text-amber-700" : (b as any).status === "APROVADA" ? "bg-green-100 text-green-700" : (b as any).status === "REJEITADA" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-600"}`}>{(b as any).status || "—"}</span></td>
                         <td className="px-3 py-3 text-right font-black font-mono text-sm text-amber-700">{fmt(Number(b.fat_total))}</td>
@@ -1428,7 +1428,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                     {closedBillings.map(b => (
                       <tr key={b.id} className="hover:bg-neutral-50">
                         <td className="px-3 py-3"><span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span></td>
-                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(b.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="px-3 py-3 text-xs font-mono font-bold text-neutral-500">{formatDateBRT(b.created_at)}</td>
                         <td className="px-3 py-3 text-[10px] font-bold text-neutral-600">{b.origem && b.destino ? `${b.origem}→${b.destino}` : "—"}</td>
                         <td className="px-3 py-3 text-xs font-mono font-bold">{b.km_total}</td>
                         <td className="px-3 py-3 text-right font-black font-mono text-sm text-green-600">{fmt(Number(b.fat_total))}</td>
@@ -1814,8 +1814,8 @@ function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => vo
     },
   });
 
-  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
-  const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "—";
+  const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
 
   const b = os?.billing;
   const photos = os?.photos || [];

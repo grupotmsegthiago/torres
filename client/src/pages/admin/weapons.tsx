@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { formatDateBRT, formatBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -667,7 +668,7 @@ function AssignWeaponModal({ weapon, open, onClose }: { weapon: Weapon; open: bo
                       {h.notes && <span className="text-xs text-neutral-400 ml-2">({h.notes})</span>}
                     </div>
                     <span className="text-xs text-neutral-500">
-                      {h.createdAt ? new Date(h.createdAt).toLocaleDateString("pt-BR") + " " + new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      {h.createdAt ? formatBRT(h.createdAt) : ""}
                     </span>
                   </div>
                 ))}
@@ -763,7 +764,7 @@ function WeaponGroupTable({
                       regStatus === "warning" ? "bg-amber-50 text-amber-700 border border-amber-200" :
                       "bg-emerald-50 text-emerald-700 border border-emerald-200"
                     }`}>
-                      {new Date(w.registrationExpiry).toLocaleDateString("pt-BR")}
+                      {formatDateBRT(w.registrationExpiry)}
                     </span>
                   ) : "-"}
                 </td>

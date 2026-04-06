@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { formatDateBRT } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
@@ -39,7 +40,7 @@ function formatProcessNumber(num: string): string {
 
 function formatDate(raw: string): string {
   if (!raw) return "-";
-  if (raw.includes("T")) return new Date(raw).toLocaleDateString("pt-BR");
+  if (raw.includes("T")) return formatDateBRT(raw);
   if (raw.length >= 8) return `${raw.slice(6, 8)}/${raw.slice(4, 6)}/${raw.slice(0, 4)}`;
   return raw;
 }

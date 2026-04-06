@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/admin/layout";
+import { formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
@@ -1522,7 +1523,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Data</p>
-                          <p className="font-bold text-neutral-700">{m.data ? new Date(m.data).toLocaleDateString("pt-BR") : "-"}</p>
+                          <p className="font-bold text-neutral-700">{m.data ? formatDateBRT(m.data) : "-"}</p>
                         </div>
                         <div>
                           <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wide">Cliente</p>

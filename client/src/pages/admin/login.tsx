@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatDateBRT } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -287,7 +288,7 @@ export default function LoginPage() {
             <div className="flex items-center gap-2 bg-white/5 rounded-lg p-3">
               <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
               <p className="text-[10px] text-white/50">
-                <strong className="text-white/70">{user.name}</strong> · CPF vinculado · {new Date().toLocaleDateString("pt-BR")} {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                <strong className="text-white/70">{user.name}</strong> · CPF vinculado · {formatDateBRT(new Date())} {new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
               </p>
             </div>
             <Button

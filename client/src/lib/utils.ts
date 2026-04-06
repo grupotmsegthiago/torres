@@ -55,6 +55,22 @@ export function unmaskBRL(masked: string): string {
   return String(val);
 }
 
+export function formatBRT(date: string | Date | null | undefined): string {
+  if (!date) return '—';
+  return new Date(date).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+export function formatDateBRT(date: string | Date | null | undefined): string {
+  if (!date) return '—';
+  return new Date(date).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo'
+  });
+}
+
 const LOWERCASE_WORDS = new Set(["de", "do", "da", "dos", "das", "e"]);
 
 export function titleCase(name: string | null | undefined): string {
