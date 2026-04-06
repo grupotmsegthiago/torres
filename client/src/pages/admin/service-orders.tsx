@@ -2196,13 +2196,21 @@ export default function ServiceOrdersPage() {
               </div>
             </div>
             <div className="flex-1 overflow-hidden bg-neutral-100" id="pdf-canvas-container" data-testid="iframe-pdf-viewer">
-              <iframe
-                src={`${pdfViewerUrl}#toolbar=0`}
+              <object
+                data={pdfViewerUrl}
+                type="application/pdf"
                 width="100%"
                 height="100%"
                 style={{ border: 'none', borderRadius: '0 0 8px 8px' }}
-                title="OS PDF"
-              />
+              >
+                <iframe
+                  src={pdfViewerUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 'none' }}
+                  title="OS PDF"
+                />
+              </object>
             </div>
           </div>
         </div>
