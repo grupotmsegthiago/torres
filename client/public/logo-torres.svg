@@ -1,20 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420">
-  <g fill="#1a1a1a">
-    <!-- Battlement merlons -->
-    <rect x="98" y="0" width="22" height="32" rx="1"/>
-    <rect x="139" y="0" width="22" height="32" rx="1"/>
-    <rect x="180" y="0" width="22" height="32" rx="1"/>
-    <!-- Battlement base bar -->
-    <rect x="86" y="24" width="128" height="20" rx="1"/>
-    <!-- Shield body -->
-    <path d="M50 40 L250 40 L250 240 Q250 310 150 370 Q50 310 50 240 Z"/>
-    <!-- White inner shield (lower area) -->
-    <path d="M68 160 L232 160 L232 235 Q232 298 150 350 Q68 298 68 235 Z" fill="white"/>
-    <!-- Dark upper chevron -->
-    <polygon points="150,210 82,160 88,150 150,196 212,150 218,160"/>
-    <!-- Dark lower chevron -->
-    <polygon points="150,260 98,215 104,205 150,246 196,205 202,215"/>
-    <!-- Dark bottom small chevron -->
-    <polygon points="150,305 115,270 121,260 150,286 179,260 185,270"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 440">
+  <g fill="white">
+    <rect x="120" y="0" width="12" height="28" rx="1"/>
+    <rect x="144" y="0" width="12" height="28" rx="1"/>
+    <rect x="168" y="0" width="12" height="28" rx="1"/>
+    <rect x="108" y="22" width="84" height="14" rx="1"/>
+    <rect x="118" y="36" width="8" height="30"/>
+    <rect x="138" y="36" width="8" height="30"/>
+    <rect x="154" y="36" width="8" height="30"/>
+    <rect x="174" y="36" width="8" height="30"/>
+    <rect x="112" y="60" width="76" height="10" rx="1"/>
+    <path d="M50 80 L250 80 L250 270 Q250 345 150 400 Q50 345 50 270 Z"/>
+    <path d="M70 175 L230 175 L230 262 Q230 330 150 380 Q70 330 70 262 Z" fill="#1a1a1a"/>
+    <polygon points="150,230 84,178 92,168 150,214 208,168 216,178" fill="white"/>
+    <polygon points="150,278 100,235 108,225 150,264 192,225 200,235" fill="white"/>
+    <polygon points="150,322 118,290 126,280 150,302 174,280 182,290" fill="white"/>
+    <text x="150" y="130" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="800" fill="#1a1a1a" letter-spacing="3">TORRES</text>
+    <text x="150" y="155" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="500" fill="#1a1a1a" letter-spacing="4">VIGILÂNCIA PATRIMONIAL</text>
   </g>
 </svg>
