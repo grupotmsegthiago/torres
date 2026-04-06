@@ -2697,7 +2697,7 @@ import type { Express } from "express";
         sectionTitle("Atualizacoes do Agente em Campo");
         const updStepLabels: Record<string, string> = {
           em_transito_origem: "Em Transito p/ Origem", em_transito_destino: "Em Transito p/ Destino",
-          checkin_chegada_km: "Chegada na Origem", iniciar_missao: "Inicio de Missao",
+          checkin_chegada_km: "Na Origem", iniciar_missao: "Inicio de Missao",
           checkout_km_saida: "KM Saida", checkout_viatura: "Conf. Viatura",
           checkin_veiculo_escoltado: "Veic. Escoltado", checkin_dados_motorista: "Dados Motorista",
           chegada_destino: "Chegada Destino", checkout_km_final: "KM Final",

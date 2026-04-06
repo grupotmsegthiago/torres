@@ -1165,7 +1165,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
-                      <p className="text-[9px] font-bold text-emerald-400 uppercase">Chegada na Origem</p>
+                      <p className="text-[9px] font-bold text-emerald-400 uppercase">Na Origem</p>
                       <p className="text-lg font-black font-mono text-emerald-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime || "—")}</p>
                     </div>
                     <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center">

@@ -641,7 +641,7 @@ import type { Express } from "express";
 
       const missionLabelMap: Record<string, string> = {
         aguardando: "Saída da Base", checkout_armamento: "Saída da Base", checkout_viatura: "Saída da Base", checkout_km_saida: "Saída da Base",
-        em_transito_origem: "Chegada na Origem", checkin_chegada_km: "Chegada na Origem", checkin_veiculo_escoltado: "Chegada na Origem", checkin_dados_motorista: "Chegada na Origem",
+        em_transito_origem: "Na Origem", checkin_chegada_km: "Na Origem", checkin_veiculo_escoltado: "Na Origem", checkin_dados_motorista: "Na Origem",
         iniciar_missao: "Em Missão", em_transito_destino: "Em Trânsito Destino",
         checkout_km_final: "Término de Missão", checkout_viatura_retorno: "Término de Missão",
         finalizada: "Missão Finalizada", retorno_base: "Retorno à Base", chegada_base: "Chegada na Base", encerrada: "Missão Encerrada",
@@ -1374,21 +1374,20 @@ import type { Express } from "express";
 
     const STEP_ALERT_LABELS: Record<string, string> = {
       aguardando: "Aguardando", checkout_km_saida: "Checkout KM Saída",
-      em_transito_origem: "Em Trânsito Origem", checkin_chegada_km: "Chegada Cliente",
-      checkin_dados_motorista: "Dados Motorista", iniciar_missao: "Início Missão",
+      em_transito_origem: "Em Trânsito Origem", checkin_chegada_km: "Na Origem",
+      checkin_veiculo_escoltado: "Na Origem", checkin_dados_motorista: "Na Origem", iniciar_missao: "Início Missão",
       em_transito_destino: "Em Trânsito Destino", chegada_destino: "Chegada Destino",
       checkout_km_final: "KM Final", finalizada: "Finalizada",
       chegada_base: "Chegada Base", encerrada: "Encerrada",
     };
     try {
-      const stepFromLabel = STEP_ALERT_LABELS[currentStep] || currentStep;
       const stepToLabel = STEP_ALERT_LABELS[nextStep] || nextStep;
       await db.insert(missionUpdates).values({
         serviceOrderId,
         osNumber: so.osNumber || null,
         employeeId: user.employeeId,
         employeeName: emp?.fullName || emp?.name || user.name || "—",
-        message: `🔄 Etapa avançada: ${stepFromLabel} → ${stepToLabel}`,
+        message: `🔄 ${stepToLabel}`,
         missionStep: nextStep,
         latitude: geo?.lat?.toString() || null,
         longitude: geo?.lng?.toString() || null,

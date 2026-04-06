@@ -581,7 +581,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const getSuggestions = () => {
     const suggestions: string[] = [];
     if (nearOrigin && isGoingToOrigin) {
-      suggestions.push("Chegada na Origem");
+      suggestions.push("Na Origem");
     }
     if (nearOrigin && !isGoingToOrigin) {
       suggestions.push("Chegada no Destino");

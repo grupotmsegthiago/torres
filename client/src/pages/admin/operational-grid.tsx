@@ -401,7 +401,7 @@ function getMissionLabel(status: string | null) {
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
-      return "Chegada na Origem";
+      return "Na Origem";
     case "iniciar_missao":
       return "Em Missão";
     case "em_transito_destino":
@@ -436,7 +436,7 @@ function getTransitStatus(missionStatus: string | null): string {
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
-      return "CHEGADA NA ORIGEM";
+      return "NA ORIGEM";
     case "iniciar_missao":
       return "EM MISSÃO";
     case "em_transito_destino":
@@ -914,12 +914,9 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   });
   const progress = routeP ? String(routeP.pct) : String(getMissionProgress(os.missionStatus));
 
-  const lastStep = os.lastAgentUpdate?.missionStep;
   const currentMs = os.missionStatus;
-  const defaultEtapa = (lastStep && currentMs && lastStep !== currentMs)
-    ? `${getMissionLabel(lastStep)} → ${getMissionLabel(currentMs)}`
-    : getMissionLabel(currentMs);
-  const etapaAvancada = agentMsg ? agentMsg : defaultEtapa;
+  const defaultEtapa = getMissionLabel(currentMs);
+  const etapaAvancada = defaultEtapa;
 
   const destLat = os.destinationLat;
   const destLng = os.destinationLng;
@@ -1227,7 +1224,7 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
     case "checkin_chegada_km":
     case "checkin_veiculo_escoltado":
     case "checkin_dados_motorista":
-      return { label: "Chegada na Origem", icon: Navigation, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
+      return { label: "Na Origem", icon: Navigation, className: "bg-cyan-50 text-cyan-700 border-cyan-200" };
     case "iniciar_missao":
       return { label: "Em Missão", icon: Siren, className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
     case "em_transito_destino":
