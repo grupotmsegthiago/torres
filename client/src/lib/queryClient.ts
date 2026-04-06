@@ -256,6 +256,10 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
         _invalidateLocal("billing");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "billing_alerts" }, () => {
+        _invalidateLocal("jornada-diretoria");
+        _invalidateLocal("billing");
       });
   }
 
