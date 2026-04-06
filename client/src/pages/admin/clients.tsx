@@ -141,6 +141,9 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     state: client?.state || "",
     zip: client?.zip || "",
     notes: client?.notes || "",
+    billingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || "",
+    paymentTermsDays: String((client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || ""),
+    billingCutoffDay: String((client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || ""),
   });
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
@@ -181,10 +184,16 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
+      const payload = {
+        ...data,
+        paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : null,
+        billingCutoffDay: data.billingCutoffDay ? Number(data.billingCutoffDay) : null,
+        billingCycle: data.billingCycle || null,
+      };
       if (client) {
-        await apiRequest("PATCH", `/api/clients/${client.id}`, data);
+        await apiRequest("PATCH", `/api/clients/${client.id}`, payload);
       } else {
-        await apiRequest("POST", "/api/clients", data);
+        await apiRequest("POST", "/api/clients", payload);
       }
     },
     onSuccess: () => {
@@ -277,6 +286,30 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Estado</label>
           <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} data-testid="input-client-state" />
+        </div>
+        <div className="md:col-span-2 border-t border-neutral-200 pt-4 mt-2">
+          <p className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" /> Ciclo Financeiro</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Tipo de Ciclo</label>
+              <select value={form.billingCycle} onChange={(e) => setForm({ ...form, billingCycle: e.target.value })} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" data-testid="select-billing-cycle">
+                <option value="">Não definido</option>
+                <option value="por_missao">Por Missão</option>
+                <option value="quinzenal">Quinzenal (1-15 / 16-30)</option>
+                <option value="mensal">Mensal (Fechamento Mês)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Dias para Vencimento</label>
+              <Input type="number" min="0" max="90" value={form.paymentTermsDays} onChange={(e) => setForm({ ...form, paymentTermsDays: e.target.value })} placeholder="Ex: 15" data-testid="input-payment-terms" />
+              <p className="text-[10px] text-neutral-400 mt-1">Dias após faturamento (D+N)</p>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Dia de Fechamento</label>
+              <Input type="number" min="1" max="31" value={form.billingCutoffDay} onChange={(e) => setForm({ ...form, billingCutoffDay: e.target.value })} placeholder="Ex: 15 ou 30" data-testid="input-cutoff-day" />
+              <p className="text-[10px] text-neutral-400 mt-1">Dia do mês para corte</p>
+            </div>
+          </div>
         </div>
         <div className="md:col-span-2">
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Observações</label>
@@ -2129,6 +2162,7 @@ export default function ClientsPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">CNPJ/CPF</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Telefone</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cidade</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ciclo</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
@@ -2139,6 +2173,14 @@ export default function ClientsPage() {
                     <td className="p-3 text-neutral-600">{c.cnpj || c.cpf || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.phone || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.city || "-"}</td>
+                    <td className="p-3 text-neutral-600 text-xs">
+                      {(c as any).billingCycle || (c as any).billing_cycle ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                          {((c as any).billingCycle || (c as any).billing_cycle) === "quinzenal" ? "Quinzenal" : ((c as any).billingCycle || (c as any).billing_cycle) === "mensal" ? "Mensal" : "Por Missão"}
+                          {((c as any).paymentTermsDays || (c as any).payment_terms_days) ? ` D+${(c as any).paymentTermsDays || (c as any).payment_terms_days}` : ""}
+                        </span>
+                      ) : <span className="text-neutral-300">—</span>}
+                    </td>
                     <td className="p-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                       <Button
                         variant="ghost"

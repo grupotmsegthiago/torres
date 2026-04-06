@@ -72,6 +72,26 @@ export default function BoletimMedicaoPage() {
   });
   const [faturaSendAsaas, setFaturaSendAsaas] = useState(false);
 
+  const { data: billingAlerts = [] } = useQuery<any[]>({
+    queryKey: ["/api/billing-alerts"],
+    queryFn: async () => {
+      const r = await authFetch("/api/billing-alerts?resolved=false");
+      const d = await r.json();
+      return Array.isArray(d) ? d : [];
+    },
+    refetchInterval: 60000,
+  });
+
+  const resolveAlertMutation = useMutation({
+    mutationFn: async (alertId: number) => {
+      return apiRequest("PATCH", `/api/billing-alerts/${alertId}/resolve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing-alerts"] });
+      toast({ title: "Alerta resolvido" });
+    },
+  });
+
   const { data: osConcluidas = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/boletim-medicao/os-concluidas"],
     queryFn: async () => {
@@ -362,6 +382,23 @@ export default function BoletimMedicaoPage() {
           )}
         </div>
 
+        {billingAlerts.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {billingAlerts.map((alert: any) => (
+              <div key={alert.id} className={`flex items-start gap-3 p-3 rounded-lg border ${alert.alert_type === "ATRASO_FATURAMENTO" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`} data-testid={`billing-alert-${alert.id}`}>
+                <AlertTriangle size={16} className={alert.alert_type === "ATRASO_FATURAMENTO" ? "text-red-600 mt-0.5 shrink-0" : "text-amber-600 mt-0.5 shrink-0"} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-bold ${alert.alert_type === "ATRASO_FATURAMENTO" ? "text-red-800" : "text-amber-800"}`}>{alert.message}</p>
+                  {alert.period_start && <p className="text-[10px] text-neutral-500 mt-0.5">Período: {alert.period_start} a {alert.period_end}</p>}
+                </div>
+                <button onClick={() => resolveAlertMutation.mutate(alert.id)} className="text-[10px] font-bold text-neutral-400 hover:text-neutral-700 whitespace-nowrap px-2 py-1 rounded hover:bg-white/50" data-testid={`resolve-alert-${alert.id}`}>
+                  Resolver
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-neutral-300" /></div>
         ) : filteredGroups.length === 0 ? (
@@ -406,6 +443,12 @@ export default function BoletimMedicaoPage() {
                       ) : (
                         <Badge className="bg-red-50 text-red-700 border border-red-200 font-bold text-[10px]">Sem Tabela</Badge>
                       )}
+                      {group.orders[0]?.clientBillingCycle && (
+                        <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]">
+                          {group.orders[0].clientBillingCycle === "quinzenal" ? "Quinzenal" : group.orders[0].clientBillingCycle === "mensal" ? "Mensal" : "Por Missão"}
+                          {group.orders[0].clientPaymentTermsDays ? ` · D+${group.orders[0].clientPaymentTermsDays}` : ""}
+                        </Badge>
+                      )}
                       {groupApproved > 0 && (
                         <button
                           onClick={(e) => {
@@ -415,6 +458,11 @@ export default function BoletimMedicaoPage() {
                               const b = o.billing;
                               return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
                             }, 0);
+                            const firstOs = approvedOrders[0] || group.orders[0];
+                            const ptDays = Number(firstOs?.clientPaymentTermsDays) || 15;
+                            const suggestedDate = new Date();
+                            suggestedDate.setDate(suggestedDate.getDate() + ptDays);
+                            setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
                             setFaturaDialog({
                               clientId: group.clientId,
                               clientName: group.clientName,
@@ -688,6 +736,11 @@ export default function BoletimMedicaoPage() {
                 <div>
                   <Label className="text-xs font-bold uppercase">Data de Vencimento</Label>
                   <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1" data-testid="input-fatura-due-date" />
+                  {(() => {
+                    const firstOs = osConcluidas.find((o: any) => o.clientId === faturaDialog?.clientId);
+                    const ptDays = Number(firstOs?.clientPaymentTermsDays);
+                    return ptDays ? <p className="text-[10px] text-indigo-500 mt-1">Prazo cadastrado: D+{ptDays} (sugerido automaticamente)</p> : null;
+                  })()}
                 </div>
                 <div>
                   <Label className="text-xs font-bold uppercase">Tipo de Cobrança</Label>

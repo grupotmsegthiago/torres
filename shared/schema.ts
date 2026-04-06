@@ -49,6 +49,9 @@ export const clients = pgTable("clients", {
   state: text("state"),
   zip: text("zip"),
   notes: text("notes"),
+  billingCycle: text("billing_cycle"),
+  paymentTermsDays: integer("payment_terms_days"),
+  billingCutoffDay: integer("billing_cutoff_day"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -711,6 +714,24 @@ export const systemAuditLogs = pgTable("system_audit_logs", {
 export const insertSystemAuditLogSchema = createInsertSchema(systemAuditLogs).omit({ id: true, createdAt: true });
 export type InsertSystemAuditLog = z.infer<typeof insertSystemAuditLogSchema>;
 export type SystemAuditLog = typeof systemAuditLogs.$inferSelect;
+
+export const billingAlerts = pgTable("billing_alerts", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull(),
+  clientName: text("client_name"),
+  alertType: text("alert_type").notNull(),
+  message: text("message").notNull(),
+  billingIds: text("billing_ids"),
+  osNumbers: text("os_numbers"),
+  periodStart: text("period_start"),
+  periodEnd: text("period_end"),
+  resolved: boolean("resolved").default(false),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export type BillingAlert = typeof billingAlerts.$inferSelect;
 
 export const companyDocuments = pgTable("company_documents", {
   id: serial("id").primaryKey(),

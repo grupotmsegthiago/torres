@@ -1659,6 +1659,9 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
           ...os,
           clientName: client?.name || "—",
           clientCnpj: client?.cnpj || null,
+          clientBillingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || null,
+          clientPaymentTermsDays: (client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || null,
+          clientBillingCutoffDay: (client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || null,
           vehiclePlate: vehicle?.plate || null,
           vehicleModel: vehicle?.model || null,
           employee1Name: emp1?.name || null,
@@ -10673,6 +10676,49 @@ Regras:
         .limit(limit);
       if (error) throw error;
       res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/billing-alerts", requireAdminRole, async (req, res) => {
+    try {
+      const resolved = req.query.resolved === "true";
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const { data, error } = await supabaseAdmin
+        .from("billing_alerts")
+        .select("*")
+        .eq("resolved", resolved)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/billing-alerts/:id/resolve", requireAdminRole, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userName = req.user?.name || req.user?.username || "admin";
+      const { data, error } = await supabaseAdmin
+        .from("billing_alerts")
+        .update({ resolved: true, resolved_at: new Date().toISOString(), resolved_by: userName })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/clients/:id/billing-config", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { data, error } = await supabaseAdmin
+        .from("clients")
+        .select("billing_cycle, payment_terms_days, billing_cutoff_day")
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      res.json(data || {});
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -337,6 +337,34 @@ export async function ensureDbSchema() {
     await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS longitude REAL`).catch(() => {});
 
     await db.execute(sql`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cycle TEXT
+    `);
+    await db.execute(sql`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER
+    `);
+    await db.execute(sql`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cutoff_day INTEGER
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS billing_alerts (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL,
+        client_name TEXT,
+        alert_type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        billing_ids TEXT,
+        os_numbers TEXT,
+        period_start TEXT,
+        period_end TEXT,
+        resolved BOOLEAN DEFAULT FALSE,
+        resolved_at TIMESTAMPTZ,
+        resolved_by TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS system_audit_logs (
         id SERIAL PRIMARY KEY,
         user_id INTEGER,

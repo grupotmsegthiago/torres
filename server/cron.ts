@@ -294,6 +294,152 @@ export function initCronJobs() {
     }
   });
 
+  cron.schedule("0 6 * * *", async () => {
+    log("CRON BillingAlerts: Verificando pendências de faturamento", "cron");
+    try {
+      const now = new Date();
+      const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
+      const brDay = Number(brDate.split("-")[2]);
+      const brMonth = Number(brDate.split("-")[1]);
+      const brYear = Number(brDate.split("-")[0]);
+
+      const { data: allClients } = await supabaseAdmin.from("clients").select("*");
+      if (!allClients?.length) return;
+
+      const clientsWithCycle = allClients.filter((c: any) => c.billing_cycle && c.billing_cycle !== "por_missao");
+      let alertsCreated = 0;
+
+      for (const client of clientsWithCycle) {
+        const cycle = client.billing_cycle;
+        const cutoffDay = client.billing_cutoff_day || 15;
+
+        let isCutoffDay = false;
+        let periodStart = "";
+        let periodEnd = "";
+
+        if (cycle === "quinzenal") {
+          if (brDay === 1 || brDay === 16) {
+            isCutoffDay = true;
+            if (brDay === 1) {
+              const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
+              const prevYear = brMonth === 1 ? brYear - 1 : brYear;
+              periodStart = `${prevYear}-${String(prevMonth).padStart(2, "0")}-16`;
+              const lastDay = new Date(prevYear, prevMonth, 0).getDate();
+              periodEnd = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`;
+            } else {
+              periodStart = `${brYear}-${String(brMonth).padStart(2, "0")}-01`;
+              periodEnd = `${brYear}-${String(brMonth).padStart(2, "0")}-15`;
+            }
+          }
+        } else if (cycle === "mensal") {
+          if (brDay === 1) {
+            isCutoffDay = true;
+            const prevMonth = brMonth === 1 ? 12 : brMonth - 1;
+            const prevYear = brMonth === 1 ? brYear - 1 : brYear;
+            const lastDay = new Date(prevYear, prevMonth, 0).getDate();
+            periodStart = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
+            periodEnd = `${prevYear}-${String(prevMonth).padStart(2, "0")}-${lastDay}`;
+          }
+        }
+
+        if (!isCutoffDay) continue;
+
+        const { data: pendingBillings } = await supabaseAdmin.from("escort_billings")
+          .select("id, service_order_id, os_number, status, data_missao")
+          .eq("client_id", client.id)
+          .in("status", ["A_VERIFICAR", "APROVADA"])
+          .is("invoice_id", null);
+
+        if (!pendingBillings?.length) continue;
+
+        const missionsInPeriod = pendingBillings.filter((b: any) => {
+          if (!b.data_missao) return false;
+          const mDate = b.data_missao.split("T")[0];
+          return mDate >= periodStart && mDate <= periodEnd;
+        });
+
+        if (!missionsInPeriod.length) continue;
+
+        const osNumbers = missionsInPeriod.map((b: any) => b.os_number).filter(Boolean).join(", ");
+        const billingIds = missionsInPeriod.map((b: any) => b.id).join(",");
+
+        const alertType = missionsInPeriod.some((b: any) => b.status === "A_VERIFICAR")
+          ? "ATRASO_FATURAMENTO"
+          : "PENDENTE_FATURAMENTO";
+
+        const message = alertType === "ATRASO_FATURAMENTO"
+          ? `URGENTE: ${client.name} possui ${missionsInPeriod.length} missão(ões) do período ${periodStart} a ${periodEnd} sem aprovação. OS: ${osNumbers}`
+          : `Faturamento Incompleto: ${client.name} possui ${missionsInPeriod.length} missão(ões) aprovada(s) pendente(s) do ciclo anterior (${periodStart} a ${periodEnd}). OS: ${osNumbers}`;
+
+        const { data: existing } = await supabaseAdmin.from("billing_alerts")
+          .select("id")
+          .eq("client_id", client.id)
+          .eq("alert_type", alertType)
+          .eq("period_start", periodStart)
+          .eq("period_end", periodEnd)
+          .eq("resolved", false)
+          .limit(1);
+
+        if (existing?.length) continue;
+
+        await supabaseAdmin.from("billing_alerts").insert({
+          client_id: client.id,
+          client_name: client.name,
+          alert_type: alertType,
+          message,
+          billing_ids: billingIds,
+          os_numbers: osNumbers,
+          period_start: periodStart,
+          period_end: periodEnd,
+        });
+
+        alertsCreated++;
+        log(`CRON BillingAlerts: Alerta criado para ${client.name}: ${alertType}`, "cron");
+      }
+
+      const { data: allBillings } = await supabaseAdmin.from("escort_billings")
+        .select("id, client_id, client_name, os_number, status, data_missao")
+        .in("status", ["A_VERIFICAR", "APROVADA"])
+        .is("invoice_id", null);
+
+      if (allBillings?.length) {
+        for (const billing of allBillings) {
+          if (!billing.data_missao || !billing.client_id) continue;
+          const mDate = new Date(billing.data_missao);
+          const daysSince = Math.floor((now.getTime() - mDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysSince <= 30) continue;
+
+          const clientRow = allClients.find((c: any) => c.id === billing.client_id);
+          const cycle = clientRow?.billing_cycle;
+          if (cycle === "por_missao" || !cycle) continue;
+
+          const { data: existingAlert } = await supabaseAdmin.from("billing_alerts")
+            .select("id")
+            .eq("client_id", billing.client_id)
+            .eq("alert_type", "ATRASO_FATURAMENTO")
+            .eq("resolved", false)
+            .ilike("os_numbers", `%${billing.os_number}%`)
+            .limit(1);
+
+          if (existingAlert?.length) continue;
+
+          await supabaseAdmin.from("billing_alerts").insert({
+            client_id: billing.client_id,
+            client_name: billing.client_name || clientRow?.name,
+            alert_type: "ATRASO_FATURAMENTO",
+            message: `Atenção: OS ${billing.os_number} ficou fora do faturamento! Missão de ${billing.data_missao?.split("T")[0]} há ${daysSince} dias sem faturar.`,
+            os_numbers: billing.os_number,
+          });
+          alertsCreated++;
+        }
+      }
+
+      log(`CRON BillingAlerts: ${alertsCreated} alerta(s) criado(s)`, "cron");
+    } catch (err: any) {
+      log(`CRON BillingAlerts: Erro: ${err.message}`, "cron");
+    }
+  });
+
   cron.schedule("59 2 * * *", async () => {
     log("CRON Provisão: Iniciando provisão diária de salários", "cron");
     try {
@@ -356,5 +502,5 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | Provisão Salário (diário 23:59 BRT)", "cron");
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT)", "cron");
 }
