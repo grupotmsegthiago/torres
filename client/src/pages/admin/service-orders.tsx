@@ -662,6 +662,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     notes: order?.notes || "",
     valorEstimado: (order as any)?.valorEstimado ? Number((order as any).valorEstimado).toFixed(2).replace(".", ",") : "",
     pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
+    pedagioIdaVolta: !!(order as any)?.pedagioIdaVolta,
     waypoints: ((order as any)?.waypoints || []) as Array<{ address: string; lat: number | null; lng: number | null }>,
   });
 
@@ -775,6 +776,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
     pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),
+    pedagioIdaVolta: !!data.pedagioIdaVolta,
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
@@ -1102,11 +1104,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               <div>
                 <FieldLabel>Pedágio (R$) {pedagioAutoSum > 0 ? "✓" : ""}</FieldLabel>
                 <div className="relative">
-                  <Input type="text" readOnly value={pedagioAutoSum > 0 ? pedagioAutoSum.toFixed(2).replace(".", ",") : (form.pedagioEstimado || "0,00")} className={`text-sm font-mono bg-neutral-100 cursor-not-allowed ${pedagioAutoSum > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
+                  <Input type="text" readOnly value={(() => { const base = pedagioAutoSum > 0 ? pedagioAutoSum : Number(String(form.pedagioEstimado || "0").replace(",", ".")); const val = form.pedagioIdaVolta ? base * 2 : base; return val.toFixed(2).replace(".", ","); })()} className={`text-sm font-mono bg-neutral-100 cursor-not-allowed ${pedagioAutoSum > 0 ? "border-amber-300 bg-amber-50/30" : ""}`} data-testid="input-os-pedagio" />
                   {pedagioAutoSum > 0 && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">AUTO</span>
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">{form.pedagioIdaVolta ? "AUTO (2x)" : "AUTO"}</span>
                   )}
                 </div>
+                <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer" data-testid="toggle-pedagio-ida-volta">
+                  <input type="checkbox" checked={form.pedagioIdaVolta} onChange={(e) => setForm({ ...form, pedagioIdaVolta: e.target.checked })} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
+                  <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta (dobrar valor)</span>
+                </label>
               </div>
               <div>
                 <FieldLabel>Solicitante</FieldLabel>

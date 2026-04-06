@@ -220,6 +220,7 @@ export const serviceOrders = pgTable("service_orders", {
   escortContractId: text("escort_contract_id"),
   valorEstimado: real("valor_estimado"),
   pedagioEstimado: real("pedagio_estimado"),
+  pedagioIdaVolta: boolean("pedagio_ida_volta").default(false),
   fuelAllocated: boolean("fuel_allocated"),
   stepLogs: jsonb("step_logs").default([]),
   waypoints: jsonb("waypoints").default([]),

@@ -2978,11 +2978,25 @@ import type { Express } from "express";
           if (clientContracts?.length) contrato = clientContracts[0];
         }
 
+        let despPedPdf = 0, despCombPdf = 0, despOutPdf = 0;
+        const { data: pdfCosts } = await supabaseAdmin.from("mission_costs").select("*").eq("service_order_id", osId).eq("cost_type", "expense");
+        if (pdfCosts) {
+          for (const mc of pdfCosts) {
+            const amt = Number(mc.amount) || 0;
+            const cat = (mc.category || "").toLowerCase();
+            if (cat.includes("pedágio") || cat.includes("pedagio")) despPedPdf += amt;
+            else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) despCombPdf += amt;
+            else despOutPdf += amt;
+          }
+        }
+        const pedagioEstPdf = Number((os as any).pedagioEstimado) || 0;
+        if (pedagioEstPdf > 0 && despPedPdf === 0) despPedPdf = pedagioEstPdf;
+
         const resultado = calcularEscolta({
           km_inicial: kmInicial, km_final: kmFinal, km_vazio: 0,
           horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
           horario_inicio: startTime, horario_fim: endTimeCalc, horario_agendado: scheduledTime,
-          despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+          despesas_pedagio: despPedPdf, despesas_combustivel: despCombPdf, despesas_outras: despOutPdf, contrato,
         });
 
         const isLive = os.status !== "concluida" && os.missionStatus !== "encerrada";
@@ -3010,6 +3024,8 @@ import type { Express } from "express";
         doc.restore();
         doc.y = tblY + 18;
 
+        const pedagioIdaVoltaPdf = !!(os as any).pedagioIdaVolta;
+        const pedagioLabel = pedagioIdaVoltaPdf ? "Pedagio (Ida e Volta)" : "Pedagio";
         const fatRows: [string, string][] = [
           ["KM Total", `${resultado.km_total} km`],
           ["KM Carregado", `${resultado.km_carregado} km`],
@@ -3019,6 +3035,7 @@ import type { Express } from "express";
           ["Estadia", BRL(resultado.faturamento.estadia)],
           ["Adicional Noturno", BRL(resultado.faturamento.adicional_noturno)],
           ["Pernoite/Diaria", BRL(resultado.faturamento.diaria)],
+          ...(despPedPdf > 0 ? [[pedagioLabel, BRL(despPedPdf)] as [string, string]] : []),
         ];
         const pagRows: [string, string][] = [
           ["VRP Base", BRL(resultado.pagamento.vrp)],

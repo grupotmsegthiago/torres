@@ -344,13 +344,17 @@ import type { Express } from "express";
         return res.status(409).json({ message: "Pedágio com este valor já foi registrado para esta OS. Se for um pedágio diferente, registre com valor distinto." });
       }
 
+      const pedagioIdaVolta = !!(os as any).pedagioIdaVolta;
+      const finalAmount = pedagioIdaVolta ? parsedAmount * 2 : parsedAmount;
+      const descLabel = pedagioIdaVolta ? `Pedágio (Ida + Volta) - ${empName} (${vehiclePlate})` : `Pedágio - ${empName} (${vehiclePlate})`;
+
       const { data: costRecord, error: costErr } = await supabaseAdmin.from("mission_costs").insert({
         service_order_id: Number(serviceOrderId),
         vehicle_id: vehicleId,
         employee_id: employeeId,
         category: "Pedágio",
-        description: `Pedágio - ${empName} (${vehiclePlate})`,
-        amount: parsedAmount.toFixed(2),
+        description: descLabel,
+        amount: finalAmount.toFixed(2),
         cost_type: "expense",
         photo_url: photoUrl,
         latitude: latitude ? String(latitude) : null,
@@ -363,8 +367,8 @@ import type { Express } from "express";
         vehicle_id: vehicleId,
         employee_id: employeeId,
         category: "Pedágio",
-        description: `Pedágio - ${empName} (${vehiclePlate})`,
-        amount: parsedAmount.toFixed(2),
+        description: descLabel,
+        amount: finalAmount.toFixed(2),
         cost_type: "revenue",
         photo_url: photoUrl,
         latitude: latitude ? String(latitude) : null,
@@ -376,9 +380,10 @@ import type { Express } from "express";
       }
 
       const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const txLabel = pedagioIdaVolta ? "PEDÁGIO (IDA+VOLTA)" : "PEDÁGIO";
       await createAutoTransaction({
-        description: `CUSTO MISSÃO ${osNum} - PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
-        amount: parsedAmount,
+        description: `CUSTO MISSÃO ${osNum} - ${txLabel} ${empName} (${vehiclePlate})`.toUpperCase().trim(),
+        amount: finalAmount,
         type: "EXPENSE",
         due_date: todayBRT,
         origin_type: "mission_cost",
@@ -388,8 +393,8 @@ import type { Express } from "express";
         created_by: "SISTEMA",
       });
       await createAutoTransaction({
-        description: `RECEITA MISSÃO ${osNum} - PEDÁGIO ${empName} (${vehiclePlate})`.toUpperCase().trim(),
-        amount: parsedAmount,
+        description: `RECEITA MISSÃO ${osNum} - ${txLabel} ${empName} (${vehiclePlate})`.toUpperCase().trim(),
+        amount: finalAmount,
         type: "INCOME",
         due_date: todayBRT,
         origin_type: "mission_cost",
@@ -399,7 +404,7 @@ import type { Express } from "express";
         created_by: "SISTEMA",
       });
 
-      console.log(`[pedagio-missao] Agent ${empName} registered R$${parsedAmount.toFixed(2)} toll reimbursement for OS ${osNum} (${vehiclePlate})`);
+      console.log(`[pedagio-missao] Agent ${empName} registered R$${finalAmount.toFixed(2)} toll${pedagioIdaVolta ? " (ida+volta)" : ""} for OS ${osNum} (${vehiclePlate})`);
       res.status(201).json({ success: true, costRecord, revRecord, vehiclePlate, osNumber: osNum });
     } catch (err: any) {
       console.error("[pedagio-missao] Error:", err.message);
