@@ -41,7 +41,7 @@ const computeKm = (os: any) => {
   return Math.max(0, kmFim - kmChegada);
 };
 
-type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA" | "FORA_CICLO";
+type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "FATURADA";
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
@@ -49,7 +49,9 @@ export default function BoletimMedicaoPage() {
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [expandedClient, setExpandedClient] = useState<number | null>(null);
   const [selectedOs, setSelectedOs] = useState<any>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("PENDENTE");
+  const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
+  const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number } | null>(null);
   const [pedagioValue, setPedagioValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [editingFields, setEditingFields] = useState(false);
@@ -267,6 +269,7 @@ export default function BoletimMedicaoPage() {
     if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
+    else if (statusFilter === "FATURADA") orders = orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO");
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
     else if (statusFilter === "FORA_CICLO") {
       orders = orders.filter(o => {
@@ -380,6 +383,17 @@ export default function BoletimMedicaoPage() {
             </button>
           ))}
           <div className="h-6 w-px bg-neutral-200 mx-1" />
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+            className="text-xs font-bold border border-neutral-200 rounded-lg px-3 py-2 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 uppercase tracking-wider"
+            data-testid="filter-status-select"
+          >
+            <option value="ALL">Todas</option>
+            <option value="PENDENTE">Pendentes</option>
+            <option value="APROVADA">Aprovadas</option>
+            <option value="FATURADA">Faturadas</option>
+          </select>
           <select
             value={periodFilter || ""}
             onChange={e => setPeriodFilter(e.target.value || null)}
@@ -515,6 +529,19 @@ export default function BoletimMedicaoPage() {
                         <table className="w-full text-xs" data-testid={`table-os-${group.clientId}`}>
                           <thead>
                             <tr className="bg-neutral-50/80">
+                              <th className="px-2 py-3 w-8">
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-neutral-300"
+                                  checked={group.orders.length > 0 && group.orders.every(o => checkedOsIds.has(o.id))}
+                                  onChange={e => {
+                                    const next = new Set(checkedOsIds);
+                                    group.orders.forEach(o => e.target.checked ? next.add(o.id) : next.delete(o.id));
+                                    setCheckedOsIds(next);
+                                  }}
+                                  data-testid={`checkbox-select-all-${group.clientId}`}
+                                />
+                              </th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">OS</th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Data</th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Rota</th>
@@ -537,6 +564,19 @@ export default function BoletimMedicaoPage() {
                               return (
                                 <Fragment key={os.id}>
                                 <tr className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""} ${isEditing ? "bg-blue-50/40" : ""}`} data-testid={`row-os-${os.id}`}>
+                                  <td className="px-2 py-3.5">
+                                    <input
+                                      type="checkbox"
+                                      className="rounded border-neutral-300"
+                                      checked={checkedOsIds.has(os.id)}
+                                      onChange={e => {
+                                        const next = new Set(checkedOsIds);
+                                        e.target.checked ? next.add(os.id) : next.delete(os.id);
+                                        setCheckedOsIds(next);
+                                      }}
+                                      data-testid={`checkbox-os-${os.id}`}
+                                    />
+                                  </td>
                                   <td className="px-4 py-3.5">
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-mono font-black text-neutral-800 text-[13px]">{os.osNumber}</span>
@@ -630,7 +670,7 @@ export default function BoletimMedicaoPage() {
                                 </tr>
                                 {b && (
                                   <tr className={`border-b ${isEditing ? "bg-blue-50/60" : "bg-neutral-50/60"}`}>
-                                    <td colSpan={10} className="px-4 py-2">
+                                    <td colSpan={11} className="px-4 py-2">
                                       {isEditing ? (
                                         <div className="space-y-3" data-testid={`edit-billing-${os.id}`}>
                                           <div className="grid grid-cols-7 gap-2">
@@ -728,10 +768,48 @@ export default function BoletimMedicaoPage() {
                             })}
                           </tbody>
                           <tfoot>
+                            {(() => {
+                              const checkedInGroup = group.orders.filter(o => checkedOsIds.has(o.id));
+                              const checkedCount = checkedInGroup.length;
+                              const checkedTotal = checkedInGroup.reduce((acc, o) => {
+                                const b = o.billing;
+                                return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
+                              }, 0);
+                              return checkedCount > 0 ? (
+                                <tr className="bg-blue-50/80 border-b">
+                                  <td colSpan={11} className="px-4 py-3">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                      <span className="text-xs font-bold text-blue-800" data-testid={`text-selected-${group.clientId}`}>
+                                        {checkedCount} OS selecionada{checkedCount > 1 ? "s" : ""} — Total: {fmt(checkedTotal)}
+                                      </span>
+                                      {isDiretoria && (
+                                        <button
+                                          onClick={() => {
+                                            const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
+                                            setAprovarFaturarDialog({
+                                              clientId: group.clientId,
+                                              clientName: group.clientName,
+                                              osIds: checkedInGroup.map(o => o.id),
+                                              billingIds,
+                                              total: checkedTotal,
+                                            });
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm"
+                                          data-testid={`button-aprovar-faturar-${group.clientId}`}
+                                        >
+                                          <CheckCircle2 size={12} />
+                                          Aprovar e Faturar
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null;
+                            })()}
                             <tr className="bg-neutral-50/80">
-                              <td colSpan={7} className="px-4 py-3 text-right font-bold text-neutral-400 uppercase text-[10px] tracking-wider">Total do Cliente:</td>
+                              <td colSpan={8} className="px-4 py-3 text-right font-bold text-neutral-400 uppercase text-[10px] tracking-wider">Total do Cliente:</td>
                               <td className="px-4 py-3 text-right font-mono font-black text-emerald-700 text-sm">{fmt(groupTotal)}</td>
-                              <td colSpan={2}></td>
+                              <td colSpan={3}></td>
                             </tr>
                           </tfoot>
                         </table>
@@ -743,6 +821,55 @@ export default function BoletimMedicaoPage() {
             })}
           </div>
         )}
+
+        <Dialog open={!!aprovarFaturarDialog} onOpenChange={(open) => { if (!open) setAprovarFaturarDialog(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Aprovar e Faturar
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Aprovar e faturar {aprovarFaturarDialog?.osIds.length} OS no valor total de {fmt(aprovarFaturarDialog?.total || 0)} para {aprovarFaturarDialog?.clientName}? Essa ação gerará cobrança no Asaas.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1">
+              <p className="text-xs font-bold text-emerald-900 uppercase">{aprovarFaturarDialog?.clientName}</p>
+              <p className="text-xs text-emerald-700"><strong>{aprovarFaturarDialog?.osIds.length}</strong> OS selecionada(s)</p>
+              <p className="text-lg font-black font-mono text-emerald-800">{fmt(aprovarFaturarDialog?.total || 0)}</p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setAprovarFaturarDialog(null)} className="text-xs font-bold uppercase" data-testid="button-cancel-aprovar-faturar">
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!aprovarFaturarDialog) return;
+                  try {
+                    for (const billingId of aprovarFaturarDialog.billingIds) {
+                      await apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "APROVADA" });
+                    }
+                    await apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${aprovarFaturarDialog.clientId}`, {
+                      billingType: "BOLETO",
+                      sendToAsaas: false,
+                      dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
+                    });
+                    invalidateAllRelated();
+                    setCheckedOsIds(new Set());
+                    toast({ title: "Sucesso", description: `${aprovarFaturarDialog.billingIds.length} faturas geradas no Asaas com sucesso` });
+                    setAprovarFaturarDialog(null);
+                  } catch (err: any) {
+                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-xs font-bold uppercase gap-2"
+                data-testid="button-confirm-aprovar-faturar"
+              >
+                <CheckCircle2 size={14} />
+                Confirmar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={!!faturaDialog} onOpenChange={(open) => { if (!open) setFaturaDialog(null); }}>
           <DialogContent className="max-w-md">
