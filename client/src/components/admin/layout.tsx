@@ -69,6 +69,7 @@ const menuItems: MenuItem[] = [
       { path: "/admin/calculadora-jornada", label: "Calculadora Jornada", icon: Clock },
     ],
   },
+  { path: "/admin/jornada-diretoria", label: "Jornada", icon: Clock, adminOnly: true },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];

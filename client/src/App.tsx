@@ -49,6 +49,7 @@ import MobilePontoOperacionalPage from "@/pages/mobile/ponto-operacional";
 import PontoOperacionalPage from "@/pages/admin/ponto-operacional";
 import HoleritesPage from "@/pages/admin/holerites";
 import CalculadoraJornadaPage from "@/pages/admin/calculadora-jornada";
+import JornadaDiretoriaPage from "@/pages/admin/jornada-diretoria";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -166,6 +167,7 @@ function Router() {
       <Route path="/admin/faturas">{() => <ProtectedRoute component={FaturasPage} />}</Route>
       <Route path="/admin/holerites">{() => <ProtectedRoute component={HoleritesPage} />}</Route>
       <Route path="/admin/calculadora-jornada">{() => <ProtectedRoute component={CalculadoraJornadaPage} />}</Route>
+      <Route path="/admin/jornada-diretoria">{() => <ProtectedRoute component={JornadaDiretoriaPage} />}</Route>
 
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>

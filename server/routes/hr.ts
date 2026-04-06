@@ -1237,5 +1237,49 @@ ${empNames}`
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/jornada-diretoria", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const mes = req.query.mes ? String(req.query.mes) : new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).slice(0, 7);
+      const [y, m] = mes.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const inicioMes = `${mes}-01T00:00:00-03:00`;
+      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+
+      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
+        .select("employee_id, employee_name, horas_decimal, horas_ativo, horas_sobreaviso, horas_noturno, horas_extras")
+        .gte("entrada", inicioMes).lte("entrada", fimMes);
+
+      const byEmp: Record<number, any> = {};
+      for (const p of pontos || []) {
+        if (!byEmp[p.employee_id]) {
+          byEmp[p.employee_id] = {
+            employeeId: p.employee_id,
+            employeeName: p.employee_name || `#${p.employee_id}`,
+            totalHoras: 0, horasAtivo: 0, horasSobreaviso: 0, horasNoturno: 0, horasExtras: 0,
+          };
+        }
+        const e = byEmp[p.employee_id];
+        e.totalHoras += Number(p.horas_decimal || 0);
+        e.horasAtivo += Number(p.horas_ativo || 0);
+        e.horasSobreaviso += Number(p.horas_sobreaviso || 0);
+        e.horasNoturno += Number(p.horas_noturno || 0);
+        e.horasExtras += Number(p.horas_extras || 0);
+      }
+
+      const resumo = Object.values(byEmp).map((e: any) => ({
+        ...e,
+        totalHoras: +e.totalHoras.toFixed(2),
+        horasAtivo: +e.horasAtivo.toFixed(2),
+        horasSobreaviso: +e.horasSobreaviso.toFixed(2),
+        horasNoturno: +e.horasNoturno.toFixed(2),
+        horasExtras: +e.horasExtras.toFixed(2),
+        status: e.totalHoras > 220 ? "excedido" : e.totalHoras >= 210 ? "alerta" : "normal",
+      }));
+      resumo.sort((a: any, b: any) => b.totalHoras - a.totalHoras);
+
+      res.json({ mes, resumo });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   }
   
