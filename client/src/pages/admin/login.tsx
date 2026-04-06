@@ -5,7 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Shield, Eye, EyeOff, UserPlus, Lock, FileCheck, User, Briefcase } from "lucide-react";
+import { Eye, EyeOff, UserPlus, Lock, FileCheck, User, Briefcase } from "lucide-react";
+import { TorresLogoIcon } from "@/components/torres-logo";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -374,11 +375,13 @@ export default function LoginPage() {
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-sm bg-neutral-900 border-neutral-800 p-8" data-testid="card-login">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
+          <div className="mb-4">
             {needsSetup ? (
-              <UserPlus className="w-6 h-6 text-white/60" />
+              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
+                <UserPlus className="w-6 h-6 text-white/60" />
+              </div>
             ) : (
-              <Shield className="w-6 h-6 text-white/60" />
+              <TorresLogoIcon size={56} color="white" />
             )}
           </div>
           <h1 className="text-xl font-bold text-white" data-testid="text-login-title">
