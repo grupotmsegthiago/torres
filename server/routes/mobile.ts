@@ -307,6 +307,17 @@ import type { Express } from "express";
       const empName = empData?.name || "Agente";
       const osNum = os.osNumber || `OS-${serviceOrderId}`;
 
+      const { data: existingTolls } = await supabaseAdmin.from("mission_costs")
+        .select("id")
+        .eq("service_order_id", Number(serviceOrderId))
+        .eq("category", "Pedágio")
+        .eq("cost_type", "expense")
+        .eq("amount", parsedAmount.toFixed(2))
+        .eq("employee_id", employeeId);
+      if (existingTolls && existingTolls.length > 0) {
+        return res.status(409).json({ message: "Pedágio com este valor já foi registrado para esta OS. Se for um pedágio diferente, registre com valor distinto." });
+      }
+
       const { data: costRecord, error: costErr } = await supabaseAdmin.from("mission_costs").insert({
         service_order_id: Number(serviceOrderId),
         vehicle_id: vehicleId,

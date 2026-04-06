@@ -49,10 +49,17 @@ function getStepTime(stepLogs: StepLogEntry[] | null | undefined, stepNames: str
   return null;
 }
 
+function ensureUTC(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const s = String(ts);
+  if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+  return s + "Z";
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   try {
-    const d = new Date(iso);
+    const d = new Date(ensureUTC(iso)!);
     if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
     return d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
   } catch { return "—"; }
@@ -1894,7 +1901,7 @@ export default function ServiceOrdersPage() {
               periodEnd = new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1);
             }
             filtered = filtered.filter(o => {
-              const d = o.scheduledDate ? new Date(o.scheduledDate) : o.createdAt ? new Date(o.createdAt) : null;
+              const d = o.scheduledDate ? new Date(ensureUTC(o.scheduledDate)!) : o.createdAt ? new Date(ensureUTC(o.createdAt)!) : null;
               return d && d >= periodStart && d < periodEnd;
             });
           }
@@ -2015,9 +2022,9 @@ export default function ServiceOrdersPage() {
                     </td>
                     <td className="p-2 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
                       {o.scheduledDate ? (() => {
-                        const d = new Date(o.scheduledDate);
+                        const d = new Date(ensureUTC(o.scheduledDate)!);
                         if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
-                        const datePart = String(o.scheduledDate).includes("T") ? String(o.scheduledDate).split("T")[0] : d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                        const datePart = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                         const [yy, mm, dd] = datePart.split("-");
                         const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
                         return <div className="leading-tight"><span className="block text-[10px] text-neutral-400">{`${dd}/${mm}/${yy}`}</span><span>{hora}</span></div>;
@@ -2034,9 +2041,9 @@ export default function ServiceOrdersPage() {
                     </td>
                     {(() => {
                       const logs = o.stepLogs as StepLogEntry[] | null;
-                      const tSaida = o.missionStartedAt ? new Date(o.missionStartedAt).toISOString() : getStepTime(logs, ["checkout_km_saida", "aguardando"]);
+                      const tSaida = o.missionStartedAt ? new Date(ensureUTC(o.missionStartedAt)!).toISOString() : getStepTime(logs, ["checkout_km_saida", "aguardando"]);
                       const tChegDestino = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
-                      const tFim = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
+                      const tFim = o.completedDate ? new Date(ensureUTC(o.completedDate)!).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
                       const isConcluida = o.status === "concluída" || o.status === "concluida" || o.missionStatus === "encerrada" || o.missionStatus === "finalizada";
                       const canEditTimes = isAdminOrDiretoria && isConcluida;
                       const isEditing = editingTimeOs === o.id;
