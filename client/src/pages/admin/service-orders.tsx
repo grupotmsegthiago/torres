@@ -1136,7 +1136,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </div>
               )}
               <div>
-                <FieldLabel>Data/Hora Agendada</FieldLabel>
+                <FieldLabel>Data da Criação</FieldLabel>
                 <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
               </div>
               {order && (
