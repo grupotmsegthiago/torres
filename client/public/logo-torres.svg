@@ -1,20 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 440">
-  <g fill="white">
-    <rect x="120" y="0" width="12" height="28" rx="1"/>
-    <rect x="144" y="0" width="12" height="28" rx="1"/>
-    <rect x="168" y="0" width="12" height="28" rx="1"/>
-    <rect x="108" y="22" width="84" height="14" rx="1"/>
-    <rect x="118" y="36" width="8" height="30"/>
-    <rect x="138" y="36" width="8" height="30"/>
-    <rect x="154" y="36" width="8" height="30"/>
-    <rect x="174" y="36" width="8" height="30"/>
-    <rect x="112" y="60" width="76" height="10" rx="1"/>
-    <path d="M50 80 L250 80 L250 270 Q250 345 150 400 Q50 345 50 270 Z"/>
-    <path d="M70 175 L230 175 L230 262 Q230 330 150 380 Q70 330 70 262 Z" fill="#1a1a1a"/>
-    <polygon points="150,230 84,178 92,168 150,214 208,168 216,178" fill="white"/>
-    <polygon points="150,278 100,235 108,225 150,264 192,225 200,235" fill="white"/>
-    <polygon points="150,322 118,290 126,280 150,302 174,280 182,290" fill="white"/>
-    <text x="150" y="130" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="800" fill="#1a1a1a" letter-spacing="3">TORRES</text>
-    <text x="150" y="155" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="500" fill="#1a1a1a" letter-spacing="4">VIGILÂNCIA PATRIMONIAL</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 380" fill="none">
+  <rect x="95" y="10" width="110" height="60" rx="2" fill="white"/>
+  <rect x="85" y="10" width="28" height="35" rx="2" fill="white"/>
+  <rect x="187" y="10" width="28" height="35" rx="2" fill="white"/>
+  <rect x="113" y="10" width="20" height="20" rx="0" fill="none"/>
+  <path d="M60 60 L60 190 Q60 240 150 280 Q240 240 240 190 L240 60 Z" fill="white"/>
+  <rect x="113" y="10" width="20" height="25" fill="#1a1a1a"/>
+  <rect x="155" y="10" width="20" height="25" fill="#1a1a1a"/>
+  <path d="M80 75 L80 185 Q80 225 150 258 Q220 225 220 185 L220 75 Z" fill="#1a1a1a"/>
+  <path d="M90 120 L150 165 L210 120 L210 145 L150 190 L90 145 Z" fill="white"/>
+  <path d="M105 158 L150 188 L195 158 L195 178 L150 208 L105 178 Z" fill="white"/>
+  <text x="150" y="320" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="58" text-anchor="middle" fill="white" letter-spacing="2">TORRES</text>
+  <text x="150" y="355" font-family="'Arial', sans-serif" font-weight="600" font-size="18" text-anchor="middle" fill="white" letter-spacing="3">VIGILÂNCIA PATRIMONIAL</text>
 </svg>
