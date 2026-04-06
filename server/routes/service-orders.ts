@@ -1526,8 +1526,8 @@ import type { Express } from "express";
         y += 18;
       }
 
-      const dateVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR") : "\u2014";
-      const timeVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "\u2014";
+      const dateVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "\u2014";
+      const timeVal = os.scheduledDate ? new Date(os.scheduledDate).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "\u2014";
       fillRect(LM, y, W, 18, "#ffffff");
       borderRect(LM, y, W, 18);
       const col3W = Math.floor(W / 3);
@@ -1601,11 +1601,11 @@ import type { Express } from "express";
 
         agentRow("CPF", emp?.cpf || "\u2014", "RG", emp?.rg || "\u2014");
         agentRow("CNH", emp?.cnhNumber || "\u2014", "Contato", emp?.phone || "\u2014");
-        agentRow("CNV", emp?.cnvNumber || "\u2014", "Val CNH", emp?.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR") : "\u2014");
-        agentRow("Matr\u00edcula", emp?.matricula || "\u2014", "Val CNV", emp?.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR") : "\u2014");
+        agentRow("CNV", emp?.cnvNumber || "\u2014", "Val CNH", emp?.cnhExpiry ? new Date(emp.cnhExpiry).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "\u2014");
+        agentRow("Matr\u00edcula", emp?.matricula || "\u2014", "Val CNV", emp?.cnvExpiry ? new Date(emp.cnvExpiry).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "\u2014");
 
         if (emp?.vestNumber) {
-          agentRow("Colete", `${emp.vestNumber} ${emp.vestBrand || ""}`.trim(), "Val Colete", emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR") : "\u2014");
+          agentRow("Colete", `${emp.vestNumber} ${emp.vestBrand || ""}`.trim(), "Val Colete", emp.vestExpiry ? new Date(emp.vestExpiry).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "\u2014");
         }
 
         y = Math.max(y, photoY + photoSize + 2);
@@ -1728,12 +1728,12 @@ import type { Express } from "express";
       if (os.escortedDriverName || os.escortedVehiclePlate) {
         sectionHeader("Dados da Carga / Ve\u00edculo Cliente");
         if (os.escortedDriverName) {
-          fieldRow2("Motorista", os.escortedDriverName, "Telefone", "");
+          fieldRow2("Motorista", os.escortedDriverName, "Telefone", os.escortedDriverPhone || "\u2014");
         }
         if (os.escortedVehiclePlate) {
-          fieldRow2("Ve\u00edculo", os.escortedVehiclePlate, "GR/Doc", "");
+          fieldRow2("Ve\u00edculo", os.escortedVehiclePlate, "GR/Doc", (os as any).smNumber || (os as any).sm_number || "\u2014");
         }
-        y += 6;
+        y += 2;
       }
 
       if ((os.description || os.notes) && y < MAX_Y) {
@@ -1751,7 +1751,7 @@ import type { Express } from "express";
       }
 
       const footerH = 80;
-      const footerY = Math.min(Math.max(y + 20, 700), PAGE_H - 30 - footerH);
+      const footerY = Math.min(y + 20, PAGE_H - 30 - footerH);
 
       gradientRect(LM, footerY, W, 24);
       doc.save();
@@ -1771,7 +1771,7 @@ import type { Express } from "express";
       doc.font("Helvetica").fontSize(6.5).fillColor(LIGHT_GRAY).text("CNPJ 36.982.392/0001-89", LM, infoY + 12, { width: infoW, align: "center", lineBreak: false });
       doc.font("Helvetica").fontSize(6.5).fillColor(LIGHT_GRAY).text("Tel: (11) 96369-6699  |  www.torresseguranca.com.br", LM, infoY + 22, { width: infoW, align: "center", lineBreak: false });
       doc.font("Helvetica").fontSize(6).fillColor("#a3a3a3").text(
-        `Documento gerado eletronicamente em ${new Date().toLocaleDateString("pt-BR")}, ${new Date().toLocaleTimeString("pt-BR")}`,
+        `Documento gerado eletronicamente em ${new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}, ${new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
         LM, infoY + 34, { width: infoW, align: "center", lineBreak: false }
       );
       doc.restore();
