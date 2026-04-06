@@ -11006,14 +11006,23 @@ Regras:
 
   app.get("/api/system-audit-logs", requireAdminRole, async (req, res) => {
     try {
-      const limit = Math.min(Number(req.query.limit) || 100, 500);
-      const { data, error } = await supabaseAdmin
+      const limit = Math.min(Number(req.query.limit) || 200, 1000);
+      const offset = Number(req.query.offset) || 0;
+      const action = req.query.action as string | undefined;
+      const userName = req.query.user_name as string | undefined;
+
+      let query = supabaseAdmin
         .from("system_audit_logs")
-        .select("*")
+        .select("*", { count: "exact" })
         .order("created_at", { ascending: false })
-        .limit(limit);
+        .range(offset, offset + limit - 1);
+
+      if (action) query = query.ilike("action", `%${action}%`);
+      if (userName) query = query.ilike("user_name", `%${userName}%`);
+
+      const { data, error, count } = await query;
       if (error) throw error;
-      res.json(data || []);
+      res.json({ logs: data || [], total: count || 0 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
