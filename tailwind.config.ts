@@ -82,6 +82,15 @@ export default {
           offline: "rgb(156 163 175)",
         },
       },
+      fontSize: {
+        xs: ["12px", { lineHeight: "1.5", fontWeight: "400" }],
+        sm: ["13px", { lineHeight: "1.4", fontWeight: "400" }],
+        base: ["14px", { lineHeight: "1.5", fontWeight: "400" }],
+        lg: ["18px", { lineHeight: "1.3", fontWeight: "600" }],
+        xl: ["24px", { lineHeight: "1.2", fontWeight: "600" }],
+        "2xl": ["28px", { lineHeight: "1.2", fontWeight: "600" }],
+        "3xl": ["32px", { lineHeight: "1.1", fontWeight: "700" }],
+      },
       fontFamily: {
         sans: ["var(--font-sans)"],
         heading: ["var(--font-heading)"],
