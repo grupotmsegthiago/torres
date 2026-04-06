@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Eye, EyeOff, UserPlus, Lock, FileCheck, User, Briefcase } from "lucide-react";
-import { TorresLogoIcon } from "@/components/torres-logo";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -381,7 +380,7 @@ export default function LoginPage() {
                 <UserPlus className="w-6 h-6 text-white/60" />
               </div>
             ) : (
-              <TorresLogoIcon size={56} color="white" />
+              <img src="/favicon.jpg" alt="Torres Vigilância Patrimonial" className="w-24 h-24 object-contain rounded-lg" data-testid="img-login-logo" />
             )}
           </div>
           <h1 className="text-xl font-bold text-white" data-testid="text-login-title">
