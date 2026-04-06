@@ -432,7 +432,7 @@ function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderI
       if (!original) continue;
       const adj: any = { stepKey };
       if (edits.timestamp !== undefined) {
-        adj.timestamp = edits.timestamp ? new Date(edits.timestamp).toISOString() : null;
+        adj.timestamp = edits.timestamp ? localInputToUtc(edits.timestamp) : null;
       }
       if (edits.km !== undefined && original.hasKm && original.kmStep) {
         adj.km = edits.km ? Number(edits.km) : null;
@@ -484,10 +484,7 @@ function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderI
     const edited = editedSteps[stepKey];
     if (edited && edited[field] !== undefined) return edited[field]!;
     if (field === "timestamp" && original) {
-      const d = new Date(original as string);
-      if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
-        return d.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T").slice(0, 16);
-      }
+      return utcToLocalInput(original as string);
     }
     if (field === "km" && original !== null && original !== undefined) return String(original);
     return "";
