@@ -17,20 +17,29 @@ const navItems = [
   { path: "/mobile/perfil", label: "Perfil", icon: UserCircle },
 ];
 
-function Watermark({ name }: { name: string }) {
-  const now = useMemo(() => {
+function Watermark({ name, matricula }: { name: string; matricula: string }) {
+  const [now, setNow] = useState(() => {
     const d = new Date();
-    return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const d = new Date();
+      setNow(d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }));
+    }, 60000);
+    return () => clearInterval(timer);
   }, []);
 
-  const lines = useMemo(() => {
-    const items: { x: number; y: number; r: number }[] = [];
-    for (let row = 0; row < 12; row++) {
-      for (let col = 0; col < 4; col++) {
+  const label = `${name} \u2022 ${matricula} \u2022 ${now}`;
+
+  const positions = useMemo(() => {
+    const items: { x: number; y: number }[] = [];
+    for (let row = 0; row < 20; row++) {
+      for (let col = 0; col < 6; col++) {
         items.push({
-          x: col * 260 + (row % 2 === 0 ? 0 : 130),
-          y: row * 180,
-          r: -25,
+          x: col * 280 + (row % 2 === 0 ? 0 : 140) - 100,
+          y: row * 120 - 50,
         });
       }
     }
@@ -38,20 +47,20 @@ function Watermark({ name }: { name: string }) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[60] pointer-events-none overflow-hidden" aria-hidden="true">
-      <svg width="100%" height="100%" className="absolute inset-0">
-        {lines.map((l, i) => (
+    <div className="fixed inset-0 z-[9999] pointer-events-none overflow-hidden" aria-hidden="true">
+      <svg width="100%" height="100%" className="absolute inset-0" style={{ width: "200vw", height: "200vh" }}>
+        {positions.map((p, i) => (
           <text
             key={i}
-            x={l.x}
-            y={l.y}
-            transform={`rotate(${l.r}, ${l.x}, ${l.y})`}
-            fill="rgba(0,0,0,0.04)"
-            fontSize="11"
+            x={p.x}
+            y={p.y}
+            transform={`rotate(-30, ${p.x}, ${p.y})`}
+            fill="rgba(180,180,180,0.13)"
+            fontSize="10"
             fontFamily="Inter, sans-serif"
-            fontWeight="600"
+            fontWeight="500"
           >
-            {name} · {now}
+            {label}
           </text>
         ))}
       </svg>
@@ -166,7 +175,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col select-none" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
-      {user && <Watermark name={user.name || user.username || "—"} />}
+      {user && <Watermark name={user.name || user.username || "—"} matricula={user.matricula || "---"} />}
       <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />

@@ -15,6 +15,7 @@ type AuthUser = {
   employeeId: number | null;
   mustChangePassword: boolean;
   termsAcceptedAt: string | null;
+  matricula: string | null;
 };
 
 type AuthContextType = {

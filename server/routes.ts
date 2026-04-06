@@ -493,9 +493,14 @@ async function ensureSystemSettingsTable() {
     res.json({ email: user.email, name: emp.name });
   });
 
-  app.get("/api/auth/me", requireAuth, (req, res) => {
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
     const safe = toSafeUser(req.user);
-    res.json({ ...safe, termsAcceptedAt: req.user!.termsAcceptedAt || null });
+    let matricula: string | null = null;
+    if (req.user!.employeeId) {
+      const emp = await storage.getEmployee(req.user!.employeeId);
+      if (emp) matricula = emp.matricula || null;
+    }
+    res.json({ ...safe, matricula, termsAcceptedAt: req.user!.termsAcceptedAt || null });
   });
 
   app.post("/api/auth/accept-terms", requireAuth, async (req, res) => {
