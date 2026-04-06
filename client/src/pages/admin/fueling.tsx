@@ -284,11 +284,17 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Gasolina (R$/L) *</label>
-              <Input type="text" inputMode="numeric" value={form.gasolinePrice || "0,000"} onChange={(e) => setForm({ ...form, gasolinePrice: maskBRL(e.target.value, 3) })} placeholder="Ex: 5,790" className="bg-white" required data-testid="input-gasoline-price" />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-500">R$</span>
+                <Input type="text" inputMode="numeric" value={form.gasolinePrice || "0,000"} onChange={(e) => setForm({ ...form, gasolinePrice: maskBRL(e.target.value, 3) })} placeholder="0,000" className="bg-white pl-10" required data-testid="input-gasoline-price" />
+              </div>
             </div>
             <div>
               <label className="text-sm font-semibold text-amber-900 mb-1.5 block">Preço Álcool (R$/L) *</label>
-              <Input type="text" inputMode="numeric" value={form.ethanolPrice || "0,000"} onChange={(e) => setForm({ ...form, ethanolPrice: maskBRL(e.target.value, 3) })} placeholder="Ex: 3,690" className="bg-white" required data-testid="input-ethanol-price" />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-500">R$</span>
+                <Input type="text" inputMode="numeric" value={form.ethanolPrice || "0,000"} onChange={(e) => setForm({ ...form, ethanolPrice: maskBRL(e.target.value, 3) })} placeholder="0,000" className="bg-white pl-10" required data-testid="input-ethanol-price" />
+              </div>
             </div>
           </div>
         </div>
@@ -360,19 +366,25 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
             <Input type="text" inputMode="numeric" value={form.liters || "0,00"} onChange={(e) => {
               const liters = maskBRL(e.target.value);
               setForm({ ...form, liters, totalCost: autoCalcTotal(liters, String(form.costPerLiter)) });
-            }} required disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-liters" />
+            }} required disabled={!pricesReady} placeholder="0,00" className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-liters" />
             {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
           </div>
           <div>
-            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor/Litro (R$)</label>
-            <Input type="text" inputMode="numeric" value={form.costPerLiter || "0,00"} onChange={(e) => {
-              const costPerLiter = maskBRL(e.target.value, 3);
-              setForm({ ...form, costPerLiter, totalCost: autoCalcTotal(String(form.liters), costPerLiter) });
-            }} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-cost-per-liter" />
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor/Litro</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-500">R$</span>
+              <Input type="text" inputMode="numeric" value={form.costPerLiter || "0,000"} onChange={(e) => {
+                const costPerLiter = maskBRL(e.target.value, 3);
+                setForm({ ...form, costPerLiter, totalCost: autoCalcTotal(String(form.liters), costPerLiter) });
+              }} disabled={!pricesReady} placeholder="0,000" className={`pl-10 ${!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""}`} data-testid="input-fueling-cost-per-liter" />
+            </div>
           </div>
           <div>
-            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total (R$)</label>
-            <Input type="text" inputMode="numeric" value={form.totalCost || "0,00"} onChange={(e) => setForm({ ...form, totalCost: maskBRL(e.target.value) })} disabled={!pricesReady} className={!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""} data-testid="input-fueling-total" />
+            <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Valor Total</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-neutral-500">R$</span>
+              <Input type="text" inputMode="numeric" value={form.totalCost || "0,00"} onChange={(e) => setForm({ ...form, totalCost: maskBRL(e.target.value) })} disabled={!pricesReady} placeholder="0,00" className={`pl-10 ${!pricesReady ? "bg-neutral-100 text-neutral-400 cursor-not-allowed" : ""}`} data-testid="input-fueling-total" />
+            </div>
             {!pricesReady && <p className="text-[10px] text-amber-600 mt-1">Preencha os preços acima para liberar</p>}
           </div>
           <div>
