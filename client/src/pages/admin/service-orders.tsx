@@ -1141,7 +1141,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               </div>
               {order && (
                 <div>
-                  <FieldLabel>Início Missão</FieldLabel>
+                  <FieldLabel>Data do Agendamento</FieldLabel>
                   {form.missionStartedAt ? (
                     <Input type="datetime-local" value={form.missionStartedAt} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-mission-started" />
                   ) : (
