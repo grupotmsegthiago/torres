@@ -622,9 +622,71 @@ import type { Express } from "express";
       const entrada = new Date(ponto.entrada);
       const diffMs = saida.getTime() - entrada.getTime();
       const horasDecimal = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+
+      const { data: locations } = await supabaseAdmin.from("agent_location_history")
+        .select("latitude, longitude, speed, created_at")
+        .eq("employee_id", empId)
+        .gte("created_at", entrada.toISOString())
+        .lte("created_at", saida.toISOString())
+        .order("created_at", { ascending: true });
+
+      let horasAtivo = 0;
+      let horasSobreaviso = 0;
+      let horasNoturno = 0;
+      let paradoDesdeMs: number | null = null;
+
+      const locs = locations || [];
+      const SPEED_THRESHOLD = 5;
+      const SOBREAVISO_MIN = 60;
+
+      for (let i = 0; i < locs.length; i++) {
+        const loc = locs[i];
+        const locTime = new Date(loc.created_at);
+        const nextTime = i < locs.length - 1 ? new Date(locs[i + 1].created_at) : saida;
+        const slotHours = (nextTime.getTime() - locTime.getTime()) / (1000 * 60 * 60);
+        if (slotHours <= 0) continue;
+
+        const speed = Number(loc.speed || 0);
+        const isMoving = speed > SPEED_THRESHOLD;
+
+        if (isMoving) {
+          horasAtivo += slotHours;
+          paradoDesdeMs = null;
+        } else {
+          if (paradoDesdeMs === null) paradoDesdeMs = locTime.getTime();
+          const minutosParado = (nextTime.getTime() - paradoDesdeMs) / 60000;
+          if (minutosParado >= SOBREAVISO_MIN) {
+            horasSobreaviso += slotHours;
+          } else {
+            horasAtivo += slotHours;
+          }
+        }
+
+        const brHour = Number(locTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+        if (brHour >= 22 || brHour < 5) {
+          horasNoturno += slotHours;
+        }
+      }
+
+      if (locs.length === 0) {
+        horasAtivo = horasDecimal;
+        const cursor = new Date(entrada);
+        while (cursor < saida) {
+          const brH = Number(cursor.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+          if (brH >= 22 || brH < 5) horasNoturno += 1 / 60;
+          cursor.setTime(cursor.getTime() + 60000);
+        }
+      }
+
+      const horasExtras = Math.max(0, horasDecimal - 8);
+
       const { data, error } = await supabaseAdmin.from("ponto_operacional").update({
         saida: saida.toISOString(),
         horas_decimal: horasDecimal,
+        horas_ativo: +horasAtivo.toFixed(2),
+        horas_sobreaviso: +horasSobreaviso.toFixed(2),
+        horas_noturno: +horasNoturno.toFixed(2),
+        horas_extras: +horasExtras.toFixed(2),
         status: "fechado",
         observacao: req.body.observacao || ponto.observacao,
         updated_at: saida.toISOString(),
