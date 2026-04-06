@@ -287,10 +287,14 @@ if (typeof window !== "undefined") {
             }
           }
           if (status === "SUBSCRIBED") {
+            const wasDisconnected = !_realtimeConnected;
             console.log("[Realtime] connected OK");
             _realtimeConnected = true;
             _lastRealtimeEvent = Date.now();
             _activeChannel = ch;
+            if (wasDisconnected) {
+              queryClient.invalidateQueries();
+            }
           }
         });
     } catch {
