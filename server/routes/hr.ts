@@ -1237,6 +1237,58 @@ ${empNames}`
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/jornada-diretoria/gerar-holerites", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const { mes } = req.body;
+      if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ message: "Informe mes no formato YYYY-MM" });
+      const [y, m] = mes.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const inicioMes = `${mes}-01T00:00:00-03:00`;
+      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+
+      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
+        .select("employee_id, employee_name, horas_extras")
+        .gte("entrada", inicioMes).lte("entrada", fimMes);
+
+      const byEmp: Record<number, { name: string; extras: number }> = {};
+      for (const p of pontos || []) {
+        if (!byEmp[p.employee_id]) byEmp[p.employee_id] = { name: p.employee_name || `#${p.employee_id}`, extras: 0 };
+        byEmp[p.employee_id].extras += Number(p.horas_extras || 0);
+      }
+
+      let criados = 0, existentes = 0;
+      for (const [empIdStr, info] of Object.entries(byEmp)) {
+        const empId = Number(empIdStr);
+        const { data: existing } = await supabaseAdmin.from("employee_payslips")
+          .select("id").eq("employee_id", empId).eq("month", m).eq("year", y).limit(1);
+        if (existing && existing.length > 0) { existentes++; continue; }
+
+        await supabaseAdmin.from("employee_payslips").insert({
+          employee_id: empId,
+          month: m,
+          year: y,
+          horas_extras: +info.extras.toFixed(2),
+          status: "pendente",
+        });
+        criados++;
+      }
+
+      res.json({ criados, existentes, total: Object.keys(byEmp).length });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/jornada-diretoria/alertas", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const mes = req.query.mes ? String(req.query.mes) : new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).slice(0, 7);
+      const { data: alerts } = await supabaseAdmin.from("billing_alerts")
+        .select("*")
+        .eq("alert_type", "JORNADA_LIMITE")
+        .eq("resolved", false)
+        .like("period_start", `${mes}%`);
+      res.json(alerts || []);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/jornada-diretoria", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const mes = req.query.mes ? String(req.query.mes) : new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()).slice(0, 7);

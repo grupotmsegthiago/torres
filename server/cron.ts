@@ -504,5 +504,56 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT)", "cron");
+  cron.schedule("0 11 * * *", async () => {
+    try {
+      log("CRON JornadaAlerta: Verificando agentes com ≥200h no mês atual", "cron");
+      const now = new Date();
+      const mes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now).slice(0, 7);
+      const [y, m] = mes.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const inicioMes = `${mes}-01T00:00:00-03:00`;
+      const fimMes = `${mes}-${String(lastDay).padStart(2, "0")}T23:59:59-03:00`;
+
+      const { data: pontos } = await supabaseAdmin.from("ponto_operacional")
+        .select("employee_id, employee_name, horas_decimal")
+        .gte("entrada", inicioMes).lte("entrada", fimMes);
+
+      const byEmp: Record<number, { name: string; total: number }> = {};
+      for (const p of pontos || []) {
+        if (!byEmp[p.employee_id]) byEmp[p.employee_id] = { name: p.employee_name || `#${p.employee_id}`, total: 0 };
+        byEmp[p.employee_id].total += Number(p.horas_decimal || 0);
+      }
+
+      let created = 0;
+      for (const [empIdStr, info] of Object.entries(byEmp)) {
+        if (info.total < 200) continue;
+        const empId = Number(empIdStr);
+
+        const { data: existing } = await supabaseAdmin.from("billing_alerts")
+          .select("id")
+          .eq("alert_type", "JORNADA_LIMITE")
+          .eq("client_id", empId)
+          .eq("resolved", false)
+          .like("period_start", `${mes}%`)
+          .limit(1);
+        if (existing && existing.length > 0) continue;
+
+        await supabaseAdmin.from("billing_alerts").insert({
+          client_id: empId,
+          client_name: info.name,
+          alert_type: "JORNADA_LIMITE",
+          message: `Agente ${info.name} atingiu ${info.total.toFixed(1)}h neste mês. Limite: 220h`,
+          period_start: `${mes}-01`,
+          period_end: `${mes}-${String(lastDay).padStart(2, "0")}`,
+          resolved: false,
+        });
+        created++;
+      }
+      log(`CRON JornadaAlerta: ${created} alerta(s) criado(s), ${Object.values(byEmp).filter(e => e.total >= 200).length} agente(s) ≥200h`, "cron");
+    } catch (err: any) {
+      log(`CRON JornadaAlerta: Erro: ${err.message}`, "cron");
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT)", "cron");
 }

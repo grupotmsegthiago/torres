@@ -1,16 +1,20 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { apiRequest } from "@/lib/queryClient";
-import { Users, AlertTriangle, Clock, TrendingUp, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Users, AlertTriangle, Clock, TrendingUp, Search, Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import * as XLSX from "xlsx";
 
 export default function JornadaDiretoriaPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
 
   const [mesReferencia, setMesReferencia] = useState(() => {
     const d = new Date();
@@ -24,6 +28,26 @@ export default function JornadaDiretoriaPage() {
     queryKey: ["/api/jornada-diretoria", mesReferencia],
     queryFn: () => apiRequest("GET", `/api/jornada-diretoria?mes=${mesReferencia}`).then(r => r.json()),
     enabled: isDiretoria,
+  });
+
+  const { data: alertas } = useQuery<any[]>({
+    queryKey: ["/api/jornada-diretoria/alertas", mesReferencia],
+    queryFn: () => apiRequest("GET", `/api/jornada-diretoria/alertas?mes=${mesReferencia}`).then(r => r.json()),
+    enabled: isDiretoria,
+  });
+
+  const gerarHoleritesMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/jornada-diretoria/gerar-holerites", { mes: mesReferencia }).then(r => r.json()),
+    onSuccess: (result: any) => {
+      toast({
+        title: "Holerites gerados",
+        description: `${result.criados} holerites gerados, ${result.existentes} já existiam`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/jornada-diretoria"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
   });
 
   if (!isDiretoria) {
@@ -51,6 +75,7 @@ export default function JornadaDiretoriaPage() {
   const totalAgentes = filtered.length;
   const agentesHoraExtra = filtered.filter((r: any) => r.totalHoras > 220).length;
   const agentesProxLimite = filtered.filter((r: any) => r.totalHoras >= 210 && r.totalHoras <= 220).length;
+  const alertasNaoResolvidos = (alertas || []).length;
 
   const getStatus = (horas: number) => {
     if (horas > 220) return { label: "EXCEDIDO", color: "bg-red-500 text-white" };
@@ -60,12 +85,41 @@ export default function JornadaDiretoriaPage() {
 
   const fmtH = (v: any) => Number(v || 0).toFixed(1) + "h";
 
+  const exportExcel = () => {
+    const rows = filtered.map((r: any) => ({
+      Nome: r.employeeName,
+      "Total (h)": +Number(r.totalHoras || 0).toFixed(2),
+      "Ativas (h)": +Number(r.horasAtivo || 0).toFixed(2),
+      "Sobreaviso (h)": +Number(r.horasSobreaviso || 0).toFixed(2),
+      "Noturnas (h)": +Number(r.horasNoturno || 0).toFixed(2),
+      "Extras (h)": +Number(r.horasExtras || 0).toFixed(2),
+      Status: getStatus(r.totalHoras).label,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Jornada");
+    const [ano, mes] = mesReferencia.split("-");
+    XLSX.writeFile(wb, `jornada-${mes}-${ano}.xlsx`);
+  };
+
   return (
     <AdminLayout>
       <div className="p-4 md:p-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <Clock className="w-6 h-6" />
-          <h1 className="page-title" data-testid="text-page-title">Jornada — Visão Diretoria</h1>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Clock className="w-6 h-6" />
+            <h1 className="page-title" data-testid="text-page-title">Jornada — Visão Diretoria</h1>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={exportExcel} disabled={filtered.length === 0} data-testid="button-export-excel">
+              <FileSpreadsheet className="w-4 h-4 mr-1" />
+              Exportar Excel
+            </Button>
+            <Button size="sm" onClick={() => gerarHoleritesMutation.mutate()} disabled={gerarHoleritesMutation.isPending || resumo.length === 0} data-testid="button-gerar-holerites">
+              {gerarHoleritesMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+              Gerar Holerites do Mês
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -98,10 +152,15 @@ export default function JornadaDiretoriaPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-4 text-center">
+            <CardContent className="p-4 text-center relative">
               <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-amber-500" />
-              <p className="helper-text text-muted-foreground">Próximos do Limite (210-220h)</p>
+              <p className="helper-text text-muted-foreground">Próximos do Limite</p>
               <p className="text-2xl font-bold text-amber-600" data-testid="text-prox-limite">{agentesProxLimite}</p>
+              {alertasNaoResolvidos > 0 && (
+                <Badge className="absolute top-2 right-2 bg-red-600 text-white text-xs" data-testid="badge-alertas-pendentes">
+                  {alertasNaoResolvidos} alerta{alertasNaoResolvidos > 1 ? "s" : ""}
+                </Badge>
+              )}
             </CardContent>
           </Card>
         </div>
