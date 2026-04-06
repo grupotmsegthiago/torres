@@ -21,7 +21,19 @@ Regras inegociáveis:
 
 Regras técnicas do projeto:
 
-- TODO acesso a dados → Supabase (supabaseAdmin). NUNCA usar db local direto.
+BANCO DE DADOS — 100% SUPABASE:
+- O projeto usa EXCLUSIVAMENTE o Supabase como banco de dados.
+- DATABASE_URL (Replit local) NÃO É USADO. O db.ts aponta para SUPABASE_DATABASE_URL.
+- Drizzle ORM (server/db.ts) e supabaseAdmin REST (server/supabase.ts) ambos conectam no MESMO banco Supabase.
+- NUNCA criar tabelas ou salvar dados no PostgreSQL local do Replit.
+- Para queries complexas: usar Drizzle (import { db } from "./db"). Para CRUD simples: usar supabaseAdmin.from("tabela").
+- Ambos os métodos escrevem no mesmo banco Supabase.
+
+TABELAS DUPLICADAS (esclarecimento):
+- employee_payslips é a tabela OFICIAL de holerites (schema Drizzle). "payslips" é apenas alias usado em algumas queries legadas — mesma tabela.
+- vehicle_fueling é a tabela OFICIAL de abastecimentos. "fueling_records" é alias legado — mesma tabela.
+
+REGRAS GERAIS:
 - NUNCA usar fetch() no frontend — sempre authFetch() de @/lib/queryClient
 - Datas: sempre BRT (America/Sao_Paulo). data_missao = ISO timestamp completo.
 - Auditoria: usar logSystemAudit() de server/audit.ts
@@ -31,4 +43,5 @@ Regras técnicas do projeto:
 - Realtime: 6 canais com event: "*". No reconnect → queryClient.invalidateQueries()
 - Schema: shared/schema.ts (Drizzle + Zod). Supabase usa snake_case.
 - Auth: Supabase Auth JWT. Roles: admin, vigilante, gerente, diretoria.
+- server/routes.ts tem 6000+ linhas. Ao editar, vá direto na linha correta. Não abra o arquivo inteiro.
 - Leia SYSTEM_OVERVIEW.md para arquitetura completa do sistema.
