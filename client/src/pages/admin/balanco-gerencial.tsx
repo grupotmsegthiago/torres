@@ -8,7 +8,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
-  Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText,
+  Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert,
 } from "lucide-react";
 import { queryClient, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -410,6 +410,19 @@ export default function BalancoGerencialPage() {
             const metaPeriodo = META_DIARIA_VIATURA * daysInPeriod * totalViaturas;
             const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
             const mc = getMetaColor(metaPct);
+
+            const today = new Date();
+            const periodStart = range.start;
+            const periodEnd = range.end;
+            const elapsed = Math.max(1, Math.floor((Math.min(today.getTime(), periodEnd.getTime()) - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+            const isPast = today > periodEnd;
+            const dailyAvg = totals.fat / elapsed;
+            const projection = isPast ? totals.fat : dailyAvg * daysInPeriod;
+            const chancePct = metaPeriodo > 0 ? (projection / metaPeriodo) * 100 : 0;
+            const chanceColor = chancePct >= 100 ? "text-green-700" : chancePct >= 80 ? "text-amber-600" : "text-red-600";
+            const chanceBg = chancePct >= 100 ? "bg-green-50 border-green-200" : chancePct >= 80 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+            const showProjection = period !== "DAY" && totals.fat > 0 && !isPast;
+
             return (
               <Card className={`p-4 border-neutral-200 ${mc.icon ? "ring-2 ring-green-400" : ""}`} data-testid="card-faturamento">
                 <div className="flex items-center gap-2 mb-2">
@@ -429,6 +442,18 @@ export default function BalancoGerencialPage() {
                     </div>
                     <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
                       <div className={`h-full rounded-full transition-all ${mc.bar}`} style={{ width: `${Math.min(metaPct, 100)}%` }} />
+                    </div>
+                  </div>
+                )}
+                {showProjection && (
+                  <div className={`mt-2 rounded-lg border p-2 ${chanceBg}`} data-testid="projection-box">
+                    <p className="text-[10px] font-bold text-neutral-500 uppercase mb-0.5">Projeção para fim do mês</p>
+                    <p className="text-sm font-black font-mono text-neutral-800">{fmt(projection)}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <ShieldAlert size={12} className={chanceColor} />
+                      <span className={`text-[10px] font-black ${chanceColor}`}>
+                        Chance de atingir a meta: {fmtPct(chancePct)}
+                      </span>
                     </div>
                   </div>
                 )}

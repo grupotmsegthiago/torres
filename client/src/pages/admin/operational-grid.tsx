@@ -628,7 +628,7 @@ function ReverseGeocodeAddress({ lat, lng }: { lat: number; lng: number }) {
   return (
     <div className="mt-1 space-y-0.5">
       {addr && (
-        <p className="text-[10px] font-bold text-neutral-700 flex items-center gap-1" data-testid="text-full-address">
+        <p className="text-[10px] font-semibold text-neutral-700 flex items-center gap-1" data-testid="text-full-address">
           <ShieldCheck className="w-3 h-3 text-emerald-600 flex-shrink-0" />
           {addr}
         </p>
@@ -656,7 +656,7 @@ function AgentLocationLine({ label, lat, lng, updatedAt, colorClass }: { label: 
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline ${noSignal ? "text-red-500" : colorClass}`}
+      className={`text-[10px] leading-tight block mt-0.5 truncate hover:underline font-semibold ${noSignal ? "text-red-500" : colorClass}`}
       title={addr || `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`}
       data-testid={`agent-location-line-${label}`}
     >
@@ -896,7 +896,10 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
   const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
   const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
-  const locationAddr = v.tracker?.address || "—";
+  const trackerLat = v.tracker?.latitude;
+  const trackerLng = v.tracker?.longitude;
+  const geoCacheKey = trackerLat && trackerLng ? `${Number(trackerLat).toFixed(5)},${Number(trackerLng).toFixed(5)}` : "";
+  const locationAddr = (geoCacheKey && _reverseGeocodeCache[geoCacheKey]) || v.tracker?.address || "—";
   const transitStatus = getTransitStatus(os.missionStatus);
 
   const lat = v.tracker?.latitude;
@@ -966,9 +969,27 @@ async function generateReportAsync(v: TrackedVehicle, gridItem?: GridItem | null
   const vars = buildReportVars(v, gridItem);
   if (!vars) return "";
 
-  const os = v.activeOs || (gridItem as any);
   const lat = v.tracker?.latitude;
   const lng = v.tracker?.longitude;
+  if (lat && lng) {
+    const gKey = `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`;
+    if (!_reverseGeocodeCache[gKey]) {
+      try {
+        const geoRes = await authFetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          if (geoData?.address) {
+            _reverseGeocodeCache[gKey] = geoData.address;
+            vars.locationAddr = geoData.address;
+          }
+        }
+      } catch {}
+    } else {
+      vars.locationAddr = _reverseGeocodeCache[gKey];
+    }
+  }
+
+  const os = v.activeOs || (gridItem as any);
   const destLat = os?.destinationLat;
   const destLng = os?.destinationLng;
   if (lat && lng && destLat && destLng) {
