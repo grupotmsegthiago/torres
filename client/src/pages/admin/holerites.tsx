@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import AdminLayout from "@/components/admin/layout";
@@ -24,10 +24,6 @@ const now = new Date();
 const currentMonth = now.getMonth() + 1;
 const currentYear = now.getFullYear();
 
-function authFetch(url: string) {
-  return fetch(url, { credentials: "include" });
-}
-
 export default function HoleritesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -41,7 +37,8 @@ export default function HoleritesPage() {
     queryKey: ["/api/payslips", filterMonth, filterYear],
     queryFn: async () => {
       const r = await authFetch(`/api/payslips?month=${filterMonth}&year=${filterYear}`);
-      return r.json();
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
