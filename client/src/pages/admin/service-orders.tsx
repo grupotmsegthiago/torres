@@ -1142,11 +1142,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {order && (
                 <div>
                   <FieldLabel>Data do Agendamento</FieldLabel>
-                  {form.missionStartedAt ? (
-                    <Input type="datetime-local" value={form.missionStartedAt} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-mission-started" />
-                  ) : (
-                    <p className="text-sm text-amber-600 font-medium py-2 px-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="text-aguardando-inicio">Aguardando início pelo agente</p>
-                  )}
+                  <Input type="datetime-local" value={form.missionStartedAt} onChange={(e) => setForm({ ...form, missionStartedAt: e.target.value })} className="text-sm" data-testid="input-os-mission-started" />
                 </div>
               )}
               {order && (
