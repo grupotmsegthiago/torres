@@ -15,7 +15,7 @@ import {
 import {
   Receipt, Plus, Loader2, DollarSign, Calendar, User, FileText,
   Upload, Download, Trash2, CheckCircle2, Clock, AlertTriangle,
-  ChevronDown, ChevronUp, BarChart3, Eye
+  ChevronDown, ChevronUp, BarChart3, Eye, ScanLine
 } from "lucide-react";
 
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -308,6 +308,44 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrResult, setOcrResult] = useState<any>(null);
+
+  const handleOcrImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrProcessing(true);
+    setOcrResult(null);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      setDocumentUrl(base64);
+      try {
+        const r = await apiRequest("POST", "/api/payslips/ocr", { imageData: base64 });
+        const data = await r.json();
+        setOcrResult(data);
+
+        setForm(f => ({
+          ...f,
+          employeeId: data.matchedEmployeeId ? String(data.matchedEmployeeId) : f.employeeId,
+          month: data.month ? String(data.month) : f.month,
+          year: data.year ? String(data.year) : f.year,
+          salarioBase: data.salarioBase ? String(data.salarioBase) : f.salarioBase,
+          periculosidade: data.periculosidade ? String(data.periculosidade) : f.periculosidade,
+          horasExtras: data.horasExtras ? String(data.horasExtras) : f.horasExtras,
+          adicionalNoturno: data.adicionalNoturno ? String(data.adicionalNoturno) : f.adicionalNoturno,
+          beneficios: data.beneficios ? String(data.beneficios) : f.beneficios,
+          descontos: data.descontos ? String(data.descontos) : f.descontos,
+        }));
+
+        toast({ title: "Holerite importado com sucesso!", description: `Funcionário: ${data.employeeName || "não identificado"} · ${data.competencia || ""}` });
+      } catch (err: any) {
+        toast({ title: "Erro no OCR", description: err.message || "Não foi possível ler o documento", variant: "destructive" });
+      }
+      setOcrProcessing(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const fetchSuggestion = async () => {
     if (!form.employeeId || !form.month || !form.year) return;
@@ -383,6 +421,31 @@ function NovoHoleriteDialog({ employees, onClose, filterMonth, filterYear }: { e
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="relative">
+            <input type="file" accept="image/*,application/pdf" onChange={handleOcrImport} className="hidden" id="ocr-upload" data-testid="input-ocr-upload" />
+            <label htmlFor="ocr-upload" className={`flex items-center justify-center gap-2 w-full border-2 border-dashed rounded-lg p-4 cursor-pointer transition-all ${ocrProcessing ? "border-indigo-400 bg-indigo-50" : ocrResult ? "border-emerald-400 bg-emerald-50" : "border-neutral-300 bg-neutral-50 hover:border-indigo-400 hover:bg-indigo-50"}`}>
+              {ocrProcessing ? (
+                <>
+                  <Loader2 size={18} className="animate-spin text-indigo-600" />
+                  <span className="text-sm font-bold text-indigo-700">Lendo holerite com OCR...</span>
+                </>
+              ) : ocrResult ? (
+                <>
+                  <CheckCircle2 size={18} className="text-emerald-600" />
+                  <span className="text-sm font-bold text-emerald-700">
+                    Importado: {ocrResult.employeeName || "Doc lido"} {ocrResult.competencia ? `· ${ocrResult.competencia}` : ""}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <ScanLine size={18} className="text-indigo-600" />
+                  <span className="text-sm font-bold text-neutral-700">Importar Holerite (OCR)</span>
+                  <span className="text-xs text-neutral-400 ml-1">PDF ou foto</span>
+                </>
+              )}
+            </label>
+          </div>
+
           <div>
             <label className="text-sm font-bold text-neutral-700 mb-1 block">Funcionário</label>
             <select value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm" data-testid="select-employee">

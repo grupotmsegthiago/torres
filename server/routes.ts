@@ -8523,6 +8523,112 @@ Para datas, converta para YYYY-MM-DD. Se só houver ano, use YYYY-01-01.`;
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/payslips/ocr", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { imageData } = req.body;
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ message: "Envie imageData (base64 data URL)" });
+      }
+
+      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+      if (!apiKey) return res.status(500).json({ message: "Chave de API de IA não configurada" });
+
+      const openai = new OpenAI({ apiKey, baseURL });
+
+      const allEmps = await storage.getEmployees();
+      const empNames = allEmps.filter((e: any) => e.status === "ativo").map((e: any) => `${e.name} (CPF: ${e.cpf || "N/A"})`).join("\n");
+
+      console.log("[ocr-holerite] Enviando para OpenAI Vision...");
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um sistema especializado em extrair dados de holerites e contracheques brasileiros.
+Analise a imagem do holerite/contracheque e extraia os seguintes campos. Retorne APENAS um JSON válido (sem markdown, sem texto extra):
+{
+  "employeeName": "nome completo do funcionário conforme aparece no documento",
+  "employeeCpf": "CPF do funcionário no formato 000.000.000-00",
+  "month": número do mês (1-12),
+  "year": número do ano (ex: 2026),
+  "salarioBase": valor numérico do salário base (sem R$),
+  "periculosidade": valor numérico da periculosidade/adicional periculosidade (sem R$),
+  "horasExtras": valor numérico total de horas extras em reais (sem R$),
+  "adicionalNoturno": valor numérico do adicional noturno (sem R$),
+  "beneficios": valor numérico total de benefícios/gratificações/VR/VA/cesta (sem R$),
+  "descontos": valor numérico total de descontos (INSS + IRRF + VT + outros) (sem R$),
+  "totalBruto": valor numérico do total de vencimentos/proventos (sem R$),
+  "totalLiquido": valor numérico do salário líquido a receber (sem R$),
+  "competencia": "texto da competência/referência conforme aparece (ex: ABR/2026)"
+}
+
+Se um campo não for encontrado, retorne 0 para números e "" para strings. Nunca invente valores.
+Os valores devem ser números (ex: 2432.50, não "2.432,50"). Converta o formato brasileiro para decimal.
+
+FUNCIONÁRIOS CADASTRADOS NO SISTEMA (use para identificar o funcionário correto):
+${empNames}`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extraia os dados deste holerite/contracheque:" },
+              { type: "image_url", image_url: { url: imageData } },
+            ],
+          },
+        ],
+      });
+
+      const text = response.choices?.[0]?.message?.content || "";
+      console.log("[ocr-holerite] OpenAI raw:", text.substring(0, 500));
+      const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      let matchedEmployeeId: number | null = null;
+      if (parsed.employeeName || parsed.employeeCpf) {
+        const cpfClean = (parsed.employeeCpf || "").replace(/\D/g, "");
+        const nameLower = (parsed.employeeName || "").toLowerCase().trim();
+
+        for (const emp of allEmps) {
+          const empCpf = (emp.cpf || "").replace(/\D/g, "");
+          if (cpfClean && empCpf && cpfClean === empCpf) {
+            matchedEmployeeId = emp.id;
+            break;
+          }
+        }
+
+        if (!matchedEmployeeId && nameLower) {
+          for (const emp of allEmps) {
+            const empName = (emp.name || "").toLowerCase().trim();
+            if (empName === nameLower || empName.includes(nameLower) || nameLower.includes(empName)) {
+              matchedEmployeeId = emp.id;
+              break;
+            }
+          }
+        }
+
+        if (!matchedEmployeeId && nameLower) {
+          const nameParts = nameLower.split(/\s+/);
+          if (nameParts.length >= 2) {
+            for (const emp of allEmps) {
+              const empParts = (emp.name || "").toLowerCase().split(/\s+/);
+              if (empParts[0] === nameParts[0] && empParts[empParts.length - 1] === nameParts[nameParts.length - 1]) {
+                matchedEmployeeId = emp.id;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`[ocr-holerite] Parsed OK. Employee match: ${matchedEmployeeId}, name: ${parsed.employeeName}`);
+      res.json({ ...parsed, matchedEmployeeId });
+    } catch (err: any) {
+      console.error("[ocr-holerite] Error:", err.message);
+      res.status(500).json({ message: "Erro ao processar holerite: " + (err.message || "Erro desconhecido") });
+    }
+  });
+
   // ====================== TESTAR TODAS APIs ======================
 
   app.post("/api/consulta/testar-todas", requireAuth, requireAdmin, async (req, res) => {
