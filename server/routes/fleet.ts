@@ -145,6 +145,16 @@ import type { Express } from "express";
         }
       }
     }
+    const { data: existing } = await supabaseAdmin.from("vehicle_fueling")
+      .select("id")
+      .eq("vehicle_id", parsed.data.vehicleId)
+      .eq("km", parsed.data.km)
+      .eq("liters", String(parsed.data.liters))
+      .eq("date", parsed.data.date)
+      .limit(1);
+    if (existing && existing.length > 0) {
+      return res.status(409).json({ message: "Abastecimento duplicado — já existe um registro idêntico para este veículo, KM, litros e data." });
+    }
     parsed.data.createdByUserId = req.user?.id || null;
     const data = await storage.createVehicleFueling(parsed.data);
     if (parsed.data.vehicleId) {
