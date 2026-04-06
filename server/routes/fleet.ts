@@ -4,7 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireDiretoria } from "../auth";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
   import { eq } from "drizzle-orm";
-  import { logFinancialAudit } from "./_helpers";
+  import { logFinancialAudit, createAutoTransaction } from "./_helpers";
 
   export function registerFleetRoutes(app: Express) {
     app.get("/api/trips", requireAuth, async (_req, res) => {
