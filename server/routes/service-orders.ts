@@ -8,6 +8,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex } from "./_helpers";
+  import { calcularEscolta } from "../billing-calc";
 
   export function registerServiceOrderRoutes(app: Express) {
     app.get("/api/service-orders", requireAuth, async (_req, res) => {

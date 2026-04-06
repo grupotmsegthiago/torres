@@ -2161,7 +2161,7 @@ export default function ServiceOrdersPage() {
                               setEditingTimeOs(o.id);
                               const logs = o.stepLogs as StepLogEntry[] | null;
                               const tChegDest = getStepTime(logs, ["chegada_destino", "em_transito_destino"]);
-                              const tFimVal = o.completedDate ? new Date(o.completedDate).toISOString() : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
+                              const tFimVal = o.completedDate ? ensureUTC(o.completedDate) : getStepTime(logs, ["encerrada", "finalizada", "checkout_km_final"]);
                               setEditInicioMissao(utcToLocalInput(tChegDest));
                               setEditFimMissao(utcToLocalInput(tFimVal));
                             }} title="Editar Horários da Missão" data-testid={`button-edit-times-${o.id}`}><Timer className="w-4 h-4 text-amber-500" /></Button>

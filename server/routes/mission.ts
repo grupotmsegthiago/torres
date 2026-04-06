@@ -8,6 +8,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS } from "./_helpers";
+  import { calcularEscolta } from "../billing-calc";
 
   export function registerMissionRoutes(app: Express) {
     app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
