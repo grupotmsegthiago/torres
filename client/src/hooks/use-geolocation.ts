@@ -6,7 +6,7 @@ const INTERVAL_MS = 10 * 60 * 1000;
 
 const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  timeout: 15000,
+  timeout: 10000,
   maximumAge: 0,
 };
 

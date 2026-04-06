@@ -1384,18 +1384,6 @@ Regras:
     }
   });
 
-  // ─── MOBILE: Folha de Ponto (Clock In/Out with photo + GPS) ──────────
-  const HQ_LAT = -23.4827;
-  const HQ_LNG = -46.7346;
-  const HQ_RADIUS_METERS = 500;
-
-  function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
 
 
   

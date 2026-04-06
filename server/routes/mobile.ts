@@ -5,6 +5,19 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { employees, employeeTimesheets, employeeOccurrences, vehicles, vehicleFueling, referencePoints, insertReferencePointSchema } from "@shared/schema";
   import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
+  import { haversineDist } from "./_helpers";
+
+  const HQ_FALLBACK_LAT = -23.4822;
+  const HQ_FALLBACK_LNG = -46.7232;
+  const HQ_FALLBACK_RADIUS = 500;
+
+  async function getBaseCoords(): Promise<{ lat: number; lng: number; radius: number; name: string }> {
+    const bases = await db.select().from(referencePoints).limit(1);
+    if (bases.length > 0) {
+      return { lat: bases[0].latitude, lng: bases[0].longitude, radius: bases[0].radiusMeters, name: bases[0].name };
+    }
+    return { lat: HQ_FALLBACK_LAT, lng: HQ_FALLBACK_LNG, radius: HQ_FALLBACK_RADIUS, name: "Sede Torres" };
+  }
 
   export function registerMobileRoutes(app: Express) {
     app.get("/api/mobile/ponto/today", requireAuth, async (req: any, res) => {
@@ -59,10 +72,11 @@ import type { Express } from "express";
         if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
           return res.status(400).json({ message: "Coordenadas de localizacao invalidas" });
         }
-        const distToHQ = haversineMeters(parsedLat, parsedLng, HQ_LAT, HQ_LNG);
-        if (distToHQ > HQ_RADIUS_METERS) {
+        const base = await getBaseCoords();
+        const distToHQ = haversineDist(parsedLat, parsedLng, base.lat, base.lng);
+        if (distToHQ > base.radius) {
           return res.status(403).json({
-            message: `Voce nao esta na sede da empresa. Distancia: ${Math.round(distToHQ)}m (maximo ${HQ_RADIUS_METERS}m). Dirija-se a Av. Raimundo Pereira de Magalhaes, 5720 - Pirituba, SP.`,
+            message: `Você está a ${Math.round(distToHQ)}m da base (${base.name}). Máximo permitido: ${base.radius}m.`,
             code: "GEOFENCE_BLOCKED",
             distance: Math.round(distToHQ),
           });
@@ -119,17 +133,18 @@ import type { Express } from "express";
 
       const employee = await storage.getEmployee(empId);
 
+      const base = await getBaseCoords();
       const checkLocation = (lat: string | null, lng: string | null) => {
         if (!lat || !lng) return { lat: null, lng: null, distance: null, atHQ: false, atHome: false };
         const la = parseFloat(lat), lo = parseFloat(lng);
-        const distHQ = haversineMeters(la, lo, HQ_LAT, HQ_LNG);
+        const distHQ = haversineDist(la, lo, base.lat, base.lng);
         let distHome: number | null = null;
         let atHome = false;
         if (employee && (employee as any).addressLat && (employee as any).addressLng) {
-          distHome = haversineMeters(la, lo, parseFloat((employee as any).addressLat), parseFloat((employee as any).addressLng));
+          distHome = haversineDist(la, lo, parseFloat((employee as any).addressLat), parseFloat((employee as any).addressLng));
           atHome = distHome <= 500;
         }
-        return { lat: la, lng: lo, distance: Math.round(distHQ), atHQ: distHQ <= HQ_RADIUS_METERS, atHome, distHome: distHome !== null ? Math.round(distHome) : null };
+        return { lat: la, lng: lo, distance: Math.round(distHQ), atHQ: distHQ <= base.radius, atHome, distHome: distHome !== null ? Math.round(distHome) : null };
       };
 
       res.json({
@@ -140,8 +155,8 @@ import type { Express } from "express";
         clockOutGeo: checkLocation(record.clockOutLat, record.clockOutLng),
         lunchOutGeo: checkLocation(record.lunchOutLat, record.lunchOutLng),
         lunchInGeo: checkLocation(record.lunchInLat, record.lunchInLng),
-        hqAddress: "Av. Raimundo Pereira de Magalhaes, 5720 - Pirituba, SP",
-        hqRadius: HQ_RADIUS_METERS,
+        hqAddress: base.name,
+        hqRadius: base.radius,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

@@ -88,7 +88,7 @@ export default function MobilePontoPage() {
             reject(new Error("Erro ao obter localização. Ative o GPS e tente novamente."));
           }
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     });
   }, [reverseGeocode]);
@@ -223,8 +223,8 @@ export default function MobilePontoPage() {
               <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
                 <Building2 className="w-8 h-8 text-red-500 shrink-0" />
                 <div>
-                  <p className="text-xs font-bold text-red-700 uppercase">Distância da Sede</p>
-                  <p className="text-2xl font-black text-red-600">{(geofenceBlock.distance / 1000).toFixed(1)} km</p>
+                  <p className="text-xs font-bold text-red-700 uppercase">Distância da Base</p>
+                  <p className="text-2xl font-black text-red-600">{geofenceBlock.distance >= 1000 ? `${(geofenceBlock.distance / 1000).toFixed(1)} km` : `${Math.round(geofenceBlock.distance)}m`}</p>
                   <p className="text-[10px] text-red-500">Máximo permitido: 500m</p>
                 </div>
               </div>
