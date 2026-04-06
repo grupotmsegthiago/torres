@@ -235,15 +235,15 @@ if (typeof window !== "undefined") {
 
   function _buildRealtimeChannel(name: string) {
     return supabase.channel(name)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_costs" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "mission_costs" }, () => {
         _invalidateLocal("mission-cost");
         _invalidateLocal("financial");
       })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "financial_transactions" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "financial_transactions" }, () => {
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
       })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "vehicle_fueling" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_fueling" }, () => {
         _invalidateLocal("vehicle");
         _invalidateLocal("financial");
         _invalidateLocal("mission-cost");
@@ -251,10 +251,7 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
         _invalidateLocal("service-order");
       })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_updates" }, () => {
-        _invalidateLocal("mission-update");
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "mission_updates" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "mission_updates" }, () => {
         _invalidateLocal("mission-update");
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
