@@ -202,8 +202,19 @@ import type { Express } from "express";
         }
       }
 
+      const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const { data: dupCheck } = await supabaseAdmin.from("vehicle_fueling")
+        .select("id")
+        .eq("vehicle_id", vehicleId)
+        .eq("date", todayDate)
+        .eq("total_cost", String(totalCost || (Number(liters || 0) * Number(costPerLiter || 0))))
+        .limit(1);
+      if (dupCheck && dupCheck.length > 0) {
+        return res.status(409).json({ message: "Abastecimento já registrado — registro duplicado detectado." });
+      }
+
       const [fueling] = await db.insert(vehicleFueling).values({
-        vehicleId, driverId: employeeId, date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+        vehicleId, driverId: employeeId, date: todayDate,
         liters: liters?.toString() || "0", costPerLiter: costPerLiter?.toString(), totalCost: totalCost?.toString(),
         km, fuelType: fuelType || "gasolina", fullTank: true, station,
         receiptPhoto, pumpPhoto, odometerPhoto, platePhoto, latitude, longitude, address,
