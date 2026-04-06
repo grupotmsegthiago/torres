@@ -7,9 +7,9 @@ import type { Express } from "express";
   import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
   import { haversineDist, createAutoTransaction } from "./_helpers";
 
-  const HQ_FALLBACK_LAT = -23.4822;
-  const HQ_FALLBACK_LNG = -46.7232;
-  const HQ_FALLBACK_RADIUS = 500;
+  const HQ_FALLBACK_LAT = -23.489;
+  const HQ_FALLBACK_LNG = -46.7234;
+  const HQ_FALLBACK_RADIUS = 800;
 
   async function getBaseCoords(): Promise<{ lat: number; lng: number; radius: number; name: string }> {
     const bases = await db.select().from(referencePoints).limit(1);
