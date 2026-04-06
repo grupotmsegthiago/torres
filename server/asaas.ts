@@ -168,14 +168,25 @@ export function registerAsaasRoutes(app: Express) {
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
         asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "");
 
-        const payment = await asaasRequest("POST", "/payments", {
+        let emiteNf = false;
+        if (clientId) {
+          const { data: cliData } = await supabaseAdmin.from("clients").select("emite_nf").eq("id", clientId).single();
+          emiteNf = cliData?.emite_nf === true;
+        }
+
+        const paymentPayload: any = {
           customer: asaasCustomerId,
           billingType: billingType || "BOLETO",
           value: parseFloat(value),
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
-        });
+        };
+        if (emiteNf) {
+          paymentPayload.postalService = false;
+        }
+
+        const payment = await asaasRequest("POST", "/payments", paymentPayload);
 
         asaasPaymentId = payment.id;
         invoiceUrl = payment.invoiceUrl;
@@ -427,8 +438,9 @@ export function registerAsaasRoutes(app: Express) {
       const invoiceDueDate = dueDate || new Date(now.getFullYear(), now.getMonth() + 1, 15).toISOString().split("T")[0];
       const description = `Faturamento Consolidado - ${clientName}\n${billings.length} missão(ões)\n\n${osDescriptions.join("\n")}`;
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
+      const emiteNfConsolidado = clientData?.emite_nf === true;
 
       let asaasCustomerId: string | null = null;
       let asaasPaymentId: string | null = null;
@@ -441,14 +453,18 @@ export function registerAsaasRoutes(app: Express) {
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
           asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj);
-          const payment = await asaasRequest("POST", "/payments", {
+          const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",
             value: totalValue,
             dueDate: invoiceDueDate,
             description: description.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
-          });
+          };
+          if (emiteNfConsolidado) {
+            consolidadoPayload.postalService = false;
+          }
+          const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
           asaasPaymentId = payment.id;
           invoiceUrl = payment.invoiceUrl;
           bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;

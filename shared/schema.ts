@@ -53,6 +53,7 @@ export const clients = pgTable("clients", {
   prazoAprovacaoDias: integer("prazo_aprovacao_dias"),
   paymentTermsDays: integer("payment_terms_days"),
   billingCutoffDay: integer("billing_cutoff_day"),
+  emiteNf: boolean("emite_nf").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

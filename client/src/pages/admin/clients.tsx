@@ -145,6 +145,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     prazoAprovacaoDias: String((client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || ""),
     paymentTermsDays: String((client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || ""),
     billingCutoffDay: String((client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || ""),
+    emiteNf: (client as any)?.emiteNf ?? (client as any)?.emite_nf ?? false,
   });
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
@@ -264,6 +265,22 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Financeiro</label>
           <textarea value={form.emailFinanceiro} onChange={(e) => setForm({ ...form, emailFinanceiro: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Recebe boletins e faturas&#10;Um e-mail por linha" data-testid="input-client-email-financeiro" />
           {parseEmails(form.emailFinanceiro).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.emailFinanceiro).length} e-mails</span>}
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nota Fiscal</label>
+          <div className="flex items-center gap-3 mt-1">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, emiteNf: !form.emiteNf })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.emiteNf ? "bg-emerald-600" : "bg-neutral-300"}`}
+              data-testid="toggle-emite-nf"
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.emiteNf ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            <span className={`text-sm font-medium ${form.emiteNf ? "text-emerald-700" : "text-neutral-500"}`}>
+              {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
+            </span>
+          </div>
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
@@ -2176,7 +2193,16 @@ export default function ClientsPage() {
               <tbody>
                 {(clients || []).map((c) => (
                   <tr key={c.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" data-testid={`row-client-${c.id}`} onClick={() => setViewingClient(c)}>
-                    <td className="p-3 font-medium text-neutral-900">{c.name}</td>
+                    <td className="p-3 font-medium text-neutral-900">
+                      <div className="flex items-center gap-2">
+                        {c.name}
+                        {(c as any).emiteNf || (c as any).emite_nf ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" data-testid={`badge-nf-${c.id}`}>NF</span>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-neutral-50 text-neutral-400 border border-neutral-200" data-testid={`badge-isento-${c.id}`}>Isento</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3 text-neutral-600">{c.cnpj || c.cpf || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.phone || "-"}</td>
                     <td className="p-3 text-neutral-600">{c.city || "-"}</td>
