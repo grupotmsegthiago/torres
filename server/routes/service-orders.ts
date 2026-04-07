@@ -741,12 +741,21 @@ import type { Express } from "express";
         }
       }
     }
-    if (!parsed.data.valorEstimado && parsed.data.escortContractId) {
+    if (!parsed.data.valorEstimado) {
       try {
-        const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento").eq("id", parsed.data.escortContractId).limit(1);
-        if (cc?.[0]) {
-          const c = cc[0];
-          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * Number(c.franquia_minima_km || 50));
+        let contractRow: any = null;
+        if (parsed.data.escortContractId) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento, franquia_km").eq("id", parsed.data.escortContractId).limit(1);
+          if (cc?.[0]) contractRow = cc[0];
+        }
+        if (!contractRow && parsed.data.clientId) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento, franquia_km").eq("client_id", parsed.data.clientId).eq("status", "Ativo").limit(1);
+          if (cc?.[0]) contractRow = cc[0];
+        }
+        if (contractRow) {
+          const c = contractRow;
+          const franquiaKm = Number(c.franquia_km || 0) || Number(c.franquia_minima_km || 50);
+          const est = (Number(c.valor_acionamento || 0)) + (Number(c.valor_km_carregado || 2.80) * franquiaKm);
           if (est > 0) (parsed.data as any).valorEstimado = est;
         }
       } catch (_e) {}
@@ -3129,6 +3138,50 @@ import type { Express } from "express";
       if (!res.headersSent) {
         res.status(500).json({ message: "Erro ao gerar relatorio da missao" });
       }
+    }
+  });
+
+  app.post("/api/service-orders/reprocessar-estimativas", requireDiretoria, async (_req, res) => {
+    try {
+      const { data: orders } = await supabaseAdmin
+        .from("service_orders")
+        .select("id, os_number, client_id, escort_contract_id, valor_estimado, type")
+        .in("status", ["agendada", "aberta"])
+        .eq("type", "escolta");
+
+      if (!orders?.length) return res.json({ message: "Nenhuma OS encontrada", updated: 0 });
+
+      let updated = 0;
+      const results: any[] = [];
+
+      for (const o of orders) {
+        let contractRow: any = null;
+        if (o.escort_contract_id) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("valor_km_carregado, franquia_minima_km, valor_acionamento, franquia_km").eq("id", o.escort_contract_id).limit(1);
+          if (cc?.[0]) contractRow = cc[0];
+        }
+        if (!contractRow && o.client_id) {
+          const { data: cc } = await supabaseAdmin.from("escort_contracts").select("id, valor_km_carregado, franquia_minima_km, valor_acionamento, franquia_km").eq("client_id", o.client_id).eq("status", "Ativo").limit(1);
+          if (cc?.[0]) {
+            contractRow = cc[0];
+            await supabaseAdmin.from("service_orders").update({ escort_contract_id: String(cc[0].id) }).eq("id", o.id);
+          }
+        }
+        if (contractRow) {
+          const franquiaKm = Number(contractRow.franquia_km || 0) || Number(contractRow.franquia_minima_km || 50);
+          const est = (Number(contractRow.valor_acionamento || 0)) + (Number(contractRow.valor_km_carregado || 2.80) * franquiaKm);
+          if (est > 0) {
+            await supabaseAdmin.from("service_orders").update({ valor_estimado: est }).eq("id", o.id);
+            updated++;
+            results.push({ osNumber: o.os_number, valorEstimado: est, antigo: o.valor_estimado });
+          }
+        }
+      }
+
+      res.json({ message: `${updated} OS reprocessadas`, updated, results });
+    } catch (err: any) {
+      console.error("[OS] reprocessar estimativas error:", err.message);
+      res.status(500).json({ message: "Erro ao reprocessar estimativas" });
     }
   });
 

@@ -215,7 +215,7 @@ import type { Express } from "express";
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
 
-        if ((o.status === "em_andamento" || o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta") {
+        if ((o.status === "em_andamento" || o.status === "agendada" || o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta") {
           try {
             const photos = await storage.getMissionPhotosByOS(o.id);
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
@@ -259,8 +259,13 @@ import type { Express } from "express";
             const fatHoraExtra = billing.fat_hora_extra;
             const fatKmExtra = billing.fat_km;
 
+            let fatBase = billing.fat_total;
+            if (fatBase === 0 && o.status === "agendada" && o.valorEstimado) {
+              fatBase = Number(o.valorEstimado) || 0;
+            }
+
             const resultado = {
-              faturamento: { total: billing.fat_total },
+              faturamento: { total: fatBase },
               pagamento: { total: n2(contrato.vrp_base) },
               km_total: billing.km_total,
             };
