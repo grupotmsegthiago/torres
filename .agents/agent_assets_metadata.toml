@@ -35,4 +35,10 @@ title = "SYSTEM_OVERVIEW.md — Documentação Completa do Sistema"
 id = "XoHD8QG5wjP_JIQ9AQzjw"
 uri = "file://DOCUMENTACAO_CHAT_INTERNO.md"
 type = "text"
-title = "Documentação Completa - Chat Interno Torres Vigilância"
+title = "Documentação Específica - Chat Interno"
+
+[[outputs]]
+id = "m8-JrIsmYFwSSJnfJ1-f0"
+uri = "file://DOCUMENTACAO_COMPLETA.md"
+type = "text"
+title = "Documentação Completa - Sistema Torres Vigilância"
