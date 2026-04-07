@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,6 +98,8 @@ function fmtDateFull(d: string | null): string {
 
 export default function FaturasPage() {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+  const isDiretoria = currentUser?.role === "diretoria";
   const [showCreate, setShowCreate] = useState(false);
   const [showDetail, setShowDetail] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -537,6 +540,7 @@ export default function FaturasPage() {
               onMarkPaid={() => markPaidMutation.mutate(showDetail.id)}
               onCancel={() => { if (confirm("Cancelar esta fatura?")) cancelMutation.mutate(showDetail.id); }}
               syncing={syncMutation.isPending}
+              isDiretoria={isDiretoria}
             />
           )}
         </div>
@@ -961,7 +965,7 @@ function NfAttachSection({ invoice }: { invoice: Invoice }) {
   );
 }
 
-function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing }: {
+function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria }: {
   invoice: Invoice;
   onClose: () => void;
   onSync: () => void;
@@ -970,6 +974,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
   onMarkPaid: () => void;
   onCancel: () => void;
   syncing: boolean;
+  isDiretoria: boolean;
 }) {
   const { toast } = useToast();
   const st = STATUS_MAP[invoice.status] || STATUS_MAP.PENDING;
@@ -1159,14 +1164,18 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
                 <Button variant="outline" size="sm" onClick={onMarkPaid} className="text-emerald-700 border-emerald-200 hover:bg-emerald-50" data-testid="button-mark-paid">
                   <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Confirmar Pgto
                 </Button>
-                <Button variant="outline" size="sm" onClick={onCancel} className="text-red-600 border-red-200 hover:bg-red-50" data-testid="button-cancel-invoice">
-                  <XCircle className="w-3.5 h-3.5 mr-1" /> Cancelar
-                </Button>
+                {isDiretoria && (
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-red-600 border-red-200 hover:bg-red-50" data-testid="button-cancel-invoice">
+                    <XCircle className="w-3.5 h-3.5 mr-1" /> Cancelar
+                  </Button>
+                )}
               </>
             )}
-            <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:bg-red-50 ml-auto" data-testid="button-delete-invoice">
-              <Trash2 className="w-3.5 h-3.5 mr-1" /> Excluir
-            </Button>
+            {isDiretoria && (
+              <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-500 hover:bg-red-50 ml-auto" data-testid="button-delete-invoice">
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Excluir
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

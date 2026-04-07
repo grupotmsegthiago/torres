@@ -316,9 +316,14 @@ export function registerAsaasRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const updates = req.body;
+      const user = (req as any).user;
 
       const { data: existing } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!existing) return res.status(404).json({ message: "Fatura não encontrada" });
+
+      if (updates.status === "CANCELLED" && user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode cancelar faturas." });
+      }
 
       if (updates.status === "CANCELLED" && existing.asaas_payment_id && process.env.ASAAS_API_KEY) {
         try {
@@ -393,6 +398,11 @@ export function registerAsaasRoutes(app: Express) {
   app.delete("/api/invoices/:id", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const user = (req as any).user;
+
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode excluir faturas." });
+      }
 
       const { data: existing } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!existing) return res.status(404).json({ message: "Fatura não encontrada" });
@@ -904,6 +914,11 @@ export function registerAsaasRoutes(app: Express) {
       const invoiceId = parseInt(req.params.id);
       if (isNaN(invoiceId)) return res.status(400).json({ message: "ID inválido" });
 
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode excluir faturas." });
+      }
+
       const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).single();
       if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
 
@@ -924,10 +939,17 @@ export function registerAsaasRoutes(app: Express) {
           .in("id", billingIds);
       }
 
+      if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+        try {
+          await asaasRequest("DELETE", `/payments/${invoice.asaas_payment_id}`);
+        } catch (e: any) {
+          console.log("[asaas] Delete payment error:", e.message);
+        }
+      }
+
       await supabaseAdmin.from("financial_transactions").delete().eq("reference_id", `INV-${invoiceId}`);
       await supabaseAdmin.from("invoices").delete().eq("id", invoiceId);
 
-      const user = (req as any).user;
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "DELETE_FATURA", targetId: String(invoiceId), targetType: "invoice",
