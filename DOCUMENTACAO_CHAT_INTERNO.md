@@ -626,3 +626,35 @@ Implementado motor de estimativa de pedágio com base local de 15 praças (Via D
 | **Total Ida** | | **R$ 53,00** |
 
 **Status:** Implementado. Servidor reiniciado sem erros. Cálculo automático ativo na criação de OS.
+
+---
+
+#### 07/04/2026 — 10:37 BRT | Correção Bug 500 "removeAutoTransaction is not defined" + Regra "Ignore Pedágio" para Recusada
+
+**Problema:**
+Ao marcar uma OS como "Recusada", o servidor retornava **erro 500** com mensagem `removeAutoTransaction is not defined`. Causa raiz: as funções `removeAutoTransaction` e `createAutoTransaction` estavam sendo chamadas em `server/routes/service-orders.ts` mas **nunca foram importadas** de `server/routes/_helpers.ts`.
+
+**Correções aplicadas:**
+
+1. **Import corrigido** (linha 13 de `service-orders.ts`):
+   - Adicionados `createAutoTransaction` e `removeAutoTransaction` ao import de `_helpers.ts`
+   - Essas funções são usadas em 8+ locais no arquivo (recusada, cancelada, concluída, reabertura, mission_cost)
+
+2. **Estorno completo de pedágio na Recusada:**
+   - Antes de deletar `mission_costs`, agora o sistema busca todos os custos vinculados à OS
+   - Para cada `mission_cost`, remove a `financial_transaction` associada (via `removeAutoTransaction("mission_cost", id)`)
+   - Isso garante que custos de pedágio (ex: R$ 38,70 Imigrantes) não contaminem o DRE
+   - Após remover transações individuais, remove também transações de receita da OS (`removeAutoTransaction("service_order", id)`)
+
+3. **Campo `pedagioEstimado` zerado:**
+   - Adicionado `pedagioEstimado = 0` ao bloco de zeragem financeira da Recusada
+   - Campos zerados: fat_calculado, custo_total_alocado, lucro_calculado, margem_calculada, valorEstimado, pedagioEstimado
+
+4. **Audit log enriquecido:**
+   - Adicionados campos `pedagioEstornado: true` e `transacoesRemovidas: true` no registro de `system_audit_logs`
+
+**Resultado:** Saldo Líquido de OS Recusada = R$ 0,00 (receita zero, custos removidos, pedágio estornado).
+
+**Filtros DRE confirmados:** `escort.ts` (linha 445) e `operational.ts` (linhas 35, 218) já filtram status "recusada" nos cálculos de billing/DRE.
+
+**Status:** Corrigido. Servidor reiniciado sem erros. Bug 500 eliminado.

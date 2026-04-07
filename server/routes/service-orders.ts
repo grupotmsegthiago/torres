@@ -7,7 +7,7 @@ import type { Express } from "express";
   import { eq, sql } from "drizzle-orm";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
-  import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex } from "./_helpers";
+  import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
@@ -1028,6 +1028,7 @@ import type { Express } from "express";
       (parsed.data as any).lucro_calculado = 0;
       (parsed.data as any).margem_calculada = 0;
       (parsed.data as any).valorEstimado = 0;
+      (parsed.data as any).pedagioEstimado = 0;
       (parsed.data as any).custos_congelados_em = new Date().toISOString();
       (parsed.data as any).custos_congelados_por = `recusada_por_${adminName}`;
 
@@ -1039,6 +1040,14 @@ import type { Express } from "express";
       } catch (_e) {}
 
       try {
+        const { data: existingCosts } = await supabaseAdmin.from("mission_costs")
+          .select("id")
+          .eq("service_order_id", Number(req.params.id));
+        if (existingCosts?.length) {
+          for (const mc of existingCosts) {
+            try { await removeAutoTransaction("mission_cost", String(mc.id)); } catch (_e) {}
+          }
+        }
         await supabaseAdmin.from("mission_costs")
           .delete()
           .eq("service_order_id", Number(req.params.id));
@@ -1060,6 +1069,8 @@ import type { Express } from "express";
             vehicleId: existing.vehicleId,
             faturamentoZerado: true,
             custosLimpos: true,
+            pedagioEstornado: true,
+            transacoesRemovidas: true,
           }),
           performed_by: req.user?.email || adminName,
         });
