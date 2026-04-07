@@ -549,6 +549,9 @@ export async function ensureDbSchema() {
     await db.execute(sql`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS invoice_id INTEGER
     `).catch(() => {});
+    await db.execute(sql`
+      ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS pago_em TIMESTAMPTZ
+    `).catch(() => {});
 
     await db.execute(sql`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT

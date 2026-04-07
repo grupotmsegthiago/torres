@@ -658,3 +658,75 @@ Ao marcar uma OS como "Recusada", o servidor retornava **erro 500** com mensagem
 **Filtros DRE confirmados:** `escort.ts` (linha 445) e `operational.ts` (linhas 35, 218) já filtram status "recusada" nos cálculos de billing/DRE.
 
 **Status:** Corrigido. Servidor reiniciado sem erros. Bug 500 eliminado.
+
+---
+
+#### 07/04/2026 — 10:45 BRT | Integração Fiscal Asaas — Fluxo de Faturamento Blindado com CNAE 7870
+
+**Descrição Tática:**
+Configurada a integração definitiva com Asaas incluindo: descrição fiscal automática padronizada, módulo NFS-e com CNAE 7870, webhook enriquecido com baixa automática, e log de auditoria em cada tentativa de geração de cobrança.
+
+**Componentes criados/alterados:**
+
+1. **`server/asaas.ts`** — Motor de Cobrança Fiscal:
+
+   **a) Constantes Fiscais (novas):**
+   - `CNAE_PRINCIPAL = "7870"` (Atividades de Vigilância e Segurança Privada)
+   - `CODIGO_SERVICO_MUNICIPAL = "11.02"` (Vigilância e segurança)
+   - `ISS_ALIQUOTA = 5` (alíquota padrão ISS)
+   - `DESCRICAO_SERVICO_FIXA = "Ref. a Serviço de Escolta Armada Caracterizada"`
+
+   **b) Função `buildInvoiceDescription()` (nova):**
+   - Monta string: `"Ref. a Serviço de Escolta Armada Caracterizada - Período: DD/MM/YYYY a DD/MM/YYYY - X missão(ões)"`
+   - Datas formatadas em pt-BR com timezone BRT
+   - Usada tanto na fatura individual quanto na consolidada
+
+   **c) Função `buildFiscalPayload()` (nova):**
+   - Gera objeto `fiscalInfo` para API Asaas NFS-e
+   - Inclui: `serviceListItem`, `municipalServiceCode`, `observations` com CNAE, `taxes` (ISS 5%, demais 0%)
+   - Enviado via `POST /payments/{id}/fiscalInfo` após criação do pagamento
+
+   **d) Endpoint `POST /api/invoices` (melhorado):**
+   - Adiciona `fiscalObservations` com CNAE quando `emite_nf = true`
+   - Log de auditoria em SUCESSO (`ASAAS_COBRANCA_GERADA`)
+   - Log de auditoria em ERRO (`ASAAS_COBRANCA_ERRO`)
+
+   **e) Endpoint `POST /api/boletim-medicao/gerar-fatura/:clientId` (melhorado):**
+   - Calcula período automático (menor→maior data_missao das OSs aprovadas)
+   - Descrição na cobrança Asaas: string fiscal padronizada (não o detalhamento)
+   - Detalhamento completo salvo na tabela `invoices.description`
+   - `fiscalObservations` com CNAE + período + contagem de missões
+   - Após criação do pagamento, chama `POST /payments/{id}/fiscalInfo` para configurar NFS-e
+   - Log de auditoria em SUCESSO (`ASAAS_FATURA_CONSOLIDADA`) e ERRO (`ASAAS_FATURA_ERRO`)
+   - Notes da invoice incluem CNAE e período
+
+   **f) Webhook `POST /api/asaas/webhook` (melhorado):**
+   - Ao receber `PAYMENT_CONFIRMED` ou `PAYMENT_RECEIVED`:
+     - Atualiza `escort_billings.status` → `"PAGO"` e registra `pago_em`
+     - Cria `financial_transaction` (INCOME) com valor líquido via `createAutoTransaction`
+   - Log de auditoria para TODOS os eventos webhook (`ASAAS_WEBHOOK_{event}`)
+   - Registra: valor bruto, valor líquido, data de pagamento
+
+2. **`server/db-init.ts`** — Nova coluna:
+   - `escort_billings.pago_em TIMESTAMPTZ` — data/hora do pagamento confirmado via webhook
+
+**Fluxo Completo:**
+```
+OS Aprovada → Boletim de Medição → "Gerar Fatura"
+  │
+  ├─ Monta descrição: "Ref. a Serviço de Escolta Armada Caracterizada - Período: X a Y"
+  ├─ Cria cliente no Asaas (findOrCreate por CPF/CNPJ)
+  ├─ Cria cobrança (BOLETO/PIX) com descrição fiscal
+  ├─ Se emite_nf → configura NFS-e com CNAE 7870, ISS 5%
+  ├─ Salva invoice com asaas_payment_id + links
+  ├─ Atualiza escort_billings → "FATURADO"
+  ├─ Log auditoria: ASAAS_FATURA_CONSOLIDADA
+  │
+  └─ Webhook (pagamento confirmado):
+     ├─ Invoice → status CONFIRMED/RECEIVED
+     ├─ escort_billings → status "PAGO" + pago_em
+     ├─ financial_transaction INCOME (valor líquido)
+     └─ Log auditoria: ASAAS_WEBHOOK_PAYMENT_RECEIVED
+```
+
+**Status:** Implementado. Servidor reiniciado sem erros. Aguardando ASAAS_API_KEY para ativação em produção.

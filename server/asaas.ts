@@ -5,10 +5,42 @@ import { logSystemAudit } from "./audit";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
+const CNAE_PRINCIPAL = "7870";
+const CODIGO_SERVICO_MUNICIPAL = "11.02";
+const ISS_ALIQUOTA = 5;
+const DESCRICAO_SERVICO_FIXA = "Ref. a Serviço de Escolta Armada Caracterizada";
+
 function getApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
   if (!key) throw new Error("ASAAS_API_KEY não configurada");
   return key;
+}
+
+function buildInvoiceDescription(clientName: string, periodoInicio: string, periodoFim: string, osCount?: number): string {
+  const inicio = new Date(periodoInicio + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const fim = new Date(periodoFim + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const countStr = osCount ? ` - ${osCount} missão(ões)` : "";
+  return `${DESCRICAO_SERVICO_FIXA} - Período: ${inicio} a ${fim}${countStr}`;
+}
+
+function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string, any> {
+  return {
+    serviceListItem: CODIGO_SERVICO_MUNICIPAL,
+    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+    deductions: 0,
+    effectiveDatePeriod: "MONTHLY",
+    receivedOnly: false,
+    observations: `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada`,
+    taxes: {
+      retainIss: false,
+      iss: ISS_ALIQUOTA,
+      cofins: 0,
+      csll: 0,
+      inss: 0,
+      ir: 0,
+      pis: 0,
+    },
+  };
 }
 
 async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
@@ -184,21 +216,38 @@ export function registerAsaasRoutes(app: Express) {
         };
         if (emiteNf) {
           paymentPayload.postalService = false;
+          paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada`;
         }
 
-        const payment = await asaasRequest("POST", "/payments", paymentPayload);
+        try {
+          const payment = await asaasRequest("POST", "/payments", paymentPayload);
+          asaasPaymentId = payment.id;
+          invoiceUrl = payment.invoiceUrl;
+          bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
+          status = payment.status || "PENDING";
 
-        asaasPaymentId = payment.id;
-        invoiceUrl = payment.invoiceUrl;
-        bankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
-        status = payment.status || "PENDING";
+          if (billingType === "PIX" || billingType === "UNDEFINED") {
+            try {
+              const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
+              pixQrCode = pixData.encodedImage;
+              pixCopiaECola = pixData.payload;
+            } catch {}
+          }
 
-        if (billingType === "PIX" || billingType === "UNDEFINED") {
-          try {
-            const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
-            pixQrCode = pixData.encodedImage;
-            pixCopiaECola = pixData.payload;
-          } catch {}
+          await logSystemAudit({
+            userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
+            action: "ASAAS_COBRANCA_GERADA", targetId: asaasPaymentId, targetType: "invoice",
+            details: `Cobrança ${billingType || "BOLETO"} R$${parseFloat(value).toFixed(2)} gerada para ${clientName}. Asaas ID: ${asaasPaymentId}`,
+            ipAddress: (req as any).ip,
+          });
+        } catch (asaasErr: any) {
+          await logSystemAudit({
+            userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
+            action: "ASAAS_COBRANCA_ERRO", targetId: serviceOrderId ? String(serviceOrderId) : "manual", targetType: "invoice",
+            details: `ERRO ao gerar cobrança para ${clientName}: ${asaasErr.message}`,
+            ipAddress: (req as any).ip,
+          });
+          throw asaasErr;
         }
       }
 
@@ -371,10 +420,40 @@ export function registerAsaasRoutes(app: Express) {
       if (payment.paymentDate) updates.payment_date = payment.paymentDate;
       if (payment.netValue) updates.net_value = payment.netValue;
 
-      await supabaseAdmin
+      const { data: updatedInvoice } = await supabaseAdmin
         .from("invoices")
         .update(updates)
-        .eq("asaas_payment_id", payment.id);
+        .eq("asaas_payment_id", payment.id)
+        .select("id, client_name, value, service_order_id")
+        .single();
+
+      if (updatedInvoice && (newStatus === "CONFIRMED" || newStatus === "RECEIVED")) {
+        try {
+          await supabaseAdmin
+            .from("escort_billings")
+            .update({ status: "PAGO", pago_em: new Date().toISOString() })
+            .eq("invoice_id", updatedInvoice.id);
+        } catch (_e) {}
+
+        try {
+          const { createAutoTransaction } = await import("./routes/_helpers");
+          await createAutoTransaction({
+            description: `Recebimento Asaas - ${updatedInvoice.client_name} (${payment.id})`,
+            amount: payment.netValue || updatedInvoice.value,
+            type: "INCOME",
+            category: "Faturamento",
+            origin_type: "invoice",
+            origin_id: String(updatedInvoice.id),
+          });
+        } catch (_e) {}
+      }
+
+      await logSystemAudit({
+        userId: null, userName: "Asaas Webhook", userRole: "system",
+        action: `ASAAS_WEBHOOK_${event}`, targetId: payment.id, targetType: "asaas_payment",
+        details: `Payment ${payment.id} → ${newStatus}. Valor: R$${payment.value || 0}. Líquido: R$${payment.netValue || 0}. Data pgto: ${payment.paymentDate || "—"}`,
+        ipAddress: (req as any).ip,
+      });
 
       console.log(`[asaas] Webhook: payment ${payment.id} → ${newStatus}`);
       res.json({ received: true });
@@ -436,9 +515,14 @@ export function registerAsaasRoutes(app: Express) {
 
       const now = new Date();
       const invoiceDueDate = dueDate || new Date(now.getFullYear(), now.getMonth() + 1, 15).toISOString().split("T")[0];
-      const description = `Faturamento Consolidado - ${clientName}\n${billings.length} missão(ões)\n\n${osDescriptions.join("\n")}`;
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf").eq("id", clientId).single();
+      const datasOs = billings.map(b => b.data_missao || b.created_at).filter(Boolean).sort();
+      const periodoInicio = datasOs[0]?.split("T")[0] || invoiceDueDate;
+      const periodoFim = datasOs[datasOs.length - 1]?.split("T")[0] || invoiceDueDate;
+      const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim, billings.length);
+      const descricaoDetalhada = `${descricaoFiscal}\n\n${osDescriptions.join("\n")}`;
+
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
 
@@ -458,11 +542,12 @@ export function registerAsaasRoutes(app: Express) {
             billingType: billingType || "BOLETO",
             value: totalValue,
             dueDate: invoiceDueDate,
-            description: description.substring(0, 500),
+            description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
+            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`;
           }
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
           asaasPaymentId = payment.id;
@@ -476,8 +561,31 @@ export function registerAsaasRoutes(app: Express) {
               pixCopiaECola = pixData.payload;
             } catch {}
           }
+
+          if (emiteNfConsolidado && asaasPaymentId) {
+            try {
+              const fiscalPayload = buildFiscalPayload(totalValue, cpfCnpj);
+              await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
+              console.log(`[asaas] NFS-e configurada para payment ${asaasPaymentId} CNAE ${CNAE_PRINCIPAL}`);
+            } catch (nfErr: any) {
+              console.log(`[asaas] NFS-e config error (non-blocking): ${nfErr.message}`);
+            }
+          }
+
+          await logSystemAudit({
+            userId: user?.id, userName: user?.name, userRole: user?.role,
+            action: "ASAAS_FATURA_CONSOLIDADA", targetId: asaasPaymentId, targetType: "invoice",
+            details: `Fatura consolidada ${billingType || "BOLETO"} R$${totalValue.toFixed(2)} para ${clientName}. ${billings.length} OS(s). CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. Asaas: ${asaasPaymentId}`,
+            ipAddress: (req as any).ip,
+          });
         } catch (asaasErr: any) {
           console.error("[asaas] Erro ao gerar cobrança:", asaasErr.message);
+          await logSystemAudit({
+            userId: user?.id, userName: user?.name, userRole: user?.role,
+            action: "ASAAS_FATURA_ERRO", targetId: String(clientId), targetType: "invoice",
+            details: `ERRO fatura consolidada ${clientName}: ${asaasErr.message}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}`,
+            ipAddress: (req as any).ip,
+          });
         }
       }
 
@@ -487,7 +595,7 @@ export function registerAsaasRoutes(app: Express) {
         client_cpf_cnpj: cpfCnpj || null,
         asaas_customer_id: asaasCustomerId,
         asaas_payment_id: asaasPaymentId,
-        description,
+        description: descricaoDetalhada,
         value: totalValue,
         due_date: invoiceDueDate,
         billing_type: billingType || "BOLETO",
@@ -496,7 +604,7 @@ export function registerAsaasRoutes(app: Express) {
         bank_slip_url: bankSlipUrl,
         pix_qr_code: pixQrCode,
         pix_copia_e_cola: pixCopiaECola,
-        notes: `Gerada do Boletim de Medição. ${billings.length} OS(s) consolidada(s). IDs: ${billingIds.join(", ")}`,
+        notes: `Gerada do Boletim de Medição. ${billings.length} OS(s) consolidada(s). CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. IDs: ${billingIds.join(", ")}`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         created_by: user?.id,
       }).select().single();
