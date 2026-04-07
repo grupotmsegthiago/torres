@@ -832,73 +832,84 @@ import type { Express } from "express";
         const finalDestLat = data.destinationLat || geoUpdates.destinationLat;
         const finalDestLng = data.destinationLng || geoUpdates.destinationLng;
         const manualPedagio = Number((parsed.data as any).pedagioEstimado || 0);
+        const idaVolta = (parsed.data as any).pedagioIdaVolta === true;
+
+        let totalIdaCusto = 0;
+        let plazaNames = "";
+        let plazaCount = 0;
 
         if (finalOriginLat && finalOriginLng && finalDestLat && finalDestLng && manualPedagio <= 0) {
           const wpCoords = wps.filter(w => w.lat && w.lng).map(w => ({ lat: Number(w.lat), lng: Number(w.lng) }));
           const tollResult = estimateTolls(finalOriginLat, finalOriginLng, finalDestLat, finalDestLng, wpCoords);
-          const idaVolta = (parsed.data as any).pedagioIdaVolta === true;
-          const autoTollValue = idaVolta ? tollResult.totalIdaVolta : tollResult.totalIda;
+          totalIdaCusto = tollResult.totalIda;
+          plazaNames = tollResult.plazas.map(p => p.name).join(", ");
+          plazaCount = tollResult.plazas.length;
+        } else if (manualPedagio > 0) {
+          totalIdaCusto = manualPedagio;
+          plazaNames = "Manual";
+          plazaCount = 0;
+        }
 
-          if (autoTollValue > 0) {
-            await storage.updateServiceOrder(data.id, { pedagioEstimado: autoTollValue } as any);
+        if (totalIdaCusto > 0) {
+          await storage.updateServiceOrder(data.id, { pedagioEstimado: totalIdaCusto } as any);
 
-            const plazaNames = tollResult.plazas.map(p => p.name).join(", ");
-            try {
-              const cost = await storage.createMissionCost({
-                serviceOrderId: data.id,
-                category: "Pedágio",
-                description: `Pedágio ${idaVolta ? "Ida+Volta" : "Ida"} (AUTO): ${plazaNames} [${tollResult.plazas.length} praça(s)]`,
-                amount: autoTollValue.toFixed(2),
+          const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+          try {
+            const costDespesa = await storage.createMissionCost({
+              serviceOrderId: data.id,
+              category: "Pedágio",
+              description: `Pedágio Ida (Despesa Torres): ${plazaNames}${plazaCount > 0 ? ` [${plazaCount} praça(s)]` : ""}`,
+              amount: totalIdaCusto.toFixed(2),
+              costType: "expense",
+            });
+            if (costDespesa) {
+              await createAutoTransaction({
+                description: `DESPESA PEDÁGIO ${data.osNumber} - IDA (${plazaCount} praça(s))`,
+                amount: totalIdaCusto,
+                type: "EXPENSE",
+                due_date: today,
+                origin_type: "mission_cost",
+                origin_id: String(costDespesa.id),
+                category_name: "Custos de Missão",
+                entity_name: null,
+                created_by: "SISTEMA",
               });
-              if (cost) {
-                await createAutoTransaction({
-                  description: `CUSTO MISSÃO ${data.osNumber} - PEDÁGIO (AUTO-CALC)`,
-                  amount: autoTollValue,
-                  type: "EXPENSE",
-                  due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
-                  origin_type: "mission_cost",
-                  origin_id: String(cost.id),
-                  category_name: "Custos de Missão",
-                  entity_name: null,
-                  created_by: "SISTEMA",
-                });
-              }
-              console.log(`[OS ${data.osNumber}] Pedágio AUTO R$${autoTollValue.toFixed(2)} (${tollResult.plazas.length} praças: ${plazaNames})`);
-            } catch (e: any) {
-              console.error(`[OS ${data.osNumber}] Erro pedágio auto:`, e.message);
             }
+            console.log(`[OS ${data.osNumber}] Pedágio DESPESA (ida) R$${totalIdaCusto.toFixed(2)} (${plazaCount} praças: ${plazaNames})`);
+          } catch (e: any) {
+            console.error(`[OS ${data.osNumber}] Erro pedágio despesa:`, e.message);
+          }
+
+          const receitaCliente = idaVolta ? totalIdaCusto * 2 : totalIdaCusto;
+          try {
+            const costReceita = await storage.createMissionCost({
+              serviceOrderId: data.id,
+              category: "Pedágio (Receita)",
+              description: `Pedágio ${idaVolta ? "Ida+Volta" : "Ida"} (Cobrança Cliente): ${plazaNames}${plazaCount > 0 ? ` [${plazaCount} praça(s)]` : ""}`,
+              amount: receitaCliente.toFixed(2),
+              costType: "revenue",
+            });
+            if (costReceita) {
+              await createAutoTransaction({
+                description: `RECEITA PEDÁGIO ${data.osNumber} - ${idaVolta ? "IDA+VOLTA" : "IDA"} (CLIENTE)`,
+                amount: receitaCliente,
+                type: "INCOME",
+                due_date: today,
+                origin_type: "mission_cost",
+                origin_id: String(costReceita.id),
+                category_name: "Faturamento",
+                entity_name: null,
+                created_by: "SISTEMA",
+              });
+            }
+            console.log(`[OS ${data.osNumber}] Pedágio RECEITA (cliente) R$${receitaCliente.toFixed(2)} ${idaVolta ? "(ida+volta)" : "(ida)"}`);
+          } catch (e: any) {
+            console.error(`[OS ${data.osNumber}] Erro pedágio receita:`, e.message);
           }
         }
       } catch (_e) {}
     })();
-
-    const pedagioVal = Number((parsed.data as any).pedagioEstimado || 0);
-    if (pedagioVal > 0) {
-      try {
-        const cost = await storage.createMissionCost({
-          serviceOrderId: data.id,
-          category: "Pedágio",
-          description: "Pedágio Ida+Volta (cálculo automático)",
-          amount: pedagioVal.toFixed(2),
-        });
-        if (cost) {
-          await createAutoTransaction({
-            description: `CUSTO MISSÃO ${data.osNumber} - PEDÁGIO (AUTO)`,
-            amount: pedagioVal,
-            type: "EXPENSE",
-            due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
-            origin_type: "mission_cost",
-            origin_id: String(cost.id),
-            category_name: "Custos de Missão",
-            entity_name: null,
-            created_by: "SISTEMA",
-          });
-        }
-        console.log(`[OS ${data.osNumber}] Pedágio automático R$${pedagioVal.toFixed(2)} registrado`);
-      } catch (e: any) {
-        console.error(`[OS ${data.osNumber}] Erro ao registrar pedágio:`, e.message);
-      }
-    }
 
     res.status(201).json(data);
   });

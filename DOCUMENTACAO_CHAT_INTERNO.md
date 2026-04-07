@@ -907,3 +907,44 @@ Isso permite verificar se customer_id e value estão corretos antes do envio.
 - `client/src/pages/admin/relatorio-faturamento.tsx` — email financeiro com fallback Torres
 
 **Status:** Implementado. Servidor reiniciado sem erros.
+
+---
+
+#### 07/04/2026 — 11:24 BRT | Blindagem de Cálculo de Pedágio — Regra do Espelho Receita x Despesa
+
+**Bug Identificado:** O valor no topo (R$ 31,80) não batia com o Total Ida (R$ 39,50) porque `pedagioEstimado` armazenava valores inconsistentes — às vezes o valor ida, às vezes ida+volta. Além disso, havia **criação duplicada de custos** no backend (duas vezes o mesmo pedágio).
+
+**Correções Aplicadas:**
+
+1. **`pedagioEstimado` SEMPRE armazena valor IDA** — Nunca mais o valor ida+volta. O campo é a base de cálculo pura.
+
+2. **Display no Frontend** — A fórmula `form.pedagioIdaVolta ? base * 2 : base` calcula a exibição corretamente:
+   - Checkbox desmarcado → mostra IDA
+   - Checkbox marcado → mostra IDA × 2
+
+3. **Toggle Simplificado** — O checkbox "Cobrar pedágio ida e volta" agora só alterna `pedagioIdaVolta`, sem recalcular `pedagioEstimado` (que permanece como IDA).
+
+4. **Regra do Espelho no Backend (Receita x Despesa):**
+   - **DESPESA (Torres)**: Cria `mission_cost` com `cost_type: "expense"`, valor = Total Ida. Lança `financial_transaction` tipo EXPENSE, categoria "Custos de Missão".
+   - **RECEITA (Cliente)**: Cria `mission_cost` com `cost_type: "revenue"`, valor = `idaVolta ? ida×2 : ida`. Lança `financial_transaction` tipo INCOME, categoria "Faturamento".
+
+5. **Remoção do Custo Duplicado** — O bloco secundário (linhas ~875-901) que criava um segundo custo idêntico foi removido. Agora só existe o bloco unificado que cria Despesa + Receita.
+
+**Fórmula Final:**
+```
+pedagioEstimado = soma das praças (IDA)
+exibição = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
+despesa_torres = pedagioEstimado (sempre IDA — custo real)
+receita_cliente = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
+```
+
+**Exemplo com print:**
+- Riacho Grande R$ 33,90 + Caieiras R$ 5,60 = **R$ 39,50 (IDA)**
+- Com checkbox "ida e volta" marcado → exibe **R$ 79,00** (39,50 × 2)
+- Despesa Torres = R$ 39,50 | Receita Cliente = R$ 79,00
+
+**Arquivos alterados:**
+- `server/routes/service-orders.ts` — Lógica de criação unificada Despesa+Receita, remoção do bloco duplicado
+- `client/src/pages/admin/service-orders.tsx` — pedagioEstimado sempre IDA, toggle simplificado
+
+**Status:** Implementado. Servidor reiniciado sem erros. Cálculo blindado.

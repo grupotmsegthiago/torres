@@ -783,7 +783,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       if (totalIda > 0) {
         setForm(prev => ({
           ...prev,
-          pedagioEstimado: (prev.pedagioIdaVolta ? totalIdaVolta : totalIda).toFixed(2).replace(".", ","),
+          pedagioEstimado: totalIda.toFixed(2).replace(".", ","),
         }));
       }
     } catch {
@@ -851,7 +851,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
-    pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),
+    pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),  // Always IDA value only
     pedagioIdaVolta: !!data.pedagioIdaVolta,
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
@@ -1190,12 +1190,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </div>
                 <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer" data-testid="toggle-pedagio-ida-volta">
                   <input type="checkbox" checked={form.pedagioIdaVolta} onChange={(e) => {
-                    const idaVolta = e.target.checked;
-                    const updates: any = { pedagioIdaVolta: idaVolta };
-                    if (tollInfo && tollInfo.totalIda) {
-                      updates.pedagioEstimado = (idaVolta ? tollInfo.totalIdaVolta : tollInfo.totalIda).toFixed(2).replace(".", ",");
-                    }
-                    setForm({ ...form, ...updates });
+                    setForm({ ...form, pedagioIdaVolta: e.target.checked });
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
