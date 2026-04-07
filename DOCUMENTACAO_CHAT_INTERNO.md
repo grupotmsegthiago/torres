@@ -755,3 +755,26 @@ O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITO
 - Os três pontos usam a mesma nomenclatura: **Escolta Armada**.
 
 **Status:** Corrigido. Servidor reiniciado sem erros.
+
+---
+
+#### 07/04/2026 — 10:57 BRT | Redesign Modal de Faturamento — Padrão Profissional Torres/Asaas
+
+**Problema:** O modal de "Gerar Fatura" mostrava R$ 0,00 porque usava `approvedTotal` (soma apenas billings com status "APROVADA"). Quando as OSs estavam com outro status, o total ficava zerado.
+
+**Correção:** Substituído `approvedTotal` por `grandTotal` (soma de TODAS as OSs no boletim de medição). O modal agora mostra o valor real consolidado.
+
+**Novo Modal — Campos implementados:**
+1. **Razão Social / Tomador** — Nome do cliente + CPF/CNPJ puxado automaticamente do cadastro
+2. **Valor Total** — `grandTotal` calculado de todas as OSs no período (não mais apenas aprovadas)
+3. **Empresa Emissora** — Fixo: TORRES VIGILÂNCIA PATRIMONIAL EIRELI, CNPJ 36.982.392/0001-89, CNAE 7870
+4. **E-mail Medição** — Puxado de `emailFinanceiro` ou `email` do cliente (read-only)
+5. **Data de Vencimento** — Sugerida automaticamente com base em `payment_terms_days` do cliente
+6. **Tipo de Cobrança** — Boleto Bancário / PIX (QR Code) / Boleto + PIX
+7. **Observações Fiscais** — "Referente ao Serviço de Escolta Armada — Ref. ao Mês [PERÍODO]"
+8. **Switch Asaas** — Envia cobrança via Asaas com NFS-e automática (CNAE 7870)
+9. **Botão principal** — "GERAR BOLETO + PIX (ASAAS)" com valor total no label
+
+**Arquivo alterado:** `client/src/pages/admin/relatorio-faturamento.tsx` (linhas 774-873)
+
+**Status:** Implementado. Servidor reiniciado sem erros. Modal redesenhado com padrão profissional.

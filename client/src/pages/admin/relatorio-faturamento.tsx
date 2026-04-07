@@ -769,49 +769,86 @@ export default function RelatorioFaturamentoPage() {
       )}
 
       <Dialog open={faturaDialog} onOpenChange={setFaturaDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase">
-              <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura Consolidada
+            <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-wide">
+              <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura — Asaas
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              Consolidar todas as OS aprovadas de <strong>{displayClientName}</strong> no período selecionado em uma única fatura.
+            <DialogDescription className="text-xs text-gray-500">
+              Faturamento consolidado via integração Asaas com emissão fiscal CNAE 7870.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
-              <p className="text-xs font-bold text-indigo-900 uppercase">{displayClientName}</p>
-              <p className="text-xs text-indigo-700"><strong>{approvedBillings.length}</strong> missão(ões) aprovada(s)</p>
-              <p className="text-xs text-indigo-500">Período: {fmtDateDisp(startDate)} a {fmtDateDisp(endDate)}</p>
-              <p className="text-lg font-black font-mono text-indigo-800">{fmt(approvedTotal)}</p>
+
+          <div className="space-y-3 py-1">
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-4">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Razão Social / Tomador</p>
+                  <p className="text-sm font-black text-indigo-900 uppercase" data-testid="text-fatura-client">{displayClientName}</p>
+                  <p className="text-[10px] text-indigo-500 font-mono">{clientData?.cnpj || clientData?.cpf || "CPF/CNPJ não cadastrado"}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Valor Total</p>
+                  <p className="text-xl font-black font-mono text-indigo-800" data-testid="text-fatura-total">{fmt(grandTotal)}</p>
+                  <p className="text-[10px] text-indigo-500">{rowsData.length} missão(ões) no período</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <Label className="text-xs font-bold uppercase">Data de Vencimento</Label>
-              <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1" data-testid="input-fatura-due-date" />
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Empresa Emissora</p>
+              <p className="text-xs font-bold text-gray-800">TORRES VIGILÂNCIA PATRIMONIAL EIRELI</p>
+              <p className="text-[10px] text-gray-500 font-mono">CNPJ 36.982.392/0001-89 &bull; CNAE 7870 — Escolta Armada</p>
             </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1">Observações / Descrição Fiscal</p>
+              <p className="text-xs text-amber-900 font-medium" data-testid="text-fatura-descricao">
+                Referente ao Serviço de Escolta Armada — Ref. ao Mês {getPeriodLabel()}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Vencimento</Label>
+                <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1 text-xs font-mono" data-testid="input-fatura-due-date" />
+              </div>
+              <div>
+                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail Medição</Label>
+                <Input
+                  type="email"
+                  value={clientData?.emailFinanceiro || clientData?.email || ""}
+                  readOnly
+                  className="mt-1 text-xs font-mono bg-gray-50"
+                  data-testid="input-fatura-email"
+                />
+              </div>
+            </div>
+
             <div>
-              <Label className="text-xs font-bold uppercase">Tipo de Cobrança</Label>
+              <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Tipo de Cobrança</Label>
               <Select value={faturaBillingType} onValueChange={setFaturaBillingType}>
-                <SelectTrigger className="mt-1" data-testid="select-fatura-billing-type">
+                <SelectTrigger className="mt-1 text-xs" data-testid="select-fatura-billing-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="BOLETO">Boleto</SelectItem>
-                  <SelectItem value="PIX">PIX</SelectItem>
-                  <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
-                  <SelectItem value="UNDEFINED">Indefinido</SelectItem>
+                  <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
+                  <SelectItem value="PIX">PIX (QR Code)</SelectItem>
+                  <SelectItem value="UNDEFINED">Boleto + PIX</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex items-center justify-between bg-neutral-50 rounded-lg p-3 border">
               <div>
                 <p className="text-xs font-bold text-neutral-700">Enviar cobrança via Asaas</p>
-                <p className="text-[10px] text-neutral-400">Gera boleto/PIX automaticamente</p>
+                <p className="text-[10px] text-neutral-400">Gera boleto/PIX + NFS-e automática (CNAE 7870)</p>
               </div>
               <Switch checked={faturaSendAsaas} onCheckedChange={setFaturaSendAsaas} data-testid="switch-send-asaas" />
             </div>
           </div>
-          <DialogFooter className="gap-2">
+
+          <DialogFooter className="gap-2 mt-2">
             <Button variant="outline" onClick={() => setFaturaDialog(false)} className="text-xs font-bold uppercase" data-testid="button-cancel-fatura">
               Cancelar
             </Button>
@@ -824,12 +861,12 @@ export default function RelatorioFaturamentoPage() {
                   dueDate: faturaDueDate,
                 });
               }}
-              disabled={gerarFaturaMutation.isPending}
-              className="bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase gap-2"
+              disabled={gerarFaturaMutation.isPending || rowsData.length === 0}
+              className="bg-indigo-600 hover:bg-indigo-700 text-xs font-black uppercase gap-2 px-6"
               data-testid="button-confirm-fatura"
             >
               {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-              Gerar Fatura {fmt(approvedTotal)}
+              GERAR BOLETO + PIX (ASAAS) {fmt(grandTotal)}
             </Button>
           </DialogFooter>
         </DialogContent>
