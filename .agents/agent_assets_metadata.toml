@@ -30,3 +30,9 @@ id = "5bZsRtctqKmdXOI8-PwiJ"
 uri = "file://SYSTEM_OVERVIEW.md"
 type = "text"
 title = "SYSTEM_OVERVIEW.md — Documentação Completa do Sistema"
+
+[[outputs]]
+id = "XoHD8QG5wjP_JIQ9AQzjw"
+uri = "file://DOCUMENTACAO_CHAT_INTERNO.md"
+type = "text"
+title = "Documentação Completa - Chat Interno Torres Vigilância"
