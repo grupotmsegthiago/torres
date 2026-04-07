@@ -908,7 +908,7 @@ Todas as rotas exigem `requireAuth` salvo indicado. Acesso restrito indicado por
 
 ---
 
-## 16. Variáveis de Ambiente
+## 15. Variáveis de Ambiente
 
 | Variável | Uso |
 |---|---|
@@ -926,7 +926,7 @@ Todas as rotas exigem `requireAuth` salvo indicado. Acesso restrito indicado por
 
 ---
 
-## 17. Estrutura de Arquivos Principais
+## 16. Estrutura de Arquivos Principais
 
 ```
 client/src/
