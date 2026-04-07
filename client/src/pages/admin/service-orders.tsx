@@ -69,7 +69,8 @@ function formatTime(iso: string | null): string {
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   try {
-    const d = new Date(iso);
+    const safe = ensureUTC(iso) || iso;
+    const d = new Date(safe);
     if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "—";
     return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
   } catch { return "—"; }

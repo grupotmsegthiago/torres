@@ -240,8 +240,8 @@ export default function CalculadoraJornadaPage() {
                     {calculos.map((c: any) => (
                       <tr key={c.id} className="border-b hover:bg-muted/50" data-testid={`row-calculo-${c.id}`}>
                         <td className="p-2 font-medium">{empName(c.employee_id)}</td>
-                        <td className="p-2 text-muted-foreground">{new Date(c.inicio_missao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
-                        <td className="p-2 text-muted-foreground">{new Date(c.fim_missao).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                        <td className="p-2 text-muted-foreground">{new Date((/[Zz]$/.test(c.inicio_missao) || /[+-]\d{2}:\d{2}$/.test(c.inicio_missao)) ? c.inicio_missao : c.inicio_missao + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                        <td className="p-2 text-muted-foreground">{new Date((/[Zz]$/.test(c.fim_missao) || /[+-]\d{2}:\d{2}$/.test(c.fim_missao)) ? c.fim_missao : c.fim_missao + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                         <td className="p-2 text-right">{fmtH(c.horas_ativo)}</td>
                         <td className="p-2 text-right">{fmtH(c.horas_sobreaviso)}</td>
                         <td className="p-2 text-right">{fmtH(c.horas_noturnas)}</td>

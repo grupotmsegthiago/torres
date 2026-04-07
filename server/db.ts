@@ -13,4 +13,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+pool.on("connect", (client) => {
+  client.query("SET timezone = 'America/Sao_Paulo'");
+});
+
 export const db = drizzle(pool, { schema });

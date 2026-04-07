@@ -52,14 +52,16 @@ interface PresenceEntry {
   last_seen: string;
 }
 
+function _eu(ts: string) { return /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z"; }
+
 function fmtTime(d: string | null) {
   if (!d) return "";
-  return new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  return new Date(_eu(d)).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtDate(d: string | null) {
   if (!d) return "";
-  const dt = new Date(d);
+  const dt = new Date(_eu(d));
   const today = new Date();
   if (dt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) === today.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })) return fmtTime(d);
   return dt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });

@@ -23,8 +23,9 @@ const fmt = (val: number | null | undefined) => {
   return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
 
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
-const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
+const _eu = (ts: string) => /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z";
+const fmtDate = (d: string | null) => d ? new Date(_eu(d)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+const fmtTime = (d: string | null) => d ? new Date(_eu(d)).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
 const fmtHoras = (val: number | null | undefined) => {
   if (!val) return "0h00";
   const h = Math.floor(val);
@@ -211,7 +212,7 @@ export default function BoletimMedicaoPage() {
       setOverrideKmFim(selectedOs.km_final != null ? String(selectedOs.km_final) : "");
       const fmtDt = (v: string | null) => {
         if (!v) return "";
-        try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || ""; } catch { return ""; }
+        try { return new Date(_eu(v)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || ""; } catch { return ""; }
       };
       setOverrideHoraChegada(fmtDt(selectedOs.hora_chegada_origem));
       setOverrideHoraFim(fmtDt(selectedOs.hora_fim_missao));
@@ -259,7 +260,7 @@ export default function BoletimMedicaoPage() {
         const bStatus = o.billing?.status;
         if (bStatus === "FATURADO" || bStatus === "PAGO") return false;
         if (!o.billing?.data_missao && !o.completedDate) return false;
-        const mDate = new Date(o.billing?.data_missao || o.completedDate);
+        const mDate = new Date(_eu(o.billing?.data_missao || o.completedDate));
         const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
         const prazoAprovacao = Number(o.clientPrazoAprovacaoDias) || 10;
         return daysSince > prazoAprovacao;
@@ -268,7 +269,7 @@ export default function BoletimMedicaoPage() {
     if (periodFilter) {
       const { start, end } = getPeriodRange(periodFilter);
       orders = orders.filter(o => {
-        const d = o.scheduledDate ? new Date(o.scheduledDate) : o.createdAt ? new Date(o.createdAt) : null;
+        const d = o.scheduledDate ? new Date(_eu(o.scheduledDate)) : o.createdAt ? new Date(_eu(o.createdAt)) : null;
         return d && d >= start && d < end;
       });
     }
@@ -285,7 +286,7 @@ export default function BoletimMedicaoPage() {
     const bStatus = o.billing?.status;
     if (bStatus === "FATURADO" || bStatus === "PAGO") return false;
     if (!o.billing?.data_missao && !o.completedDate) return false;
-    const mDate = new Date(o.billing?.data_missao || o.completedDate);
+    const mDate = new Date(_eu(o.billing?.data_missao || o.completedDate));
     const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
@@ -845,7 +846,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
   const fmtToHHMM = (v: string | null) => {
     if (!v) return null;
-    try { return new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
+    try { return new Date(_eu(v)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
   };
   const ini = b?.horario_inicio_considerado || b?.horario_inicio;
   const fimReal = fmtToHHMM(os.hora_fim_missao) || b?.horario_fim;
@@ -1162,7 +1163,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                 {b.revisado_por && (
                   <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-100">
                     <p className="text-[9px] font-bold text-neutral-400 uppercase mb-1">Revisado por</p>
-                    <p className="text-xs font-semibold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
+                    <p className="text-xs font-semibold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(_eu(b.revisado_em)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
                   </div>
                 )}
 

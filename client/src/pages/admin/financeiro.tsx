@@ -1035,7 +1035,8 @@ export default function FinanceiroPage() {
   const setBo = (k: string, v: any) => setBoCalc(p => ({ ...p, [k]: v }));
 
   const renderBoletim = () => {
-    const sortedBillings = [...escortBillings].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const _eu = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+    const sortedBillings = [...escortBillings].sort((a, b) => new Date(_eu(b.created_at)).getTime() - new Date(_eu(a.created_at)).getTime());
     return (
       <div className="space-y-6" data-testid="panel-boletim">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -1199,7 +1200,7 @@ export default function FinanceiroPage() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-amber-100 text-amber-800 text-[10px] font-black border-0">A VERIFICAR</Badge>
-                            <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
+                            <span className="text-[10px] font-mono text-neutral-400">{new Date((/[Zz]$/.test(b.created_at) || /[+-]\d{2}:\d{2}$/.test(b.created_at)) ? b.created_at : b.created_at + "Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                           </div>
                           <span className="text-[10px] font-bold text-neutral-500">{b.vigilante_name || "—"}</span>
                         </div>
@@ -1278,7 +1279,7 @@ export default function FinanceiroPage() {
                           {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Rejeitada</Badge>}
                           {b.status === "CANCELADO" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Cancelada</Badge>}
                         </div>
-                        <span className="text-[10px] font-mono text-neutral-400">{new Date(b.created_at).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
+                        <span className="text-[10px] font-mono text-neutral-400">{new Date((/[Zz]$/.test(b.created_at) || /[+-]\d{2}:\d{2}$/.test(b.created_at)) ? b.created_at : b.created_at + "Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-neutral-600 truncate">{b.client_name || "Sem cliente"} {b.origem && b.destino ? `· ${b.origem}→${b.destino}` : ""}</span>

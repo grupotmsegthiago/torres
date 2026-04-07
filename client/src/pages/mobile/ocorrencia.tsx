@@ -218,7 +218,7 @@ export default function MobileOcorrenciaPage() {
                     {o.photos.length > 3 && <span className="text-xs text-neutral-400 self-center ml-1">+{o.photos.length - 3}</span>}
                   </div>
                 )}
-                <p className="text-[10px] text-neutral-400 mt-2">{new Date(o.created_at || o.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+                <p className="text-[10px] text-neutral-400 mt-2">{(() => { const _t = o.created_at || o.createdAt; const _s = /[Zz]$/.test(_t) || /[+-]\d{2}:\d{2}$/.test(_t) ? _t : _t + "Z"; return new Date(_s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }); })()}</p>
                 {o.admin_notes && (
                   <div className="mt-2 bg-blue-50 rounded-lg p-2">
                     <p className="text-[10px] font-bold text-blue-600">Resposta do Admin:</p>

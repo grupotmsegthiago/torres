@@ -18,7 +18,7 @@ function formatDuration(ms: number) {
 }
 
 function formatDateBR(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(_ensureUTC(iso)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function MobilePontoOperacionalPage() {
@@ -39,7 +39,7 @@ export default function MobilePontoOperacionalPage() {
 
   useEffect(() => {
     if (!pontoAberto?.entrada) { setElapsed(0); return; }
-    const tick = () => setElapsed(Date.now() - new Date(pontoAberto.entrada).getTime());
+    const tick = () => setElapsed(Date.now() - new Date(_ensureUTC(pontoAberto.entrada)).getTime());
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);

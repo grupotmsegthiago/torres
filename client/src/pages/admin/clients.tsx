@@ -978,7 +978,8 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
   const filteredOS = (() => {
     const now = new Date();
     return clientBillings.filter(b => {
-      const d = new Date(b.created_at);
+      const _eu = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+      const d = new Date(_eu(b.created_at));
       if (osPeriod === "FORTNIGHT") { const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24); return diff <= 15; }
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
@@ -988,7 +989,8 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
     const now = new Date();
     return clientOrders.filter(o => {
       if (o.status !== "concluida" && o.missionStatus !== "encerrada") return false;
-      const d = new Date(o.completedDate || o.createdAt);
+      const _eu2 = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+      const d = new Date(_eu2(o.completedDate || o.createdAt));
       if (osPeriod === "FORTNIGHT") { const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24); return diff <= 15; }
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
@@ -1810,7 +1812,7 @@ function HomologacaoTab({ client }: { client: Client }) {
                         <span key={i} className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">{d}</span>
                       ))}
                     </div>
-                    <p className="text-[9px] text-neutral-400 mt-1.5">{new Date(log.sentAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}{log.sentBy ? ` • por ${log.sentBy}` : ""}</p>
+                    <p className="text-[9px] text-neutral-400 mt-1.5">{new Date((/[Zz]$/.test(log.sentAt) || /[+-]\d{2}:\d{2}$/.test(log.sentAt)) ? log.sentAt : log.sentAt + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}{log.sentBy ? ` • por ${log.sentBy}` : ""}</p>
                   </div>
                 ))}
               </div>
@@ -1832,7 +1834,7 @@ function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => vo
   });
 
   const fmtDate = (d: string | null) => d ? formatDateBRT(d) : "—";
-  const fmtTime = (d: string | null) => d ? new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtTime = (d: string | null) => { if (!d) return "—"; const s = /[Zz]$/.test(d) || /[+-]\d{2}:\d{2}$/.test(d) ? d : d + "Z"; return new Date(s).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }); };
 
   const b = os?.billing;
   const photos = os?.photos || [];
@@ -2088,7 +2090,7 @@ function MissionDetailModal({ osId, onClose }: { osId: number; onClose: () => vo
                   {b.revisado_por && (
                     <div className="mt-3 bg-neutral-50 p-3 rounded-xl">
                       <p className="text-[9px] font-black text-neutral-400 uppercase">Revisado por</p>
-                      <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date(b.revisado_em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
+                      <p className="text-xs font-bold text-neutral-700">{b.revisado_por} em {b.revisado_em ? new Date((/[Zz]$/.test(b.revisado_em) || /[+-]\d{2}:\d{2}$/.test(b.revisado_em)) ? b.revisado_em : b.revisado_em + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</p>
                     </div>
                   )}
 

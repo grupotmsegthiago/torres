@@ -5,12 +5,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { Clock, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Trash2, Timer, Plane } from "lucide-react";
 
+function _ensureUTC(ts: string) { return /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z"; }
+
 function formatDateBR(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(_ensureUTC(iso)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function formatElapsed(entradaISO: string) {
-  const ms = Date.now() - new Date(entradaISO).getTime();
+  const ms = Date.now() - new Date(_ensureUTC(entradaISO)).getTime();
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
   if (h > 24) {

@@ -35,8 +35,9 @@ function getActionColor(action: string) {
 
 function formatDateTime(iso: string) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const s = /[Zz]$/.test(iso) || /[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + "Z";
+  const d = new Date(s);
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 const PAGE_SIZE = 50;

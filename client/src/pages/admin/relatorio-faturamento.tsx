@@ -18,8 +18,9 @@ import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_177395
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtDate = (iso?: string | null) => iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
-const fmtTime = (iso?: string | null) => iso ? new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "—";
+const _eu = (ts: string) => /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z";
+const fmtDate = (iso?: string | null) => iso ? new Date(_eu(iso)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+const fmtTime = (iso?: string | null) => iso ? new Date(_eu(iso)).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "—";
 const fmtHHMM = (h: number) => {
   if (isNaN(h) || h <= 0) return "00:00";
   const hrs = Math.floor(h);

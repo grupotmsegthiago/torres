@@ -44,7 +44,8 @@ interface TelemetrySummary {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const s = /[Zz]$/.test(d) || /[+-]\d{2}:\d{2}$/.test(d) ? d : d + "Z";
+  return new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function getDateRange(period: string): { from: string; to: string } {

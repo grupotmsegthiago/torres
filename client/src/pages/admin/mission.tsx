@@ -167,7 +167,8 @@ function MissionTimer({ startedAt }: { startedAt?: string | null }) {
   }, []);
 
   if (startedAt) {
-    const start = new Date(startedAt).getTime();
+    const _eu = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+    const start = new Date(_eu(startedAt)).getTime();
     const diff = Math.max(0, Math.floor((now.getTime() - start) / 1000));
     const h = Math.floor(diff / 3600);
     const m = Math.floor((diff % 3600) / 60);
@@ -325,7 +326,7 @@ function MissionDataCard({ mission }: { mission: ActiveMission }) {
         {mission.scheduledDate && (
           <p className="text-sm text-foreground">
             <span className="font-bold">AGENDAMENTO:</span>{" "}
-            {new Date(mission.scheduledDate).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            {new Date((/[Zz]$/.test(mission.scheduledDate) || /[+-]\d{2}:\d{2}$/.test(mission.scheduledDate)) ? mission.scheduledDate : mission.scheduledDate + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
           </p>
         )}
         {mission.description && (
@@ -363,7 +364,8 @@ function MissionTimeline({ stepLogs }: { stepLogs: StepLogEntry[] }) {
 
   if (!stepLogs || stepLogs.length === 0) return null;
 
-  const sorted = [...stepLogs].sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  const _eu = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+  const sorted = [...stepLogs].sort((a, b) => new Date(_eu(a.completedAt)).getTime() - new Date(_eu(b.completedAt)).getTime());
   const display = expanded ? sorted : sorted.slice(-3);
 
   return (
@@ -375,9 +377,9 @@ function MissionTimeline({ stepLogs }: { stepLogs: StepLogEntry[] }) {
       </button>
       <div className="space-y-0">
         {display.map((log, i) => {
-          const dt = new Date(log.completedAt);
-          const timeStr = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-          const dateStr = dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const dt = new Date(_eu(log.completedAt));
+          const timeStr = dt.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const dateStr = dt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
           const isLast = i === display.length - 1;
           return (
             <div key={`${log.step}-${log.completedAt}`} className="flex gap-3" data-testid={`timeline-entry-${log.step}`}>
@@ -430,8 +432,10 @@ function ScheduledMissionsList({ missions }: { missions: ScheduledMissionInfo[] 
       </h3>
       <div className="space-y-3">
         {missions.map((m) => {
+          const _eu2 = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
           const dateStr = m.scheduledDate
-            ? new Date(m.scheduledDate).toLocaleDateString("pt-BR", {
+            ? new Date(_eu2(m.scheduledDate)).toLocaleDateString("pt-BR", {
+                timeZone: "America/Sao_Paulo",
                 day: "2-digit", month: "2-digit", year: "numeric",
                 hour: "2-digit", minute: "2-digit"
               })

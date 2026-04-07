@@ -18,9 +18,10 @@ const TABS: { key: HRTab; label: string; icon: any }[] = [
 
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
+function _eu(ts: string) { return /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z"; }
 function fmtDate(d: string | null) {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return new Date(_eu(d)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 function fmtCurrency(v: number | null) {
   if (v == null) return "-";

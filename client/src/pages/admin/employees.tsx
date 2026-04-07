@@ -264,9 +264,10 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
   );
 }
 
+function _eu(ts: string) { return /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z"; }
 function isDocExpiringSoon(dateStr: string | null): "expired" | "warning" | "ok" {
   if (!dateStr) return "ok";
-  const d = new Date(dateStr);
+  const d = new Date(_eu(dateStr));
   const now = new Date();
   const diffDays = (d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
   if (diffDays < 0) return "expired";
@@ -1998,7 +1999,7 @@ function SalaryTabContent({ employee, isDiretoria, salaries, loadingSal, showSal
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-red-50">
-                          <span className="text-[9px] text-neutral-400 font-mono">{d.createdAt ? new Date(d.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                          <span className="text-[9px] text-neutral-400 font-mono">{d.createdAt ? new Date(_eu(d.createdAt)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
                           {d.createdBy && <span className="text-[9px] text-neutral-400">por {d.createdBy}</span>}
                         </div>
                       </div>
@@ -2388,7 +2389,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const fmtCurrency = (v: number | null) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-";
   const docExpiryStatus = (dateStr: string | null): "expired" | "warning" | "ok" => {
     if (!dateStr) return "ok";
-    const d = new Date(dateStr);
+    const d = new Date(_eu(dateStr));
     const now = new Date();
     const diffDays = (d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     if (diffDays < 0) return "expired";

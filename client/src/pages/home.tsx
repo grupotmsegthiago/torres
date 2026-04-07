@@ -509,7 +509,9 @@ function EscortCalculator() {
     e.preventDefault();
     if (!origem.trim() || !destino.trim() || !carga.trim() || !dataEmbarque) return;
 
-    const dataFormatada = new Date(dataEmbarque).toLocaleString("pt-BR", {
+    const _euH = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+    const dataFormatada = new Date(_euH(dataEmbarque)).toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
       day: "2-digit",
       month: "2-digit",
       year: "numeric",

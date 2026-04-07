@@ -12,7 +12,10 @@ O sistema opera EXCLUSIVAMENTE em America/Sao_Paulo (UTC-3).
 - No frontend, SEMPRE usar `ensureUTC(dateString)` antes de `new Date()` para garantir interpretação correta.
 - Toda exibição de horário (Grid, DRE, Chat, OS, Relatórios) DEVE usar `timeZone: "America/Sao_Paulo"`.
 - No backend, `process.env.TZ = "America/Sao_Paulo"` já está configurado em `server/index.ts`.
+- No banco de dados, `SET timezone = 'America/Sao_Paulo'` é executado automaticamente em cada conexão via `pool.on("connect")` em `server/db.ts`.
 - No backend, usar `(NOW() AT TIME ZONE 'UTC')::timestamp` em RPCs do Supabase.
+- A função `ensureUTC` está exportada centralmente em `client/src/lib/utils.ts` — usar import de lá sempre que possível.
+- Funções utilitárias `formatBRT`, `formatDateBRT`, `formatTimeBRT` em `utils.ts` já aplicam `ensureUTC` internamente.
 - NUNCA exibir horário sem `timeZone: "America/Sao_Paulo"` no `toLocaleTimeString` / `toLocaleDateString`.
 - NUNCA usar `new Date(dateString)` sem `ensureUTC()` em cálculos de "tempo atrás" (há X min), pois causa offset de 3h.
 - Qualquer nova data inserida no sistema DEVE ser tratada como Brasília (UTC-3).

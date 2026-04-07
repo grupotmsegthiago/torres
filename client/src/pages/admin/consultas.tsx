@@ -561,7 +561,7 @@ function LogsTab() {
                   <tr key={l.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-log-${l.id}`}>
                     <td className="p-2.5 text-neutral-500 font-mono whitespace-nowrap">
                       <Clock className="w-3 h-3 inline mr-1" />
-                      {l.createdAt ? new Date(l.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-"}
+                      {l.createdAt ? new Date((/[Zz]$/.test(l.createdAt) || /[+-]\d{2}:\d{2}$/.test(l.createdAt)) ? l.createdAt : l.createdAt + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-"}
                     </td>
                     <td className="p-2.5 text-neutral-800 font-mono">{l.endpoint}</td>
                     <td className="p-2.5"><Badge variant="outline" className="text-xs">{l.method}</Badge></td>

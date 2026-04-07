@@ -36,8 +36,15 @@ type LocHistory = {
   createdAt: string;
 };
 
+function ensureUTC(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const s = String(ts);
+  if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+  return s + "Z";
+}
+
 function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = Date.now() - new Date(ensureUTC(dateStr)!).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "agora";
   if (mins < 60) return `${mins}min atrás`;
@@ -47,7 +54,7 @@ function timeAgo(dateStr: string) {
 }
 
 function isOnline(dateStr: string) {
-  return Date.now() - new Date(dateStr).getTime() < 15 * 60 * 1000;
+  return Date.now() - new Date(ensureUTC(dateStr)!).getTime() < 15 * 60 * 1000;
 }
 
 function mapsUrl(lat: number, lng: number) {
@@ -163,7 +170,7 @@ function AgentCard({ loc }: { loc: AgentLoc }) {
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 flex items-center justify-center bg-neutral-100 rounded text-[10px] font-bold text-neutral-500">{idx + 1}</span>
                     <span className="text-neutral-700">
-                      {new Date(h.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      {new Date(ensureUTC(h.createdAt)!).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -272,7 +279,7 @@ export default function TrackerPage() {
                     const aOn = isOnline(a.updatedAt) ? 0 : 1;
                     const bOn = isOnline(b.updatedAt) ? 0 : 1;
                     if (aOn !== bOn) return aOn - bOn;
-                    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                    return new Date(ensureUTC(b.updatedAt)!).getTime() - new Date(ensureUTC(a.updatedAt)!).getTime();
                   })
                   .map((loc) => (
                     <AgentCard key={loc.id} loc={loc} />

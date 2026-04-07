@@ -1492,7 +1492,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                       {isExpanded ? <ChevronDown size={14} className="text-neutral-400 shrink-0" /> : <ChevronRight size={14} className="text-neutral-400 shrink-0" />}
                       <span className="text-xs font-black text-neutral-900 shrink-0">{m.os_number || m.boletim || "-"}</span>
                       <span className="text-[10px] text-neutral-400 shrink-0">
-                        {m.data ? new Date(m.data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "-"}
+                        {m.data ? new Date((/[Zz]$/.test(m.data) || /[+-]\d{2}:\d{2}$/.test(m.data)) ? m.data : m.data + "Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "-"}
                       </span>
                       {isCancelada ? (
                         <Badge className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0 border-0 hover:bg-red-600 shrink-0">CANCELADA</Badge>

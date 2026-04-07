@@ -395,7 +395,8 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
 
   if (!stepLogs || stepLogs.length === 0) return null;
 
-  const sorted = [...stepLogs].sort((a: any, b: any) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+  const _euTl = (s: string) => /[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z";
+  const sorted = [...stepLogs].sort((a: any, b: any) => new Date(_euTl(a.completedAt)).getTime() - new Date(_euTl(b.completedAt)).getTime());
   const display = expanded ? sorted : sorted.slice(-2);
 
   return (
@@ -409,7 +410,7 @@ function MobileTimeline({ stepLogs }: { stepLogs: any[] }) {
       </button>
       <div className="space-y-0">
         {display.map((log: any, i: number) => {
-          const dt = new Date(log.completedAt);
+          const dt = new Date(_euTl(log.completedAt));
           const timeStr = dt.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
           const dateStr = dt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
           const isLast = i === display.length - 1;
@@ -914,7 +915,7 @@ export default function MobileMissaoPage() {
   useEffect(() => {
     if (mission && currentStep === "aguardando" && mission.scheduledDate) {
       const now = new Date();
-      const scheduled = new Date(mission.scheduledDate);
+      const scheduled = new Date(parseUTCTimestamp(mission.scheduledDate));
       const diffMin = (scheduled.getTime() - now.getTime()) / (1000 * 60);
       setEarlyBlocked(diffMin > 30 && !mission.earlyStartApproved);
     } else {
@@ -1503,7 +1504,7 @@ export default function MobileMissaoPage() {
                       </div>
                       <div>
                         <p className="text-xs font-black text-neutral-900 uppercase tracking-wider">{s.osNumber}</p>
-                        <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(s.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "Agendada"}</p>
+                        <p className="text-[10px] text-neutral-400">{s.scheduledDate ? new Date(parseUTCTimestamp(s.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "Agendada"}</p>
                       </div>
                     </div>
                     {s.priority === "imediata" && (
@@ -1515,9 +1516,9 @@ export default function MobileMissaoPage() {
                     <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2">
                       <Clock className="w-3.5 h-3.5 text-neutral-400" />
                       <span className="font-semibold text-neutral-700">
-                        {new Date(s.scheduledDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" })}
+                        {new Date(parseUTCTimestamp(s.scheduledDate)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" })}
                         {" às "}
-                        {new Date(s.scheduledDate).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
+                        {new Date(parseUTCTimestamp(s.scheduledDate)).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
                   )}
@@ -1767,7 +1768,7 @@ export default function MobileMissaoPage() {
               {mission.scheduledDate && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <Bell className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(parseUTCTimestamp(mission.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 </div>
               )}
               {mission.origin && (
@@ -1853,7 +1854,7 @@ export default function MobileMissaoPage() {
               {mission.scheduledDate && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
                   <Bell className="w-3.5 h-3.5" />
-                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(mission.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
+                  <span><strong className="text-neutral-700">Data/Hora:</strong> {new Date(parseUTCTimestamp(mission.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                 </div>
               )}
               {mission.description && (
