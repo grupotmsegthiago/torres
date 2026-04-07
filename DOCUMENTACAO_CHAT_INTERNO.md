@@ -514,3 +514,28 @@ if (alreadyLinked?.length) continue;           // ← já vinculado em outra OS
 A lógica anterior de "Último Lançamento" (`created_at >= os.created_at`) permitia herança de custos entre missões da mesma viatura. A nova lógica de "Lançamento por Data da Missão" (`date = scheduled_date em BRT`) garante isolamento total: cada OS só contabiliza abastecimentos realizados na data exata da sua operação. O check de duplicidade cross-OS impede que o mesmo registro F#N seja contabilizado duas vezes, mesmo em cenários de viatura compartilhada entre múltiplas OS no mesmo dia.
 
 **Status:** Testado e aplicado. Servidor rodando sem erros. SYSTEM_BRAIN.md L002 respeitado ("Custos reais de combustível NUNCA devem ser herdados de missões anteriores da mesma viatura"). RULES.md Regra 6 respeitada ("NUNCA puxar registros de abastecimento de dias anteriores").
+
+---
+
+#### 07/04/2026 — 10:15 BRT | Auditoria do Fluxo de Aceite de Missão via Chat
+
+**Descrição Tática:**
+1. **Verificação de Sigilo do Card (`mission_invite`):**
+   - Endpoint `POST /api/chat/send-mission-invite` (`server/routes/chat.ts`, linha 372): Envia apenas `osId`, `osNumber`, `scheduledDate`, `origin`, `destination`, `type`. **Nenhum campo `customer_name` ou `total_value` presente.**
+   - Endpoint automático em `server/routes/service-orders.ts` (linha 1041): Adiciona `team` (nomes dos agentes) e `vehicle` (placa). **Nenhum dado financeiro ou de cliente.**
+   - Interface `MissionInviteData` (`chat-widget.tsx`, linha 53): Define apenas 6 campos operacionais, zero financeiros.
+
+2. **Rastreabilidade do Aceite:**
+   - Endpoint `POST /api/missions/:osId/accept` (`server/routes/mission.ts`, linha 1845): Salva `responded_at` em ISO UTC via `new Date().toISOString()`. ID do agente extraído do JWT (`req.user!.employeeId`), nunca do body (proteção IDOR). Verifica designação em `assignedEmployeeId`/`assignedEmployee2Id` antes de aceitar.
+   - Mensagem de sistema inserida no chat: `"✅ {nome} aceitou a missão {osNumber} — {timeBRT}"` com hora formatada em `timeZone: "America/Sao_Paulo"`.
+   - Audit log gravado com `logSystemAudit`: ação `mission_acceptance_accept`, IP, GPS, dispositivo, token de aceite.
+
+3. **Integridade do Histórico na Pasta do Funcionário:**
+   - Endpoint `GET /api/employees/:id/acceptances` (`server/routes/mission.ts`, linha 1825): Busca `mission_acceptances` por `employee_id`, enriquece com `osNumber`, `osDate`, `osType`.
+   - Frontend `employees.tsx`: Aba "Missões" (key `aceites`) com dashboard de 4 contadores (Total, Aceitos, Recusados, Expirados) e tabela detalhada com colunas OS, Data Missão, Status, Respondido em, Dispositivo.
+   - Data da missão exibida com `timeZone: "America/Sao_Paulo"`.
+
+**Justificativa Técnica:**
+Auditoria preventiva do fluxo end-to-end de aceite de missão para garantir que: (1) nenhum dado financeiro ou de cliente vaza para agentes de campo via card do chat; (2) timestamps são registrados corretamente em Brasília; (3) o histórico de aceites alimenta corretamente a pasta do funcionário.
+
+**Status:** Auditoria concluída. **Nenhum erro encontrado.** Todos os 7 pontos de verificação aprovados. SYSTEM_BRAIN.md Regra 1.5 respeitada (aceite de missão com tabela `mission_acceptances`, CRON de expiração, proteção IDOR). RULES.md consultado.
