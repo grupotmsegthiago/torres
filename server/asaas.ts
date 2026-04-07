@@ -489,12 +489,15 @@ export function registerAsaasRoutes(app: Express) {
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .in("status", ["APROVADA", "A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+        .not("status", "in", '("RECUSADA","FATURADA","CANCELADA")');
 
       if (billErr) throw billErr;
       if (!billings || billings.length === 0) {
-        return res.status(400).json({ message: "Nenhuma OS faturável encontrada para este cliente. Status aceitos: APROVADA, A_VERIFICAR, VERIFICADA, PENDENTE." });
+        return res.status(400).json({ message: "Nenhuma OS faturável encontrada para este cliente. Todas as OSs já foram faturadas, recusadas ou canceladas." });
       }
+
+      console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Status encontrados: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
+
 
       const clientName = billings[0].client_name || "Cliente";
 
@@ -522,7 +525,7 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim, billings.length);
       const descricaoDetalhada = `${descricaoFiscal}\n\n${osDescriptions.join("\n")}`;
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
 
@@ -549,6 +552,7 @@ export function registerAsaasRoutes(app: Express) {
             consolidadoPayload.postalService = false;
             consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`;
           }
+          console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
           asaasPaymentId = payment.id;
           invoiceUrl = payment.invoiceUrl;

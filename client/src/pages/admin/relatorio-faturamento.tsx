@@ -813,10 +813,10 @@ export default function RelatorioFaturamentoPage() {
                 <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1 text-xs font-mono" data-testid="input-fatura-due-date" />
               </div>
               <div>
-                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail Medição</Label>
+                <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail Financeiro</Label>
                 <Input
                   type="email"
-                  value={clientData?.emailFinanceiro || clientData?.email || ""}
+                  value={clientData?.email_financeiro || clientData?.emailFinanceiro || "financeiro@torresseguranca.com.br"}
                   readOnly
                   className="mt-1 text-xs font-mono bg-gray-50"
                   data-testid="input-fatura-email"

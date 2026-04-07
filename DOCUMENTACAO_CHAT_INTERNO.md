@@ -874,3 +874,36 @@ O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITO
 **Arquivos alterados:** `client/src/pages/admin/faturas.tsx` (reconstrução total)
 
 **Status:** Implementado. Servidor reiniciado sem erros. Layout financeiro elite operacional.
+
+---
+
+#### 07/04/2026 — 11:20 BRT | Força Bruta — Filtro Liberado + Email Financeiro + Auditoria Payload
+
+**4 Correções Aplicadas:**
+
+1. **Filtro Liberado (Força Bruta)** — Em vez de listar status aceitos (APROVADA, VERIFICADA, etc.), agora a query exclui apenas os que NÃO podem ser faturados:
+```sql
+.eq("client_id", clientId)
+.not("status", "in", '("RECUSADA","FATURADA","CANCELADA")')
+```
+Qualquer OS que não seja RECUSADA, FATURADA ou CANCELADA é faturável. Isso resolve o erro 400 independente do nome do status usado.
+
+2. **E-mail Financeiro Padronizado** — Campo `email_financeiro` adicionado à tabela `clients` via db-init.ts. No modal:
+   - Prioridade: `email_financeiro` → `emailFinanceiro` → fallback `financeiro@torresseguranca.com.br`
+   - Nunca mais aparece e-mail pessoal
+   - Label renomeado de "E-mail Medição" para "E-mail Financeiro"
+
+3. **Auditoria de Payload** — Antes de enviar para o Asaas, o sistema agora imprime no log:
+```
+[asaas] PAYLOAD AUDIT — Enviando para Asaas: { customer, billingType, value, dueDate, description, ... }
+```
+Isso permite verificar se customer_id e value estão corretos antes do envio.
+
+4. **Query de Clientes Expandida** — O select de `clients` agora inclui `email, email_financeiro` além de cnpj, cpf, emite_nf, address, city, state.
+
+**Arquivos alterados:**
+- `server/asaas.ts` — filtro NOT IN, payload audit log, select expandido
+- `server/db-init.ts` — coluna `email_financeiro` na tabela clients
+- `client/src/pages/admin/relatorio-faturamento.tsx` — email financeiro com fallback Torres
+
+**Status:** Implementado. Servidor reiniciado sem erros.

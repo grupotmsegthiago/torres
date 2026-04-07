@@ -358,6 +358,9 @@ export async function ensureDbSchema() {
     await db.execute(sql`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cutoff_day INTEGER
     `);
+    await db.execute(sql`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_financeiro TEXT
+    `);
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS billing_alerts (
