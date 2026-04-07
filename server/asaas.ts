@@ -92,10 +92,18 @@ async function ensureInvoicesTable() {
         payment_date TEXT,
         external_reference TEXT,
         notes TEXT,
+        nfse_url TEXT,
+        nfse_status TEXT,
+        nfse_number TEXT,
+        nf_anexo_url TEXT,
         created_by INTEGER,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`
+      );
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_url TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_status TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_number TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nf_anexo_url TEXT;`
     });
   } catch (e: any) {
     console.log("[asaas] ensureInvoicesTable via direct query fallback");
@@ -443,11 +451,12 @@ export function registerAsaasRoutes(app: Express) {
 
       try {
         const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
-        if (fiscalInfo?.rpsSerie || fiscalInfo?.rpsNumber || fiscalInfo?.externalUrl) {
-          if (fiscalInfo.externalUrl) {
-            updates.nfse_url = fiscalInfo.externalUrl;
-          }
-          console.log(`[asaas] NFS-e sync OK: status=${fiscalInfo.status}, url=${fiscalInfo.externalUrl || 'N/A'}`);
+        if (fiscalInfo) {
+          updates.nfse_status = fiscalInfo.status || null;
+          if (fiscalInfo.externalUrl) updates.nfse_url = fiscalInfo.externalUrl;
+          if (fiscalInfo.number) updates.nfse_number = String(fiscalInfo.number);
+          else if (fiscalInfo.rpsNumber) updates.nfse_number = `RPS-${fiscalInfo.rpsNumber}`;
+          console.log(`[asaas] NFS-e sync: status=${fiscalInfo.status}, number=${fiscalInfo.number || fiscalInfo.rpsNumber || 'N/A'}, url=${fiscalInfo.externalUrl || 'N/A'}`);
         }
       } catch (nfErr: any) {
         console.log(`[asaas] NFS-e fetch (non-blocking): ${nfErr.message}`);
@@ -458,6 +467,45 @@ export function registerAsaasRoutes(app: Express) {
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/invoices/:id/emit-nfse", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+      if (!invoice.asaas_payment_id) return res.status(400).json({ message: "Fatura sem vínculo com Asaas. A NFS-e só pode ser emitida para cobranças integradas." });
+
+      const cpfCnpj = invoice.client_cpf_cnpj || "";
+      if (!cpfCnpj) return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
+
+      const fiscalPayload = buildFiscalPayload(parseFloat(invoice.value), cpfCnpj);
+      const result = await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/fiscalInfo`, fiscalPayload);
+
+      const updates: Record<string, any> = {
+        nfse_status: result.status || "SCHEDULED",
+        updated_at: new Date().toISOString(),
+      };
+      if (result.externalUrl) updates.nfse_url = result.externalUrl;
+      if (result.number) updates.nfse_number = String(result.number);
+
+      const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
+      if (error) throw error;
+
+      const user = (req as any).user;
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "EMITIR_NFSE", targetId: invoice.asaas_payment_id, targetType: "invoice",
+        details: `NFS-e solicitada para fatura #${id} (${invoice.asaas_payment_id}). Status: ${result.status || 'SCHEDULED'}`,
+        ipAddress: (req as any).ip,
+      });
+
+      console.log(`[asaas] NFS-e emitida: payment=${invoice.asaas_payment_id}, status=${result.status}`);
+      res.json({ ...data, nfseResult: result });
+    } catch (err: any) {
+      console.error("[asaas] Erro NFS-e:", err.message);
+      res.status(500).json({ message: `Erro ao emitir NFS-e: ${err.message}` });
     }
   });
 
@@ -796,6 +844,8 @@ export function registerAsaasRoutes(app: Express) {
       let pixQrCode: string | null = null;
       let pixCopiaECola: string | null = null;
       let invoiceStatus = "PENDING";
+      let nfseStatus: string | null = null;
+      let nfseNumber: string | null = null;
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
@@ -830,9 +880,12 @@ export function registerAsaasRoutes(app: Express) {
           if (emiteNfConsolidado && asaasPaymentId) {
             try {
               const fiscalPayload = buildFiscalPayload(totalValue, cpfCnpj);
-              await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
-              console.log(`[asaas] NFS-e configurada para payment ${asaasPaymentId} CNAE ${CNAE_PRINCIPAL}`);
+              const nfResult = await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
+              nfseStatus = nfResult.status || "SCHEDULED";
+              if (nfResult.number) nfseNumber = String(nfResult.number);
+              console.log(`[asaas] NFS-e configurada para payment ${asaasPaymentId} CNAE ${CNAE_PRINCIPAL}. Status: ${nfseStatus}`);
             } catch (nfErr: any) {
+              nfseStatus = "ERROR";
               console.log(`[asaas] NFS-e config error (non-blocking): ${nfErr.message}`);
             }
           }
@@ -869,6 +922,8 @@ export function registerAsaasRoutes(app: Express) {
         bank_slip_url: bankSlipUrl,
         pix_qr_code: pixQrCode,
         pix_copia_e_cola: pixCopiaECola,
+        nfse_status: nfseStatus,
+        nfse_number: nfseNumber,
         notes: `Referente aos serviços de Escolta Armada Caracterizada - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         created_by: user?.id,

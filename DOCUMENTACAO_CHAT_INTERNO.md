@@ -1287,6 +1287,37 @@ O Thiago precisa acessar o painel Asaas (https://www.asaas.com) → Configuraç�
 - Endpoints: `POST /api/invoices/:id/attach-nf` e `DELETE /api/invoices/:id/attach-nf`
 - Auditoria: ação `ANEXAR_NF` registrada
 
+---
+
+### Atualização 07/04/2026 18:04 BRT — NFS-e Integrada via Asaas (Emissão Automática)
+
+**Mudança:** Substituição do sistema de "Anexar NF" manual por sistema completo de NFS-e integrada via Asaas.
+
+**Novos campos no banco `invoices`:**
+- `nfse_status TEXT` — Status da NFS-e (SCHEDULED, AUTHORIZED, ERROR, PROCESSING, WAITING_MUNICIPAL_PROCESSING, CANCELLED)
+- `nfse_number TEXT` — Número da NFS-e ou RPS
+
+**Novo endpoint:**
+- `POST /api/invoices/:id/emit-nfse` — Emite/re-emite NFS-e via Asaas (`fiscalInfo` API). Requer admin. Auditoria: `EMITIR_NFSE`.
+
+**Fluxo NFS-e:**
+1. Ao gerar fatura (Boletim Medição → Gerar Fatura), se `emite_nf=true` no cliente, NFS-e é automaticamente solicitada ao Asaas (`POST /payments/{id}/fiscalInfo`). Status inicial: `SCHEDULED`.
+2. Asaas emite NFS-e após pagamento confirmado (automático). Status final: `AUTHORIZED`.
+3. Sincronizar fatura (`POST /api/invoices/:id/sync`) busca status atualizado da NFS-e, URL e número.
+4. Se erro, pode re-emitir manualmente pelo botão "Tentar Novamente".
+
+**Frontend — `NfseControlSection` (substituiu `NfAttachSection`):**
+- Mostra status da NFS-e com badge colorida (Agendada/Autorizada/Erro/Processando)
+- NFS-e Autorizada: card verde com botão "Visualizar NFS-e" + número
+- NFS-e Agendada: card âmbar explicando emissão automática
+- NFS-e Erro: card vermelho com orientação + botão "Tentar Novamente"
+- Botão "Emitir NFS-e via Asaas" para emissão manual quando necessário
+- Badges na tabela de faturas: "NFS-e ✓" (verde), "NF Agendada" (âmbar), "NF Erro" (vermelho)
+
+**Pré-requisito para NFS-e funcionar:**
+- Thiago deve configurar no Asaas: Configurações → Nota Fiscal → Inscrição Municipal + login da prefeitura
+- Cliente deve ter `emite_nf=true` no cadastro + CPF/CNPJ preenchido
+
 **Arquivos Alterados:**
-- `server/asaas.ts` — Mensagem de erro melhorada + sync NFS-e + endpoints attach-nf
-- `client/src/pages/admin/faturas.tsx` — Interface Invoice atualizada + NfAttachSection + badges NF
+- `server/asaas.ts` — Endpoint `emit-nfse`, sync com `nfse_status/number`, `nfseStatus` no gerar-fatura
+- `client/src/pages/admin/faturas.tsx` — `NfseControlSection`, badges NFS-e na tabela, interface atualizada

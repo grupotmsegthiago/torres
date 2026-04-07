@@ -17,7 +17,7 @@ import {
   FileText, DollarSign, Calendar, CheckCircle2, XCircle,
   Clock, AlertTriangle, Send, Copy, Eye, Trash2,
   Building2, Download, Receipt, Mail, MailCheck, MailX,
-  Activity, Bell, Paperclip, Upload, Link2,
+  Activity, Bell,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -49,6 +49,8 @@ interface Invoice {
   external_reference: string | null;
   notes: string | null;
   nfse_url: string | null;
+  nfse_status: string | null;
+  nfse_number: string | null;
   nf_anexo_url: string | null;
   created_at: string;
 }
@@ -455,7 +457,22 @@ export default function FaturasPage() {
                               ) : (
                                 <span className="text-[10px] text-neutral-400">Local</span>
                               )}
-                              {(inv.nfse_url || inv.nf_anexo_url) && (
+                              {inv.nfse_status === "AUTHORIZED" && (
+                                <Badge className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200">
+                                  NFS-e ✓
+                                </Badge>
+                              )}
+                              {inv.nfse_status === "SCHEDULED" && (
+                                <Badge className="text-[9px] bg-amber-50 text-amber-600 border border-amber-200">
+                                  NF Agendada
+                                </Badge>
+                              )}
+                              {inv.nfse_status === "ERROR" && (
+                                <Badge className="text-[9px] bg-red-50 text-red-600 border border-red-200">
+                                  NF Erro
+                                </Badge>
+                              )}
+                              {!inv.nfse_status && (inv.nfse_url || inv.nf_anexo_url) && (
                                 <Badge className="text-[9px] bg-violet-50 text-violet-600 border border-violet-200">
                                   NF
                                 </Badge>
@@ -848,118 +865,140 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
   );
 }
 
-function NfAttachSection({ invoice }: { invoice: Invoice }) {
+const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
+  SCHEDULED:          { label: "Agendada",      color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
+  AUTHORIZED:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  CANCELLED:          { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
+  ERROR:              { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
+  PROCESSING:         { label: "Processando",   color: "bg-blue-50 text-blue-700 border-blue-200",       icon: Loader2 },
+  WAITING_MUNICIPAL_PROCESSING: { label: "Aguardando Prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock },
+};
+
+function NfseControlSection({ invoice }: { invoice: Invoice }) {
   const { toast } = useToast();
-  const [showAttach, setShowAttach] = useState(false);
-  const [nfUrl, setNfUrl] = useState("");
-  const [attaching, setAttaching] = useState(false);
+  const [emitting, setEmitting] = useState(false);
 
-  const handleAttach = async () => {
-    if (!nfUrl.trim()) return;
-    setAttaching(true);
+  const nfStatus = invoice.nfse_status ? (NFSE_STATUS_MAP[invoice.nfse_status] || { label: invoice.nfse_status, color: "bg-neutral-100 text-neutral-600 border-neutral-200", icon: FileText }) : null;
+  const hasNfse = !!invoice.nfse_status;
+  const isAuthorized = invoice.nfse_status === "AUTHORIZED";
+  const isError = invoice.nfse_status === "ERROR";
+  const canEmit = invoice.asaas_payment_id && !isAuthorized && invoice.status !== "CANCELLED";
+
+  const handleEmitNfse = async () => {
+    setEmitting(true);
     try {
-      const r = await authFetch(`/api/invoices/${invoice.id}/attach-nf`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nf_anexo_url: nfUrl.trim() }),
-      });
+      const r = await authFetch(`/api/invoices/${invoice.id}/emit-nfse`, { method: "POST" });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "NF anexada com sucesso" });
-      setShowAttach(false);
-      setNfUrl("");
+      toast({ title: "NFS-e solicitada com sucesso", description: "A nota será processada pelo Asaas e emitida automaticamente." });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao emitir NFS-e", description: err.message, variant: "destructive" });
     } finally {
-      setAttaching(false);
-    }
-  };
-
-  const handleRemove = async () => {
-    try {
-      const r = await authFetch(`/api/invoices/${invoice.id}/attach-nf`, { method: "DELETE" });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Anexo de NF removido" });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      setEmitting(false);
     }
   };
 
   return (
-    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold text-neutral-700 flex items-center gap-1">
-          <Paperclip className="w-3.5 h-3.5" /> Nota Fiscal
+          <Receipt className="w-3.5 h-3.5" /> Nota Fiscal de Serviço (NFS-e)
         </p>
-        {!invoice.nf_anexo_url && !invoice.nfse_url && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs h-7 text-violet-700 border-violet-200 hover:bg-violet-50"
-            onClick={() => setShowAttach(!showAttach)}
-            data-testid="button-attach-nf"
-          >
-            <Upload className="w-3 h-3 mr-1" /> Anexar NF
-          </Button>
+        {hasNfse && nfStatus && (
+          <Badge className={`text-[10px] ${nfStatus.color} border`}>
+            <nfStatus.icon className={`w-3 h-3 mr-1 ${invoice.nfse_status === "PROCESSING" ? "animate-spin" : ""}`} />
+            {nfStatus.label}
+          </Badge>
         )}
       </div>
 
-      {invoice.nfse_url && (
-        <div className="flex items-center gap-2 text-xs">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span className="text-emerald-700 font-medium">NFS-e emitida via Asaas</span>
-        </div>
-      )}
-
-      {invoice.nf_anexo_url && (
-        <div className="flex items-center justify-between">
+      {isAuthorized && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-2">
           <div className="flex items-center gap-2 text-xs">
-            <CheckCircle2 className="w-3.5 h-3.5 text-violet-600" />
-            <span className="text-violet-700 font-medium">NF anexada manualmente</span>
-          </div>
-          <div className="flex gap-1">
-            <a href={invoice.nf_anexo_url} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="sm" className="h-6 text-xs text-violet-600" data-testid="button-open-nf-anexo">
-                <ExternalLink className="w-3 h-3 mr-1" /> Abrir
-              </Button>
-            </a>
-            <Button variant="ghost" size="sm" className="h-6 text-xs text-red-500" onClick={handleRemove} data-testid="button-remove-nf-anexo">
-              <Trash2 className="w-3 h-3 mr-1" /> Remover
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {!invoice.nfse_url && !invoice.nf_anexo_url && !showAttach && (
-        <p className="text-[11px] text-neutral-400">Nenhuma NF vinculada. Use "Anexar NF" para adicionar o link da nota fiscal.</p>
-      )}
-
-      {showAttach && (
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <Label className="text-[10px] text-neutral-500">URL da Nota Fiscal (link do PDF ou portal)</Label>
-            <div className="flex items-center gap-1 mt-1">
-              <Link2 className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
-              <Input
-                className="h-8 text-xs"
-                placeholder="https://... (link da NF)"
-                value={nfUrl}
-                onChange={(e) => setNfUrl(e.target.value)}
-                data-testid="input-nf-url"
-              />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <div>
+              <span className="text-emerald-700 font-bold">NFS-e emitida com sucesso</span>
+              {invoice.nfse_number && (
+                <span className="text-emerald-600 ml-2 font-mono text-[10px]">N° {invoice.nfse_number}</span>
+              )}
             </div>
           </div>
-          <Button
-            size="sm"
-            className="h-8 bg-violet-600 hover:bg-violet-700"
-            onClick={handleAttach}
-            disabled={!nfUrl.trim() || attaching}
-            data-testid="button-confirm-attach-nf"
-          >
-            {attaching ? <Loader2 className="w-3 h-3 animate-spin" /> : "Salvar"}
-          </Button>
+          {invoice.nfse_url && (
+            <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-authorized">
+                <ExternalLink className="w-3 h-3 mr-1" /> Visualizar NFS-e
+              </Button>
+            </a>
+          )}
         </div>
+      )}
+
+      {invoice.nfse_status === "SCHEDULED" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+          <div className="flex items-center gap-2 text-xs">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <div>
+              <p className="text-amber-700 font-medium">NFS-e agendada para emissão automática</p>
+              <p className="text-amber-600 text-[10px] mt-0.5">O Asaas emitirá a nota fiscal automaticamente após confirmação do pagamento. A NFS-e será enviada por e-mail junto com o boleto/comprovante.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(invoice.nfse_status === "PROCESSING" || invoice.nfse_status === "WAITING_MUNICIPAL_PROCESSING") && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5">
+          <div className="flex items-center gap-2 text-xs">
+            <Loader2 className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
+            <div>
+              <p className="text-blue-700 font-medium">NFS-e em processamento</p>
+              <p className="text-blue-600 text-[10px] mt-0.5">Aguardando autorização da prefeitura. Sincronize para atualizar o status.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+            <div>
+              <p className="text-red-700 font-medium">Erro na emissão da NFS-e</p>
+              <p className="text-red-600 text-[10px] mt-0.5">Verifique se a configuração fiscal do Asaas está correta (Configurações → Nota Fiscal → Inscrição Municipal) e tente novamente.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!hasNfse && !invoice.nfse_url && (
+        <div className="flex items-center gap-2 text-xs text-neutral-500">
+          <AlertTriangle className="w-3.5 h-3.5 text-neutral-400" />
+          <p>Nenhuma NFS-e vinculada a esta cobrança.</p>
+        </div>
+      )}
+
+      {canEmit && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={`w-full h-8 text-xs ${isError ? "text-red-700 border-red-200 hover:bg-red-50" : "text-indigo-700 border-indigo-200 hover:bg-indigo-50"}`}
+          onClick={handleEmitNfse}
+          disabled={emitting}
+          data-testid="button-emit-nfse"
+        >
+          {emitting ? (
+            <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Solicitando NFS-e...</>
+          ) : isError ? (
+            <><RefreshCw className="w-3 h-3 mr-1" /> Tentar Novamente</>
+          ) : hasNfse ? (
+            <><RefreshCw className="w-3 h-3 mr-1" /> Re-emitir NFS-e</>
+          ) : (
+            <><Receipt className="w-3 h-3 mr-1" /> Emitir NFS-e via Asaas</>
+          )}
+        </Button>
+      )}
+
+      {!invoice.asaas_payment_id && (
+        <p className="text-[10px] text-neutral-400">NFS-e disponível apenas para cobranças integradas com o Asaas.</p>
       )}
     </div>
   );
@@ -1096,15 +1135,8 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             )}
             {invoice.nfse_url && (
               <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm" className="text-indigo-700 border-indigo-200 hover:bg-indigo-50" data-testid="button-view-nfse">
-                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF (Asaas)
-                </Button>
-              </a>
-            )}
-            {invoice.nf_anexo_url && (
-              <a href={invoice.nf_anexo_url} target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm" className="text-violet-700 border-violet-200 hover:bg-violet-50" data-testid="button-view-nf-anexo">
-                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF Anexada
+                <Button variant="outline" size="sm" className="text-emerald-700 border-emerald-200 hover:bg-emerald-50" data-testid="button-view-nfse">
+                  <Receipt className="w-3.5 h-3.5 mr-1" /> NFS-e
                 </Button>
               </a>
             )}
@@ -1122,7 +1154,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             )}
           </div>
 
-          <NfAttachSection invoice={invoice} />
+          <NfseControlSection invoice={invoice} />
 
           {invoice.pix_qr_code && (
             <div className="text-center bg-white border rounded-xl p-4">
