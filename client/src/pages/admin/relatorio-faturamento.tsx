@@ -77,6 +77,7 @@ export default function RelatorioFaturamentoPage() {
   });
 
   const approvedBillings = useMemo(() => billings.filter(b => b.status === "APROVADA"), [billings]);
+  const faturadoBillings = useMemo(() => billings.filter(b => b.status === "FATURADO" || b.status === "FATURADA"), [billings]);
   const approvedTotal = useMemo(() => approvedBillings.reduce((acc, b) => {
     return acc + Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
   }, 0), [approvedBillings]);
@@ -519,8 +520,8 @@ export default function RelatorioFaturamentoPage() {
                   <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-print-pdf">
                     <Printer size={18} /> PDF
                   </button>
-                  <button onClick={openFaturaDialog} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-gerar-fatura">
-                    <Receipt size={18} /> Gerar Fatura {approvedBillings.length > 0 ? `(${approvedBillings.length})` : ""}
+                  <button onClick={openFaturaDialog} disabled={approvedBillings.length === 0} className={`${approvedBillings.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`} data-testid="btn-gerar-fatura" title={approvedBillings.length === 0 ? "Todas as OS ja foram faturadas" : ""}>
+                    <Receipt size={18} /> Gerar Fatura {approvedBillings.length > 0 ? `(${approvedBillings.length})` : faturadoBillings.length > 0 ? "(Faturadas)" : ""}
                   </button>
                 </>
               )}
@@ -535,15 +536,36 @@ export default function RelatorioFaturamentoPage() {
         </div>
       )}
 
+      {reportGenerated && faturadoBillings.length > 0 && approvedBillings.length === 0 && (
+        <div className="mt-4 no-print bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3" data-testid="banner-todas-faturadas">
+          <Check size={20} className="text-amber-600 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-900">
+              Todas as {faturadoBillings.length} OS neste periodo ja foram faturadas
+            </p>
+            <p className="text-xs text-amber-600">Para gerar nova fatura, exclua a fatura existente primeiro na tela de Faturas.</p>
+          </div>
+        </div>
+      )}
+
+      {reportGenerated && faturadoBillings.length > 0 && approvedBillings.length > 0 && (
+        <div className="mt-4 no-print bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3" data-testid="banner-parcial-faturadas">
+          <Check size={16} className="text-amber-500 shrink-0" />
+          <p className="text-xs text-amber-700">
+            <span className="font-bold">{faturadoBillings.length} OS ja faturada{faturadoBillings.length > 1 ? "s" : ""}</span> neste periodo (marcadas em amarelo). Somente as {approvedBillings.length} aprovadas serao incluidas na nova fatura.
+          </p>
+        </div>
+      )}
+
       {reportGenerated && approvedBillings.length > 0 && (
         <div className="mt-4 no-print bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between" data-testid="banner-fatura-aprovadas">
           <div className="flex items-center gap-3">
             <Receipt size={20} className="text-indigo-600" />
             <div>
               <p className="text-sm font-bold text-indigo-900">
-                💰 {approvedBillings.length} mediç{approvedBillings.length > 1 ? "ões" : "ão"} aprovada{approvedBillings.length > 1 ? "s" : ""} — {fmt(approvedTotal)}
+                {approvedBillings.length} medicao(oes) aprovada{approvedBillings.length > 1 ? "s" : ""} — {fmt(approvedTotal)}
               </p>
-              <p className="text-xs text-indigo-600">Pronta{approvedBillings.length > 1 ? "s" : ""} para geração de fatura</p>
+              <p className="text-xs text-indigo-600">Pronta{approvedBillings.length > 1 ? "s" : ""} para geracao de fatura</p>
             </div>
           </div>
           <button
@@ -561,17 +583,28 @@ export default function RelatorioFaturamentoPage() {
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="flex items-center gap-3 mb-3">
             <Calculator size={18} className="text-gray-700" />
-            <span className="text-sm font-bold text-gray-700">{rowsData.length} OS &middot; Total: <span className="text-black font-black">{fmt(grandTotal)}</span></span>
+            <span className="text-sm font-bold text-gray-700">
+              {rowsData.length} OS &middot; Total: <span className="text-black font-black">{fmt(grandTotal)}</span>
+              {faturadoBillings.length > 0 && (
+                <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadoBillings.length} faturada{faturadoBillings.length > 1 ? "s" : ""}</span>
+              )}
+              {approvedBillings.length > 0 && (
+                <span className="ml-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">{approvedBillings.length} aprovada{approvedBillings.length > 1 ? "s" : ""}</span>
+              )}
+            </span>
           </div>
           <div className="space-y-1">
             {rowsData.map((r, i) => {
               const isExpanded = expandedRows.has(r.billingId);
               return (
                 <div key={r.billingId} className={`border rounded-lg ${isExpanded ? "border-gray-300 bg-gray-50" : "border-gray-100"}`}>
-                  <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setExpandedRows(prev => { const n = new Set(prev); n.has(r.billingId) ? n.delete(r.billingId) : n.add(r.billingId); return n; })} data-testid={`row-billing-${i}`}>
+                  <div className={`flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors ${r.status === "FATURADO" || r.status === "FATURADA" ? "bg-amber-50/60" : ""}`} onClick={() => setExpandedRows(prev => { const n = new Set(prev); n.has(r.billingId) ? n.delete(r.billingId) : n.add(r.billingId); return n; })} data-testid={`row-billing-${i}`}>
                     <div className="flex items-center gap-3 min-w-0">
                       {isExpanded ? <ChevronDown size={14} className="text-gray-600 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
                       <span className="text-xs font-black text-black">{r.id}</span>
+                      {(r.status === "FATURADO" || r.status === "FATURADA") && (
+                        <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded" data-testid={`badge-faturado-${i}`}>Faturada</span>
+                      )}
                       <span className="text-xs font-bold text-gray-500 truncate max-w-[200px]">{r.route}</span>
                       <span className="text-xs text-gray-400">{r.startDate}</span>
                     </div>
