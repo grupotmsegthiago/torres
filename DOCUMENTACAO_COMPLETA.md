@@ -12,7 +12,7 @@ Sistema institucional completo para gestão de operações de vigilância patrim
 - **Landing Page** institucional pública
 - **Painel Administrativo** (desktop) para gestão completa
 - **App Mobile** para agentes em campo
-- **API REST** com 12 módulos de rotas
+- **API REST** com 13 módulos de rotas
 - **Banco de Dados** Supabase PostgreSQL com Realtime
 
 ### Stack Tecnológico
@@ -40,7 +40,7 @@ Página institucional pública com apresentação da empresa, serviços oferecid
 
 ---
 
-## 3. Painel Administrativo (24 Páginas)
+## 3. Painel Administrativo (30 Páginas)
 
 Acessível em `/admin/*`. Restrito a roles `admin` e `diretoria`. Agentes (`funcionario`) são bloqueados com tela "Acesso Negado".
 

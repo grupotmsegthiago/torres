@@ -81,7 +81,7 @@ Status online/offline de cada usuário.
 
 ---
 
-## 3. Backend — API (8 Endpoints)
+## 3. Backend — API (9 Endpoints)
 
 Arquivo: `server/routes/chat.ts`  
 Registrado em: `server/routes.ts` via `registerChatRoutes(app)`  
