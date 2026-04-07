@@ -833,3 +833,44 @@ O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITO
 **Arquivo alterado:** `client/src/pages/admin/faturas.tsx`
 
 **Status:** Implementado. Servidor reiniciado sem erros. Layout profissional com container centralizado.
+
+---
+
+#### 07/04/2026 — 11:14 BRT | Reconstrução Total — Controle de Faturas / NF (Padrão Torres Elite)
+
+**Página completamente reconstruída** com padrão Dashboard Financeiro Profissional.
+
+**4 Pilares Implementados:**
+
+1. **Cards de Resumo (Topo)** — 4 cards com borda lateral colorida:
+   - Em Aberto (amarelo) — relógio, valor + contagem de faturas
+   - Pagas (verde) — check, valor líquido recebido + contagem
+   - Vencidas (vermelho) — alerta, valor + contagem
+   - Canceladas (cinza) — X, contagem
+
+2. **Barra de Busca Inteligente** — Campo único para buscar por cliente, NF, descrição ou ID Asaas. Filtros de status (dropdown) e mês (input month).
+
+3. **Tabela de Dados Compacta** — Componente Table do Shadcn com colunas:
+   - Status (Badge colorida)
+   - NF / ID (NF-0001 + ID Asaas em monospace)
+   - Cliente (Razão Social em CAIXA ALTA + CNPJ)
+   - Valor R$ (alinhado à direita, font-black, tabular-nums)
+   - Emissão (DD/MM/YYYY Brasília)
+   - Vencimento (vermelho se vencida)
+   - Tipo (Boleto/PIX/Cartão)
+   - Asaas Status (Badge com status Asaas ou "Local")
+   - Ações (Eye + Sync, visíveis no hover)
+
+4. **Ações Rápidas** — Ícones no final de cada linha:
+   - Eye (ver detalhes) — abre modal
+   - RefreshCw (sincronizar Asaas) — sync individual
+
+**Botão Atualizar** — Vermelho, canto superior direito, força refetch de dados.
+
+**Baixa Automática** — Confirmada no webhook (PAYMENT_CONFIRMED/RECEIVED → status PAGO + transação INCOME). No modal "Confirmar Pgto" manual, também gera baixa.
+
+**Container** — max-w-7xl mx-auto mantido. Footer da tabela mostra contagem + total geral.
+
+**Arquivos alterados:** `client/src/pages/admin/faturas.tsx` (reconstrução total)
+
+**Status:** Implementado. Servidor reiniciado sem erros. Layout financeiro elite operacional.

@@ -9,10 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
+  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
+} from "@/components/ui/table";
+import {
   Plus, Search, RefreshCw, Loader2, X, ExternalLink,
   FileText, DollarSign, Calendar, CheckCircle2, XCircle,
   Clock, AlertTriangle, Send, Copy, Eye, Trash2,
-  Building2, Filter, Download, Receipt,
+  Building2, Download, Receipt,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -52,34 +55,41 @@ interface AsaasStatus {
   balance?: { balance: number; };
 }
 
-const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  PENDING: { label: "Pendente", color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: Clock },
-  CONFIRMED: { label: "Confirmado", color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
-  RECEIVED: { label: "Recebido", color: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: DollarSign },
-  OVERDUE: { label: "Vencido", color: "bg-red-100 text-red-800 border-red-200", icon: AlertTriangle },
-  CANCELLED: { label: "Cancelado", color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
-  REFUNDED: { label: "Estornado", color: "bg-purple-100 text-purple-800 border-purple-200", icon: RefreshCw },
-  RECEIVED_IN_CASH: { label: "Recebido em Dinheiro", color: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: DollarSign },
+const STATUS_MAP: Record<string, { label: string; color: string; badgeCls: string; icon: any }> = {
+  PENDING:          { label: "Pendente",     color: "bg-yellow-100 text-yellow-800 border-yellow-200", badgeCls: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: Clock },
+  CONFIRMED:        { label: "Confirmado",   color: "bg-green-100 text-green-800 border-green-200",   badgeCls: "bg-green-50 text-green-700 border border-green-200",   icon: CheckCircle2 },
+  RECEIVED:         { label: "Recebido",     color: "bg-emerald-100 text-emerald-800 border-emerald-200", badgeCls: "bg-emerald-50 text-emerald-700 border border-emerald-200", icon: DollarSign },
+  OVERDUE:          { label: "Vencido",      color: "bg-red-100 text-red-800 border-red-200",         badgeCls: "bg-red-50 text-red-700 border border-red-200",         icon: AlertTriangle },
+  CANCELLED:        { label: "Cancelado",    color: "bg-neutral-100 text-neutral-500 border-neutral-200", badgeCls: "bg-neutral-100 text-neutral-500 border border-neutral-200", icon: XCircle },
+  REFUNDED:         { label: "Estornado",    color: "bg-purple-100 text-purple-800 border-purple-200",   badgeCls: "bg-purple-50 text-purple-700 border border-purple-200",   icon: RefreshCw },
+  RECEIVED_IN_CASH: { label: "Pago Manual",  color: "bg-emerald-100 text-emerald-800 border-emerald-200", badgeCls: "bg-emerald-50 text-emerald-700 border border-emerald-200", icon: DollarSign },
 };
 
 const BILLING_TYPES: Record<string, string> = {
   BOLETO: "Boleto",
   PIX: "PIX",
-  CREDIT_CARD: "Cartão de Crédito",
-  UNDEFINED: "Definido pelo Cliente",
+  CREDIT_CARD: "Cartão",
+  UNDEFINED: "Cliente Escolhe",
 };
 
-function formatCurrency(val: string | number | null | undefined): string {
+function fmt(val: string | number | null | undefined): string {
   if (!val) return "R$ 0,00";
   const n = typeof val === "string" ? parseFloat(val) : val;
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function formatDate(d: string | null): string {
+function fmtDate(d: string | null): string {
   if (!d) return "—";
   const parts = d.split("-");
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
   return d;
+}
+
+function fmtDateFull(d: string | null): string {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  } catch { return d; }
 }
 
 export default function FaturasPage() {
@@ -94,7 +104,7 @@ export default function FaturasPage() {
     queryKey: ["/api/asaas/status"],
   });
 
-  const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
+  const { data: invoices = [], isLoading, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices", statusFilter, monthFilter],
     queryFn: async () => {
       let url = `/api/invoices?status=${statusFilter}`;
@@ -115,16 +125,21 @@ export default function FaturasPage() {
     return invoices.filter(inv =>
       inv.client_name.toLowerCase().includes(q) ||
       inv.description.toLowerCase().includes(q) ||
-      (inv.asaas_payment_id && inv.asaas_payment_id.toLowerCase().includes(q))
+      (inv.asaas_payment_id && inv.asaas_payment_id.toLowerCase().includes(q)) ||
+      String(inv.id).includes(q)
     );
   }, [invoices, searchTerm]);
 
   const totals = useMemo(() => {
-    const pending = filtered.filter(i => i.status === "PENDING" || i.status === "OVERDUE").reduce((s, i) => s + parseFloat(i.value || "0"), 0);
-    const received = filtered.filter(i => i.status === "CONFIRMED" || i.status === "RECEIVED" || i.status === "RECEIVED_IN_CASH").reduce((s, i) => s + parseFloat(i.net_value || i.value || "0"), 0);
-    const overdue = filtered.filter(i => i.status === "OVERDUE").length;
-    return { pending, received, overdue, total: filtered.length };
-  }, [filtered]);
+    const emAberto = invoices.filter(i => i.status === "PENDING").reduce((s, i) => s + parseFloat(i.value || "0"), 0);
+    const emAbertoCount = invoices.filter(i => i.status === "PENDING").length;
+    const pagas = invoices.filter(i => ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(i.status)).reduce((s, i) => s + parseFloat(i.net_value || i.value || "0"), 0);
+    const pagasCount = invoices.filter(i => ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(i.status)).length;
+    const vencidas = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).length;
+    const vencidasTotal = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).reduce((s, i) => s + parseFloat(i.value || "0"), 0);
+    const canceladas = invoices.filter(i => i.status === "CANCELLED").length;
+    return { emAberto, emAbertoCount, pagas, pagasCount, vencidas, vencidasTotal, canceladas, total: invoices.length };
+  }, [invoices]);
 
   const syncMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -175,7 +190,7 @@ export default function FaturasPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Fatura marcada como paga" });
+      toast({ title: "Fatura marcada como paga — baixa automática realizada" });
       setShowDetail(null);
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -199,6 +214,11 @@ export default function FaturasPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const getDisplayStatus = (inv: Invoice) => {
+    const isOverdue = inv.status === "PENDING" && new Date(inv.due_date + "T23:59:59") < new Date();
+    return isOverdue ? STATUS_MAP.OVERDUE : (STATUS_MAP[inv.status] || STATUS_MAP.PENDING);
+  };
+
   return (
     <AdminLayout>
       <div className="p-4 lg:p-6" data-testid="faturas-page">
@@ -208,201 +228,254 @@ export default function FaturasPage() {
             <div>
               <h1 className="text-2xl font-bold text-neutral-900 flex items-center gap-2" data-testid="text-page-title">
                 <Receipt className="w-7 h-7 text-indigo-600" />
-                Controle de Faturas
+                Controle de Faturas / NF
               </h1>
-              <p className="text-sm text-neutral-500 mt-1">
-                Gerencie cobranças e faturas
+              <div className="text-sm text-neutral-500 mt-1 flex items-center gap-2 flex-wrap">
+                <span>Gerencie cobranças, NFs e faturamento — CNAE 7870</span>
                 {asaasStatus?.connected && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-emerald-600 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Asaas conectado
-                  </span>
+                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                    <CheckCircle2 className="w-3 h-3 mr-1" /> Asaas Online
+                  </Badge>
                 )}
                 {asaasStatus && !asaasStatus.connected && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-amber-500 font-medium text-[11px]">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Asaas: configure ASAAS_API_KEY
-                  </span>
+                  <Badge className="bg-amber-50 text-amber-600 border border-amber-200 text-[10px]">
+                    <AlertTriangle className="w-3 h-3 mr-1" /> Asaas: configure API Key
+                  </Badge>
                 )}
-              </p>
+              </div>
             </div>
-            <Button onClick={() => setShowCreate(true)} className="bg-indigo-600 hover:bg-indigo-700" data-testid="button-new-invoice">
-              <Plus className="w-4 h-4 mr-2" /> Nova Fatura
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => refetch()}
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold text-xs"
+                data-testid="button-sync-all"
+              >
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Atualizar
+              </Button>
+              <Button onClick={() => setShowCreate(true)} className="bg-indigo-600 hover:bg-indigo-700 font-bold text-xs" data-testid="button-new-invoice">
+                <Plus className="w-4 h-4 mr-1.5" /> Nova Fatura
+              </Button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="p-5 bg-white shadow-sm border border-neutral-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-yellow-400">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-indigo-600" />
+                <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-yellow-600" />
                 </div>
-                <div>
-                  <p className="text-xs text-neutral-500 uppercase font-bold tracking-wide">Total Faturas</p>
-                  <p className="text-3xl font-black text-neutral-900 mt-0.5" data-testid="text-total-count">{totals.total}</p>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Em Aberto</p>
+                  <p className="text-xl font-black text-yellow-700" data-testid="text-pending-total">{fmt(totals.emAberto)}</p>
+                  <p className="text-[10px] text-neutral-400">{totals.emAbertoCount} fatura{totals.emAbertoCount !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-5 bg-white shadow-sm border border-amber-100">
+            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-emerald-400">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-amber-600 uppercase font-bold tracking-wide">A Receber</p>
-                  <p className="text-2xl font-black text-amber-700 mt-0.5" data-testid="text-pending-total">{formatCurrency(totals.pending)}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-5 bg-white shadow-sm border border-emerald-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 </div>
-                <div>
-                  <p className="text-xs text-emerald-600 uppercase font-bold tracking-wide">Recebido</p>
-                  <p className="text-2xl font-black text-emerald-700 mt-0.5" data-testid="text-received-total">{formatCurrency(totals.received)}</p>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Pagas</p>
+                  <p className="text-xl font-black text-emerald-700" data-testid="text-received-total">{fmt(totals.pagas)}</p>
+                  <p className="text-[10px] text-neutral-400">{totals.pagasCount} fatura{totals.pagasCount !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-5 bg-white shadow-sm border border-red-100">
+            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-red-400">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-red-500" />
                 </div>
-                <div>
-                  <p className="text-xs text-red-600 uppercase font-bold tracking-wide">Vencidos</p>
-                  <p className="text-3xl font-black text-red-700 mt-0.5" data-testid="text-overdue-count">{totals.overdue}</p>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Vencidas</p>
+                  <p className="text-xl font-black text-red-700" data-testid="text-overdue-count">{fmt(totals.vencidasTotal)}</p>
+                  <p className="text-[10px] text-neutral-400">{totals.vencidas} fatura{totals.vencidas !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-neutral-300">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center">
+                  <XCircle className="w-5 h-5 text-neutral-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Canceladas</p>
+                  <p className="text-xl font-black text-neutral-600" data-testid="text-cancelled-count">{totals.canceladas}</p>
+                  <p className="text-[10px] text-neutral-400">fatura{totals.canceladas !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
           </div>
 
-          <Card className="p-4 bg-white shadow-sm">
-            <div className="flex flex-col sm:flex-row gap-3 items-end">
-              <div className="flex-1">
-                <Label className="text-xs font-semibold text-neutral-600">Buscar</Label>
-                <div className="relative mt-1">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <Card className="bg-white shadow-sm">
+            <div className="p-4 border-b border-neutral-100">
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                    <Input
+                      placeholder="Buscar por cliente, NF, ID Asaas..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="pl-10 h-10"
+                      data-testid="input-search"
+                    />
+                  </div>
+                </div>
+                <div className="w-40">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-10" data-testid="select-status-filter">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todos os Status</SelectItem>
+                      <SelectItem value="PENDING">Pendente</SelectItem>
+                      <SelectItem value="CONFIRMED">Confirmado</SelectItem>
+                      <SelectItem value="RECEIVED">Recebido</SelectItem>
+                      <SelectItem value="OVERDUE">Vencido</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-40">
                   <Input
-                    placeholder="Cliente, descrição, ID Asaas..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                    data-testid="input-search"
+                    type="month"
+                    value={monthFilter}
+                    onChange={e => setMonthFilter(e.target.value)}
+                    className="h-10"
+                    data-testid="input-month-filter"
                   />
                 </div>
+                {(statusFilter !== "ALL" || monthFilter || searchTerm) && (
+                  <Button variant="ghost" size="sm" onClick={() => { setStatusFilter("ALL"); setMonthFilter(""); setSearchTerm(""); }} className="h-10" data-testid="button-clear-filters">
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
-              <div className="w-44">
-                <Label className="text-xs font-semibold text-neutral-600">Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="mt-1" data-testid="select-status-filter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Todos</SelectItem>
-                    <SelectItem value="PENDING">Pendente</SelectItem>
-                    <SelectItem value="CONFIRMED">Confirmado</SelectItem>
-                    <SelectItem value="RECEIVED">Recebido</SelectItem>
-                    <SelectItem value="OVERDUE">Vencido</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-44">
-                <Label className="text-xs font-semibold text-neutral-600">Mês</Label>
-                <Input
-                  type="month"
-                  value={monthFilter}
-                  onChange={e => setMonthFilter(e.target.value)}
-                  className="mt-1"
-                  data-testid="input-month-filter"
-                />
-              </div>
-              {(statusFilter !== "ALL" || monthFilter) && (
-                <Button variant="ghost" size="sm" onClick={() => { setStatusFilter("ALL"); setMonthFilter(""); }} data-testid="button-clear-filters">
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
             </div>
+
+            {isLoading ? (
+              <div className="flex justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="p-16 text-center">
+                <Receipt className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+                <p className="text-neutral-500 font-medium">Nenhuma fatura encontrada</p>
+                <p className="text-sm text-neutral-400 mt-1">Clique em "Nova Fatura" para criar ou ajuste os filtros</p>
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-neutral-50/80">
+                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead>NF / ID</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead className="text-right">Valor (R$)</TableHead>
+                      <TableHead className="hidden md:table-cell">Emissão</TableHead>
+                      <TableHead>Vencimento</TableHead>
+                      <TableHead className="hidden lg:table-cell">Tipo</TableHead>
+                      <TableHead className="hidden lg:table-cell">Asaas</TableHead>
+                      <TableHead className="w-[80px] text-center">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map(inv => {
+                      const ds = getDisplayStatus(inv);
+                      const DsIcon = ds.icon;
+                      return (
+                        <TableRow
+                          key={inv.id}
+                          className="cursor-pointer group"
+                          onClick={() => setShowDetail(inv)}
+                          data-testid={`row-invoice-${inv.id}`}
+                        >
+                          <TableCell>
+                            <Badge className={`text-[10px] font-bold ${ds.badgeCls} whitespace-nowrap`}>
+                              <DsIcon className="w-3 h-3 mr-1" />
+                              {ds.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-mono font-bold text-neutral-700">NF-{String(inv.id).padStart(4, "0")}</p>
+                              {inv.asaas_payment_id && (
+                                <p className="text-[10px] text-indigo-500 font-mono truncate max-w-[140px]">{inv.asaas_payment_id}</p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <p className="text-sm font-bold text-neutral-900 uppercase truncate max-w-[200px]">{inv.client_name}</p>
+                            {inv.client_cpf_cnpj && (
+                              <p className="text-[10px] text-neutral-400 font-mono">{inv.client_cpf_cnpj}</p>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <p className="text-sm font-black text-neutral-900 tabular-nums">{fmt(inv.value)}</p>
+                            {inv.net_value && inv.net_value !== inv.value && (
+                              <p className="text-[10px] text-emerald-600 font-semibold">Liq: {fmt(inv.net_value)}</p>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <span className="text-xs text-neutral-500 tabular-nums">{fmtDateFull(inv.created_at)}</span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`text-xs font-medium tabular-nums ${
+                              inv.status === "PENDING" && new Date(inv.due_date + "T23:59:59") < new Date() ? "text-red-600 font-bold" : "text-neutral-600"
+                            }`}>
+                              {fmtDate(inv.due_date)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <span className="text-xs text-neutral-500">{BILLING_TYPES[inv.billing_type] || inv.billing_type}</span>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {inv.asaas_payment_id ? (
+                              <Badge className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200">
+                                {inv.status}
+                              </Badge>
+                            ) : (
+                              <span className="text-[10px] text-neutral-400">Local</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowDetail(inv); }}
+                                className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 hover:text-indigo-600 transition-colors"
+                                title="Ver detalhes"
+                                data-testid={`button-view-${inv.id}`}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              {inv.asaas_payment_id && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); syncMutation.mutate(inv.id); }}
+                                  className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 hover:text-emerald-600 transition-colors"
+                                  title="Sincronizar com Asaas"
+                                  data-testid={`button-sync-${inv.id}`}
+                                >
+                                  <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                                </button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                <div className="px-4 py-3 border-t border-neutral-100 bg-neutral-50/50 text-xs text-neutral-500 flex items-center justify-between">
+                  <span>{filtered.length} fatura{filtered.length !== 1 ? "s" : ""} encontrada{filtered.length !== 1 ? "s" : ""}</span>
+                  <span className="font-semibold text-neutral-700">Total: {fmt(filtered.reduce((s, i) => s + parseFloat(i.value || "0"), 0))}</span>
+                </div>
+              </>
+            )}
           </Card>
-
-          {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <Card className="p-16 text-center bg-white shadow-sm">
-              <Receipt className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
-              <p className="text-neutral-500 font-medium">Nenhuma fatura encontrada</p>
-              <p className="text-sm text-neutral-400 mt-1">Clique em "Nova Fatura" para criar</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map(inv => {
-                const st = STATUS_MAP[inv.status] || STATUS_MAP.PENDING;
-                const isOverdue = inv.status === "PENDING" && new Date(inv.due_date + "T23:59:59") < new Date();
-                const displayStatus = isOverdue ? STATUS_MAP.OVERDUE : st;
-                const DisplayIcon = displayStatus.icon;
-
-                const descParts = inv.description.split(/\s*[-–—]\s*/);
-                const mainDesc = descParts[0] || inv.description;
-                const subDesc = descParts.slice(1).join(" — ");
-                const missionMatch = inv.description.match(/(\d+)\s*miss[ãõ]/i);
-                const missionCount = missionMatch ? missionMatch[1] : null;
-                const periodMatch = inv.description.match(/Per[ií]odo[:\s]*([^\n]+)/i);
-                const period = periodMatch ? periodMatch[1].trim() : null;
-
-                return (
-                  <Card
-                    key={inv.id}
-                    className="bg-white shadow-sm hover:shadow-md transition-all cursor-pointer border border-neutral-100 hover:border-indigo-200"
-                    onClick={() => setShowDetail(inv)}
-                    data-testid={`card-invoice-${inv.id}`}
-                  >
-                    <div className="p-5 flex items-start gap-5">
-                      <div className="w-10 h-10 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Building2 className="w-5 h-5 text-neutral-400" />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-sm text-neutral-900 truncate">{inv.client_name}</span>
-                          {inv.asaas_payment_id && (
-                            <Badge variant="outline" className="text-[10px] border-indigo-200 text-indigo-600 flex-shrink-0 px-1.5">ASAAS</Badge>
-                          )}
-                          {inv.service_order_id && (
-                            <Badge variant="outline" className="text-[10px] border-neutral-200 text-neutral-500 flex-shrink-0 px-1.5">OS #{inv.service_order_id}</Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-neutral-500 line-clamp-1">{mainDesc}</p>
-                        <div className="flex items-center gap-3 mt-2 text-[11px] text-neutral-400 flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" /> Venc: {formatDate(inv.due_date)}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Receipt className="w-3 h-3" /> {BILLING_TYPES[inv.billing_type] || inv.billing_type}
-                          </span>
-                          {missionCount && (
-                            <span className="text-indigo-500 font-medium">{missionCount} missão(ões)</span>
-                          )}
-                          {period && (
-                            <span className="text-neutral-400">{period}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-right flex-shrink-0 min-w-[140px]">
-                        <p className="text-xl font-black text-neutral-900">{formatCurrency(inv.value)}</p>
-                        <Badge className={`text-[10px] ${displayStatus.color} border mt-2 inline-flex`}>
-                          <DisplayIcon className="w-3 h-3 mr-1" />
-                          {displayStatus.label}
-                        </Badge>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
 
           {showCreate && (
             <CreateInvoiceDialog
@@ -441,7 +514,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
     dueDate: "",
     billingType: "BOLETO",
     notes: "",
-    sendToAsaas: asaasConnected,
+    sendToAsaas: true,
   });
 
   const createMutation = useMutation({
@@ -452,6 +525,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
         body: JSON.stringify({
           ...form,
           clientId: form.clientId ? parseInt(form.clientId) : null,
+          sendToAsaas: true,
         }),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
@@ -525,7 +599,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
             <Textarea
               value={form.description}
               onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Ex: Escolta realizada em 01/04/2026 — OS TOR-0019"
+              placeholder="Ex: Ref. ao Serviço de Escolta Armada — OS TOR-0019"
               rows={2}
               data-testid="input-description"
             />
@@ -577,30 +651,10 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
             />
           </div>
 
-          {asaasConnected && (
-            <label className="flex items-center gap-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100 cursor-pointer" data-testid="label-send-asaas">
-              <input
-                type="checkbox"
-                checked={form.sendToAsaas}
-                onChange={e => setForm(prev => ({ ...prev, sendToAsaas: e.target.checked }))}
-                className="rounded border-indigo-300"
-              />
-              <div>
-                <p className="text-sm font-bold text-indigo-800">Gerar cobrança no Asaas</p>
-                <p className="text-[11px] text-indigo-600">Boleto/PIX será gerado automaticamente e enviado ao cliente</p>
-              </div>
-            </label>
-          )}
-
-          {!asaasConnected && (
-            <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
-              <p className="text-xs text-amber-700 flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Asaas não conectado — fatura será registrada apenas localmente.
-                Configure a ASAAS_API_KEY nos Secrets para ativar cobranças.
-              </p>
-            </div>
-          )}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <p className="text-[11px] text-emerald-700 font-medium">Cobrança gerada automaticamente via Asaas com NFS-e (CNAE 7870). Baixa automática ao confirmar pagamento.</p>
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} data-testid="button-cancel-create">Cancelar</Button>
@@ -649,70 +703,75 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600" />
-            Fatura #{invoice.id}
+            Fatura NF-{String(invoice.id).padStart(4, "0")}
           </DialogTitle>
           <DialogDescription>Detalhes e ações da cobrança</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="flex items-center justify-between">
-            <Badge className={`${st.color} border`}>
+            <Badge className={`${st.badgeCls} font-bold`}>
               <StIcon className="w-3 h-3 mr-1" />
               {st.label}
             </Badge>
             {invoice.asaas_payment_id && (
-              <span className="text-[10px] text-neutral-400">ID Asaas: {invoice.asaas_payment_id}</span>
+              <span className="text-[10px] text-neutral-400 font-mono">{invoice.asaas_payment_id}</span>
             )}
           </div>
 
-          <div className="bg-neutral-50 rounded-lg p-4 space-y-3">
-            <div className="flex justify-between">
+          <div className="bg-neutral-50 rounded-xl p-4 space-y-3 border">
+            <div className="flex justify-between items-start">
               <span className="text-xs text-neutral-500">Cliente</span>
-              <span className="text-sm font-semibold text-right">{invoice.client_name}</span>
-            </div>
-            {invoice.client_cpf_cnpj && (
-              <div className="flex justify-between">
-                <span className="text-xs text-neutral-500">CPF/CNPJ</span>
-                <span className="text-sm">{invoice.client_cpf_cnpj}</span>
+              <div className="text-right">
+                <span className="text-sm font-bold text-neutral-900 uppercase">{invoice.client_name}</span>
+                {invoice.client_cpf_cnpj && (
+                  <p className="text-[10px] text-neutral-400 font-mono">{invoice.client_cpf_cnpj}</p>
+                )}
               </div>
-            )}
+            </div>
             <div className="flex justify-between">
               <span className="text-xs text-neutral-500">Descrição</span>
-              <span className="text-sm text-right max-w-[60%]">{invoice.description}</span>
+              <span className="text-xs text-right max-w-[60%] text-neutral-600">{invoice.description}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-xs text-neutral-500">Valor</span>
-              <span className="text-lg font-bold text-neutral-900">{formatCurrency(invoice.value)}</span>
+            <div className="border-t border-neutral-200 pt-3 flex justify-between items-baseline">
+              <span className="text-xs text-neutral-500">Valor Total</span>
+              <span className="text-2xl font-black text-neutral-900">{fmt(invoice.value)}</span>
             </div>
             {invoice.net_value && invoice.net_value !== invoice.value && (
               <div className="flex justify-between">
                 <span className="text-xs text-neutral-500">Valor Líquido</span>
-                <span className="text-sm font-semibold text-emerald-700">{formatCurrency(invoice.net_value)}</span>
+                <span className="text-sm font-bold text-emerald-700">{fmt(invoice.net_value)}</span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-xs text-neutral-500">Vencimento</span>
-              <span className="text-sm">{formatDate(invoice.due_date)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-xs text-neutral-500">Forma de Pagamento</span>
-              <span className="text-sm">{BILLING_TYPES[invoice.billing_type] || invoice.billing_type}</span>
-            </div>
-            {invoice.payment_date && (
-              <div className="flex justify-between">
-                <span className="text-xs text-neutral-500">Data Pagamento</span>
-                <span className="text-sm text-emerald-700 font-semibold">{formatDate(invoice.payment_date)}</span>
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-neutral-200">
+              <div>
+                <p className="text-[10px] text-neutral-400">Emissão</p>
+                <p className="text-xs font-semibold">{fmtDateFull(invoice.created_at)}</p>
               </div>
-            )}
+              <div>
+                <p className="text-[10px] text-neutral-400">Vencimento</p>
+                <p className="text-xs font-semibold">{fmtDate(invoice.due_date)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-neutral-400">Forma</p>
+                <p className="text-xs font-semibold">{BILLING_TYPES[invoice.billing_type] || invoice.billing_type}</p>
+              </div>
+              {invoice.payment_date && (
+                <div>
+                  <p className="text-[10px] text-neutral-400">Data Pagamento</p>
+                  <p className="text-xs font-bold text-emerald-700">{fmtDate(invoice.payment_date)}</p>
+                </div>
+              )}
+            </div>
             {invoice.service_order_id && (
-              <div className="flex justify-between">
+              <div className="flex justify-between pt-2 border-t border-neutral-200">
                 <span className="text-xs text-neutral-500">Ordem de Serviço</span>
-                <span className="text-sm text-indigo-600 font-semibold">OS #{invoice.service_order_id}</span>
+                <Badge variant="outline" className="text-indigo-600 border-indigo-200 text-xs">OS #{invoice.service_order_id}</Badge>
               </div>
             )}
             {invoice.notes && (
-              <div>
-                <span className="text-xs text-neutral-500">Observações</span>
-                <p className="text-sm text-neutral-700 mt-1 bg-white p-2 rounded border">{invoice.notes}</p>
+              <div className="pt-2 border-t border-neutral-200">
+                <p className="text-[10px] text-neutral-400 mb-1">Observações</p>
+                <p className="text-xs text-neutral-600 bg-white p-2 rounded border">{invoice.notes}</p>
               </div>
             )}
           </div>
@@ -721,7 +780,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             {invoice.invoice_url && (
               <a href={invoice.invoice_url} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm" data-testid="button-view-invoice">
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver Fatura
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver NF
                 </Button>
               </a>
             )}
@@ -740,9 +799,16 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
           </div>
 
           {invoice.pix_qr_code && (
-            <div className="text-center bg-white border rounded-lg p-4">
+            <div className="text-center bg-white border rounded-xl p-4">
               <p className="text-xs text-neutral-500 mb-2 font-bold">QR Code PIX</p>
               <img src={`data:image/png;base64,${invoice.pix_qr_code}`} alt="PIX QR Code" className="w-48 h-48 mx-auto" data-testid="img-pix-qrcode" />
+            </div>
+          )}
+
+          {isPaid && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <p className="text-xs text-emerald-700 font-medium">Pagamento confirmado — baixa automática realizada no sistema.</p>
             </div>
           )}
 
