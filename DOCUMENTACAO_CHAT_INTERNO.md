@@ -1213,3 +1213,51 @@ O Thiago precisa acessar o painel Asaas (https://www.asaas.com) → Configuraç�
 **Arquivos Alterados:**
 - `shared/schema.ts` — Adicionados campos emailContratual e emailMedicao
 - `client/src/pages/admin/clients.tsx` — Componente EmailTagInput + novo layout Localização e Contato
+
+---
+
+### [07/04/2026 12:43 BRT] Reorganização do Menu Lateral — Arquitetura de 4 Blocos
+
+**Descrição:** Menu lateral reorganizado em 4 macro-blocos com separadores visuais e cabeçalhos coloridos.
+
+**Estrutura Nova:**
+```
+📊 Painel (raiz)
+💬 Chat (raiz)
+👤 Usuários (raiz, admin)
+🛡️ Auditoria (raiz, admin)
+
+─── 💼 COMERCIAL (azul) ───
+  Clientes
+  Ordens de Serviço
+  Boletim de Medição
+  Relatório Faturamento
+
+─── 📡 OPERAÇÕES (âmbar) ───
+  ▸ Grid Operacional
+    Painel Operacional
+    Missão Ativa
+    Simulador Missão
+  Armamento
+  ▸ Frota
+    Veículos / Viagens / Abastecimento / Manutenção / Rastreador / Telemetria
+
+─── 👥 GESTÃO DE PESSOAS (verde) ───
+  ▸ Funcionários
+    Cadastro / Folha de Ponto / Holerites / Ponto Operacional / Jornada
+  Guia Operacional
+
+─── 💰 CONTROLADORIA (violeta, admin) ───
+  ▸ Financeiro
+    Contas / Faturas / Balanço Gerencial / Cotação Gasto Mínimo / Calculadora Jornada
+```
+
+**Detalhes Técnicos:**
+- Cabeçalhos de seção com ícone colorido + texto tracking-widest em CAPS
+- Separadores `<div className="h-px bg-white/10 my-3" />` entre blocos
+- Cada seção colapsável independentemente dos grupos internos
+- Jornada movida de raiz para dentro de Funcionários
+- Armamento posicionado entre Grid e Frota no bloco Operações
+
+**Arquivos Alterados:**
+- `client/src/components/admin/layout.tsx` — Nova estrutura `menuSections[]` + `rootItems[]` + renderização por blocos
