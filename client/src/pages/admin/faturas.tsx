@@ -959,7 +959,14 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             {invoice.invoice_url && (
               <a href={invoice.invoice_url} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm" data-testid="button-view-invoice">
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver NF
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver Cobrança
+                </Button>
+              </a>
+            )}
+            {(invoice as any).nfse_url && (
+              <a href={(invoice as any).nfse_url} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="text-indigo-700 border-indigo-200 hover:bg-indigo-50" data-testid="button-view-nfse">
+                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF
                 </Button>
               </a>
             )}
