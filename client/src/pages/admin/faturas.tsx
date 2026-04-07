@@ -460,14 +460,24 @@ export default function FaturasPage() {
                                 <Eye className="w-4 h-4" />
                               </button>
                               {inv.asaas_payment_id && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); syncMutation.mutate(inv.id); }}
-                                  className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 hover:text-emerald-600 transition-colors"
-                                  title="Sincronizar com Asaas"
-                                  data-testid={`button-sync-${inv.id}`}
-                                >
-                                  <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                                </button>
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); resendMutation.mutate(inv.id); }}
+                                    className="p-1.5 rounded-md hover:bg-blue-50 text-neutral-400 hover:text-blue-600 transition-colors"
+                                    title="Reenviar E-mail"
+                                    data-testid={`button-resend-${inv.id}`}
+                                  >
+                                    <Send className={`w-4 h-4 ${resendMutation.isPending ? "animate-pulse" : ""}`} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); syncMutation.mutate(inv.id); }}
+                                    className="p-1.5 rounded-md hover:bg-neutral-100 text-neutral-400 hover:text-emerald-600 transition-colors"
+                                    title="Sincronizar com Asaas"
+                                    data-testid={`button-sync-${inv.id}`}
+                                  >
+                                    <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                                  </button>
+                                </>
                               )}
                               {inv.status !== "PAGO" && (
                                 <button

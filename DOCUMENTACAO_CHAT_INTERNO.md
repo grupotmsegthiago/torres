@@ -1098,3 +1098,38 @@ supabaseAdmin
 **Fatura #4 (R$ 13k):** Já estava deletada desde 11:52. Base limpa.
 
 **Status:** Implementado. Todos os campos de texto da fatura agora seguem o padrão Torres.
+
+---
+
+### 07/04/2026 — 08:50 BRT — Correção de Disparo de E-mail Asaas + Botão Reenviar
+
+**Problema Identificado:**
+O payload de criação de cobrança no Asaas NÃO incluía o campo `notificationDisabled: false`. Contas Asaas de produção podem vir com notificações desativadas por padrão, impedindo o disparo automático de e-mail/boleto ao cliente.
+
+**Correções Aplicadas:**
+
+1. **`notificationDisabled: false`** adicionado aos dois payloads de criação de cobrança:
+   - `POST /api/invoices` (fatura manual) — `paymentPayload`
+   - `POST /api/boletim-medicao/gerar-fatura/:clientId` (fatura consolidada) — `consolidadoPayload`
+   
+2. **Botão "Reenviar E-mail"** adicionado na coluna de Ações da tabela de faturas (`faturas.tsx`):
+   - Ícone: `Send` (avião de papel azul)
+   - Visível apenas para faturas com `asaas_payment_id`
+   - Chama `POST /api/invoices/:id/resend` → `POST /payments/{id}/resendNotification` no Asaas
+   - Endpoint já existia em `server/asaas.ts` linha 362
+
+3. **Endpoint de reenvio já existente:**
+   - `POST /api/invoices/:id/resend` (server/asaas.ts)
+   - Chama `POST /payments/{asaas_payment_id}/resendNotification`
+   - Retorna `{ success: true, message: "Notificação reenviada" }`
+
+**Fatura #5 — Link Direto:**
+- Asaas ID: `pay_3mrvgog3yipun8bw`
+- URL do boleto/pagamento: `https://www.asaas.com/i/3mrvgog3yipun8bw`
+- Cliente: TM SEGURANÇA — R$ 5.299,10 — PIX — Vencimento 30/04/2026
+
+**Arquivos Alterados:**
+- `server/asaas.ts` — `notificationDisabled: false` nos payloads
+- `client/src/pages/admin/faturas.tsx` — Botão "Reenviar E-mail" na tabela
+
+**Status:** Implementado e funcional.

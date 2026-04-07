@@ -212,6 +212,7 @@ export function registerAsaasRoutes(app: Express) {
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
+          notificationDisabled: false,
         };
         if (emiteNf) {
           paymentPayload.postalService = false;
@@ -573,6 +574,7 @@ export function registerAsaasRoutes(app: Express) {
             dueDate: invoiceDueDate,
             description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
+            notificationDisabled: false,
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
