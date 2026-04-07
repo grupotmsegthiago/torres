@@ -488,7 +488,7 @@ export function registerAsaasRoutes(app: Express) {
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .not("status", "in", '("RECUSADA","FATURADA","CANCELADA")');
+        .not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")');
 
       if (billErr) throw billErr;
       if (!billings || billings.length === 0) {
@@ -678,7 +678,7 @@ export function registerAsaasRoutes(app: Express) {
         const billingIds = linkedBillings.map((b: any) => b.id);
         await supabaseAdmin
           .from("escort_billings")
-          .update({ status: "VERIFICADA", invoice_id: null, faturado_em: null, faturado_por: null })
+          .update({ status: "APROVADA", invoice_id: null, faturado_em: null, faturado_por: null })
           .in("id", billingIds);
       }
 
@@ -689,7 +689,7 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "DELETE_FATURA", targetId: String(invoiceId), targetType: "invoice",
-        details: `Fatura #${invoiceId} excluída. ${linkedBillings?.length || 0} billing(s) revertidos para VERIFICADA.`,
+        details: `Fatura #${invoiceId} excluída. ${linkedBillings?.length || 0} billing(s) revertidos para APROVADA.`,
         ipAddress: (req as any).ip,
       });
 

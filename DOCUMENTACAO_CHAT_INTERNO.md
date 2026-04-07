@@ -987,3 +987,24 @@ receita_cliente = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
 - `client/src/pages/admin/faturas.tsx` — remoção NF-XXXX, botão excluir, "Aguardando" status
 
 **Status:** Implementado. Servidor reiniciado OK.
+
+---
+
+#### 07/04/2026 — 11:35 BRT | ATIVAÇÃO API PRODUÇÃO ASAAS + RESET NF-0003
+
+**API Key de Produção:** Salva como secret `ASAAS_API_KEY` no Replit. Chave real `$aact_prod_*`. Servidor reiniciado com a chave ativa.
+
+**Reset NF-0003 executado:**
+- 12 escort_billings com status `FATURADO` (inv=3) foram resetados para `APROVADA`
+- Tabela `invoices` já estava limpa (NF-0003 não existia mais na tabela)
+- Financial transactions vinculadas limpas
+- Todos os 15 billings agora estão `APROVADA` (faturáveis)
+- 2 billings permanecem `A_VERIFICAR`
+
+**Correção de Status Constraint:**
+- `escort_billings` tem check constraint que não aceita `VERIFICADA`
+- Status válidos incluem: `APROVADA`, `FATURADO`, `A_VERIFICAR`, `RECUSADA`, `CANCELADA`
+- Endpoint `DELETE /api/invoices/:id` corrigido: agora reverte para `APROVADA` (não `VERIFICADA`)
+- Filtro de billing atualizado: `.not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")')` — adicionado `FATURADO` ao blacklist
+
+**Status:** API de produção ativa. Base limpa. Pronto para gerar fatura real da TM SEGURANÇA.
