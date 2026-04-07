@@ -1,6 +1,10 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 import * as schema from "@shared/schema";
+
+types.setTypeParser(1114, (val: string) => {
+  return val + "-03:00";
+});
 
 const connectionString = process.env.SUPABASE_DATABASE_URL;
 

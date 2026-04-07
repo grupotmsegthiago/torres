@@ -66,8 +66,10 @@ export function parseUTCDate(ts: string | Date | null | undefined): Date {
   if (!ts) return new Date(NaN);
   if (ts instanceof Date) return ts;
   const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
-  const withZ = normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : normalized + "Z";
-  return new Date(withZ);
+  if (normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized)) {
+    return new Date(normalized);
+  }
+  return new Date(normalized + "-03:00");
 }
 
 export function formatTimeBRT(date: string | Date | null | undefined): string {
