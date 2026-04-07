@@ -948,3 +948,42 @@ receita_cliente = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
 - `client/src/pages/admin/service-orders.tsx` — pedagioEstimado sempre IDA, toggle simplificado
 
 **Status:** Implementado. Servidor reiniciado sem erros. Cálculo blindado.
+
+---
+
+#### 07/04/2026 — 11:28 BRT | RESET DE FATURAMENTO — Padronização Torres Segurança
+
+**Problema:** Faturas geradas com descrição gigante (loop listando cada BO + endereço + valor), número NF-0003 fake, e valor inconsistente.
+
+**4 Ações de Limpeza Executadas:**
+
+1. **Endpoint DELETE Fatura** — `DELETE /api/invoices/:id`
+   - Exclui a fatura do banco
+   - Reverte todos os `escort_billings` vinculados para status `VERIFICADA` (faturáveis novamente)
+   - Limpa `financial_transactions` vinculadas (referência `INV-{id}`)
+   - Protege faturas com status `PAGO` (não permite exclusão)
+   - Loga auditoria completa
+
+2. **Remoção do Sequencial Fake NF-XXXX**
+   - Frontend não exibe mais `NF-0003`. Mostra o ID Asaas quando existir, ou "Aguardando" quando ainda não processado
+   - Número da NF só será preenchido quando o webhook do Asaas confirmar a emissão
+
+3. **Descrição Cirúrgica — `buildInvoiceDescription()` simplificada**
+   - **ANTES**: `"Ref. ao Serviço de Escolta Armada - Período: X a Y - 14 missão(ões)\n\nBO-20260401-ETZ1 01/04/2026 Universal Armazéns...\nBO-20260330-QDH0 30/03/2026 Rua Jamil..."`
+   - **DEPOIS**: `"Ref. a Serviço de Escolta Armada Caracterizada - Período: 30/03/2026 a 06/07/2026"`
+   - O detalhamento das OSs vai APENAS para o campo `notes` (relatório interno), nunca para `description` (boleto/NF)
+
+4. **Validação de Valor com Audit Log**
+   - Cada OS é logada individualmente: `[billing-audit] BO-XXXX: acion=X hExtra=X km=X ped=X rec=X = TOTAL`
+   - Log final: `[billing-audit] TOTAL para fatura: R$X.XX (N OS)`
+   - Bloqueia fatura se valor total = R$0,00
+
+**Botão de Exclusão na Tabela**
+   - Ícone Trash2 (lixeira) no hover de cada fatura, com confirmação
+   - Apenas faturas não-pagas podem ser excluídas
+
+**Arquivos alterados:**
+- `server/asaas.ts` — buildInvoiceDescription, endpoint DELETE, audit logs, constante DESCRICAO_SERVICO_FIXA
+- `client/src/pages/admin/faturas.tsx` — remoção NF-XXXX, botão excluir, "Aguardando" status
+
+**Status:** Implementado. Servidor reiniciado OK.

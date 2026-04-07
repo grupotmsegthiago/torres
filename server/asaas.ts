@@ -8,7 +8,7 @@ const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3
 const CNAE_PRINCIPAL = "7870";
 const CODIGO_SERVICO_MUNICIPAL = "11.02";
 const ISS_ALIQUOTA = 5;
-const DESCRICAO_SERVICO_FIXA = "Ref. ao Serviço de Escolta Armada";
+const DESCRICAO_SERVICO_FIXA = "Ref. a Serviço de Escolta Armada Caracterizada";
 
 function getApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
@@ -16,11 +16,10 @@ function getApiKey(): string {
   return key;
 }
 
-function buildInvoiceDescription(clientName: string, periodoInicio: string, periodoFim: string, osCount?: number): string {
+function buildInvoiceDescription(_clientName: string, periodoInicio: string, periodoFim: string, _osCount?: number): string {
   const inicio = new Date(periodoInicio + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const fim = new Date(periodoFim + "T12:00:00Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  const countStr = osCount ? ` - ${osCount} missão(ões)` : "";
-  return `${DESCRICAO_SERVICO_FIXA} - Período: ${inicio} a ${fim}${countStr}`;
+  return `Ref. a Serviço de Escolta Armada Caracterizada - Período: ${inicio} a ${fim}`;
 }
 
 function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string, any> {
@@ -506,7 +505,12 @@ export function registerAsaasRoutes(app: Express) {
       const billingIds: string[] = [];
 
       for (const b of billings) {
-        const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+        const acionamento = Number(b.fat_acionamento || 0);
+        const horaExtra = Number(b.fat_hora_extra || 0);
+        const km = Number(b.fat_km || 0);
+        const pedagio = Number(b.despesas_pedagio || 0);
+        const receitas = Number(b.receitas_os || 0);
+        const fat = acionamento + horaExtra + km + pedagio + receitas;
         totalValue += fat;
         billingIds.push(b.id);
 
@@ -514,6 +518,11 @@ export function registerAsaasRoutes(app: Express) {
         const route = [b.origem, b.destino].filter(Boolean).join(" → ");
         const dataMissao = b.data_missao ? new Date(b.data_missao).toLocaleDateString("pt-BR") : "";
         osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
+        console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} rec=${receitas} = ${fat}`);
+      }
+      console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS)`);
+      if (totalValue <= 0) {
+        return res.status(400).json({ message: `Valor total é R$0,00. Verifique o Boletim de Medição.` });
       }
 
       const now = new Date();
@@ -522,8 +531,8 @@ export function registerAsaasRoutes(app: Express) {
       const datasOs = billings.map(b => b.data_missao || b.created_at).filter(Boolean).sort();
       const periodoInicio = datasOs[0]?.split("T")[0] || invoiceDueDate;
       const periodoFim = datasOs[datasOs.length - 1]?.split("T")[0] || invoiceDueDate;
-      const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim, billings.length);
-      const descricaoDetalhada = `${descricaoFiscal}\n\n${osDescriptions.join("\n")}`;
+      const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
+      const descricaoInterna = osDescriptions.join("\n");
 
       const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
@@ -599,7 +608,7 @@ export function registerAsaasRoutes(app: Express) {
         client_cpf_cnpj: cpfCnpj || null,
         asaas_customer_id: asaasCustomerId,
         asaas_payment_id: asaasPaymentId,
-        description: descricaoDetalhada,
+        description: descricaoFiscal,
         value: totalValue,
         due_date: invoiceDueDate,
         billing_type: billingType || "BOLETO",
@@ -608,7 +617,7 @@ export function registerAsaasRoutes(app: Express) {
         bank_slip_url: bankSlipUrl,
         pix_qr_code: pixQrCode,
         pix_copia_e_cola: pixCopiaECola,
-        notes: `Gerada do Boletim de Medição. ${billings.length} OS(s) consolidada(s). CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. IDs: ${billingIds.join(", ")}`,
+        notes: `Boletim de Medição: ${billings.length} OS(s). CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.\n\nDetalhamento:\n${descricaoInterna}\n\nIDs: ${billingIds.join(", ")}`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         created_by: user?.id,
       }).select().single();
@@ -644,6 +653,49 @@ export function registerAsaasRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[billing] Erro ao gerar fatura:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/invoices/:id", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) return res.status(400).json({ message: "ID inválido" });
+
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+      if (invoice.status === "PAGO") {
+        return res.status(400).json({ message: "Não é possível excluir fatura já paga" });
+      }
+
+      const { data: linkedBillings } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id")
+        .eq("invoice_id", invoiceId);
+
+      if (linkedBillings && linkedBillings.length > 0) {
+        const billingIds = linkedBillings.map((b: any) => b.id);
+        await supabaseAdmin
+          .from("escort_billings")
+          .update({ status: "VERIFICADA", invoice_id: null, faturado_em: null, faturado_por: null })
+          .in("id", billingIds);
+      }
+
+      await supabaseAdmin.from("financial_transactions").delete().eq("reference_id", `INV-${invoiceId}`);
+      await supabaseAdmin.from("invoices").delete().eq("id", invoiceId);
+
+      const user = (req as any).user;
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "DELETE_FATURA", targetId: String(invoiceId), targetType: "invoice",
+        details: `Fatura #${invoiceId} excluída. ${linkedBillings?.length || 0} billing(s) revertidos para VERIFICADA.`,
+        ipAddress: (req as any).ip,
+      });
+
+      res.json({ success: true, revertedBillings: linkedBillings?.length || 0 });
+    } catch (err: any) {
+      console.error("[billing] Erro ao excluir fatura:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

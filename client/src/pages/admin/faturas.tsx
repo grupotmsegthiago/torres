@@ -402,9 +402,16 @@ export default function FaturasPage() {
                           </TableCell>
                           <TableCell>
                             <div className="space-y-0.5">
-                              <p className="text-xs font-mono font-bold text-neutral-700">NF-{String(inv.id).padStart(4, "0")}</p>
-                              {inv.asaas_payment_id && (
-                                <p className="text-[10px] text-indigo-500 font-mono truncate max-w-[140px]">{inv.asaas_payment_id}</p>
+                              {inv.asaas_payment_id ? (
+                                <>
+                                  <p className="text-xs font-mono font-bold text-neutral-700 truncate max-w-[140px]">{inv.asaas_payment_id}</p>
+                                  <p className="text-[10px] text-neutral-400">#{inv.id}</p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-xs font-medium text-amber-600">Aguardando</p>
+                                  <p className="text-[10px] text-neutral-400">#{inv.id}</p>
+                                </>
                               )}
                             </div>
                           </TableCell>
@@ -460,6 +467,21 @@ export default function FaturasPage() {
                                   data-testid={`button-sync-${inv.id}`}
                                 >
                                   <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                                </button>
+                              )}
+                              {inv.status !== "PAGO" && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Excluir fatura #${inv.id}? As OSs vinculadas voltarão para VERIFICADA.`)) {
+                                      deleteMutation.mutate(inv.id);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-md hover:bg-red-50 text-neutral-400 hover:text-red-600 transition-colors"
+                                  title="Excluir fatura"
+                                  data-testid={`button-delete-${inv.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
                             </div>
@@ -703,7 +725,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600" />
-            Fatura NF-{String(invoice.id).padStart(4, "0")}
+            Fatura #{invoice.id} {invoice.asaas_payment_id ? `(${invoice.asaas_payment_id})` : "(Aguardando NF)"}
           </DialogTitle>
           <DialogDescription>Detalhes e ações da cobrança</DialogDescription>
         </DialogHeader>
