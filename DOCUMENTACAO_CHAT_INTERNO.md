@@ -1030,3 +1030,42 @@ receita_cliente = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
 - `ASAAS_API_KEY` ativa: `$aact_prod_*`
 - Sistema pronto para emissão real
 - Validação de CPF/CNPJ do Asaas pode retornar erro — logado em auditoria
+
+---
+
+#### 07/04/2026 — 11:52 BRT | ESTORNO FATURA #4 + TRAVA DE DATA ESTRITA
+
+**Estorno Fatura #4:**
+- Fatura #4 (R$ 13.942,80) deletada do banco
+- 14 escort_billings revertidos de `FATURADO` → `APROVADA`
+- Financial transactions vinculadas limpas
+- Causa: Query de billing não filtrava por data, pegava TODAS as OSs do cliente
+
+**Trava de Data Implementada (server/asaas.ts):**
+- Endpoint `POST /api/boletim-medicao/gerar-fatura/:clientId` agora EXIGE `startDate` e `endDate` no body
+- Query Supabase blindada com `.gte("data_missao", fromDate)` e `.lte("data_missao", toDate)`
+- Se `startDate` ou `endDate` não forem enviados → retorna 400 "Período obrigatório"
+
+**Validação de Soma (backend vs frontend):**
+- Frontend envia `expectedTotal` (grandTotal do boletim na tela)
+- Backend calcula soma dos billings filtrados
+- Se diferença > R$0,01 → BLOQUEIA emissão com erro detalhado:
+  `"BLOQUEADO: Soma do backend (R$X) difere do frontend (R$Y). Diferença: R$Z"`
+
+**Frontend atualizado (relatorio-faturamento.tsx):**
+- Mutation agora envia: `{ billingType, sendToAsaas, dueDate, startDate, endDate, expectedTotal }`
+- `startDate` e `endDate` vêm dos campos de período do boletim
+- `expectedTotal` = `grandTotal` calculado na tela
+
+**Query Supabase Final:**
+```
+supabaseAdmin
+  .from("escort_billings")
+  .select("*")
+  .eq("client_id", clientId)
+  .not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")')
+  .gte("data_missao", fromDate)    // ← NOVO: trava início
+  .lte("data_missao", toDate)      // ← NOVO: trava fim
+```
+
+**Status:** Implementado. Fatura #4 estornada. Base limpa. Pronto para nova emissão com período correto.

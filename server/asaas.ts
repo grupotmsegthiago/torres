@@ -481,21 +481,32 @@ export function registerAsaasRoutes(app: Express) {
       const clientId = parseInt(req.params.clientId);
       if (!clientId) return res.status(400).json({ message: "clientId inválido" });
 
-      const { billingType, sendToAsaas, dueDate } = req.body;
+      const { billingType, sendToAsaas, dueDate, startDate, endDate, expectedTotal } = req.body;
       const user = (req as any).user;
 
-      const { data: billings, error: billErr } = await supabaseAdmin
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "Período obrigatório. Informe startDate e endDate." });
+      }
+
+      const fromDate = `${startDate}T00:00:00`;
+      const toDate = `${endDate}T23:59:59`;
+
+      let query = supabaseAdmin
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")');
+        .not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")')
+        .gte("data_missao", fromDate)
+        .lte("data_missao", toDate);
+
+      const { data: billings, error: billErr } = await query;
 
       if (billErr) throw billErr;
       if (!billings || billings.length === 0) {
-        return res.status(400).json({ message: "Nenhuma OS faturável encontrada para este cliente. Todas as OSs já foram faturadas, recusadas ou canceladas." });
+        return res.status(400).json({ message: `Nenhuma OS faturável no período ${startDate} a ${endDate}. Verifique o filtro de datas e status.` });
       }
 
-      console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Status encontrados: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
+      console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Período: ${startDate} a ${endDate}. Status: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
 
 
       const clientName = billings[0].client_name || "Cliente";
@@ -520,9 +531,15 @@ export function registerAsaasRoutes(app: Express) {
         osDescriptions.push(`${osRef} ${dataMissao} ${route} ${fmt(fat)}`.trim());
         console.log(`[billing-audit] ${osRef}: acion=${acionamento} hExtra=${horaExtra} km=${km} ped=${pedagio} rec=${receitas} = ${fat}`);
       }
-      console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS)`);
+      console.log(`[billing-audit] TOTAL para fatura: R$${totalValue.toFixed(2)} (${billings.length} OS). Período: ${startDate} a ${endDate}`);
       if (totalValue <= 0) {
         return res.status(400).json({ message: `Valor total é R$0,00. Verifique o Boletim de Medição.` });
+      }
+
+      if (expectedTotal && Math.abs(totalValue - Number(expectedTotal)) > 0.01) {
+        const msg = `BLOQUEADO: Soma do backend (R$${totalValue.toFixed(2)}) difere do frontend (R$${Number(expectedTotal).toFixed(2)}). Diferença: R$${Math.abs(totalValue - Number(expectedTotal)).toFixed(2)}`;
+        console.error(`[billing-audit] ${msg}`);
+        return res.status(400).json({ message: msg });
       }
 
       const now = new Date();

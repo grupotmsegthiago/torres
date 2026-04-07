@@ -82,8 +82,8 @@ export default function RelatorioFaturamentoPage() {
   }, 0), [approvedBillings]);
 
   const gerarFaturaMutation = useMutation({
-    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string }) => {
-      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate });
+    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string; startDate: string; endDate: string; expectedTotal: number }) => {
+      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal });
     },
     onSuccess: async (response: any) => {
       const data = await response.json?.() || response;
@@ -855,6 +855,9 @@ export default function RelatorioFaturamentoPage() {
                   billingType: faturaBillingType,
                   sendToAsaas: true,
                   dueDate: faturaDueDate,
+                  startDate,
+                  endDate,
+                  expectedTotal: grandTotal,
                 });
               }}
               disabled={gerarFaturaMutation.isPending || rowsData.length === 0}
