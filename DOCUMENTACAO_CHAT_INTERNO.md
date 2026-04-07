@@ -560,3 +560,28 @@ Auditoria preventiva do fluxo end-to-end de aceite de missão para garantir que:
 Documento gerado para permitir que analista externo tenha visão completa da arquitetura sem necessidade de acesso ao código-fonte, reduzindo custos de reprocessamento e acelerando revisões futuras.
 
 **Status:** Documento entregue. SYSTEM_BRAIN.md e RULES.md enviados como referência. Nenhuma alteração de código realizada nesta etapa — apenas documentação.
+
+---
+
+#### 07/04/2026 — 10:30 BRT | Implementação de Status "Recusada" com Reset Financeiro (Estorno Tático)
+
+**Descrição Tática:**
+Novo status `recusada` implementado no fluxo de OS com 4 ações automáticas:
+
+1. **Zerar Receita** — Campos `fat_calculado`, `custo_total_alocado`, `lucro_calculado`, `margem_calculada`, `valorEstimado` todos zerados. Valores congelados com `custos_congelados_por = "recusada_por_[admin]"`.
+2. **Limpar Faturamento** — `escort_billings` vinculados marcados como `CANCELADA`; `mission_costs` deletados; transações automáticas removidas. Motor de faturamento 15/30 dias (Pilar 4) agora ignora OS com status `recusada` em todos os filtros.
+3. **Liberar Viatura** — `isFinished` inclui `recusada`, liberando veículo para `disponível` imediatamente + kit de armamento para `disponível`.
+4. **Log de Auditoria** — Registro em `system_audit_logs` com action `OS_RECUSADA`, detalhando: osNumber, status anterior, timestamp BRT, admin responsável, clientId, vehicleId, confirmação de faturamento zerado e custos limpos.
+
+**Arquivos alterados:**
+- `server/routes/service-orders.ts` — Trigger de limpeza no PATCH handler (linhas 959-1005); `isFinished` + `wasFinished` + filtros de alocação de combustível
+- `server/routes/operational.ts` — Grid filter (recusada aparece no dia mas sem cálculo DRE); sorting de finalização
+- `server/routes/escort.ts` — Boletim de medição ignora recusada; DRE não calcula billing para recusada
+- `client/src/pages/admin/service-orders.tsx` — Dropdown com opção "Recusada"; badge laranja; contagem em filtros
+- `client/src/pages/admin/operational-grid.tsx` — Badge laranja "RECUSADA" no grid; sorting correto
+- `client/src/pages/admin/boletim-medicao.tsx` — Row styling laranja; label "Recusada — Faturamento Zerado"
+
+**Justificativa Técnica:**
+Estorno Tático impede faturamento indevido no Asaas/DRE para missões recusadas pelo cliente ou operação. Segue padrão existente de `cancelada` mas com identidade visual distinta (laranja vs vermelho) para diferenciar na auditoria. Timestamp registrado em BRT conforme regra SYSTEM_BRAIN.md.
+
+**Status:** Implementado e testado. Servidor reiniciado sem erros. SYSTEM_BRAIN.md e RULES.md consultados.

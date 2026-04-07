@@ -46,7 +46,7 @@ import type { Express } from "express";
       const concluidas = allOrders.filter(o =>
         o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada" ||
         o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt) ||
-        o.status === "cancelada"
+        o.status === "cancelada" || o.status === "recusada"
       );
 
       const enriched = await Promise.all(concluidas.map(async (os) => {
@@ -604,7 +604,7 @@ import type { Express } from "express";
           const sameDaySameVehicle = allOrders.filter(o =>
             o.id !== osId &&
             o.vehicleId === os.vehicleId &&
-            o.status !== "concluída" && o.status !== "concluida" && o.status !== "cancelada" &&
+            o.status !== "concluída" && o.status !== "concluida" && o.status !== "cancelada" && o.status !== "recusada" &&
             o.missionStatus !== "encerrada" &&
             ((o.scheduledDate ? new Date(o.scheduledDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]) === osDate)
           );
@@ -942,15 +942,63 @@ import type { Express } from "express";
 
     if (parsed.data.completedDate && existing) {
       const currentStatus = parsed.data.status || existing.status || "";
-      if (!["concluída", "concluida", "cancelada"].includes(currentStatus)) {
+      if (!["concluída", "concluida", "cancelada", "recusada"].includes(currentStatus)) {
         (parsed.data as any).status = "concluída";
       }
     }
 
-    const wasFinished = existing && (existing.status === "concluída" || existing.status === "concluida" || existing.status === "cancelada");
-    const isReopening = wasFinished && parsed.data.status && !["concluída", "concluida", "cancelada"].includes(parsed.data.status);
+    const wasFinished = existing && (existing.status === "concluída" || existing.status === "concluida" || existing.status === "cancelada" || existing.status === "recusada");
+    const isReopening = wasFinished && parsed.data.status && !["concluída", "concluida", "cancelada", "recusada"].includes(parsed.data.status);
     if (isReopening) {
       try { await removeAutoTransaction("service_order", String(req.params.id)); } catch (_e) {}
+    }
+
+    const isRecusada = parsed.data.status === "recusada" && existing && existing.status !== "recusada";
+    if (isRecusada) {
+      const recusadaTimeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const adminName = req.user?.name || req.user?.email || "Sistema";
+
+      (parsed.data as any).fat_calculado = 0;
+      (parsed.data as any).custo_total_alocado = 0;
+      (parsed.data as any).lucro_calculado = 0;
+      (parsed.data as any).margem_calculada = 0;
+      (parsed.data as any).valorEstimado = 0;
+      (parsed.data as any).custos_congelados_em = new Date().toISOString();
+      (parsed.data as any).custos_congelados_por = `recusada_por_${adminName}`;
+
+      try {
+        await supabaseAdmin.from("escort_billings")
+          .update({ status: "CANCELADA" })
+          .eq("service_order_id", Number(req.params.id))
+          .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+      } catch (_e) {}
+
+      try {
+        await supabaseAdmin.from("mission_costs")
+          .delete()
+          .eq("service_order_id", Number(req.params.id));
+      } catch (_e) {}
+
+      try { await removeAutoTransaction("service_order", String(req.params.id)); } catch (_e) {}
+
+      try {
+        await supabaseAdmin.from("system_audit_logs").insert({
+          action: "OS_RECUSADA",
+          entity_type: "service_order",
+          entity_id: String(req.params.id),
+          details: JSON.stringify({
+            osNumber: existing.osNumber,
+            previousStatus: existing.status,
+            recusadaEm: recusadaTimeBRT,
+            recusadaPor: adminName,
+            clientId: existing.clientId,
+            vehicleId: existing.vehicleId,
+            faturamentoZerado: true,
+            custosLimpos: true,
+          }),
+          performed_by: req.user?.email || adminName,
+        });
+      } catch (_e) {}
     }
 
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
@@ -1094,7 +1142,7 @@ import type { Express } from "express";
     if (data.kitId && (!existing || existing.kitId !== data.kitId)) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
     }
-    if (data.kitId && (data.missionStatus === "encerrada" || data.status === "concluída" || data.status === "cancelada")) {
+    if (data.kitId && (data.missionStatus === "encerrada" || data.status === "concluída" || data.status === "cancelada" || data.status === "recusada")) {
       await storage.updateWeaponKit(data.kitId, { status: "disponível" });
     }
 
@@ -1105,7 +1153,7 @@ import type { Express } from "express";
       await storage.updateVehicle(data.vehicleId, { status: "em_uso" });
     }
     const isFinished = data.missionStatus === "encerrada" || data.missionStatus === "finalizada" ||
-      data.status === "concluida" || data.status === "concluída" || data.status === "cancelada";
+      data.status === "concluida" || data.status === "concluída" || data.status === "cancelada" || data.status === "recusada";
     if (data.vehicleId && isFinished) {
       await storage.updateVehicle(data.vehicleId, { status: "disponível" });
 

@@ -348,7 +348,7 @@ import type { Express } from "express";
       }
       let billingRow = billing?.[0] || null;
 
-      if (!billingRow && so.type === "escolta" && (so.status === "em_andamento" || so.status === "concluida" || so.status === "concluída")) {
+      if (!billingRow && so.type === "escolta" && so.status !== "recusada" && (so.status === "em_andamento" || so.status === "concluida" || so.status === "concluída")) {
         try {
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, franquia_minima_km: 50, valor_hora_estadia: 50, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30, periculosidade_horas_limite: 8 };
           if (so.escortContractId) {
@@ -442,7 +442,7 @@ import type { Express } from "express";
           const allOrders = await storage.getServiceOrders();
           const sameDayVehicleOrders = allOrders.filter((ox: any) => {
             if (ox.vehicleId !== so.vehicleId) return false;
-            if (ox.status === "cancelada") return false;
+            if (ox.status === "cancelada" || ox.status === "recusada") return false;
             const oxDate = ox.scheduledDate ? new Date(ox.scheduledDate).toISOString().split("T")[0] : null;
             return oxDate === dateFrom;
           });
@@ -1527,7 +1527,7 @@ import type { Express } from "express";
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
         const startBRT = missionStartBRT(so);
         if (so.status === "em_andamento") return true;
-        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
+        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" || so.status === "recusada" ||
           so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
         if (isConcluded) {
           const sdBRT = extractDatePart(so.scheduledDate);

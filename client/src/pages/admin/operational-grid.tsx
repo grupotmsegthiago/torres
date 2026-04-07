@@ -3770,8 +3770,8 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
     }] : []),
     ...(vehicle.upcomingOrders || []).map(u => ({ ...u, isCurrent: false })),
   ].sort((a, b) => {
-    const isFinA = a.status === "concluida" || a.status === "concluída" || a.status === "cancelada" ? 1 : 0;
-    const isFinB = b.status === "concluida" || b.status === "concluída" || b.status === "cancelada" ? 1 : 0;
+    const isFinA = a.status === "concluida" || a.status === "concluída" || a.status === "cancelada" || a.status === "recusada" ? 1 : 0;
+    const isFinB = b.status === "concluida" || b.status === "concluída" || b.status === "cancelada" || b.status === "recusada" ? 1 : 0;
     if (isFinA !== isFinB) return isFinA - isFinB;
     const da = a.scheduledDate ? parseUTCDate(a.scheduledDate).getTime() : 0;
     const db = b.scheduledDate ? parseUTCDate(b.scheduledDate).getTime() : 0;
@@ -3803,12 +3803,14 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
                     o.status === "concluida" || o.status === "concluída" ? "bg-green-100 text-green-800 border-green-300" :
                     o.status === "cancelada" ? "bg-red-100 text-red-700 border-red-200" :
+                    o.status === "recusada" ? "bg-orange-100 text-orange-700 border-orange-200" :
                     o.status === "em_andamento" ? "bg-amber-100 text-amber-800 border-amber-300" :
                     o.priority === "imediata" ? "bg-red-100 text-red-700 border-red-200" :
                     "bg-blue-50 text-blue-600 border-blue-200"
                   }`}>
                     {o.status === "concluida" || o.status === "concluída" ? "CONCLUÍDA" :
                      o.status === "cancelada" ? "CANCELADA" :
+                     o.status === "recusada" ? "RECUSADA" :
                      o.status === "em_andamento" ? "EM ANDAMENTO" :
                      o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
                   </span>

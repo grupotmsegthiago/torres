@@ -1195,6 +1195,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <option value="em_andamento">Em Andamento</option>
                     <option value="concluída">Concluída</option>
                     <option value="cancelada">Cancelada</option>
+                    <option value="recusada">Recusada</option>
                   </select>
                 </div>
               )}
@@ -1829,11 +1830,12 @@ export default function ServiceOrdersPage() {
         const allOrds = orders || [];
         const getOsStatus = (o: ServiceOrder) => {
           if (o.status === "cancelada") return "cancelada";
+          if (o.status === "recusada") return "recusada";
           if (o.status === "concluida" || o.status === "concluída") return "concluida";
           if (o.status === "em_andamento") return "em_andamento";
           return "pendente";
         };
-        const statusCounts = { pendente: 0, em_andamento: 0, concluida: 0, cancelada: 0, reaproveitada: 0 };
+        const statusCounts = { pendente: 0, em_andamento: 0, concluida: 0, cancelada: 0, recusada: 0, reaproveitada: 0 };
         allOrds.forEach(o => { statusCounts[getOsStatus(o)]++; if (o.priority === "reaproveitamento") statusCounts.reaproveitada++; });
         const authorizers = [...new Map(allOrds.filter(o => (o as any).createdByUserId).map(o => {
           const uid = (o as any).createdByUserId;
@@ -1942,6 +1944,7 @@ export default function ServiceOrdersPage() {
         ) : (() => {
           const getOsStatusKey = (o: ServiceOrder) => {
             if (o.status === "cancelada") return "cancelada";
+            if (o.status === "recusada") return "recusada";
             if (o.status === "concluida" || o.status === "concluída") return "concluida";
             if (o.status === "em_andamento") return "em_andamento";
             return "pendente";
@@ -2070,6 +2073,7 @@ export default function ServiceOrdersPage() {
                         o.status === "em_andamento" ? "bg-blue-600 text-white" :
                         o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                         o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
+                        o.status === "recusada" ? "bg-orange-50 text-orange-700 border border-orange-200" :
                         o.status === "agendada" && o.priority === "imediata" ? "bg-blue-600 text-white" :
                         o.status === "agendada" || o.status === "aberta" ? "bg-amber-50 text-amber-700 border border-amber-200" :
                         "bg-neutral-100 text-neutral-600 border border-neutral-200"
@@ -2079,6 +2083,7 @@ export default function ServiceOrdersPage() {
                         o.status === "em_andamento" ? "EM ANDAMENTO" :
                         o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" :
                         o.status === "cancelada" ? "CANCELADA" :
+                        o.status === "recusada" ? "RECUSADA" :
                         o.status?.toUpperCase()
                       }</span>
                     </td>

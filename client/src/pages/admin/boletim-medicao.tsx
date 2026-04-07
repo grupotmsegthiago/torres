@@ -517,7 +517,7 @@ export default function BoletimMedicaoPage() {
                               const canEdit = b && !["FATURADO", "PAGO"].includes(b.status);
                               return (
                                 <Fragment key={os.id}>
-                                <tr className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""} ${isEditing ? "bg-blue-50/40" : ""}`} data-testid={`row-os-${os.id}`}>
+                                <tr className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""} ${os.status === "recusada" ? "bg-orange-50/30" : ""} ${isEditing ? "bg-blue-50/40" : ""}`} data-testid={`row-os-${os.id}`}>
                                   <td className="px-2 py-3.5">
                                     <input
                                       type="checkbox"
@@ -539,6 +539,7 @@ export default function BoletimMedicaoPage() {
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
                                     {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
                                     {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{b?.observacoes ? b.observacoes.split("|")[0].trim() : "Cancelada"}</p>}
+                                    {os.status === "recusada" && <p className="text-[9px] text-orange-600 font-bold mt-0.5">Recusada — Faturamento Zerado</p>}
                                   </td>
                                   <td className="px-4 py-3.5">
                                     <span className="font-semibold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</span>
