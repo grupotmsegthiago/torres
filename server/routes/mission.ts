@@ -1293,6 +1293,14 @@ import type { Express } from "express";
     const currentStep = MISSION_STEPS[currentIdx];
 
 
+    if (currentStep === "aguardando" && so.scheduledDate) {
+      const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "-03:00");
+      const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
+      if (diffMin > 30 && !so.earlyStartApproved) {
+        return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde. Aguarde autorização da central.", code: "EARLY_START" });
+      }
+    }
+
     if (so.status === "agendada" && currentStep === "aguardando") {
       await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
     }
@@ -1626,6 +1634,14 @@ import type { Express } from "express";
       const currentIdx = MISSION_STEPS.indexOf(currentStep as any);
       if (currentIdx < 0 || currentIdx >= MISSION_STEPS.length - 1) {
         return res.status(400).json({ message: "Missao ja finalizada ou status invalido" });
+      }
+
+      if (currentStep === "aguardando" && so.scheduledDate) {
+        const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "-03:00");
+        const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
+        if (diffMin > 30 && !so.earlyStartApproved) {
+          return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde.", code: "EARLY_START" });
+        }
       }
 
       if (so.status === "agendada" && currentStep === "aguardando") {

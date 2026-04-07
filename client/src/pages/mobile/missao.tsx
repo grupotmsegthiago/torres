@@ -1314,9 +1314,14 @@ export default function MobileMissaoPage() {
     setSubmitting(true);
     try {
       await advanceMission();
-      toast({ title: "Chegada confirmada!" });
+      toast({ title: "Etapa avançada!" });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      if (err.message?.includes("EARLY_START")) {
+        setEarlyBlocked(true);
+        toast({ title: "Início antecipado bloqueado", description: "Aguarde o horário agendado ou solicite autorização.", variant: "destructive" });
+      } else {
+        toast({ title: "Erro", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1878,15 +1883,29 @@ export default function MobileMissaoPage() {
               </label>
             </div>
 
-            <button
-              onClick={handleTransitAdvance}
-              disabled={submitting || !cienteConfirmed}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              data-testid="button-start-checkout"
-            >
-              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-              Iniciar Missão
-            </button>
+            {earlyBlocked ? (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-center space-y-2">
+                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+                  <Lock className="w-6 h-6 text-amber-600" />
+                </div>
+                <p className="text-sm font-black text-amber-800 uppercase tracking-wider">Aguarde o Horário</p>
+                <p className="text-xs text-amber-600">
+                  Esta missão está agendada para{" "}
+                  <strong>{mission.scheduledDate ? new Date(parseUTCTimestamp(mission.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—"}</strong>.
+                  O início antecipado requer autorização da central.
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={handleTransitAdvance}
+                disabled={submitting || !cienteConfirmed}
+                className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                data-testid="button-start-checkout"
+              >
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+                Iniciar Missão
+              </button>
+            )}
           </div>
         )}
 
