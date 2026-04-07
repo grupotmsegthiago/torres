@@ -11,6 +11,7 @@ import type { Express } from "express";
   import { calcularEscolta } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
+  import { estimateTolls, getAllTollPlazas } from "../toll-engine";
 
   export function registerServiceOrderRoutes(app: Express) {
     app.get("/api/service-orders", requireAuth, async (_req, res) => {
@@ -654,6 +655,27 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/toll-plazas", requireAuth, async (_req, res) => {
+    res.json(getAllTollPlazas());
+  });
+
+  app.post("/api/toll-estimate", requireAuth, async (req, res) => {
+    try {
+      const { originLat, originLng, destLat, destLng, waypoints } = req.body;
+      if (!originLat || !originLng || !destLat || !destLng) {
+        return res.status(400).json({ message: "Coordenadas de origem e destino são obrigatórias" });
+      }
+      const estimate = estimateTolls(
+        Number(originLat), Number(originLng),
+        Number(destLat), Number(destLng),
+        waypoints
+      );
+      res.json(estimate);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/service-orders", requireAuth, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
@@ -803,6 +825,49 @@ import type { Express } from "express";
         if (wpsChanged) geoUpdates.waypoints = wps;
         if (Object.keys(geoUpdates).length > 0) {
           await storage.updateServiceOrder(data.id, geoUpdates);
+        }
+
+        const finalOriginLat = data.originLat || geoUpdates.originLat;
+        const finalOriginLng = data.originLng || geoUpdates.originLng;
+        const finalDestLat = data.destinationLat || geoUpdates.destinationLat;
+        const finalDestLng = data.destinationLng || geoUpdates.destinationLng;
+        const manualPedagio = Number((parsed.data as any).pedagioEstimado || 0);
+
+        if (finalOriginLat && finalOriginLng && finalDestLat && finalDestLng && manualPedagio <= 0) {
+          const wpCoords = wps.filter(w => w.lat && w.lng).map(w => ({ lat: Number(w.lat), lng: Number(w.lng) }));
+          const tollResult = estimateTolls(finalOriginLat, finalOriginLng, finalDestLat, finalDestLng, wpCoords);
+          const idaVolta = (parsed.data as any).pedagioIdaVolta === true;
+          const autoTollValue = idaVolta ? tollResult.totalIdaVolta : tollResult.totalIda;
+
+          if (autoTollValue > 0) {
+            await storage.updateServiceOrder(data.id, { pedagioEstimado: autoTollValue } as any);
+
+            const plazaNames = tollResult.plazas.map(p => p.name).join(", ");
+            try {
+              const cost = await storage.createMissionCost({
+                serviceOrderId: data.id,
+                category: "Pedágio",
+                description: `Pedágio ${idaVolta ? "Ida+Volta" : "Ida"} (AUTO): ${plazaNames} [${tollResult.plazas.length} praça(s)]`,
+                amount: autoTollValue.toFixed(2),
+              });
+              if (cost) {
+                await createAutoTransaction({
+                  description: `CUSTO MISSÃO ${data.osNumber} - PEDÁGIO (AUTO-CALC)`,
+                  amount: autoTollValue,
+                  type: "EXPENSE",
+                  due_date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }),
+                  origin_type: "mission_cost",
+                  origin_id: String(cost.id),
+                  category_name: "Custos de Missão",
+                  entity_name: null,
+                  created_by: "SISTEMA",
+                });
+              }
+              console.log(`[OS ${data.osNumber}] Pedágio AUTO R$${autoTollValue.toFixed(2)} (${tollResult.plazas.length} praças: ${plazaNames})`);
+            } catch (e: any) {
+              console.error(`[OS ${data.osNumber}] Erro pedágio auto:`, e.message);
+            }
+          }
         }
       } catch (_e) {}
     })();
@@ -2125,87 +2190,109 @@ import type { Express } from "express";
 
   app.post("/api/calculate-tolls", requireAuth, async (req, res) => {
     try {
-      const { origin, destination } = req.body;
+      const { origin, destination, originLat, originLng, destLat, destLng } = req.body;
       if (!origin || !destination) return res.status(400).json({ message: "Origem e destino são obrigatórios" });
 
+      let googleTotalIda = 0;
+      let googleTotalIdaVolta = 0;
+      let googleTolls: { name: string; price: number }[] = [];
+      let distanceMeters = 0;
+      let source = "local";
+
       const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) return res.status(500).json({ message: "API key não configurada" });
+      if (apiKey) {
+        try {
+          const routesUrl = "https://routes.googleapis.com/directions/v2:computeRoutes";
+          const body = {
+            origin: { address: origin },
+            destination: { address: destination },
+            travelMode: "DRIVE",
+            extraComputations: ["TOLLS"],
+            routeModifiers: { vehicleInfo: { emissionType: "GASOLINE" }, tollPasses: [] },
+          };
 
-      const routesUrl = "https://routes.googleapis.com/directions/v2:computeRoutes";
-      const body = {
-        origin: { address: origin },
-        destination: { address: destination },
-        travelMode: "DRIVE",
-        extraComputations: ["TOLLS"],
-        routeModifiers: {
-          vehicleInfo: {
-            emissionType: "GASOLINE",
-          },
-          tollPasses: [],
-        },
-      };
+          const resp = await fetch(routesUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Goog-Api-Key": apiKey,
+              "X-Goog-FieldMask": "routes.travelAdvisory.tollInfo,routes.distanceMeters,routes.duration,routes.legs.travelAdvisory.tollInfo",
+            },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(15000),
+          });
 
-      const resp = await fetch(routesUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "routes.travelAdvisory.tollInfo,routes.distanceMeters,routes.duration,routes.legs.travelAdvisory.tollInfo",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error("[calculate-tolls] Routes API error:", resp.status, errText);
-        return res.status(502).json({ message: "Erro ao consultar rota", detail: errText });
-      }
-
-      const data = await resp.json();
-      const route = data.routes?.[0];
-      if (!route) return res.json({ tolls: [], totalIda: 0, totalIdaVolta: 0, count: 0 });
-
-      const tollInfo = route.travelAdvisory?.tollInfo;
-      let totalIda = 0;
-      const tollDetails: { name: string; price: number }[] = [];
-
-      if (tollInfo?.estimatedPrice) {
-        for (const price of tollInfo.estimatedPrice) {
-          if (price.currencyCode === "BRL") {
-            totalIda += parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
-          }
-        }
-      }
-
-      const legs = route.legs || [];
-      for (const leg of legs) {
-        const legToll = leg.travelAdvisory?.tollInfo;
-        if (legToll?.estimatedPrice) {
-          for (const price of legToll.estimatedPrice) {
-            if (price.currencyCode === "BRL") {
-              const val = parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
-              tollDetails.push({ name: "Pedágio", price: val });
+          if (resp.ok) {
+            const data = await resp.json();
+            const route = data.routes?.[0];
+            if (route) {
+              distanceMeters = route.distanceMeters || 0;
+              const tollInfo = route.travelAdvisory?.tollInfo;
+              if (tollInfo?.estimatedPrice) {
+                for (const price of tollInfo.estimatedPrice) {
+                  if (price.currencyCode === "BRL") {
+                    googleTotalIda += parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
+                  }
+                }
+              }
+              for (const leg of (route.legs || [])) {
+                const legToll = leg.travelAdvisory?.tollInfo;
+                if (legToll?.estimatedPrice) {
+                  for (const price of legToll.estimatedPrice) {
+                    if (price.currencyCode === "BRL") {
+                      const val = parseFloat(price.units || "0") + parseFloat(price.nanos || "0") / 1e9;
+                      googleTolls.push({ name: "Pedágio", price: val });
+                    }
+                  }
+                }
+              }
+              if (googleTotalIda === 0 && googleTolls.length > 0) {
+                googleTotalIda = googleTolls.reduce((sum, t) => sum + t.price, 0);
+              }
+              googleTotalIdaVolta = Math.round(googleTotalIda * 2 * 100) / 100;
+              if (googleTotalIda > 0) source = "google";
             }
+          } else {
+            console.error("[calculate-tolls] Routes API error:", resp.status);
           }
+        } catch (e: any) {
+          console.error("[calculate-tolls] Google Routes exception:", e.message);
         }
       }
 
-      if (totalIda === 0 && tollDetails.length > 0) {
-        totalIda = tollDetails.reduce((sum, t) => sum + t.price, 0);
+      let localEstimate = null;
+      const oLat = Number(originLat) || 0;
+      const oLng = Number(originLng) || 0;
+      const dLat = Number(destLat) || 0;
+      const dLng = Number(destLng) || 0;
+
+      if (oLat && oLng && dLat && dLng) {
+        localEstimate = estimateTolls(oLat, oLng, dLat, dLng);
+      } else {
+        try {
+          const oGeo = await nominatimGeocode(origin);
+          const dGeo = await nominatimGeocode(destination);
+          if (oGeo && dGeo) {
+            localEstimate = estimateTolls(oGeo.lat, oGeo.lng, dGeo.lat, dGeo.lng);
+          }
+        } catch (_e) {}
       }
 
-      const totalIdaVolta = Math.round(totalIda * 2 * 100) / 100;
-      const distanceMeters = route.distanceMeters || 0;
+      const finalTotalIda = googleTotalIda > 0 ? Math.round(googleTotalIda * 100) / 100 : (localEstimate?.totalIda || 0);
+      const finalTotalIdaVolta = googleTotalIda > 0 ? googleTotalIdaVolta : (localEstimate?.totalIdaVolta || 0);
+      const finalSource = googleTotalIda > 0 ? "google" : (localEstimate && localEstimate.totalIda > 0 ? "local" : "none");
 
-      console.log(`[calculate-tolls] ${origin} → ${destination}: ${tollDetails.length} pedágio(s), ida=R$${totalIda.toFixed(2)}, ida+volta=R$${totalIdaVolta.toFixed(2)}`);
+      console.log(`[calculate-tolls] ${origin} → ${destination}: source=${finalSource}, ida=R$${finalTotalIda.toFixed(2)}, ida+volta=R$${finalTotalIdaVolta.toFixed(2)}, praças=${localEstimate?.plazas?.length || 0}`);
 
       res.json({
-        tolls: tollDetails,
-        totalIda: Math.round(totalIda * 100) / 100,
-        totalIdaVolta,
-        count: tollDetails.length || (totalIda > 0 ? 1 : 0),
+        tolls: googleTolls.length > 0 ? googleTolls : (localEstimate?.plazas || []).map(p => ({ name: `${p.name} (${p.road})`, price: p.price, city: p.city, state: p.state })),
+        totalIda: finalTotalIda,
+        totalIdaVolta: finalTotalIdaVolta,
+        count: googleTolls.length || localEstimate?.plazas?.length || (finalTotalIda > 0 ? 1 : 0),
         distanceMeters,
+        source: finalSource,
+        plazas: localEstimate?.plazas || [],
+        routeDistanceKm: localEstimate?.routeDistanceKm || (distanceMeters ? Math.round(distanceMeters / 100) / 10 : 0),
       });
     } catch (err: any) {
       console.error("[calculate-tolls] Exception:", err.message);

@@ -585,3 +585,44 @@ Novo status `recusada` implementado no fluxo de OS com 4 ações automáticas:
 Estorno Tático impede faturamento indevido no Asaas/DRE para missões recusadas pelo cliente ou operação. Segue padrão existente de `cancelada` mas com identidade visual distinta (laranja vs vermelho) para diferenciar na auditoria. Timestamp registrado em BRT conforme regra SYSTEM_BRAIN.md.
 
 **Status:** Implementado e testado. Servidor reiniciado sem erros. SYSTEM_BRAIN.md e RULES.md consultados.
+
+---
+
+#### 07/04/2026 — 10:40 BRT | Motor de Cálculo Automático de Pedágio (Toll Engine)
+
+**Descrição Tática:**
+Implementado motor de estimativa de pedágio com base local de 15 praças (Via Dutra, Anchieta-Imigrantes, Bandeirantes, Anhanguera, Fernão Dias, Raposo Tavares, Castelo Branco, Rio-Santos) com valores atualizados (reajuste setembro/2025).
+
+**Componentes criados/alterados:**
+
+1. **`server/toll-engine.ts`** (NOVO) — Motor de cálculo com:
+   - Base de dados local de 15 praças com coordenadas GPS, preços, tipo (convencional/free_flow), direcionalidade
+   - Função `estimateTolls(originLat, originLng, destLat, destLng, waypoints)` que calcula praças no corredor da rota (15km de largura)
+   - Haversine distance + projeção ortogonal para determinar proximidade ao segmento da rota
+   - Retorna: totalIda, totalIdaVolta, lista de praças com distância da origem, distância estimada da rota
+
+2. **`server/routes/service-orders.ts`** — Endpoints + integração:
+   - `GET /api/toll-plazas` — Lista todas as praças cadastradas
+   - `POST /api/toll-estimate` — Estimativa por coordenadas
+   - `POST /api/calculate-tolls` — MELHORADO: Google Routes API como fonte primária + toll-engine como fallback; agora retorna `plazas[]` com detalhamento praça-a-praça e `source` (google/local)
+   - Criação de OS: se `pedagioEstimado` não foi preenchido manualmente e as coordenadas existem, calcula automaticamente após geocoding e registra `mission_cost` + `financial_transaction`
+
+3. **`client/src/pages/admin/service-orders.tsx`** — Frontend:
+   - `calcTolls` agora envia coordenadas ao backend e recebe detalhamento de praças
+   - Tooltip com breakdown praça-a-praça (nome, cidade/estado, valor)
+   - Badge indicando fonte (Google / Base Local)
+   - Toggle "Ida+Volta" recalcula valor instantaneamente
+   - Estado `tollInfo` ampliado com `plazas`, `source`, `routeDistanceKm`
+
+**Praças cadastradas (Via Dutra — Guarulhos→RJ, vigência 01/09/2025):**
+| Praça | Cidade | Valor |
+|-------|--------|-------|
+| Free Flow SP | Guarulhos/SP | R$ 4,50 |
+| Arujá | Arujá/SP | R$ 4,50 |
+| Guararema | Guararema/SP | R$ 4,50 |
+| Jacareí | Jacareí/SP | R$ 8,10 |
+| Moreira César | Pindamonhangaba/SP | R$ 16,90 |
+| Itatiaia | Itatiaia/RJ | R$ 14,50 |
+| **Total Ida** | | **R$ 53,00** |
+
+**Status:** Implementado. Servidor reiniciado sem erros. Cálculo automático ativo na criação de OS.
