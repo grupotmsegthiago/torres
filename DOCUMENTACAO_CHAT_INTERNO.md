@@ -383,3 +383,84 @@ GET /api/chat/users
 ---
 
 *Documento gerado automaticamente pelo sistema Torres Vigilância Patrimonial.*
+
+---
+
+### 🕒 Histórico de Atualizações
+
+---
+
+#### 07/04/2026 — 06:55 BRT | Sistema de Aceite de Missões (Task #11)
+
+**Descrição Tática:**
+1. **Tabela `mission_acceptances`** criada no Supabase — registra aceite/recusa de missões com GPS, IP, dispositivo, horário e assinatura do agente.
+2. **Endpoints canônicos** implementados:
+   - `POST /api/missions/:osId/accept` — agente aceita a missão
+   - `POST /api/missions/:osId/refuse` — agente recusa a missão
+   - `POST /api/chat/accept-mission` — aceite/recusa via chat (mesmo fluxo)
+3. **Verificação de segurança IDOR:** Antes de verificar `mission_acceptances`, o sistema valida se o agente está **realmente designado na OS** (campos `employee1_id` ou `employee2_id`). Agentes não-designados recebem erro 403.
+4. **`send-mission-invite`** atualizado para criar registros de aceite apenas para os agentes efetivamente designados na OS (não para todos os participantes da conversa).
+5. **`AcceptanceStatusSection`** adicionada em `service-orders.tsx` — mostra status de aceite na página da OS.
+6. **Aba "Missões"** adicionada na pasta do funcionário em `employees.tsx` — histórico de missões aceitas/recusadas.
+7. **Mensagens de sistema** (`type: "system"`) inseridas na conversa de despacho ao aceitar/recusar.
+
+**Justificativa Técnica:**
+O fluxo anterior de despacho de missões via chat não registrava formalmente o aceite do agente. Sem registro de aceite com metadados (GPS, IP, timestamp), não havia como auditar se o agente aceitou ou recusou a missão. A correção de IDOR era crítica — sem ela, qualquer agente com acesso ao chat poderia aceitar missões de outros agentes.
+
+**Status:** Testado e mergeado. RULES.md e SYSTEM_BRAIN.md respeitados. Post-merge executado com sucesso.
+
+---
+
+#### 07/04/2026 — 07:30 BRT | Correção Completa de Fuso Horário (Brasília UTC-3)
+
+**Descrição Tática:**
+1. **`ensureUTC()`** exportada centralmente em `client/src/lib/utils.ts` — função que adiciona sufixo "Z" a timestamps do banco que são armazenados sem timezone.
+2. **`formatBRT()`, `formatDateBRT()`, `formatTimeBRT()`** atualizadas para usar `ensureUTC` internamente.
+3. **25+ arquivos do frontend corrigidos:**
+   - `tracker.tsx` — `timeAgo()`, `isOnline()`, display de histórico, ordenação
+   - `telemetry.tsx` — `formatDate()` sem `timeZone: "America/Sao_Paulo"`
+   - `mission.tsx` — timer, scheduledDate, MissionTimeline, próximas missões
+   - `ponto-operacional.tsx` (admin + mobile) — `formatDateBR()`, timer de jornada
+   - `financeiro.tsx` — sorting de billings, display de `created_at`
+   - `clients.tsx` — filtros de período, `sentAt`, `revisado_em`, `fmtTime`
+   - `employees.tsx` — `isDocExpiringSoon()`, `createdAt`, `docExpiryStatus`
+   - `service-orders.tsx` — `formatDateTime()`
+   - `boletim-medicao.tsx` — `fmtDate`/`fmtTime`, `mDate`, `fmtToHHMM`
+   - `relatorio-faturamento.tsx` — `fmtDate`/`fmtTime`
+   - `calculadora-jornada.tsx` — `inicio_missao`/`fim_missao`
+   - `consultas.tsx` — display de `createdAt` nos logs
+   - `audit.tsx` — `formatDateTime()`
+   - `home.tsx` — `dataEmbarque` do formulário de cotação
+   - `balanco-gerencial.tsx` — display de `m.data`
+   - `fueling.tsx` — display de `createdAt`
+   - `mobile/chat.tsx` — `fmtTime()`, `fmtDate()`
+   - `mobile/meu-rh.tsx` — `fmtDate()`
+   - `mobile/ocorrencia.tsx` — `created_at` display
+   - `mobile/missao.tsx` — timeline, scheduledDate, earlyBlocked
+4. **Banco de dados:** `SET timezone = 'America/Sao_Paulo'` executado automaticamente em cada nova conexão via `pool.on("connect")` em `server/db.ts`.
+5. **Backend:** `process.env.TZ = "America/Sao_Paulo"` já existia em `server/index.ts` (mantido).
+
+**Justificativa Técnica:**
+O Supabase armazena timestamps sem sufixo de timezone (ex: `"2026-04-07T06:05:00"`). Quando o JavaScript faz `new Date("2026-04-07T06:05:00")`, interpreta como hora local do navegador. Se o navegador está em UTC (ou qualquer fuso diferente de BRT), o horário é interpretado com offset de +3h, causando erros como "há 3h10" quando deveria mostrar "há 5 min", ou "PERDA DE SINAL 190min" quando era 10min. A função `ensureUTC()` adiciona o sufixo "Z" para forçar interpretação como UTC, e depois `timeZone: "America/Sao_Paulo"` converte para exibição em Brasília.
+
+**Status:** Testado — servidor rodando sem erros. RULES.md atualizado com regras de timezone. SYSTEM_BRAIN.md respeitado.
+
+---
+
+#### 07/04/2026 — 09:40 BRT | Auditoria Financeira TOR-0018 (Custo Fantasma R$ 590,88)
+
+**Descrição Tática:**
+1. **Auditoria realizada** sobre o valor de R$ 590,88 exibido como "Abastecimento" na TOR-0018.
+2. **Origem identificada:** Dois registros em `mission_costs` (id=48 e id=49), ambos criados em `2026-04-07T06:30:27` pela função `syncFuelingMissionCosts()`.
+3. **Causa raiz identificada:** A função `syncFuelingMissionCosts()` em `server/routes.ts` (linha 215) busca abastecimentos com `created_at >= os.created_at` para a mesma viatura. Isso puxou abastecimentos dos dias 03/04 (R$ 292,76, F#12) e 05/04 (R$ 298,12, F#13) que pertenciam a missões anteriores (TOR-0016, TOR-0019) da mesma viatura UER7D08.
+4. **Valores detalhados:**
+   - `mission_costs` id=48: R$ 292,76 — Posto pão com linguiça, 42.49L gasolina (fueling id=12, data original 03/04)
+   - `mission_costs` id=49: R$ 298,12 — Auto posto Geremias, 42.65L gasolina (fueling id=13, data original 05/04)
+   - Total: R$ 292,76 + R$ 298,12 = **R$ 590,88**
+5. **Impacto:** Faturamento TOR-0018 = R$ 480,00 → Margem = 480 − 590,88 = **−R$ 110,88** (margem negativa falsa).
+6. **Nenhuma correção aplicada** — apenas auditoria e documentação da falha.
+
+**Justificativa Técnica:**
+O filtro `created_at >= os.created_at` não verifica se o abastecimento já foi contabilizado em outra OS concluída da mesma viatura. Como a TOR-0018 é a única OS ativa do vehicle_id=8, o sync atribuiu todos os abastecimentos recentes da viatura a ela, independentemente de terem ocorrido durante missões anteriores já encerradas.
+
+**Status:** Falha documentada. Correção pendente de autorização. RULES.md consultado — regra de ghost costs se aplica aqui (custos não devem ser atribuídos sem comprovação real vinculada à missão).
