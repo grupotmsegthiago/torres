@@ -106,21 +106,45 @@ async function ensureInvoicesTable() {
   }
 }
 
-async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string): Promise<string> {
+async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string): Promise<string> {
   const cleanDoc = cpfCnpj.replace(/[^\d]/g, "");
   if (!cleanDoc) throw new Error("CPF/CNPJ é obrigatório para criar cobrança no Asaas");
 
   try {
     const search = await asaasRequest("GET", `/customers?cpfCnpj=${cleanDoc}`);
     if (search.data && search.data.length > 0) {
-      return search.data[0].id;
+      const existing = search.data[0];
+      if (!existing.email && email) {
+        const emails = email.split(/[;,]\s*/);
+        const primaryEmail = emails[0].trim();
+        const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",");
+        try {
+          const updatePayload: any = { email: primaryEmail, notificationDisabled: false };
+          if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
+          await asaasRequest("PUT", `/customers/${existing.id}`, updatePayload);
+          console.log(`[asaas] Customer ${existing.id} atualizado com email: ${primaryEmail}`);
+        } catch (e: any) {
+          console.log(`[asaas] Falha ao atualizar email do customer: ${e.message}`);
+        }
+      }
+      return existing.id;
     }
   } catch {}
 
-  const customer = await asaasRequest("POST", "/customers", {
+  const emails = (email || "").split(/[;,]\s*/);
+  const primaryEmail = emails[0]?.trim() || undefined;
+  const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",") || undefined;
+
+  const customerPayload: any = {
     name,
     cpfCnpj: cleanDoc,
-  });
+    notificationDisabled: false,
+  };
+  if (primaryEmail) customerPayload.email = primaryEmail;
+  if (additionalEmails) customerPayload.additionalEmails = additionalEmails;
+  if (phone) customerPayload.mobilePhone = phone.replace(/[^\d]/g, "");
+
+  const customer = await asaasRequest("POST", "/customers", customerPayload);
   return customer.id;
 }
 
@@ -197,7 +221,14 @@ export function registerAsaasRoutes(app: Express) {
       let status = "PENDING";
 
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
-        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "");
+        let clientEmail: string | undefined;
+        let clientPhone: string | undefined;
+        if (clientId) {
+          const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone").eq("id", clientId).single();
+          clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
+          clientPhone = cliInfo?.phone || undefined;
+        }
+        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone);
 
         let emiteNf = false;
         if (clientId) {
@@ -669,9 +700,11 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro, phone").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
+      const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || undefined;
+      const clientPhoneConsolidado = clientData?.phone || undefined;
 
       let asaasCustomerId: string | null = null;
       let asaasPaymentId: string | null = null;
@@ -683,7 +716,7 @@ export function registerAsaasRoutes(app: Express) {
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
-          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj);
+          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado);
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",
