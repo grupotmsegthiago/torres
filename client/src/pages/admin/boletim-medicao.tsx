@@ -49,7 +49,12 @@ export default function BoletimMedicaoPage() {
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [expandedClient, setExpandedClient] = useState<number | null>(null);
   const [selectedOs, setSelectedOs] = useState<any>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("PENDENTE");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("status");
+    if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "APROVADA", "REJEITADA", "FORA_CICLO", "FATURADA"].includes(s)) return s as StatusFilter;
+    return "PENDENTE";
+  });
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
   const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number } | null>(null);
   const [pedagioValue, setPedagioValue] = useState("");

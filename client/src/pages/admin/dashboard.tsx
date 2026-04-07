@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, Users, Car, FileText, Fuel, Wrench, Route, Clock, AlertTriangle, ShieldAlert, Receipt, Gavel, Activity } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
+import AlertasDashboard from "@/components/admin/AlertasDashboard";
 import type { Client, Employee, Vehicle, ServiceOrder, Trip, VehicleFueling, VehicleMaintenance, Timesheet } from "@shared/schema";
 
 function StatCard({ title, value, icon: Icon, color }: { title: string; value: number | string; icon: any; color: string }) {
@@ -70,6 +71,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-dashboard-title">Painel de Controle</h1>
         <p className="text-sm text-neutral-500 mt-1">Visão geral do sistema</p>
       </div>
+
+      <AlertasDashboard />
 
       {user?.role === "funcionario" && activeMission && (
         <Alert className="mb-6 border-amber-300 bg-amber-50" data-testid="alert-active-mission">

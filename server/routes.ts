@@ -404,6 +404,41 @@ async function ensureSystemSettingsTable() {
     console.error("[auto-fix] Erro ao corrigir OS travadas:", e.message);
   }
 
+  app.get("/api/dashboard/alertas-mickael", requireAuth, async (req: any, res) => {
+    try {
+      const u = req.user;
+      if (!u) return res.json({ osPendentes: 0, docsPendentes: 0, boletinsPendentes: 0, employeesComDocPendente: [] });
+      const isAllowed = u.role === "diretoria" || (u.name || "").toLowerCase().includes("mickael");
+      if (!isAllowed) return res.json({ osPendentes: 0, docsPendentes: 0, boletinsPendentes: 0, employeesComDocPendente: [] });
+
+      const { data: osPend } = await supabaseAdmin.from("service_orders").select("id", { count: "exact" }).eq("status", "pendente");
+      const osPendentes = osPend?.length || 0;
+
+      const { data: emps } = await supabaseAdmin.from("employees").select("id, name, cnh_expiry, cnv_expiry, cnv_number, status").eq("status", "ativo");
+      const today = new Date().toISOString().split("T")[0];
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+      const twoYearsAgoStr = twoYearsAgo.toISOString().split("T")[0];
+
+      const employeesComDocPendente: string[] = [];
+      (emps || []).forEach((e: any) => {
+        const issues: string[] = [];
+        if (!e.cnv_expiry || e.cnv_expiry < today) issues.push("CNV");
+        if (!e.cnh_expiry || e.cnh_expiry < today) issues.push("CNH");
+        if (e.cnv_expiry && e.cnv_expiry < twoYearsAgoStr) issues.push("Reciclagem");
+        if (issues.length > 0) employeesComDocPendente.push(e.name);
+      });
+
+      const { data: billingsPend } = await supabaseAdmin.from("escort_billings").select("id", { count: "exact" }).eq("status", "APROVADA");
+      const boletinsPendentes = billingsPend?.length || 0;
+
+      res.json({ osPendentes, docsPendentes: employeesComDocPendente.length, boletinsPendentes, employeesComDocPendente });
+    } catch (e: any) {
+      console.error("[alertas-mickael] erro:", e.message);
+      res.json({ osPendentes: 0, docsPendentes: 0, boletinsPendentes: 0, employeesComDocPendente: [] });
+    }
+  });
+
   app.get("/api/system-settings/:key", requireAuth, async (req, res) => {
     try {
       const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));

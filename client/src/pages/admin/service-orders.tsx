@@ -1571,7 +1571,10 @@ export default function ServiceOrdersPage() {
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
   const [filterVehicleId, setFilterVehicleId] = useState<number | null>(null);
   const [searchOS, setSearchOS] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("status") || null;
+  });
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
   const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
