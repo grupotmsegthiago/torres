@@ -368,8 +368,125 @@ export function registerAsaasRoutes(app: Express) {
       if (!invoice.asaas_payment_id) return res.status(400).json({ message: "Fatura sem vínculo com Asaas" });
 
       await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/resendNotification`, {});
-      res.json({ success: true, message: "Notificação reenviada" });
+
+      const now = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      await logSystemAudit({
+        userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
+        action: "ASAAS_NOTIFICACAO_REENVIADA", targetId: invoice.asaas_payment_id, targetType: "invoice",
+        details: `Notificação reenviada para cobrança ${invoice.asaas_payment_id} (R$${parseFloat(invoice.value).toFixed(2)}) às ${now}`,
+        ipAddress: (req as any).ip,
+      });
+
+      res.json({ success: true, message: "Notificação reenviada", timestamp: now });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/invoices/:id/notifications", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+      if (!invoice.asaas_payment_id) return res.status(400).json({ message: "Fatura sem vínculo com Asaas" });
+
+      let notifications: any[] = [];
+      let paymentDetails: any = null;
+
+      try {
+        paymentDetails = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+      } catch {}
+
+      try {
+        const notifData = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/notifications`);
+        if (notifData?.data) notifications = notifData.data;
+        else if (Array.isArray(notifData)) notifications = notifData;
+      } catch {}
+
+      const { data: auditLogs } = await supabaseAdmin
+        .from("system_audit_log")
+        .select("action, details, created_at")
+        .or(`target_id.eq.${invoice.asaas_payment_id},and(target_type.eq.invoice,target_id.eq.${invoice.id})`)
+        .order("created_at", { ascending: true })
+        .limit(20);
+
+      const timeline: any[] = [];
+
+      if (invoice.created_at) {
+        timeline.push({
+          type: "created",
+          icon: "receipt",
+          label: "Cobrança criada no Asaas",
+          detail: `${invoice.billing_type} • R$ ${parseFloat(invoice.value).toFixed(2)}`,
+          timestamp: invoice.created_at,
+        });
+      }
+
+      if (auditLogs) {
+        for (const log of auditLogs) {
+          if (log.action === "ASAAS_COBRANCA_GERADA") {
+            continue;
+          }
+          if (log.action === "ASAAS_NOTIFICACAO_REENVIADA") {
+            timeline.push({
+              type: "resent",
+              icon: "send",
+              label: "Notificação reenviada manualmente",
+              detail: log.details,
+              timestamp: log.created_at,
+            });
+          }
+          if (log.action?.startsWith("ASAAS_WEBHOOK_")) {
+            const evtName = log.action.replace("ASAAS_WEBHOOK_", "");
+            timeline.push({
+              type: "webhook",
+              icon: "webhook",
+              label: `Evento Asaas: ${evtName}`,
+              detail: log.details,
+              timestamp: log.created_at,
+            });
+          }
+        }
+      }
+
+      for (const n of notifications) {
+        const eventLabel = n.event === "PAYMENT_CREATED" ? "E-mail de cobrança enviado"
+          : n.event === "PAYMENT_RECEIVED" ? "E-mail de confirmação de pagamento"
+          : n.event === "PAYMENT_OVERDUE" ? "E-mail de cobrança vencida"
+          : n.event === "PAYMENT_DUEDATE_WARNING" ? "E-mail de lembrete de vencimento"
+          : `Notificação: ${n.event || "desconhecido"}`;
+
+        timeline.push({
+          type: n.status === "FAILED" || n.status === "BOUNCED" ? "error" : n.status === "READ" ? "read" : "sent",
+          icon: n.status === "FAILED" || n.status === "BOUNCED" ? "alert" : n.status === "READ" ? "eye" : "mail",
+          label: eventLabel,
+          detail: n.emailAddress ? `Para: ${n.emailAddress}` : undefined,
+          status: n.status,
+          timestamp: n.scheduleDate || n.dateCreated,
+        });
+      }
+
+      const emailStatus = paymentDetails?.lastInvoiceViewedDate ? "VIEWED"
+        : notifications.some((n: any) => n.status === "BOUNCED" || n.status === "FAILED") ? "BOUNCE"
+        : notifications.some((n: any) => n.status === "READ") ? "READ"
+        : notifications.some((n: any) => n.status === "SENT" || n.status === "DELIVERED") ? "SENT"
+        : notifications.length > 0 ? "QUEUED"
+        : "UNKNOWN";
+
+      const customerEmail = paymentDetails?.customer?.email || null;
+
+      timeline.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+
+      res.json({
+        emailStatus,
+        customerEmail,
+        lastViewedDate: paymentDetails?.lastInvoiceViewedDate || null,
+        notifications,
+        timeline,
+        paymentStatus: paymentDetails?.status,
+      });
+    } catch (err: any) {
+      console.error("[asaas] notifications error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

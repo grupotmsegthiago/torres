@@ -15,7 +15,8 @@ import {
   Plus, Search, RefreshCw, Loader2, X, ExternalLink,
   FileText, DollarSign, Calendar, CheckCircle2, XCircle,
   Clock, AlertTriangle, Send, Copy, Eye, Trash2,
-  Building2, Download, Receipt,
+  Building2, Download, Receipt, Mail, MailCheck, MailX,
+  Activity, Bell,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -706,6 +707,134 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
   );
 }
 
+function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number; asaasPaymentId: string | null }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/invoices", invoiceId, "notifications"],
+    queryFn: () => authFetch(`/api/invoices/${invoiceId}/notifications`).then(r => r.ok ? r.json() : null),
+    enabled: !!asaasPaymentId,
+    refetchInterval: 30000,
+  });
+
+  if (!asaasPaymentId) return null;
+  if (isLoading) return (
+    <div className="bg-neutral-50 rounded-xl border p-4">
+      <div className="flex items-center gap-2 text-xs text-neutral-400">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Carregando status de envio...
+      </div>
+    </div>
+  );
+  if (!data) return null;
+
+  const emailStatusConfig: Record<string, { label: string; cls: string; icon: any; bgCls: string }> = {
+    VIEWED: { label: "E-mail Visualizado pelo Cliente", cls: "text-emerald-700", icon: MailCheck, bgCls: "bg-emerald-50 border-emerald-200" },
+    READ: { label: "E-mail Lido", cls: "text-emerald-700", icon: MailCheck, bgCls: "bg-emerald-50 border-emerald-200" },
+    SENT: { label: "E-mail Enviado", cls: "text-blue-700", icon: Mail, bgCls: "bg-blue-50 border-blue-200" },
+    QUEUED: { label: "E-mail na Fila de Envio", cls: "text-amber-700", icon: Clock, bgCls: "bg-amber-50 border-amber-200" },
+    BOUNCE: { label: "E-mail Rejeitado (Bounce)", cls: "text-red-700", icon: MailX, bgCls: "bg-red-50 border-red-200" },
+    UNKNOWN: { label: "Aguardando Informações", cls: "text-neutral-500", icon: Clock, bgCls: "bg-neutral-50 border-neutral-200" },
+  };
+
+  const st = emailStatusConfig[data.emailStatus] || emailStatusConfig.UNKNOWN;
+  const StIcon = st.icon;
+
+  const timelineIcons: Record<string, any> = {
+    receipt: Receipt,
+    send: Send,
+    mail: Mail,
+    eye: Eye,
+    alert: AlertTriangle,
+    webhook: Activity,
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-xl border p-4 ${st.bgCls}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${st.bgCls}`}>
+            <StIcon className={`w-5 h-5 ${st.cls}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Status do Envio</p>
+            <p className={`text-sm font-black ${st.cls}`}>{st.label}</p>
+            {data.customerEmail && (
+              <p className="text-[10px] text-neutral-500 mt-0.5">Destinatário: {data.customerEmail}</p>
+            )}
+          </div>
+        </div>
+        {data.lastViewedDate && (
+          <div className="mt-2 pt-2 border-t border-emerald-200 flex items-center gap-2">
+            <Eye className="w-3.5 h-3.5 text-emerald-600" />
+            <p className="text-[10px] text-emerald-700 font-medium">
+              Cliente visualizou em: {new Date(data.lastViewedDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {data.emailStatus === "BOUNCE" && (
+        <div className="bg-red-50 border border-red-300 rounded-xl p-3 flex items-start gap-2">
+          <MailX className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-bold text-red-700">E-mail Rejeitado (Bounce)</p>
+            <p className="text-[10px] text-red-600 mt-0.5">
+              O e-mail do cliente retornou como inválido ou caixa cheia. Verifique o endereço de e-mail cadastrado e reenvie manualmente.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {data.timeline && data.timeline.length > 0 && (
+        <div className="bg-white rounded-xl border p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-3 flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5" />
+            Histórico de Eventos
+          </p>
+          <div className="space-y-0">
+            {data.timeline.map((evt: any, idx: number) => {
+              const TlIcon = timelineIcons[evt.icon] || Bell;
+              const isLast = idx === data.timeline.length - 1;
+              const evtColor = evt.type === "error" ? "text-red-600"
+                : evt.type === "read" ? "text-emerald-600"
+                : evt.type === "sent" ? "text-blue-600"
+                : evt.type === "resent" ? "text-indigo-600"
+                : evt.type === "webhook" ? "text-violet-600"
+                : "text-neutral-500";
+              const dotColor = evt.type === "error" ? "bg-red-500"
+                : evt.type === "read" ? "bg-emerald-500"
+                : evt.type === "sent" ? "bg-blue-500"
+                : evt.type === "resent" ? "bg-indigo-500"
+                : evt.type === "webhook" ? "bg-violet-500"
+                : "bg-neutral-400";
+
+              return (
+                <div key={idx} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
+                    {!isLast && <div className="w-px flex-1 bg-neutral-200 my-1" />}
+                  </div>
+                  <div className={`pb-3 min-w-0 ${isLast ? "pb-0" : ""}`}>
+                    <div className="flex items-center gap-1.5">
+                      <TlIcon className={`w-3 h-3 shrink-0 ${evtColor}`} />
+                      <p className={`text-xs font-semibold ${evtColor}`}>{evt.label}</p>
+                    </div>
+                    {evt.detail && <p className="text-[10px] text-neutral-400 mt-0.5 truncate">{evt.detail}</p>}
+                    {evt.timestamp && (
+                      <p className="text-[10px] text-neutral-300 mt-0.5 tabular-nums">
+                        {new Date(evt.timestamp).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing }: {
   invoice: Invoice;
   onClose: () => void;
@@ -721,6 +850,22 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
   const StIcon = st.icon;
   const isPaid = ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(invoice.status);
   const isCancelled = invoice.status === "CANCELLED";
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+
+  const handleResend = async () => {
+    setResendSuccess(null);
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/resend`, { method: "POST" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      const result = await r.json();
+      const now = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+      setResendSuccess(`Notificação reenviada com sucesso às ${now}`);
+      toast({ title: "Notificação reenviada ao cliente" });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id, "notifications"] });
+    } catch (err: any) {
+      toast({ title: "Erro ao reenviar", description: err.message, variant: "destructive" });
+    }
+  };
 
   const copyPix = () => {
     if (invoice.pix_copia_e_cola) {
@@ -808,6 +953,8 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             )}
           </div>
 
+          <NotificationTracker invoiceId={invoice.id} asaasPaymentId={invoice.asaas_payment_id} />
+
           <div className="flex flex-wrap gap-2">
             {invoice.invoice_url && (
               <a href={invoice.invoice_url} target="_blank" rel="noopener noreferrer">
@@ -844,6 +991,13 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             </div>
           )}
 
+          {resendSuccess && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <p className="text-xs text-emerald-700 font-medium">{resendSuccess}</p>
+            </div>
+          )}
+
           <div className="border-t pt-4 flex flex-wrap gap-2">
             {invoice.asaas_payment_id && (
               <>
@@ -852,8 +1006,8 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
                   Sincronizar
                 </Button>
                 {!isPaid && !isCancelled && (
-                  <Button variant="outline" size="sm" onClick={onResend} data-testid="button-resend">
-                    <Send className="w-3.5 h-3.5 mr-1" /> Reenviar
+                  <Button variant="outline" size="sm" onClick={handleResend} className="text-blue-700 border-blue-200 hover:bg-blue-50" data-testid="button-resend">
+                    <Send className="w-3.5 h-3.5 mr-1" /> Reenviar E-mail
                   </Button>
                 )}
               </>

@@ -1133,3 +1133,52 @@ O payload de criação de cobrança no Asaas NÃO incluía o campo `notification
 - `client/src/pages/admin/faturas.tsx` — Botão "Reenviar E-mail" na tabela
 
 **Status:** Implementado e funcional.
+
+---
+
+### 07/04/2026 — 09:00 BRT — Rastreamento Total de Notificações Asaas
+
+**Contexto:**
+O e-mail de cobrança da Fatura #5 (TM SEGURANÇA, R$5.299,10) não chegou ao cliente. Investigação revelou que as notificações de vencimento estavam DESABILITADAS para o customer `cus_000169792049` no Asaas. Resposta do Asaas: `"Não há mensagem de aviso de vencimento habilitada para este cliente."`.
+
+**Ação Necessária (Manual):**
+O Thiago precisa acessar o painel Asaas (https://www.asaas.com) → Configurações → Notificações → Habilitar "Notificações por e-mail ao cliente" para ativar o envio automático.
+
+**Implementações Técnicas:**
+
+1. **Endpoint `GET /api/invoices/:id/notifications`** (server/asaas.ts):
+   - Consulta `GET /payments/{id}` para dados do pagamento (lastInvoiceViewedDate, customer email)
+   - Consulta `GET /payments/{id}/notifications` para lista de notificações enviadas
+   - Consulta `system_audit_log` para reenvios manuais e webhooks
+   - Retorna: emailStatus (VIEWED/READ/SENT/QUEUED/BOUNCE/UNKNOWN), customerEmail, lastViewedDate, timeline de eventos
+
+2. **Componente `NotificationTracker`** (faturas.tsx):
+   - Card de "Status do Envio" com badge visual colorida:
+     - Verde: E-mail Visualizado / Lido
+     - Azul: E-mail Enviado
+     - Âmbar: Na Fila de Envio
+     - Vermelho: E-mail Rejeitado (Bounce) — com alerta expandido
+   - Mostra destinatário e data de visualização pelo cliente
+   - Auto-refresh a cada 30 segundos
+   
+3. **Histórico de Eventos (Timeline):**
+   - Timeline vertical com dots coloridos e ícones por tipo
+   - Eventos: Cobrança criada, E-mail enviado, Reenvio manual, Webhooks Asaas, Alertas de bounce
+   - Timestamp em formato BRT (dd/mm/aa HH:mm)
+
+4. **Confirmação Visual no Reenviar:**
+   - Botão "Reenviar E-mail" no detail dialog (azul, com ícone Send)
+   - Ao clicar e ter sucesso: mostra card verde "Notificação reenviada com sucesso às HH:MM"
+   - Ao falhar: toast destrutivo com mensagem de erro do Asaas
+   - Registra auditoria `ASAAS_NOTIFICACAO_REENVIADA` no system_audit_log
+
+5. **Alerta de Bounce:**
+   - Card vermelho com ícone MailX
+   - Texto: "O e-mail do cliente retornou como inválido ou caixa cheia"
+   - Orientação: "Verifique o endereço de e-mail cadastrado e reenvie manualmente"
+
+**Arquivos Alterados:**
+- `server/asaas.ts` — Endpoint de notificações + audit no resend
+- `client/src/pages/admin/faturas.tsx` — NotificationTracker + novo InvoiceDetailDialog
+
+**Status:** Implementado e funcional. Pendente: ativar notificações no painel Asaas.
