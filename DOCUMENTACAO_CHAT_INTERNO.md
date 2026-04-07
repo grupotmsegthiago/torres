@@ -539,3 +539,24 @@ A lógica anterior de "Último Lançamento" (`created_at >= os.created_at`) perm
 Auditoria preventiva do fluxo end-to-end de aceite de missão para garantir que: (1) nenhum dado financeiro ou de cliente vaza para agentes de campo via card do chat; (2) timestamps são registrados corretamente em Brasília; (3) o histórico de aceites alimenta corretamente a pasta do funcionário.
 
 **Status:** Auditoria concluída. **Nenhum erro encontrado.** Todos os 7 pontos de verificação aprovados. SYSTEM_BRAIN.md Regra 1.5 respeitada (aceite de missão com tabela `mission_acceptances`, CRON de expiração, proteção IDOR). RULES.md consultado.
+
+---
+
+#### 07/04/2026 — 10:25 BRT | Mapa Completo do Sistema para Auditoria Externa
+
+**Descrição Tática:**
+1. **Arquivo `MAPA_SISTEMA_COMPLETO.md` gerado** com visão 360° do projeto contendo:
+   - Tree View completo da estrutura de arquivos (sem node_modules)
+   - Inventário de todas as 68 tabelas do Supabase com descrição de cada uma
+   - Pilar 1: Autenticação (`use-auth.tsx`) — fluxo de login, RBAC, diferenciação Diretoria/Admin/Agente
+   - Pilar 2: Lógica Operacional (`operational.ts`) — vehicleFuelCache, vehicleFuelFirstOS, cálculo DRE, congelamento de custos
+   - Pilar 3: Sync de Abastecimento (`routes.ts`) — syncFuelingMissionCosts corrigida com filtro de data exata
+   - Pilar 4: Faturamento (6 telas de billing) — motor de cálculo, ciclos 15/30 dias, integração Asaas
+   - Regras Globais: timezone, combustível, financeiro, missão, segurança
+   - Lições Aprendidas: 6 regressões históricas documentadas (L001-L006)
+2. **Tabelas inventariadas** em 8 categorias: Operacional (7), Financeiro (11), Frota (6), RH (11), Clientes (4), Armamento (5), Chat (4), Sistema (13), Localização (3).
+
+**Justificativa Técnica:**
+Documento gerado para permitir que analista externo tenha visão completa da arquitetura sem necessidade de acesso ao código-fonte, reduzindo custos de reprocessamento e acelerando revisões futuras.
+
+**Status:** Documento entregue. SYSTEM_BRAIN.md e RULES.md enviados como referência. Nenhuma alteração de código realizada nesta etapa — apenas documentação.
