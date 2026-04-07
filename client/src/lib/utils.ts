@@ -96,6 +96,32 @@ export function formatDateBRT(date: string | Date | null | undefined): string {
   });
 }
 
+export function getNowBRT(): Date {
+  return new Date();
+}
+
+export function formatNowBRT(format: "time" | "datetime" | "date" | "full" = "time"): string {
+  const now = getNowBRT();
+  if (format === "time") return now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
+  if (format === "date") return now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+  if (format === "datetime") return now.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
+  return now.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
+}
+
+export function diffMinutesBRT(dateStr: string | Date | null | undefined): number {
+  if (!dateStr) return -1;
+  const d = parseUTCDate(dateStr);
+  return Math.floor((getNowBRT().getTime() - d.getTime()) / 60000);
+}
+
+export function isTodayBRT(dateStr: string | Date | null | undefined): boolean {
+  if (!dateStr) return false;
+  const d = parseUTCDate(dateStr);
+  const todayStr = getNowBRT().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const dateStrBRT = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  return todayStr === dateStrBRT;
+}
+
 const LOWERCASE_WORDS = new Set(["de", "do", "da", "dos", "das", "e"]);
 
 export function titleCase(name: string | null | undefined): string {

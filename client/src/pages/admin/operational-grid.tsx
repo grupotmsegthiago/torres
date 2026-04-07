@@ -23,7 +23,7 @@ import {
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT } from "@/lib/utils";
+import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT, getNowBRT, formatNowBRT, diffMinutesBRT, isTodayBRT } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
@@ -6439,6 +6439,17 @@ function TrucksControlStatus() {
 
 const REFRESH_INTERVAL_MS = 30 * 1000;
 
+function useBRTClock() {
+  const [now, setNow] = useState(getNowBRT());
+  useEffect(() => {
+    const id = setInterval(() => setNow(getNowBRT()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
+  const date = now.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+  return { now, time, date };
+}
+
 function useCountdown(intervalMs: number, lastFetchTime: number) {
   const [remaining, setRemaining] = useState(intervalMs / 1000);
 
@@ -7798,6 +7809,7 @@ export default function OperationalGridPage() {
   }, []);
 
   const countdown = useCountdown(REFRESH_INTERVAL_MS, lastRefresh);
+  const brtClock = useBRTClock();
   const isFetching = fetchingVehicles || fetchingGrid;
   const isLoading = loadingVehicles || loadingGrid;
 
@@ -7847,6 +7859,13 @@ export default function OperationalGridPage() {
                 <TrucksControlStatus />
               </div>
               <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2" data-testid="brt-central-clock">
+                  <Clock className="w-4 h-4 text-emerald-400" />
+                  <div className="flex flex-col items-end leading-tight">
+                    <span className="text-sm font-black text-white tabular-nums tracking-wider" data-testid="text-brt-time">{brtClock.time}</span>
+                    <span className="text-[9px] text-neutral-400 font-medium uppercase">{brtClock.date}</span>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2 text-xs text-neutral-300 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2" data-testid="countdown-timer">
                   <Timer className="w-3.5 h-3.5 text-neutral-400" />
                   <span>Próxima <span className="font-bold text-white">{countdown.display}</span></span>

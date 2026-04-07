@@ -1522,7 +1522,35 @@ O fluxo está completo:
 | `client/src/pages/admin/operational-grid.tsx` | Badges DB-first, GPS stale filter, fmtBRL global |
 
 ---
+
+## RELÓGIO CENTRAL BRT — Sistema Unificado (07/04/2026 19:08 BRT)
+
+### Implementação
+
+**Hook `useBRTClock()`** — Tick a cada 1s, retorna `{ now, time, date }` sempre em `America/Sao_Paulo`.
+
+**Funções utilitárias centrais** (`client/src/lib/utils.ts`):
+- `getNowBRT()` — Retorna `new Date()` (referência central de tempo)
+- `formatNowBRT(format)` — Formata o agora em BRT (`time`, `date`, `datetime`, `full`)
+- `diffMinutesBRT(dateStr)` — Diferença em minutos entre agora e uma data
+- `isTodayBRT(dateStr)` — Verifica se uma data é "hoje" em BRT
+
+**Componente visual** — Relógio com ícone verde no header da Grid Operacional:
+- Hora grande em `tabular-nums` (ex: `19:08:33`)
+- Data abaixo (ex: `seg., 07/04/2026`)
+- `data-testid="brt-central-clock"`
+
+Todo o sistema já usa `timeZone: "America/Sao_Paulo"` em todas as formatações de data/hora.
+
+### Arquivos Alterados
+| Arquivo | Alteração |
+|---------|-----------|
+| `client/src/lib/utils.ts` | +`getNowBRT`, `formatNowBRT`, `diffMinutesBRT`, `isTodayBRT` |
+| `client/src/pages/admin/operational-grid.tsx` | +`useBRTClock()`, relógio central no header |
+
+---
 **Laudo gerado em:** 07/04/2026 18:52 BRT  
 **Laudo saneamento matemático:** 07/04/2026 19:05 BRT  
+**Laudo relógio central:** 07/04/2026 19:08 BRT  
 **Para auditoria de:** Mickael  
 **Validado por:** Agent AI
