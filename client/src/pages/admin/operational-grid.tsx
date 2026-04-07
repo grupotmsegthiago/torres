@@ -376,7 +376,7 @@ function formatPhone(phone: string): string {
 
 function getLastPositionInfo(lastPositionTime?: string) {
   if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
-  const parsed = new Date(lastPositionTime).getTime();
+  const parsed = new Date(ensureUTC(lastPositionTime)!).getTime();
   if (isNaN(parsed)) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
   const diffMin = Math.floor((Date.now() - parsed) / 60000);
   if (diffMin < 0) return { text: "agora", color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin: 0, noSignal: false };
@@ -1114,7 +1114,7 @@ function getPriorityDisplay(priority: string) {
 
 function formatElapsedTime(dateStr: string | null | undefined): string {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
+  const d = new Date(ensureUTC(dateStr)!);
   if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "";
   const diff = Date.now() - d.getTime();
   if (diff < 0) return "";
@@ -1129,7 +1129,7 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
 
 function getTimeAgoUrgency(dateStr: string | null | undefined): { text: string; colorClass: string; minutesAgo: number } {
   if (!dateStr) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
-  const d = new Date(dateStr);
+  const d = new Date(ensureUTC(dateStr)!);
   if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
   const diff = Date.now() - d.getTime();
   if (diff < 0) return { text: "agora", colorClass: "text-green-600", minutesAgo: 0 };
@@ -1280,7 +1280,7 @@ function isRodizioSP(plate: string): boolean {
 }
 
 function formatTimeDiff(since: string): string {
-  const diffMin = Math.floor((Date.now() - new Date(since).getTime()) / 60000);
+  const diffMin = Math.floor((Date.now() - new Date(ensureUTC(since)!).getTime()) / 60000);
   if (diffMin < 1) return "< 1min";
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
@@ -1300,7 +1300,7 @@ function getIdleMinutes(v: TrackedVehicle): number {
   if ((v.tracker.speed ?? 0) > 2) return 0;
   const since = v.tracker.stoppedSince || v.tracker.lastPositionTime;
   if (!since) return 0;
-  return Math.floor((Date.now() - new Date(since).getTime()) / 60000);
+  return Math.floor((Date.now() - new Date(ensureUTC(since)!).getTime()) / 60000);
 }
 
 function getIgnitionOnTime(v: TrackedVehicle): string | null {
@@ -3370,7 +3370,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             <div className={`px-4 py-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
               <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
               <p className="text-[10px] mt-1 opacity-60">
-                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
+                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
               </p>
               {(() => {
                 const mu = getTimeAgoUrgency(v.activeOs!.lastAgentUpdate!.createdAt);
@@ -3387,7 +3387,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`history-update-${u.id}`}>
                     {(() => {
                       const hu2 = getTimeAgoUrgency(u.createdAt);
-                      const t2 = u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                      const t2 = u.createdAt ? new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                       return <span className={`font-mono flex-shrink-0 font-bold ${hu2.colorClass}`} title={hu2.text}>{t2}</span>;
                     })()}
                     <span className="text-neutral-400">—</span>
@@ -4355,7 +4355,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             {v.activeOs?.lastAgentUpdate && (
               <div className={`px-4 py-2 ${photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
                 <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
-                <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}</p>
+                <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}</p>
               </div>
             )}
             {(v.activeOs?.recentUpdates?.length ?? 0) > 0 && (
@@ -4366,7 +4366,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`ctx-history-${u.id}`}>
                       {(() => {
                         const hu = getTimeAgoUrgency(u.createdAt);
-                        const tStr = u.createdAt ? new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                        const tStr = u.createdAt ? new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                         return (
                           <span className={`font-mono flex-shrink-0 font-bold ${hu.colorClass}`} title={hu.text}>
                             {tStr}
@@ -5282,9 +5282,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <div className="inline-flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
                               <span className="text-[11px] font-semibold text-neutral-700 tabular-nums">
-                                {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
+                                {v.lastAlert.createdAt ? new Date(ensureUTC(v.lastAlert.createdAt)!).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }) : "—"}
                                 {" "}
-                                {v.lastAlert.createdAt ? new Date(v.lastAlert.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                                {v.lastAlert.createdAt ? new Date(ensureUTC(v.lastAlert.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -5442,7 +5442,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   const urgency = getTimeAgoUrgency(v.activeOs.lastAgentUpdate.createdAt);
                                   if (!urgency.text) return null;
                                   const timeStr = v.activeOs.lastAgentUpdate.createdAt
-                                    ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+                                    ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
                                     : "";
                                   return (
                                     <span className={`text-[10px] font-bold ${urgency.colorClass}`} data-testid={`elapsed-${v.id}`}>
@@ -5466,7 +5466,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <TooltipContent side="bottom" className="max-w-[280px]">
                                   <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
                                   <p className="text-[10px] text-neutral-400 mt-0.5">
-                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(v.activeOs.lastAgentUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
+                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
                                     {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷 Foto" : ""}
                                   </p>
                                   {(() => {
@@ -6187,7 +6187,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-neutral-800">"{rowForwardUpdate.message}"</p>
                   <p className="text-[10px] text-neutral-500 mt-1">
-                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? new Date(rowForwardUpdate.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
+                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? new Date(ensureUTC(rowForwardUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
                   </p>
                 </div>
               </div>
@@ -6303,7 +6303,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <span className="text-neutral-400">·</span>
                         <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}..."` : "—"}</span>
                         {fwd.photoIncluded && <span className="text-neutral-400">📷</span>}
-                        <span className="text-neutral-400 ml-auto flex-shrink-0">{new Date(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                        <span className="text-neutral-400 ml-auto flex-shrink-0">{new Date(ensureUTC(fwd.createdAt)!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span>
                       </div>
                     ))}
                   </div>
@@ -6654,8 +6654,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     }
     const groups = Array.from(map.values());
     groups.sort((a, b) => {
-      const aTime = new Date(a.updates[0]?.createdAt || 0).getTime();
-      const bTime = new Date(b.updates[0]?.createdAt || 0).getTime();
+      const aTime = new Date(ensureUTC(a.updates[0]?.createdAt) || 0).getTime();
+      const bTime = new Date(ensureUTC(b.updates[0]?.createdAt) || 0).getTime();
       return bTime - aTime;
     });
     return groups;
@@ -6697,7 +6697,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     const currentOffline = new Set<string>();
     const currentCritical = new Set<string>();
     for (const g of vtrGroups) {
-      const latestTs = g.updates[0]?.createdAt ? new Date(g.updates[0].createdAt).getTime() : 0;
+      const latestTs = g.updates[0]?.createdAt ? new Date(ensureUTC(g.updates[0].createdAt)!).getTime() : 0;
       const elapsed = nowMs - latestTs;
       if (elapsed > 15 * 60 * 1000) {
         currentCritical.add(g.osNumber);
@@ -6783,10 +6783,10 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           const isExpanded = expandedVtrs.has(group.osNumber);
           const isFlashing = flashVtrs.has(group.osNumber);
           const latest = group.updates[0];
-          const latestTime = latest?.createdAt ? new Date(latest.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+          const latestTime = latest?.createdAt ? new Date(ensureUTC(latest.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "—";
           const gridItem = gridData.find((g: GridItem) => g.osNumber === group.osNumber);
           const statusLabel = latest?.missionStep ? getMissionLabel(latest.missionStep) : (gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—");
-          const msSinceLastUpdate = latest?.createdAt ? Date.now() - new Date(latest.createdAt).getTime() : Infinity;
+          const msSinceLastUpdate = latest?.createdAt ? Date.now() - new Date(ensureUTC(latest.createdAt)!).getTime() : Infinity;
           const isVtrOffline = msSinceLastUpdate > 5 * 60 * 1000;
           const isVtrCritical = msSinceLastUpdate > 15 * 60 * 1000;
           const minSinceLast = Math.floor(msSinceLastUpdate / 60000);
@@ -6857,7 +6857,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             const nu = getTimeAgoUrgency(u.createdAt);
                             return (
                               <span className={`text-[10px] font-bold ${nu.colorClass}`}>
-                                {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({nu.text})
+                                {new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({nu.text})
                               </span>
                             );
                           })()}
@@ -7297,7 +7297,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             {fwd.photoIncluded && <span className="text-neutral-400 ml-1">📷</span>}
                           </div>
                           <span className="text-neutral-400 flex-shrink-0">
-                            {new Date(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            {new Date(ensureUTC(fwd.createdAt)!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                           </span>
                         </div>
                       ))}
@@ -7329,7 +7329,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
 }
 
 function timeAgo(dateStr: string) {
-  const ts = new Date(dateStr).getTime();
+  const ts = new Date(ensureUTC(dateStr)!).getTime();
   if (isNaN(ts)) return "—";
   const diff = Date.now() - ts;
   if (diff < 0) return "agora";
@@ -7359,7 +7359,7 @@ function AlertsTimeline() {
   });
 
 
-  const recentCount = allUpdates.filter(u => (Date.now() - new Date(u.createdAt).getTime()) < 600000).length;
+  const recentCount = allUpdates.filter(u => (Date.now() - new Date(ensureUTC(u.createdAt)!).getTime()) < 600000).length;
 
   return (
     <>
@@ -7406,7 +7406,7 @@ function AlertsTimeline() {
               </div>
             ) : (
               allUpdates.map((u: any, idx: number) => {
-                const ageMs = Date.now() - new Date(u.createdAt).getTime();
+                const ageMs = Date.now() - new Date(ensureUTC(u.createdAt)!).getTime();
                 const isCritical = ageMs < 600000;
                 const isNewest = idx === 0;
                 const hasPhoto = u.hasPhoto || (!!u.photoUrl && u.photoUrl !== "[has_photo]");
@@ -7525,7 +7525,7 @@ function AlertsTimeline() {
                               return (
                                 <span className={`text-[11px] font-bold flex items-center gap-1 ${tl.colorClass}`}>
                                   <Clock className="w-3 h-3" />
-                                  {new Date(u.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({tl.text})
+                                  {new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({tl.text})
                                 </span>
                               );
                             })()}
