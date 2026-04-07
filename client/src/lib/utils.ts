@@ -55,9 +55,17 @@ export function unmaskBRL(masked: string): string {
   return String(val);
 }
 
+export function ensureUTC(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const s = String(ts);
+  if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+  return s + "Z";
+}
+
 export function formatBRT(date: string | Date | null | undefined): string {
   if (!date) return '—';
-  return new Date(date).toLocaleString('pt-BR', {
+  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
+  return d.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
@@ -66,8 +74,18 @@ export function formatBRT(date: string | Date | null | undefined): string {
 
 export function formatDateBRT(date: string | Date | null | undefined): string {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('pt-BR', {
+  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
+  return d.toLocaleDateString('pt-BR', {
     timeZone: 'America/Sao_Paulo'
+  });
+}
+
+export function formatTimeBRT(date: string | Date | null | undefined): string {
+  if (!date) return '—';
+  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
+  return d.toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit', minute: '2-digit'
   });
 }
 
