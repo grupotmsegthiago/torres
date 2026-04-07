@@ -802,3 +802,34 @@ O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITO
 - `server/asaas.ts` — Filtro `.eq("status", "APROVADA")` → `.in("status", [...])`
 
 **Status:** Implementado. Servidor reiniciado sem erros. Fluxo simplificado: sem escolha manual.
+
+---
+
+#### 07/04/2026 — 11:09 BRT | Redesign Layout Controle de Faturas — Dashboard Profissional
+
+**Problema:** Conteúdo esticava até as bordas da tela em monitores grandes. Cards gigantes com muito espaço em branco. Hierarquia visual pobre.
+
+**Correções Aplicadas:**
+
+1. **Container Centralizado** — `max-w-7xl mx-auto` no container principal. Conteúdo centralizado com margem lateral automática.
+
+2. **Cards de Resumo Redesenhados** — Grid `grid-cols-1 md:grid-cols-2 lg:grid-cols-4` com:
+   - Ícone colorido em caixa arredondada (indigo/amber/emerald/red)
+   - Tipografia `font-black text-3xl/2xl` para valores
+   - Labels `uppercase tracking-wide` para categorias
+   - Bordas coloridas por tipo (border-amber-100, border-emerald-100, etc.)
+
+3. **Cards de Fatura Redesenhados** — Cada fatura agora tem:
+   - Ícone de empresa à esquerda (Building2 em caixa neutral-50)
+   - Nome do cliente em negrito (`font-bold`)
+   - Descrição + período + missões em texto secundário (`text-neutral-500`)
+   - Badges inline para ASAAS e OS#
+   - Valor em destaque à direita (`text-xl font-black`, min-w-[140px])
+   - Badge de status colorido abaixo do valor
+   - Hover com `shadow-md` + `border-indigo-200`
+
+4. **Asaas Status** — Mensagem "Asaas offline" substituída por "Asaas: configure ASAAS_API_KEY" (mais descritivo). A lógica está correta — verifica `process.env.ASAAS_API_KEY` e tenta `/finance/balance`. Basta adicionar a secret para ficar verde.
+
+**Arquivo alterado:** `client/src/pages/admin/faturas.tsx`
+
+**Status:** Implementado. Servidor reiniciado sem erros. Layout profissional com container centralizado.
