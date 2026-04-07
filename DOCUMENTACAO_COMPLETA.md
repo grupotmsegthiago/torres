@@ -532,18 +532,8 @@ Todas as tabelas residem no Supabase PostgreSQL. Acesso via Drizzle ORM (`db.*`)
 - `chat_messages`: mensagens (text/image/location/system)
 - `chat_presence`: status online/offline
 
-### API (9 endpoints)
-| Método | Rota | Função |
-|---|---|---|
-| GET | `/api/chat/conversations` | Listar conversas |
-| POST | `/api/chat/conversations` | Criar conversa |
-| GET | `/api/chat/conversations/:id/messages` | Buscar mensagens |
-| POST | `/api/chat/conversations/:id/messages` | Enviar mensagem |
-| PATCH | `/api/chat/conversations/:id/read` | Marcar como lido |
-| POST | `/api/chat/presence` | Atualizar presença |
-| GET | `/api/chat/presence` | Consultar presença |
-| GET | `/api/chat/unread-count` | Contar não lidas |
-| GET | `/api/chat/users` | Listar usuários |
+### API
+9 endpoints no módulo `server/routes/chat.ts` — ver inventário completo na seção 13.16.
 
 ### Frontend Admin (`/admin/chat`)
 - Sidebar de conversas (busca, badges, status online)
@@ -567,26 +557,358 @@ Todas as tabelas residem no Supabase PostgreSQL. Acesso via Drizzle ORM (`db.*`)
 
 ---
 
-## 13. Tarefas Concluídas (Histórico)
+## 13. Inventário Completo de Endpoints da API
+
+Todas as rotas exigem `requireAuth` salvo indicado. Acesso restrito indicado por `admin` (requireAdminRole) ou `diretoria` (requireDiretoria).
+
+### 13.1 Autenticação e Sistema (`server/routes.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/health` | Público | Health check |
+| POST | `/api/auth/token-failure` | Público | Log de falhas de token |
+| GET | `/api/auth/setup-check` | Público | Verificar setup inicial |
+| POST | `/api/auth/setup` | Público | Setup do primeiro usuário |
+| POST | `/api/auth/cpf-lookup` | Público | Busca por CPF no login |
+| GET | `/api/auth/me` | Auth | Dados do usuário logado |
+| POST | `/api/auth/accept-terms` | Auth | Aceitar termos de uso |
+| POST | `/api/auth/login-selfie` | Auth | Enviar selfie de login |
+| GET | `/api/auth/login-selfie-today` | Auth | Verificar selfie de hoje |
+| GET | `/api/admin/login-selfies` | Auth | Listar selfies (admin) |
+| GET | `/api/admin/login-selfie/:id` | Auth | Detalhe selfie (admin) |
+| POST | `/api/auth/change-password` | Auth | Alterar senha |
+| GET | `/api/auth/perfil` | Auth | Perfil do usuário |
+| GET | `/api/auth/perfis` | Admin | Listar perfis de acesso |
+| GET | `/api/system-settings/:key` | Auth | Ler configuração |
+| PUT | `/api/system-settings/:key` | Admin | Alterar configuração |
+
+### 13.2 Armamento (`server/routes.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/weapons` | Admin | Listar armas |
+| GET | `/api/weapons/:id` | Admin | Detalhe arma |
+| POST | `/api/weapons` | Admin | Cadastrar arma |
+| PATCH | `/api/weapons/:id` | Admin | Editar arma |
+| DELETE | `/api/weapons/:id` | Diretoria | Excluir arma |
+| GET | `/api/weapon-assignments/:weaponId` | Admin | Atribuições de arma |
+| POST | `/api/weapon-assignments` | Admin | Atribuir arma |
+| GET | `/api/weapon-kits` | Admin | Listar kits de arma |
+| GET | `/api/weapon-kits/:id` | Admin | Detalhe kit |
+| POST | `/api/weapon-kits` | Admin | Criar kit |
+| PATCH | `/api/weapon-kits/:id` | Admin | Editar kit |
+| DELETE | `/api/weapon-kits/:id` | Diretoria | Excluir kit |
+| POST | `/api/weapon-kits/send-docs` | Admin | Enviar docs do kit |
+| POST | `/api/weapons/ocr` | Admin | OCR de documento de arma |
+| POST | `/api/weapons/ocr-batch` | Admin | OCR em lote |
+| POST | `/api/weapons/batch` | Admin | Cadastro em lote |
+
+### 13.3 Veículos e Localização (`server/routes.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/vehicle-assignments/:vehicleId` | Admin | Atribuições de veículo |
+| POST | `/api/vehicle-assignments` | Admin | Atribuir veículo |
+| POST | `/api/agent/location` | Auth | Enviar localização do agente |
+| GET | `/api/agent/locations` | Admin | Posições atuais dos agentes |
+| GET | `/api/agent/locations/:userId/history` | Admin | Histórico de posições |
+
+### 13.4 Documentos e Email (`server/routes.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/company-documents` | Auth | Listar documentos da empresa |
+| POST | `/api/company-documents` | Auth | Upload documento |
+| DELETE | `/api/company-documents/:docType` | Diretoria | Excluir documento |
+| GET | `/api/homologation-logs/:clientId` | Auth | Logs de homologação |
+| GET | `/api/email-config` | Auth | Configuração de email |
+| POST | `/api/email-test` | Admin | Testar email |
+| POST | `/api/homologation/send` | Auth | Enviar homologação |
+
+### 13.5 Clientes (`server/routes/clients.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/clients` | Auth | Listar clientes |
+| GET | `/api/clients/:id` | Auth | Detalhe do cliente |
+| GET | `/api/clients/:id/contrato-pdf` | Auth | PDF do contrato |
+| POST | `/api/clients` | Auth | Cadastrar cliente |
+| PATCH | `/api/clients/:id` | Auth | Editar cliente |
+| DELETE | `/api/clients/:id` | Diretoria | Excluir cliente |
+| GET | `/api/clients/:id/vehicles` | Auth | Veículos do cliente |
+| POST | `/api/clients/:id/vehicles` | Auth | Adicionar veículo ao cliente |
+| PATCH | `/api/client-vehicles/:id` | Auth | Editar veículo do cliente |
+| DELETE | `/api/client-vehicles/:id` | Diretoria | Excluir veículo do cliente |
+| GET | `/api/clients/:id/billing-config` | Auth | Config de faturamento |
+
+### 13.6 Funcionários (`server/routes/employees.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/employees` | Auth | Listar funcionários |
+| GET | `/api/employees/next-matricula` | Auth | Próxima matrícula disponível |
+| GET | `/api/employees/:id` | Auth | Detalhe do funcionário |
+| POST | `/api/employees` | Auth | Cadastrar funcionário |
+| PATCH | `/api/employees/:id` | Auth | Editar funcionário |
+| DELETE | `/api/employees/:id` | Diretoria | Excluir funcionário |
+| GET | `/api/employees/:id/salaries` | Auth | Histórico salarial |
+| POST | `/api/employees/:id/salaries` | Auth | Adicionar salário |
+| DELETE | `/api/employee-salaries/:id` | Diretoria | Excluir salário |
+| GET | `/api/employees/:id/salary-discounts` | Admin | Descontos salariais |
+| POST | `/api/employees/:id/salary-discounts` | Admin | Adicionar desconto |
+| DELETE | `/api/salary-discounts/:id` | Diretoria | Excluir desconto |
+| GET | `/api/employees/:id/salary-summary` | Admin | Resumo salarial |
+| POST | `/api/payroll/sync-financial` | Diretoria | Sincronizar folha com financeiro |
+| POST | `/api/employees/apply-cct-kit` | Diretoria | Aplicar kit CCT |
+| GET | `/api/employees/monthly-hours` | Auth | Horas mensais |
+| GET | `/api/employees/:id/cost-detail` | Auth | Detalhe de custo |
+| GET | `/api/cpf-lookup/:cpf` | Auth | Consulta CPF |
+| POST | `/api/employees/ocr` | Admin | OCR de documento |
+| POST | `/api/employees/ocr-document` | Admin | OCR de documento avançado |
+
+### 13.7 Veículos (`server/routes/vehicles.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/vehicles` | Auth | Listar veículos |
+| GET | `/api/vehicles/:id` | Auth | Detalhe do veículo |
+| POST | `/api/vehicles` | Auth | Cadastrar veículo |
+| PATCH | `/api/vehicles/:id` | Auth | Editar veículo |
+| PATCH | `/api/vehicles/:id/km` | Auth | Atualizar KM |
+| DELETE | `/api/vehicles/:id` | Diretoria | Excluir veículo |
+
+### 13.8 Ordens de Serviço (`server/routes/service-orders.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/service-orders` | Auth | Listar OS |
+| GET | `/api/service-orders/:id` | Auth | Detalhe da OS |
+| GET | `/api/service-orders/:id/step-data` | Auth | Dados de etapa |
+| PATCH | `/api/service-orders/:id/step-adjustments` | Auth | Ajustar etapa |
+| PATCH | `/api/service-orders/:id/fuel-allocation` | Auth | Alocação combustível |
+| GET | `/api/service-orders/:id/enriched` | Auth | OS enriquecida |
+| POST | `/api/service-orders` | Auth | Criar OS |
+| PATCH | `/api/service-orders/:id` | Auth | Editar OS |
+| DELETE | `/api/service-orders/:id` | Diretoria | Excluir OS |
+| POST | `/api/service-orders/:id/send-report-email` | Auth | Enviar relatório por email |
+| POST | `/api/service-orders/:id/approve-early-start` | Auth | Aprovar início antecipado |
+| GET | `/api/service-orders/:id/pdf` | Auth | PDF da OS |
+| GET | `/api/service-orders/:id/positions` | Auth | Posições GPS da OS |
+| GET | `/api/reverse-geocode` | Auth | Geocodificação reversa |
+| POST | `/api/road-distance` | Auth | Distância rodoviária |
+| GET | `/api/boletim-medicao/os-concluidas` | Auth | OS concluídas p/ boletim |
+| POST | `/api/boletim-medicao/calcular/:osId` | Admin | Calcular medição |
+| PATCH | `/api/boletim-medicao/os/:id/diretoria-override` | Auth | Override diretoria |
+
+### 13.9 Frota (`server/routes/fleet.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/trips` | Auth | Listar viagens |
+| GET | `/api/trips/:id` | Auth | Detalhe viagem |
+| POST | `/api/trips` | Auth | Registrar viagem |
+| PATCH | `/api/trips/:id` | Auth | Editar viagem |
+| DELETE | `/api/trips/:id` | Diretoria | Excluir viagem |
+| GET | `/api/maintenance` | Auth | Listar manutenções |
+| GET | `/api/maintenance/:id` | Auth | Detalhe manutenção |
+| POST | `/api/maintenance` | Auth | Registrar manutenção |
+| PATCH | `/api/maintenance/:id` | Auth | Editar manutenção |
+| DELETE | `/api/maintenance/:id` | Diretoria | Excluir manutenção |
+| GET | `/api/fueling` | Auth | Listar abastecimentos |
+| GET | `/api/fueling/:id` | Auth | Detalhe abastecimento |
+| POST | `/api/fueling` | Auth | Registrar abastecimento |
+| PATCH | `/api/fueling/:id` | Auth | Editar abastecimento |
+| DELETE | `/api/fueling/:id` | Diretoria | Excluir abastecimento |
+| GET | `/api/timesheets` | Auth | Listar folhas de ponto |
+| GET | `/api/timesheets/:id` | Auth | Detalhe folha |
+| POST | `/api/timesheets` | Auth | Registrar ponto |
+| PATCH | `/api/timesheets/:id` | Auth | Editar ponto |
+| DELETE | `/api/timesheets/:id` | Diretoria | Excluir ponto |
+
+### 13.10 Operacional (`server/routes/operational.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/operational-grid` | Auth | Grid operacional |
+| GET | `/api/vehicle-tracking` | Auth | Rastreamento de veículos |
+| GET | `/api/truckscontrol/test` | Admin | Testar conexão TrucksControl |
+| GET | `/api/truckscontrol/debug` | Admin | Debug TrucksControl |
+| GET | `/api/truckscontrol/positions` | Admin | Posições GPS veículos |
+| GET | `/api/truckscontrol/spy` | Admin | Spy mode rastreador |
+| POST | `/api/truckscontrol/command` | Admin | Enviar comando remoto |
+| GET | `/api/gerenciadoras` | Admin | Listar gerenciadoras |
+| POST | `/api/gerenciadoras` | Admin | Cadastrar gerenciadora |
+| PATCH | `/api/gerenciadoras/:id` | Admin | Editar gerenciadora |
+| DELETE | `/api/gerenciadoras/:id` | Diretoria | Excluir gerenciadora |
+| POST | `/api/gerenciadoras/:id/mirror` | Admin | Espelhar na gerenciadora |
+| GET | `/api/telemetry/events` | Admin | Eventos de telemetria |
+| GET | `/api/telemetry/summary` | Admin | Resumo de telemetria |
+| GET | `/api/truckscontrol/espelhados` | Admin | Veículos espelhados |
+| GET | `/api/truckscontrol/espelhamentos-pendentes` | Admin | Espelhamentos pendentes |
+| POST | `/api/truckscontrol/espelhar` | Admin | Espelhar veículo |
+| POST | `/api/truckscontrol/espelhar/diagnostico` | Admin | Diagnóstico espelhamento |
+| POST | `/api/truckscontrol/espelhamento/aceitar` | Admin | Aceitar espelhamento |
+| POST | `/api/truckscontrol/espelhamento/rejeitar` | Admin | Rejeitar espelhamento |
+| POST | `/api/truckscontrol/espelhamento/cancelar` | Admin | Cancelar espelhamento |
+
+### 13.11 Missão (`server/routes/mission.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/mission/active` | Auth | Missão ativa |
+| GET | `/api/mission/scheduled` | Auth | Missões agendadas |
+| POST | `/api/mission/update` | Auth | Enviar atualização |
+| GET | `/api/service-orders/:id/updates` | Auth | Atualizações da OS |
+| GET | `/api/mission/updates` | Admin | Todas as atualizações |
+| GET | `/api/mission/updates/:id/photo` | Admin | Foto de atualização |
+| PATCH | `/api/mission/updates/mark-read` | Admin | Marcar como lida |
+| POST | `/api/mission/updates/:id/copy-audit` | Admin | Copiar para auditoria |
+| POST | `/api/mission/updates/:id/forward` | Admin | Encaminhar atualização |
+| GET | `/api/service-orders/:id/forwards` | Admin | Encaminhamentos da OS |
+| GET | `/api/mission/status/:serviceOrderId` | Auth | Status da missão |
+| GET | `/api/mission/photos/:serviceOrderId` | Auth | Fotos da missão |
+| GET | `/api/mission/photo/:id` | Auth | Foto individual |
+| POST | `/api/mission/photo` | Auth | Upload foto |
+| POST | `/api/mission/escort-data` | Auth | Dados de escolta |
+| POST | `/api/mission/start` | Auth | Iniciar missão |
+| POST | `/api/mission/rollback-step` | Admin | Voltar etapa |
+| POST | `/api/mission/cancel` | Admin | Cancelar missão |
+| POST | `/api/mission/finish` | Admin | Finalizar missão |
+| POST | `/api/mission/advance` | Auth | Avançar etapa |
+| POST | `/api/mission/base-clean` | Auth | Limpar base |
+| POST | `/api/mission/simulate-step` | Admin | Simular etapa |
+| POST | `/api/mission/nova-entrega` | Auth | Nova entrega |
+
+### 13.12 Escolta e Faturamento (`server/routes/escort.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| POST | `/api/escort/billings` | Admin | Criar boletim |
+| GET | `/api/escort/billings` | Admin | Listar boletins |
+| PUT | `/api/escort/billings/:id` | Admin | Atualizar boletim |
+| PATCH | `/api/escort/billings/:id` | Admin | Editar boletim parcial |
+| DELETE | `/api/escort/billings/:id` | Diretoria | Excluir boletim |
+| POST | `/api/escort/billings/submit-os` | Admin | Submeter OS ao boletim |
+| PATCH | `/api/escort/billings/:id/salvar` | Admin | Salvar rascunho |
+| POST | `/api/escort/billings/:id/revisar` | Admin | Enviar para revisão |
+| POST | `/api/escort/billings/:id/reabrir` | Diretoria | Reabrir boletim |
+| GET | `/api/escort/billings/pendentes` | Admin | Boletins pendentes |
+| GET | `/api/system-audit-logs` | Admin | Logs de auditoria do sistema |
+| GET | `/api/billing-alerts` | Admin | Alertas de faturamento |
+| PATCH | `/api/billing-alerts/:id/resolve` | Admin | Resolver alerta |
+| GET | `/api/escort/routes` | Auth | Listar rotas de escolta |
+| POST | `/api/escort/routes` | Admin | Criar rota |
+| PUT | `/api/escort/routes/:id` | Admin | Editar rota |
+| DELETE | `/api/escort/routes/:id` | Diretoria | Excluir rota |
+| POST | `/api/escort/billings/:id/gerar-boletim` | Admin | Gerar boletim PDF |
+| GET | `/api/financial/dashboard` | Admin | Dashboard financeiro |
+| GET | `/api/service-contracts/:id/pdf` | Admin | PDF contrato de serviço |
+| GET | `/api/escort/relatorio/:clientId` | Auth | Relatório escolta por cliente |
+| POST | `/api/audit-log` | Auth | Registrar log de auditoria |
+| GET | `/api/audit-logs` | Admin | Listar logs de auditoria |
+| GET | `/api/audit-logs/stats` | Admin | Estatísticas de auditoria |
+
+### 13.13 RH (`server/routes/hr.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/my/hr-summary` | Auth | Resumo RH do agente logado |
+| GET | `/api/employees/:id/absences` | Admin | Faltas do funcionário |
+| POST | `/api/employees/:id/absences` | Admin | Registrar falta |
+| DELETE | `/api/absences/:id` | Diretoria | Excluir falta |
+| GET | `/api/employees/:id/fines` | Admin | Multas do funcionário |
+| POST | `/api/employees/:id/fines` | Admin | Registrar multa |
+| DELETE | `/api/fines/:id` | Diretoria | Excluir multa |
+| GET | `/api/employees/:id/disciplinary` | Admin | Disciplinares |
+| POST | `/api/employees/:id/disciplinary` | Admin | Registrar disciplinar |
+| DELETE | `/api/disciplinary/:id` | Diretoria | Excluir disciplinar |
+| GET | `/api/employees/:id/timesheets` | Admin | Folhas de ponto |
+| POST | `/api/employees/:id/timesheets` | Admin | Registrar ponto |
+| GET | `/api/employees/:id/folha-ponto-excel` | Admin | Exportar ponto Excel |
+| GET | `/api/employees/:id/payslips` | Admin | Holerites do funcionário |
+| GET | `/api/payslips` | Admin | Todos os holerites |
+| GET | `/api/payslips/suggestion` | Admin | Sugestão de holerite |
+| POST | `/api/employees/:id/payslips` | Admin | Criar holerite |
+| PATCH | `/api/payslips/:id` | Admin | Editar holerite |
+| DELETE | `/api/payslips/:id` | Diretoria | Excluir holerite |
+| GET | `/api/payslips/employee-report/:id` | Admin | Relatório do funcionário |
+| POST | `/api/payslips/ocr` | Admin | OCR de holerite |
+| GET | `/api/users` | Admin | Listar usuários do sistema |
+| POST | `/api/users` | Admin | Criar usuário |
+| PATCH | `/api/users/:id` | Admin | Editar usuário |
+
+### 13.14 Mobile (`server/routes/mobile.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/mobile/ponto/today` | Auth | Ponto de hoje |
+| POST | `/api/mobile/ponto/clock` | Auth | Registrar entrada/saída |
+| GET | `/api/employees/:id/ponto-detalhado/:timesheetId` | Admin | Ponto detalhado |
+| GET | `/api/mobile/abastecimento/vehicles` | Auth | Veículos p/ abastecimento |
+| GET | `/api/mobile/abastecimento/vehicle` | Auth | Veículo atual |
+| POST | `/api/mobile/abastecimento` | Auth | Registrar abastecimento |
+| POST | `/api/mobile/pedagio-missao` | Auth | Registrar pedágio em missão |
+| POST | `/api/mobile/pedagio-vazio` | Auth | Registrar pedágio avulso |
+| GET | `/api/mobile/ocorrencias` | Auth | Minhas ocorrências |
+| POST | `/api/mobile/ocorrencias` | Auth | Registrar ocorrência |
+| GET | `/api/ocorrencias` | Admin | Todas as ocorrências |
+| PATCH | `/api/ocorrencias/:id` | Admin | Resolver ocorrência |
+| GET | `/api/mobile/oil-alert/:vehicleId` | Auth | Alerta de troca de óleo |
+| GET | `/api/reference-points` | Auth | Pontos de referência |
+| POST | `/api/reference-points` | Auth | Criar ponto |
+| PATCH | `/api/reference-points/:id` | Auth | Editar ponto |
+| DELETE | `/api/reference-points/:id` | Diretoria | Excluir ponto |
+| GET | `/api/ponto-operacional/aberto` | Auth | Ponto operacional aberto |
+| POST | `/api/ponto-operacional/entrada` | Auth | Registrar entrada operacional |
+| POST | `/api/ponto-operacional/saida` | Auth | Registrar saída operacional |
+| GET | `/api/ponto-operacional/resumo-mensal` | Auth | Resumo mensal |
+| GET | `/api/ponto-operacional/historico/:employeeId` | Auth | Histórico operacional |
+| DELETE | `/api/ponto-operacional/:id` | Auth | Excluir ponto operacional |
+
+### 13.15 Consultas Externas (`server/routes/consultas.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| POST | `/api/consulta/testar-todas` | Admin | Testar todas as APIs |
+| GET | `/api/datajud/:cnpj` | Auth | Consulta DataJud |
+| GET | `/api/plate-lookup/:plate` | Auth | Consulta placa |
+| GET | `/api/consulta/multas-prf/:placa` | Admin | Multas PRF |
+| GET | `/api/consulta/cnh/:cpf` | Admin | Consulta CNH |
+| GET | `/api/consulta/processos/:cpf` | Admin | Processos judiciais |
+| GET | `/api/consulta/spc/:document` | Admin | Consulta SPC |
+| GET | `/api/consulta/quod/:document` | Admin | Consulta QUOD |
+| GET | `/api/consulta/protesto/:document` | Admin | Consulta protestos |
+| GET | `/api/consulta/situacao-eleitoral/:cpf` | Admin | Situação eleitoral |
+| POST | `/api/consulta/emitir-nf` | Admin | Emitir nota fiscal |
+| GET | `/api/consulta/analise-risco/:document` | Admin | Análise de risco |
+| GET | `/api/api-logs` | Auth | Logs de API |
+| GET | `/api/api-logs/stats` | Auth | Estatísticas de API |
+
+### 13.16 Chat Interno (`server/routes/chat.ts`)
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET | `/api/chat/conversations` | Auth | Listar conversas |
+| POST | `/api/chat/conversations` | Auth | Criar conversa |
+| GET | `/api/chat/conversations/:id/messages` | Auth | Buscar mensagens |
+| POST | `/api/chat/conversations/:id/messages` | Auth | Enviar mensagem |
+| PATCH | `/api/chat/conversations/:id/read` | Auth | Marcar como lido |
+| POST | `/api/chat/presence` | Auth | Atualizar presença |
+| GET | `/api/chat/presence` | Auth | Consultar presença |
+| GET | `/api/chat/unread-count` | Auth | Contar não lidas |
+| GET | `/api/chat/users` | Auth | Listar usuários para chat |
+
+**Total: 210+ endpoints em 13 módulos de rota**
+
+---
+
+## 14. Tarefas Concluídas (Histórico)
 
 | # | Tarefa | Status |
 |---|---|---|
 | #1 | Corrigir permissão de localização no iOS | Concluída |
 | #2 | Rastreamento de Rota da Missão no Mapa | Concluída |
 | #3 | Validação CNV/CNH obrigatória na criação de OS | Concluída |
+| #4 | Ocultar cliente TM Segurança nos filtros | Concluída |
 | #5 | Relatório de Missão PDF — Layout Profissional | Concluída |
 | #6 | Integração Financeira Automática — Tabelas se Conversam | Concluída |
 | #7 | Alerta sonoro para atualizações dos agentes | Concluída |
+| #8 | Integração OS ↔ Financeiro ↔ DRE | Concluída |
 | #9 | Resiliência de Retry no App Mobile | Concluída |
+| #10 | Documentação Completa do Projeto | Concluída |
 
-### Correções Recentes (sem tarefa formal)
+### Correções Aplicadas (sem tarefa formal)
 - **Bug timezone RPC:** `calc_mission_elapsed_hours` retornava horas negativas. Corrigido `NOW()` para `(NOW() AT TIME ZONE 'UTC')::timestamp`
 - **Pedágio Ida e Volta:** Adicionado ao PDF do relatório de missão e coluna `pedagio_ida_volta` no banco
 - **Coordenadas da base:** Corrigido para lat -23.489, lng -46.7234, raio 800m
 
 ---
 
-## 14. Variáveis de Ambiente
+## 16. Variáveis de Ambiente
 
 | Variável | Uso |
 |---|---|
@@ -604,7 +926,7 @@ Todas as tabelas residem no Supabase PostgreSQL. Acesso via Drizzle ORM (`db.*`)
 
 ---
 
-## 15. Estrutura de Arquivos Principais
+## 17. Estrutura de Arquivos Principais
 
 ```
 client/src/

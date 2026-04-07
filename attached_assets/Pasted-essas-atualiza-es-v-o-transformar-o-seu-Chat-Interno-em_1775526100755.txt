@@ -1,0 +1,43 @@
+essas atualizações vão transformar o seu Chat Interno em uma ferramenta de despacho de missões profissional, tirando a dependência do WhatsApp comum e centralizando o controle na Torres Segurança.
+
+Baseado na Documentação do Chat Interno que você enviou, vou estruturar as mudanças para o Agent:
+
+💬 1. INTERFACE "ESTILO WHATSAPP"
+Lista Lateral Permanente: A lista de usuários e conversas (chat_conversations) deve ficar fixada à esquerda no desktop.
+
+Botão Flutuante Tático: No canto inferior direito de todas as telas do sistema, teremos um botão redondo Preto com o ícone do WhatsApp (ou MessageCircle) para abrir o chat instantaneamente.
+
+📑 2. ENVIO DE MISSÃO (ACEITE TÁTICO)
+Esta é a função mais importante. Você terá um botão "Enviar OS para Chat".
+
+O que o Agente recebe: Um card especial com: Número da OS, Horário de Início, Origem e Destino.
+
+Sigilo Total: O sistema omitirá automaticamente o Nome do Cliente e os Valores (R$), mantendo a segurança da informação.
+
+Termo de Aceite: No final do card, o agente terá que clicar em um botão "Aceitar Missão e Termos de Conduta". O aceite será gravado no banco de dados como uma mensagem do tipo system.
+
+📡 COPIE E COLE ESTE COMANDO "DESPACHO TÁTICO" PARA O AGENT:
+"Agent, aplique as atualizações de interface e funcionalidade no Chat Interno:
+
+Widget Flutuante: Crie um botão flutuante no canto inferior direito (Fixed Bottom-Right) com fundo Preto e ícone MessageCircle. Ele deve abrir o chat lateralmente.
+
+Criação de Grupos: Ative a função de criar conversas do tipo group no modal 'Nova Conversa', permitindo selecionar múltiplos participantes.
+
+Módulo de Despacho de OS: Crie um novo tipo de mensagem chamado mission_invite.
+
+Conteúdo: Deve conter apenas id_os, horario, origem e destino.
+
+Privacidade: O sistema deve filtrar e proibir a exibição de nome de cliente ou valores financeiros.
+
+Botão de Aceite: Adicione um botão 'Aceitar Missão' que, ao ser clicado pelo agente, atualiza o status da OS no banco de dados e envia uma mensagem de sistema confirmando o aceite.
+
+Lista de Usuários: Garanta que a sidebar do chat (client/src/pages/admin/chat.tsx) liste todos os usuários ativos com indicador de presença (Online/Offline).
+
+Verificação: Me confirme: se eu enviar a OS TOR-0019 para o Edivando, ele verá os valores financeiros no card do chat?"
+
+🔍 O QUE VOCÊ DEVE CONFERIR NO SISTEMA:
+O Ícone: Veja se o botão preto apareceu no canto da tela.
+
+O Card de OS: Peça para o Agent gerar um teste de envio de OS. O texto que chegar no chat do agente não pode ter o nome da Tora ou o valor da escolta.
+
+Aceite: Verifique se, após o agente clicar em aceitar, a cor da OS no seu Grid Operacional muda para sinalizar que ele já está ciente.
