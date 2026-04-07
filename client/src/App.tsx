@@ -50,6 +50,8 @@ import PontoOperacionalPage from "@/pages/admin/ponto-operacional";
 import HoleritesPage from "@/pages/admin/holerites";
 import CalculadoraJornadaPage from "@/pages/admin/calculadora-jornada";
 import JornadaDiretoriaPage from "@/pages/admin/jornada-diretoria";
+import ChatPage from "@/pages/admin/chat";
+import MobileChatPage from "@/pages/mobile/chat";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
@@ -168,6 +170,7 @@ function Router() {
       <Route path="/admin/holerites">{() => <ProtectedRoute component={HoleritesPage} />}</Route>
       <Route path="/admin/calculadora-jornada">{() => <ProtectedRoute component={CalculadoraJornadaPage} />}</Route>
       <Route path="/admin/jornada-diretoria">{() => <ProtectedRoute component={JornadaDiretoriaPage} />}</Route>
+      <Route path="/admin/chat">{() => <ProtectedRoute component={ChatPage} />}</Route>
 
       <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
       <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
@@ -180,6 +183,7 @@ function Router() {
       <Route path="/mobile/abastecimento">{() => <MobileProtectedRoute component={MobileAbastecimentoPage} />}</Route>
       <Route path="/mobile/pedagio">{() => <MobileProtectedRoute component={MobilePedagioPage} />}</Route>
       <Route path="/mobile/ocorrencia">{() => <MobileProtectedRoute component={MobileOcorrenciaPage} />}</Route>
+      <Route path="/mobile/chat">{() => <MobileProtectedRoute component={MobileChatPage} />}</Route>
       <Route path="/mobile/ponto-operacional">{() => <MobileProtectedRoute component={MobilePontoOperacionalPage} />}</Route>
       <Route path="/admin/ponto-operacional">{() => <ProtectedRoute component={PontoOperacionalPage} />}</Route>
       <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>

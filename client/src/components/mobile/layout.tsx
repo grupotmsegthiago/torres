@@ -4,7 +4,7 @@ import { useGeolocation } from "@/hooks/use-geolocation";
 import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
 import { titleCase } from "@/lib/utils";
 import { useMemo, useState, useEffect } from "react";
-import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield, CloudOff } from "lucide-react";
+import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield, CloudOff, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { subscribeQueue } from "@/lib/offlineQueue";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
@@ -12,7 +12,7 @@ import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_177247339
 const navItems = [
   { path: "/mobile", label: "Início", icon: Home },
   { path: "/mobile/missao", label: "Missão", icon: Crosshair },
-  { path: "/mobile/checklist", label: "Checklist", icon: ClipboardCheck },
+  { path: "/mobile/chat", label: "Chat", icon: MessageCircle },
   { path: "/mobile/meu-rh", label: "Meu RH", icon: FileText },
   { path: "/mobile/perfil", label: "Perfil", icon: UserCircle },
 ];

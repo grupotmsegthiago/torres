@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -69,6 +69,7 @@ const menuItems: MenuItem[] = [
       { path: "/admin/calculadora-jornada", label: "Calculadora Jornada", icon: Clock },
     ],
   },
+  { path: "/admin/chat", label: "Chat", icon: MessageCircle },
   { path: "/admin/jornada-diretoria", label: "Jornada", icon: Clock, adminOnly: true },
   { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },

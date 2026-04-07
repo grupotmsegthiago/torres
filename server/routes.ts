@@ -339,6 +339,7 @@ async function ensureSystemSettingsTable() {
   import { registerHRRoutes } from "./routes/hr";
   import { registerEscortRoutes } from "./routes/escort";
   import { registerMobileRoutes } from "./routes/mobile";
+  import { registerChatRoutes } from "./routes/chat";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -660,6 +661,7 @@ async function ensureSystemSettingsTable() {
     registerHRRoutes(app);
     registerEscortRoutes(app);
     registerMobileRoutes(app);
+    registerChatRoutes(app);
 
   
   // ===== WEAPONS =====
