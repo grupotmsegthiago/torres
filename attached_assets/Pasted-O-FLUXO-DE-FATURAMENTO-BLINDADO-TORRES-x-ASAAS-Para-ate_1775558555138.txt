@@ -1,0 +1,33 @@
+O FLUXO DE FATURAMENTO BLINDADO (TORRES x ASAAS)
+Para atender ao seu pedido, o Agent deve configurar o seguinte processo:
+
+Dados do Cliente e Fiscal: O sistema deve puxar o CNPJ/CPF e o endereço do cadastro do cliente e aplicar o CNAE 7870 (Serviços de Segurança e Vigilância).
+
+Mensagem Automática: A descrição da cobrança deve ser montada dinamicamente: "Ref. a Serviço de Escolta Armada Caracterizada - Período: [Data_Inicio] a [Data_Fim]".
+
+Emissão de NF-e: O gatilho do Asaas deve ser configurado para emitir a Nota Fiscal de Serviço (NFS-e) assim que a cobrança for gerada ou após o pagamento (conforme sua preferência).
+
+Controle de "Contas": Assim que o boleto/PIX for gerado no Asaas, o sistema deve criar um registro no seu módulo de "Faturas e Cobranças" com status PENDENTE.
+
+Baixa Automática (Webhook): Quando o cliente pagar, o Asaas avisa o seu sistema via Webhook, e o status muda sozinho para PAGO, lançando o valor líquido no seu Contas a Receber.
+
+📡 COMANDO DE CONFIGURAÇÃO ASAAS (ESTRITO):
+Mickael, use este comando para o Agent configurar a inteligência por trás dessa integração:
+
+"Agent, leia o MAPA_SISTEMA_COMPLETO.md. Vamos configurar a integração definitiva com o Asaas.
+
+Motor de Cobrança: No arquivo de integração server/lib/asaas.ts (ou similar), configure a criação de cobrança (BOLETO/PIX) para incluir:
+
+Descrição Automática: String fixa: 'Ref. a Serviço de Escolta Armada Caracterizada' + as datas de execução da OS.
+
+Módulo Fiscal: Configure o objeto infNFSe para usar o CNAE 7870 e puxar o código de serviço municipal correspondente.
+
+Sincronismo de Faturas: Ao gerar a cobrança no Asaas, salve o asaas_id e o link do boleto na nossa tabela escort_billings. O status deve ser iniciado como PENDENTE.
+
+Webhook de Baixa: Verifique a rota de Webhook (/api/webhooks/asaas). Ela deve estar pronta para receber o evento PAYMENT_RECEIVED e atualizar automaticamente a OS e a Fatura para status PAGO, registrando a data do crédito.
+
+Histórico de Cobrança: Crie um log em system_audit_logs para cada tentativa de geração de boleto, informando se houve sucesso ou erro do Asaas.
+
+Timeline: Registre no DOCUMENTACAO_CHAT_INTERNO.md a ativação do fluxo fiscal automatizado com CNAE 7870.
+
+Mande o código da função que monta a descrição e o objeto fiscal para auditoria antes de rodar."
