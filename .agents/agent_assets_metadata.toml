@@ -42,3 +42,9 @@ id = "m8-JrIsmYFwSSJnfJ1-f0"
 uri = "file://DOCUMENTACAO_COMPLETA.md"
 type = "text"
 title = "Documentação Completa - Sistema Torres Vigilância"
+
+[[outputs]]
+id = "6MtDAIeyhfWww0JOX5rn3"
+uri = "file://AUDITORIA_CHAT_SISTEMA.md"
+type = "text"
+title = "Auditoria Completa - Sistema de Chat"
