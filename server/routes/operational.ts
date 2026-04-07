@@ -70,8 +70,10 @@ import type { Express } from "express";
       const { data: allFuelRecords } = await supabaseAdmin.from("financial_transactions")
         .select("amount, description, created_at")
         .eq("origin_type", "fueling")
+        .gte("created_at", todayStr + "T00:00:00")
+        .lte("created_at", todayStr + "T23:59:59")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(200);
       if (allFuelRecords) {
         const seenPlates = new Set<string>();
         for (const fr of allFuelRecords) {
@@ -276,6 +278,9 @@ import type { Express } from "express";
             let custoPedagio = 0;
             let custoOutros = 0;
             let receitasOsGrid = 0;
+
+            const missionHasStarted = o.status !== "agendada" && o.status !== "aberta";
+
             try {
               const osMissionCosts = await storage.getMissionCostsByOS(o.id);
               for (const mc of osMissionCosts) {
@@ -286,26 +291,29 @@ import type { Express } from "express";
                 else if (cat.includes("combustível") || cat.includes("combustivel") || cat.includes("abastecimento")) custoCombustivel += amt;
                 else custoOutros += amt;
               }
-              if (custoPedagio === 0 && (o as any).pedagioEstimado) {
-                custoPedagio = Number((o as any).pedagioEstimado) || 0;
-              }
 
-              if (o.vehicleId && vehicleVazioCosts.has(o.vehicleId)) {
-                const vazioAmt = vehicleVazioCosts.get(o.vehicleId) || 0;
-                custoPedagio += vazioAmt;
-                vehicleVazioCosts.delete(o.vehicleId);
-              }
+              if (missionHasStarted) {
+                if (custoPedagio === 0 && (o as any).pedagioEstimado) {
+                  custoPedagio = Number((o as any).pedagioEstimado) || 0;
+                }
 
-              if (custoCombustivel === 0 && o.vehicleId) {
-                const oDate = toDateBRT(o.scheduledDate);
-                const vPlate = vehicle?.plate?.toUpperCase() || "";
-                if (vPlate) {
-                  const fuelKey = `${vPlate}:${oDate}`;
-                  const firstOsForFuel = vehicleFuelFirstOS.get(fuelKey);
-                  if (firstOsForFuel !== o.id) {
-                    custoCombustivel = 0;
-                  } else {
-                    custoCombustivel = vehicleFuelCache.get(vPlate) || 0;
+                if (o.vehicleId && vehicleVazioCosts.has(o.vehicleId)) {
+                  const vazioAmt = vehicleVazioCosts.get(o.vehicleId) || 0;
+                  custoPedagio += vazioAmt;
+                  vehicleVazioCosts.delete(o.vehicleId);
+                }
+
+                if (custoCombustivel === 0 && o.vehicleId) {
+                  const oDate = toDateBRT(o.scheduledDate);
+                  const vPlate = vehicle?.plate?.toUpperCase() || "";
+                  if (vPlate) {
+                    const fuelKey = `${vPlate}:${oDate}`;
+                    const firstOsForFuel = vehicleFuelFirstOS.get(fuelKey);
+                    if (firstOsForFuel !== o.id) {
+                      custoCombustivel = 0;
+                    } else {
+                      custoCombustivel = vehicleFuelCache.get(vPlate) || 0;
+                    }
                   }
                 }
               }

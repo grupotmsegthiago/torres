@@ -457,10 +457,17 @@ function getTransitStatus(missionStatus: string | null): string {
   }
 }
 
+function ensureUTC(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const s = String(ts);
+  if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+  return s + "Z";
+}
+
 function getHoursUntilMission(scheduledDate: string | null | undefined): number | null {
   if (!scheduledDate) return null;
   const now = new Date();
-  const scheduled = new Date(scheduledDate);
+  const scheduled = new Date(ensureUTC(scheduledDate)!);
   return (scheduled.getTime() - now.getTime()) / (1000 * 60 * 60);
 }
 
@@ -3814,7 +3821,7 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
               {o.scheduledDate && (
                 <p className="text-xs text-neutral-400">
                   <CalendarClock className="w-3 h-3 inline mr-1" />
-                  {new Date(o.scheduledDate).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  {new Date(ensureUTC(o.scheduledDate)!).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                 </p>
               )}
             </div>
@@ -5476,7 +5483,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {v.activeOs.scheduledDate && (
                               <span className="ml-1 text-[10px] text-neutral-400">
                                 · {(() => {
-                                  const sd = new Date(v.activeOs.scheduledDate);
+                                  const sd = new Date(ensureUTC(v.activeOs.scheduledDate)!);
                                   const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                   const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                   const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -5541,7 +5548,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
-                                        const hora = (g.missionStartedAt || g.scheduledDate) ? new Date((g.missionStartedAt || g.scheduledDate)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                                        const hora = (g.missionStartedAt || g.scheduledDate) ? new Date(ensureUTC(g.missionStartedAt || g.scheduledDate)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
                                         const he = g.liveCost?.fat_hora_extra || 0;
                                         const ke = g.liveCost?.fat_km_extra || 0;
                                         const heHours = g.liveCost?.horas_excedentes || 0;
@@ -5667,7 +5674,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {(() => {
                                 const dateRef = v.activeOs.missionStartedAt || v.activeOs.scheduledDate;
                                 if (!dateRef) return "";
-                                const sd = new Date(dateRef);
+                                const sd = new Date(ensureUTC(dateRef)!);
                                 const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -5689,7 +5696,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           </div>
                           {v.scheduledOs.scheduledDate && (
                             <p className="text-xs text-neutral-500 font-medium">
-                              {new Date(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                              {new Date(ensureUTC(v.scheduledOs.scheduledDate)!).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                             </p>
                           )}
                         </div>
@@ -5806,11 +5813,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
             });
           }
         }
-        allNext.sort((a, b) => new Date(a.os.scheduledDate).getTime() - new Date(b.os.scheduledDate).getTime());
+        allNext.sort((a, b) => new Date(ensureUTC(a.os.scheduledDate)!).getTime() - new Date(ensureUTC(b.os.scheduledDate)!).getTime());
         if (allNext.length === 0) return null;
 
         const nextOs = allNext[0];
-        const nextDt = nextOs.os.scheduledDate ? new Date(nextOs.os.scheduledDate) : null;
+        const nextDt = nextOs.os.scheduledDate ? new Date(ensureUTC(nextOs.os.scheduledDate)!) : null;
         const nextDiff = nextDt ? nextDt.getTime() - Date.now() : 0;
         const nextIsPast = nextDiff < 0;
         const nextIsUrgent = nextDiff > 0 && nextDiff < 3600000;
@@ -5887,7 +5894,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
               });
             }
           }
-          allNext.sort((a, b) => new Date(a.os.scheduledDate).getTime() - new Date(b.os.scheduledDate).getTime());
+          allNext.sort((a, b) => new Date(ensureUTC(a.os.scheduledDate)!).getTime() - new Date(ensureUTC(b.os.scheduledDate)!).getTime());
 
           if (allNext.length === 0) return <p className="text-sm text-neutral-400 text-center py-6">Nenhum agendamento pendente</p>;
 
@@ -5895,7 +5902,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
             <div className="space-y-3">
               {allNext.map((item, idx) => {
                 const { os, veh } = item;
-                const scheduledDt = os.scheduledDate ? new Date(os.scheduledDate) : null;
+                const scheduledDt = os.scheduledDate ? new Date(ensureUTC(os.scheduledDate)!) : null;
                 const diff = scheduledDt ? scheduledDt.getTime() - Date.now() : 0;
                 const isPast = diff < 0;
                 const isUrgent = diff > 0 && diff < 3600000;
@@ -6007,7 +6014,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       <DialogContent className="max-w-md">
         {nextOsDetail && (() => {
           const { os, vehicle: veh } = nextOsDetail;
-          const scheduledDt = os.scheduledDate ? new Date(os.scheduledDate) : null;
+          const scheduledDt = os.scheduledDate ? new Date(ensureUTC(os.scheduledDate)!) : null;
           const timeUntil = scheduledDt ? (() => {
             const diff = scheduledDt.getTime() - Date.now();
             if (diff < 0) return "Já passou";
