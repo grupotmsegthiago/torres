@@ -1572,9 +1572,36 @@ Todo o sistema já usa `timeZone: "America/Sao_Paulo"` em todas as formatações
 - **Nunca** usar `new Date()` em colunas timestamp
 
 ---
+
+### [07/04/2026 19:40 BRT] LAUDO COMPARATIVO TOR-0022 / TOR-0023 / TOR-0024
+
+**Causa raiz encontrada:** Função SQL `calc_mission_elapsed_hours` usava `NOW() AT TIME ZONE 'UTC'` (UTC 22:xx) e subtraía de `mission_started_at` (BRT 19:xx), gerando diferença FANTASMA de +3h.
+
+**Impactos do bug antes da correção:**
+
+| OS | started (BRT) | RPC retornava (errado) | RPC correto | Badge "há X" | HE badge |
+|-----|--------|---------|--------|---------|---------|
+| TOR-0022 | 19:30 | 3.0h | 0.15h | "há 3h" ❌ | Não (3h = franquia) |
+| TOR-0023 | 19:00 | 3.5h | 0.65h | "há 3h11" ❌ | Sim (3.5h > 3h) ❌ |
+| TOR-0024 | 19:00 | 3.5h | 0.65h | Variável | Sim/Não (timing) |
+
+**Valor R$ 571,59 da TOR-0023:** era cálculo antigo do `calcularFaturamentoLive()` usando horas infladas (3.5h → fat_hora_extra R$55,06 sobre acionamento R$480). O valor correto com 0.65h é R$480 (acionamento puro, sem hora extra).
+
+**Correções aplicadas:**
+
+1. **RPC `calc_mission_elapsed_hours`** — `(NOW() AT TIME ZONE 'UTC')` → `(NOW() AT TIME ZONE 'America/Sao_Paulo')`. Agora compara BRT com BRT.
+
+2. **Parsing de datas no grid** — `new Date(o.missionStartedAt)` → `parseBRT()` que adiciona `-03:00` a strings sem timezone (vindas do Supabase).
+
+3. **Recálculo billing:** horas_missao, fat_hora_extra, fat_total, resultado corrigidos para os 3 orders.
+
+**GPS / last_position_time:** Todos os 3 veículos (IDs 5, 8, 9) têm `last_km_update` similar (~17:37 BRT). A TOR-0023 NÃO tem travamento de GPS exclusivo — o "há 3h11" era 100% erro do type parser (BRT interpretado como UTC).
+
+---
 **Laudo gerado em:** 07/04/2026 18:52 BRT  
 **Laudo saneamento matemático:** 07/04/2026 19:05 BRT  
 **Laudo relógio central:** 07/04/2026 19:08 BRT  
 **Laudo fix timezone writes:** 07/04/2026 19:30 BRT  
+**Laudo comparativo TOR-22/23/24:** 07/04/2026 19:40 BRT  
 **Para auditoria de:** Mickael  
 **Validado por:** Agent AI

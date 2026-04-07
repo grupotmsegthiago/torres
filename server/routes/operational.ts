@@ -224,8 +224,9 @@ import type { Express } from "express";
             const kmInicial = kmChegadaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
 
-            const missionStartDate = o.missionStartedAt ? new Date(o.missionStartedAt as string) : null;
-            const missionEndDate = o.completedDate ? new Date(o.completedDate) : null;
+            const parseBRT = (v: any) => { const s = String(v); return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "-03:00"); };
+            const missionStartDate = o.missionStartedAt ? parseBRT(o.missionStartedAt) : null;
+            const missionEndDate = o.completedDate ? parseBRT(o.completedDate) : null;
             const nowDate = new Date();
 
             const startTime = missionStartDate ? missionStartDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : undefined;

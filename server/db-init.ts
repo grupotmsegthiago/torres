@@ -755,7 +755,7 @@ export async function ensureCalcMissionRPC() {
       RETURNS numeric AS $$
         SELECT COALESCE(
           EXTRACT(EPOCH FROM (
-            COALESCE(completed_date, (NOW() AT TIME ZONE 'UTC')::timestamp) - mission_started_at
+            COALESCE(completed_date, (NOW() AT TIME ZONE 'America/Sao_Paulo')::timestamp) - mission_started_at
           )) / 3600.0,
           0
         )
