@@ -730,3 +730,28 @@ OS Aprovada → Boletim de Medição → "Gerar Fatura"
 ```
 
 **Status:** Implementado. Servidor reiniciado sem erros. Aguardando ASAAS_API_KEY para ativação em produção.
+
+---
+
+#### 07/04/2026 — 10:50 BRT | Correção Botão "Gerar Fatura" + Padronização Nomenclatura Serviço
+
+**Problema 1 — Botão "Gerar Fatura" desaparecido:**
+O botão estava condicionado a `approvedBillings.length > 0`, fazendo com que sumisse quando não havia billings com status "APROVADA" no período. Para meses retroativos ou operações pendentes, o admin não conseguia gerar a fatura.
+
+**Correção:** Removida a condicional `{approvedBillings.length > 0 && ...}`. O botão agora está sempre visível quando o relatório é gerado. O contador mostra `(N)` somente quando há aprovadas, caso contrário fica sem número.
+
+**Problema 2 — Texto do cabeçalho incorreto:**
+O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS" — texto genérico que não corresponde ao serviço prestado pela Torres.
+
+**Correção:** Alterado para **"REFERENTE AO SERVIÇO DE ESCOLTA ARMADA"** em 3 locais:
+- `relatorio-faturamento.tsx` linha 421 (export Excel)
+- `relatorio-faturamento.tsx` linha 670 (cabeçalho visual HTML)
+- `server/asaas.ts` linha 14 (`DESCRICAO_SERVICO_FIXA = "Ref. ao Serviço de Escolta Armada"`)
+
+**Sincronismo Fiscal Confirmado:**
+- Boletim HTML: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — MARÇO/2026`
+- Export Excel: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA`
+- Asaas cobrança: `Ref. ao Serviço de Escolta Armada - Período: 01/03/2026 a 31/03/2026`
+- Os três pontos usam a mesma nomenclatura: **Escolta Armada**.
+
+**Status:** Corrigido. Servidor reiniciado sem erros.

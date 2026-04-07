@@ -415,7 +415,7 @@ export default function RelatorioFaturamentoPage() {
     const headerSub = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA", "KM EXTRA", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "INICIAL", "FINAL", "TOTAL", "INICIAL", "FINAL", "TOTAL", "KM", "VALOR", "TOTAL", "HORA", "VALOR", "TOTAL", "PEDÁGIO", "TOTAL"];
     const titleRow = ["BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL"];
     const periodRow = [getPeriodLabel()];
-    const subtitleRow = ["REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS"];
+    const subtitleRow = ["REFERENTE AO SERVIÇO DE ESCOLTA ARMADA"];
     const dataRows = rowsData.map(r => [
       r.id, r.route, fmt(r.activationFee), r.franchiseHoursFmt, r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "-", fmt(r.unitHr), fmt(r.unitKm),
       r.startDate, r.startTime, r.viatura, r.cargoPlate, r.endDate, r.endTime,
@@ -520,11 +520,9 @@ export default function RelatorioFaturamentoPage() {
                   <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-print-pdf">
                     <Printer size={18} /> PDF
                   </button>
-                  {approvedBillings.length > 0 && (
-                    <button onClick={openFaturaDialog} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-gerar-fatura">
-                      <Receipt size={18} /> Gerar Fatura ({approvedBillings.length})
-                    </button>
-                  )}
+                  <button onClick={openFaturaDialog} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-gerar-fatura">
+                    <Receipt size={18} /> Gerar Fatura {approvedBillings.length > 0 ? `(${approvedBillings.length})` : ""}
+                  </button>
                 </>
               )}
             </div>
@@ -666,7 +664,7 @@ export default function RelatorioFaturamentoPage() {
             <h1 style={{ fontSize: "18px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", color: "#111", margin: 0 }}>TORRES — SERVIÇOS TÁTICOS</h1>
             <p className="subtitle-line" style={{ fontSize: "14px", fontWeight: 700, textTransform: "uppercase", color: "#374151", margin: "4px 0 2px" }}>BOLETIM DE MEDIÇÃO — {displayClientName}</p>
             <p className="ref-line" style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "#6b7280", margin: 0 }}>
-              REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS — {getPeriodLabel()}
+              REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — {getPeriodLabel()}
             </p>
           </div>
 
