@@ -52,6 +52,8 @@ const OpNotifContext = createContext<OpNotifContextType>({
   updateNotification: () => {},
 });
 
+const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 function useOpNotifications() {
   return useContext(OpNotifContext);
 }
@@ -341,6 +343,7 @@ interface GridItem {
     custo_total: number;
     resultado: number;
     margem_pct: number;
+    frozen?: boolean;
     fuel_allocated: boolean;
     fuel_allocated_hint: string | null;
     contrato_nome: string | null;
@@ -484,10 +487,25 @@ function getRouteProgress(opts: {
   destLat?: number | null; destLng?: number | null;
   currentLat?: number | null; currentLng?: number | null;
   missionStatus?: string | null;
-}): { pct: number; distTotalKm: number; distRemainingKm: number; distTravelledKm: number } | null {
-  const { originLat, originLng, destLat, destLng, currentLat, currentLng, missionStatus } = opts;
+  vehicleId?: number | string | null;
+  lastPositionTime?: string | null;
+}): { pct: number; distTotalKm: number; distRemainingKm: number; distTravelledKm: number; gpsStale?: boolean } | null {
+  const { originLat, originLng, destLat, destLng, missionStatus, vehicleId, lastPositionTime } = opts;
   if (!destLat || !destLng) return null;
-  if (!currentLat || !currentLng) return null;
+
+  let effectiveLat = opts.currentLat;
+  let effectiveLng = opts.currentLng;
+  let gpsStale = false;
+
+  if (vehicleId) {
+    const validPos = getValidGpsPosition(vehicleId, opts.currentLat, opts.currentLng, lastPositionTime);
+    if (!validPos) return null;
+    effectiveLat = validPos.lat;
+    effectiveLng = validPos.lng;
+    gpsStale = validPos.isStale;
+  } else {
+    if (!effectiveLat || !effectiveLng) return null;
+  }
 
   const isTransit = missionStatus === "em_transito_destino" || missionStatus === "em_transito_origem";
   const isFinished = missionStatus === "chegada_destino" || missionStatus === "checkout_km_final" || missionStatus === "checkout_viatura_retorno" || missionStatus === "finalizada" || missionStatus === "retorno_base" || missionStatus === "chegada_base" || missionStatus === "encerrada";
@@ -498,22 +516,22 @@ function getRouteProgress(opts: {
     const totalDist = haversineKm(originLat!, originLng!, destLat, destLng) * 1.3;
     if (totalDist < 1) return null;
 
-    if (isFinished) return { pct: 100, distTotalKm: totalDist, distRemainingKm: 0, distTravelledKm: totalDist };
+    if (isFinished) return { pct: 100, distTotalKm: totalDist, distRemainingKm: 0, distTravelledKm: totalDist, gpsStale };
 
-    const distFromOrigin = haversineKm(originLat!, originLng!, currentLat, currentLng) * 1.3;
-    const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
+    const distFromOrigin = haversineKm(originLat!, originLng!, effectiveLat!, effectiveLng!) * 1.3;
+    const distToDest = haversineKm(effectiveLat!, effectiveLng!, destLat, destLng) * 1.3;
 
     if (!isTransit) {
-      if (distFromOrigin < 5) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0 };
+      if (distFromOrigin < 5) return { pct: 0, distTotalKm: totalDist, distRemainingKm: totalDist, distTravelledKm: 0, gpsStale };
     }
 
     const pct = Math.min(100, Math.max(0, Math.round((1 - distToDest / totalDist) * 100)));
-    return { pct, distTotalKm: totalDist, distRemainingKm: distToDest, distTravelledKm: distFromOrigin };
+    return { pct, distTotalKm: totalDist, distRemainingKm: distToDest, distTravelledKm: distFromOrigin, gpsStale };
   }
 
-  const distToDest = haversineKm(currentLat, currentLng, destLat, destLng) * 1.3;
-  if (isFinished) return { pct: 100, distTotalKm: distToDest, distRemainingKm: 0, distTravelledKm: distToDest };
-  return { pct: 0, distTotalKm: 0, distRemainingKm: distToDest, distTravelledKm: 0 };
+  const distToDest = haversineKm(effectiveLat!, effectiveLng!, destLat, destLng) * 1.3;
+  if (isFinished) return { pct: 100, distTotalKm: distToDest, distRemainingKm: 0, distTravelledKm: distToDest, gpsStale };
+  return { pct: 0, distTotalKm: 0, distRemainingKm: distToDest, distTravelledKm: 0, gpsStale };
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -809,6 +827,33 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+const GPS_STALE_MINUTES = 5;
+const _lastValidGpsCache: Record<string, { lat: number; lng: number; km: number }> = {};
+
+function getValidGpsPosition(
+  vehicleId: string | number,
+  currentLat: number | null | undefined,
+  currentLng: number | null | undefined,
+  lastPositionTime: string | null | undefined,
+): { lat: number; lng: number; isStale: boolean } | null {
+  const key = String(vehicleId);
+  if (!currentLat || !currentLng) return _lastValidGpsCache[key] ? { ..._lastValidGpsCache[key], isStale: true } : null;
+
+  let isStale = false;
+  if (lastPositionTime) {
+    const parsed = parseUTCDate(lastPositionTime).getTime();
+    const diffMin = (Date.now() - parsed) / 60000;
+    isStale = diffMin > GPS_STALE_MINUTES;
+  }
+
+  if (isStale && _lastValidGpsCache[key]) {
+    return { lat: _lastValidGpsCache[key].lat, lng: _lastValidGpsCache[key].lng, isStale: true };
+  }
+
+  _lastValidGpsCache[key] = { lat: currentLat, lng: currentLng, km: 0 };
+  return { lat: currentLat, lng: currentLng, isStale: false };
+}
+
 function calcEta(distKm: number, speedKmh: number | null | undefined): string {
   const AVG_HIGHWAY_SPEED = 65;
   const avgSpeed = (speedKmh && speedKmh > 30 && speedKmh < 130) ? Math.min(speedKmh, 100) : AVG_HIGHWAY_SPEED;
@@ -913,6 +958,8 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     destLat: os.destinationLat, destLng: os.destinationLng,
     currentLat: lat ? Number(lat) : null, currentLng: lng ? Number(lng) : null,
     missionStatus: os.missionStatus,
+    vehicleId: v.id,
+    lastPositionTime: v.tracker?.lastPositionTime,
   });
   const progress = routeP ? String(routeP.pct) : String(getMissionProgress(os.missionStatus));
 
@@ -4612,8 +4659,6 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
     enabled: open && !!osId,
   });
 
-  const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
   const lc = liveCost;
   const n = (v: any) => Number(v) || 0;
   const totalReceita = lc ? n(lc.faturamento) : n(data?.totals?.totalRevenue);
@@ -5506,11 +5551,10 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
                             const totPed = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
                             const totOutros = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
-                            const totCusto = totPag + totComb + totPed + totOutros;
-                            const totResult = totFat - totCusto;
+                            const totCusto = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_total || 0), 0);
+                            const totResult = vtrWithCost.reduce((s, g) => s + (g.liveCost?.resultado || 0), 0);
                             const META_VTR = 1800;
                             const metaBatida = totFat >= META_VTR;
-                            const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
                             const statusLabel = (g2: GridItem) => {
                               const s = g2.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                               const ms = g2.missionStatus;
@@ -5658,6 +5702,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               destLat: v.activeOs.destinationLat, destLng: v.activeOs.destinationLng,
                               currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
                               missionStatus: ms,
+                              vehicleId: v.id,
+                              lastPositionTime: v.tracker?.lastPositionTime,
                             });
                             if (rp && rp.distTotalKm > 0) {
                               return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} compact /></div>;
@@ -6999,6 +7045,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
               destLat: matchedVehicle?.activeOs?.destinationLat, destLng: matchedVehicle?.activeOs?.destinationLng,
               currentLat: lat ? Number(lat) : null, currentLng: lng ? Number(lng) : null,
               missionStatus: os?.missionStatus,
+              vehicleId: matchedVehicle?.id,
+              lastPositionTime: matchedVehicle?.tracker?.lastPositionTime,
             });
             const progress = routeP ? routeP.pct : getMissionProgress(os?.missionStatus);
             const fmtDistKm = (km: number) => km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
@@ -7567,8 +7615,6 @@ function CostDetailModal({ empId, onClose }: { empId: number; onClose: () => voi
     enabled: !!empId,
   });
 
-  const BRL = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
-
   return (
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-w-lg bg-white">
@@ -7599,36 +7645,36 @@ function CostDetailModal({ empId, onClose }: { empId: number; onClose: () => voi
             <div className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Remuneração</div>
               <div className="divide-y divide-neutral-100">
-                <div className="flex justify-between px-3 py-1.5"><span>Salário Base</span><span className="font-semibold">{BRL(data.breakdown.salarioBase)}</span></div>
-                <div className="flex justify-between px-3 py-1.5"><span>Periculosidade (30%)</span><span className="font-semibold">{BRL(data.breakdown.periculosidade)}</span></div>
-                <div className="flex justify-between px-3 py-1.5"><span>Salário + Periculosidade</span><span className="font-bold">{BRL(data.breakdown.salarioComPeric)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Salário Base</span><span className="font-semibold">{fmtBRL(data.breakdown.salarioBase)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Periculosidade (30%)</span><span className="font-semibold">{fmtBRL(data.breakdown.periculosidade)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Salário + Periculosidade</span><span className="font-bold">{fmtBRL(data.breakdown.salarioComPeric)}</span></div>
                 {data.breakdown.horasExtras > 0 && (
                   <>
-                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>Horas Extras ({data.breakdown.horasExtras}h × R$22,99)</span><span className="font-semibold text-amber-700">{BRL(data.breakdown.custoHorasExtras)}</span></div>
-                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>DSR sobre HE (1/6)</span><span className="font-semibold text-amber-700">{BRL(data.breakdown.dsrHorasExtras)}</span></div>
+                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>Horas Extras ({data.breakdown.horasExtras}h × R$22,99)</span><span className="font-semibold text-amber-700">{fmtBRL(data.breakdown.custoHorasExtras)}</span></div>
+                    <div className="flex justify-between px-3 py-1.5 bg-amber-50"><span>DSR sobre HE (1/6)</span><span className="font-semibold text-amber-700">{fmtBRL(data.breakdown.dsrHorasExtras)}</span></div>
                   </>
                 )}
-                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Subtotal Remuneração</span><span>{BRL(data.breakdown.subtotalRemuneracao)}</span></div>
+                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Subtotal Remuneração</span><span>{fmtBRL(data.breakdown.subtotalRemuneracao)}</span></div>
               </div>
             </div>
 
             <div className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Encargos Sociais ({data.breakdown.encargosSociaisPct}%)</div>
-              <div className="flex justify-between px-3 py-1.5"><span>FGTS + INSS + Férias + 13º + Provisões</span><span className="font-semibold">{BRL(data.breakdown.encargos)}</span></div>
+              <div className="flex justify-between px-3 py-1.5"><span>FGTS + INSS + Férias + 13º + Provisões</span><span className="font-semibold">{fmtBRL(data.breakdown.encargos)}</span></div>
             </div>
 
             <div className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="bg-neutral-50 px-3 py-1.5 font-bold text-neutral-600 uppercase tracking-wider text-[10px]">Benefícios</div>
               <div className="divide-y divide-neutral-100">
-                <div className="flex justify-between px-3 py-1.5"><span>Vale Refeição (22d × R$40,00)</span><span className="font-semibold">{BRL(data.breakdown.valeRefeicao)}</span></div>
-                <div className="flex justify-between px-3 py-1.5"><span>Cesta Básica</span><span className="font-semibold">{BRL(data.breakdown.cestaBasica)}</span></div>
-                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Total Benefícios</span><span>{BRL(data.breakdown.totalBeneficios)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Vale Refeição (22d × R$40,00)</span><span className="font-semibold">{fmtBRL(data.breakdown.valeRefeicao)}</span></div>
+                <div className="flex justify-between px-3 py-1.5"><span>Cesta Básica</span><span className="font-semibold">{fmtBRL(data.breakdown.cestaBasica)}</span></div>
+                <div className="flex justify-between px-3 py-1.5 font-bold bg-neutral-50"><span>Total Benefícios</span><span>{fmtBRL(data.breakdown.totalBeneficios)}</span></div>
               </div>
             </div>
 
             <div className="bg-neutral-900 text-white rounded-lg px-3 py-3 flex justify-between items-center">
               <span className="font-bold text-sm">CUSTO TOTAL EMPRESA</span>
-              <span className="text-xl font-bold">{BRL(data.breakdown.custoTotal)}</span>
+              <span className="text-xl font-bold">{fmtBRL(data.breakdown.custoTotal)}</span>
             </div>
 
             {data.missionDetails.length > 0 && (

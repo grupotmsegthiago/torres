@@ -1481,6 +1481,48 @@ Campos de bloqueio/punição são ocultados de não-diretores.
 | `server/routes/consultas.ts` | +`requireAdmin` em api-logs (3 endpoints) |
 
 ---
+
+## SANEAMENTO MATEMÁTICO — Grid Operacional (07/04/2026 19:05 BRT)
+
+### 1. Badges Financeiros → Leitura direta do banco (DB-first)
+
+**ANTES:** `totCusto` e `totResult` eram recalculados no frontend somando componentes individuais (`totPag + totComb + totPed + totOutros`), podendo divergir dos valores congelados pelo backend.
+
+**DEPOIS:** Ambos leem diretamente do `liveCost` que já vem do servidor:
+- `totFat` → `liveCost.faturamento` (soma do servidor, frozen ou live)
+- `totCusto` → `liveCost.custo_total` (valor congelado no banco ou calculado no servidor)
+- `totResult` → `liveCost.resultado` (lucro calculado/congelado no servidor)
+
+Os subtotais `totPag`, `totComb`, `totPed`, `totOutros` continuam existindo **apenas para o tooltip de detalhamento**, não influenciam os badges principais.
+
+### 2. Trava GPS (Stale Signal Filter)
+
+Nova função `getValidGpsPosition()`:
+- Constante `GPS_STALE_MINUTES = 5`
+- Se o último sinal GPS tem mais de 5 minutos, mantém a última posição válida em cache (`_lastValidGpsCache`)
+- `getRouteProgress()` agora aceita `vehicleId` e `lastPositionTime` e usa `getValidGpsPosition()` para filtrar sinais ruins
+- Retorno inclui flag `gpsStale: boolean` para indicação visual futura
+
+### 3. Sincronização Real-Time
+
+O fluxo está completo:
+- Tabela `service_orders` → Supabase Realtime → `_invalidateLocal("service-order")` → invalida `operationalGrid` + `vehicleTracking`
+- Tabelas `mission_costs`, `escort_billings`, `mission_updates` → todos invalidam `operationalGrid`
+- GPS (TrucksControl API) → refetch automático a cada 30s (`REFRESH_INTERVAL_MS`)
+
+### 4. Formatação Uniforme (fmtBRL)
+
+- Função `fmtBRL()` promovida a **global** (linha 58), usando `toLocaleString("pt-BR", { style: "currency", currency: "BRL" })`
+- 3 definições locais duplicadas removidas (DRE modal, grid badges, custo empregado)
+- Todos os badges financeiros agora usam a mesma formatação
+
+### Arquivos Alterados
+| Arquivo | Alteração |
+|---------|-----------|
+| `client/src/pages/admin/operational-grid.tsx` | Badges DB-first, GPS stale filter, fmtBRL global |
+
+---
 **Laudo gerado em:** 07/04/2026 18:52 BRT  
+**Laudo saneamento matemático:** 07/04/2026 19:05 BRT  
 **Para auditoria de:** Mickael  
 **Validado por:** Agent AI
