@@ -1,11 +1,18 @@
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
-import { authFetch } from "@/lib/queryClient";
+import { authFetch, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
-  Calculator, Calendar, Pencil, Save, X, Check,
+  Calculator, Calendar, Pencil, Save, X, Check, Receipt, Banknote,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import * as XLSX from "xlsx";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 
@@ -32,6 +39,7 @@ const extractCity = (addr: string) => {
 };
 
 export default function RelatorioFaturamentoPage() {
+  const { toast } = useToast();
   const [selectedClient, setSelectedClient] = useState("");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date(); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-01`;
@@ -50,6 +58,13 @@ export default function RelatorioFaturamentoPage() {
   const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [savingEdit, setSavingEdit] = useState(false);
+  const [faturaDialog, setFaturaDialog] = useState(false);
+  const [faturaBillingType, setFaturaBillingType] = useState("BOLETO");
+  const [faturaDueDate, setFaturaDueDate] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
+    return d.toISOString().split("T")[0];
+  });
+  const [faturaSendAsaas, setFaturaSendAsaas] = useState(false);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -60,6 +75,36 @@ export default function RelatorioFaturamentoPage() {
     queryKey: ["/api/escort/contracts"],
     queryFn: async () => { const r = await authFetch("/api/escort/contracts"); return r.json(); },
   });
+
+  const approvedBillings = useMemo(() => billings.filter(b => b.status === "APROVADA"), [billings]);
+  const approvedTotal = useMemo(() => approvedBillings.reduce((acc, b) => {
+    return acc + Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+  }, 0), [approvedBillings]);
+
+  const gerarFaturaMutation = useMutation({
+    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string }) => {
+      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate });
+    },
+    onSuccess: async (response: any) => {
+      const data = await response.json?.() || response;
+      const count = data?.missionsCount || 0;
+      const val = data?.totalValue ? fmt(data.totalValue) : "";
+      toast({ title: "Fatura Gerada!", description: `${count} missão(ões) consolidada(s). ${val}` });
+      setFaturaDialog(false);
+      invalidateRelatedQueries("billing");
+      handleGenerate();
+    },
+    onError: (err: Error) => toast({ title: "Erro ao gerar fatura", description: err.message, variant: "destructive" }),
+  });
+
+  const openFaturaDialog = () => {
+    const clientData = clients.find((c: any) => c.id.toString() === selectedClient);
+    const ptDays = Number(clientData?.payment_terms_days) || 15;
+    const suggestedDate = new Date();
+    suggestedDate.setDate(suggestedDate.getDate() + ptDays);
+    setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
+    setFaturaDialog(true);
+  };
 
   const handleSetMonth = (v: string) => {
     setSelectedMonth(v);
@@ -474,6 +519,11 @@ export default function RelatorioFaturamentoPage() {
                   <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-print-pdf">
                     <Printer size={18} /> PDF
                   </button>
+                  {approvedBillings.length > 0 && (
+                    <button onClick={openFaturaDialog} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-gerar-fatura">
+                      <Receipt size={18} /> Gerar Fatura ({approvedBillings.length})
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -484,6 +534,28 @@ export default function RelatorioFaturamentoPage() {
       {reportGenerated && rowsData.length === 0 && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 mt-4 text-center" data-testid="text-no-results">
           <p className="text-gray-400 font-bold">Nenhum boletim aprovado encontrado para o período selecionado.</p>
+        </div>
+      )}
+
+      {reportGenerated && approvedBillings.length > 0 && (
+        <div className="mt-4 no-print bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between" data-testid="banner-fatura-aprovadas">
+          <div className="flex items-center gap-3">
+            <Receipt size={20} className="text-indigo-600" />
+            <div>
+              <p className="text-sm font-bold text-indigo-900">
+                💰 {approvedBillings.length} mediç{approvedBillings.length > 1 ? "ões" : "ão"} aprovada{approvedBillings.length > 1 ? "s" : ""} — {fmt(approvedTotal)}
+              </p>
+              <p className="text-xs text-indigo-600">Pronta{approvedBillings.length > 1 ? "s" : ""} para geração de fatura</p>
+            </div>
+          </div>
+          <button
+            onClick={openFaturaDialog}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-colors"
+            data-testid="btn-gerar-fatura-banner"
+          >
+            <Banknote size={18} />
+            Gerar Fatura
+          </button>
         </div>
       )}
 
@@ -696,6 +768,73 @@ export default function RelatorioFaturamentoPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={faturaDialog} onOpenChange={setFaturaDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase">
+              <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura Consolidada
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Consolidar todas as OS aprovadas de <strong>{displayClientName}</strong> no período selecionado em uma única fatura.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
+              <p className="text-xs font-bold text-indigo-900 uppercase">{displayClientName}</p>
+              <p className="text-xs text-indigo-700"><strong>{approvedBillings.length}</strong> missão(ões) aprovada(s)</p>
+              <p className="text-xs text-indigo-500">Período: {fmtDateDisp(startDate)} a {fmtDateDisp(endDate)}</p>
+              <p className="text-lg font-black font-mono text-indigo-800">{fmt(approvedTotal)}</p>
+            </div>
+            <div>
+              <Label className="text-xs font-bold uppercase">Data de Vencimento</Label>
+              <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1" data-testid="input-fatura-due-date" />
+            </div>
+            <div>
+              <Label className="text-xs font-bold uppercase">Tipo de Cobrança</Label>
+              <Select value={faturaBillingType} onValueChange={setFaturaBillingType}>
+                <SelectTrigger className="mt-1" data-testid="select-fatura-billing-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BOLETO">Boleto</SelectItem>
+                  <SelectItem value="PIX">PIX</SelectItem>
+                  <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
+                  <SelectItem value="UNDEFINED">Indefinido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between bg-neutral-50 rounded-lg p-3 border">
+              <div>
+                <p className="text-xs font-bold text-neutral-700">Enviar cobrança via Asaas</p>
+                <p className="text-[10px] text-neutral-400">Gera boleto/PIX automaticamente</p>
+              </div>
+              <Switch checked={faturaSendAsaas} onCheckedChange={setFaturaSendAsaas} data-testid="switch-send-asaas" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setFaturaDialog(false)} className="text-xs font-bold uppercase" data-testid="button-cancel-fatura">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                gerarFaturaMutation.mutate({
+                  clientId: parseInt(selectedClient),
+                  billingType: faturaBillingType,
+                  sendToAsaas: faturaSendAsaas,
+                  dueDate: faturaDueDate,
+                });
+              }}
+              disabled={gerarFaturaMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase gap-2"
+              data-testid="button-confirm-fatura"
+            >
+              {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
+              Gerar Fatura {fmt(approvedTotal)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

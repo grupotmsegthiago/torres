@@ -11,14 +11,12 @@ import {
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
-  CircleDot, Timer, Receipt, Banknote,
+  CircleDot, Timer,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
 const fmt = (val: number | null | undefined) => {
   if (val === null || val === undefined) return "R$ 0,00";
@@ -71,13 +69,6 @@ export default function BoletimMedicaoPage() {
     despesas_pedagio: string; horario_inicio: string; horario_termino: string;
     receitas_os: string;
   }>({ km_inicial: "", km_final: "", fat_acionamento: "", despesas_pedagio: "", horario_inicio: "", horario_termino: "", receitas_os: "" });
-  const [faturaDialog, setFaturaDialog] = useState<{ clientId: number; clientName: string; approvedCount: number; total: number; billingIds: string[] } | null>(null);
-  const [faturaBillingType, setFaturaBillingType] = useState("BOLETO");
-  const [faturaDueDate, setFaturaDueDate] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
-    return d.toISOString().split("T")[0];
-  });
-  const [faturaSendAsaas, setFaturaSendAsaas] = useState(false);
 
   const { data: billingAlerts = [] } = useQuery<any[]>({
     queryKey: ["/api/billing-alerts"],
@@ -191,20 +182,6 @@ export default function BoletimMedicaoPage() {
     onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
   });
 
-  const gerarFaturaMutation = useMutation({
-    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string }) => {
-      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate });
-    },
-    onSuccess: async (response: any) => {
-      invalidateAllRelated();
-      const data = await response.json?.() || response;
-      const count = data?.missionsCount || 0;
-      const val = data?.totalValue ? fmt(data.totalValue) : "";
-      toast({ title: "Fatura Gerada!", description: `${count} missão(ões) consolidada(s). ${val}` });
-      setFaturaDialog(null);
-    },
-    onError: (err: Error) => toast({ title: "Erro ao gerar fatura", description: err.message, variant: "destructive" }),
-  });
 
   const overrideMutation = useMutation({
     mutationFn: async ({ osId, data }: { osId: number; data: any }) => {
@@ -495,35 +472,6 @@ export default function BoletimMedicaoPage() {
                           {group.orders[0].clientBillingCycle === "quinzenal" ? "Quinzenal" : group.orders[0].clientBillingCycle === "mensal" ? "Mensal" : "Por Missão"}
                           {group.orders[0].clientPaymentTermsDays ? ` · D+${group.orders[0].clientPaymentTermsDays}` : ""}
                         </Badge>
-                      )}
-                      {groupApproved > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const approvedOrders = group.orders.filter(o => o.billing?.status === "APROVADA");
-                            const total = approvedOrders.reduce((acc, o) => {
-                              const b = o.billing;
-                              return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
-                            }, 0);
-                            const firstOs = approvedOrders[0] || group.orders[0];
-                            const ptDays = Number(firstOs?.clientPaymentTermsDays) || 15;
-                            const suggestedDate = new Date();
-                            suggestedDate.setDate(suggestedDate.getDate() + ptDays);
-                            setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
-                            setFaturaDialog({
-                              clientId: group.clientId,
-                              clientName: group.clientName,
-                              approvedCount: approvedOrders.length,
-                              total,
-                              billingIds: approvedOrders.map(o => o.billing?.id).filter(Boolean),
-                            });
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-indigo-700 transition-all shadow-sm"
-                          data-testid={`button-gerar-fatura-${group.clientId}`}
-                        >
-                          <Receipt size={12} />
-                          Gerar Fatura
-                        </button>
                       )}
                     </div>
                   </button>
@@ -871,81 +819,6 @@ export default function BoletimMedicaoPage() {
               >
                 <CheckCircle2 size={14} />
                 Confirmar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={!!faturaDialog} onOpenChange={(open) => { if (!open) setFaturaDialog(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase">
-                <Receipt className="w-5 h-5 text-indigo-600" /> Gerar Fatura Consolidada
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                Consolidar todas as OS aprovadas de <strong>{faturaDialog?.clientName}</strong> em uma única fatura.
-              </DialogDescription>
-            </DialogHeader>
-            {faturaDialog && (
-              <div className="space-y-4 py-2">
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
-                  <p className="text-xs font-bold text-indigo-900 uppercase">{faturaDialog.clientName}</p>
-                  <p className="text-xs text-indigo-700"><strong>{faturaDialog.approvedCount}</strong> missão(ões) aprovada(s)</p>
-                  <p className="text-lg font-black font-mono text-indigo-800">{fmt(faturaDialog.total)}</p>
-                </div>
-                <div>
-                  <Label className="text-xs font-bold uppercase">Data de Vencimento</Label>
-                  <Input type="date" value={faturaDueDate} onChange={(e) => setFaturaDueDate(e.target.value)} className="mt-1" data-testid="input-fatura-due-date" />
-                  {(() => {
-                    const firstOs = osConcluidas.find((o: any) => o.clientId === faturaDialog?.clientId);
-                    const ptDays = Number(firstOs?.clientPaymentTermsDays);
-                    return ptDays ? <p className="text-[10px] text-indigo-500 mt-1">Prazo cadastrado: D+{ptDays} (sugerido automaticamente)</p> : null;
-                  })()}
-                </div>
-                <div>
-                  <Label className="text-xs font-bold uppercase">Tipo de Cobrança</Label>
-                  <Select value={faturaBillingType} onValueChange={setFaturaBillingType}>
-                    <SelectTrigger className="mt-1" data-testid="select-fatura-billing-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="BOLETO">Boleto</SelectItem>
-                      <SelectItem value="PIX">PIX</SelectItem>
-                      <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
-                      <SelectItem value="UNDEFINED">Indefinido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between bg-neutral-50 rounded-lg p-3 border">
-                  <div>
-                    <p className="text-xs font-bold text-neutral-700">Enviar cobrança via Asaas</p>
-                    <p className="text-[10px] text-neutral-400">Gera boleto/PIX automaticamente</p>
-                  </div>
-                  <Switch checked={faturaSendAsaas} onCheckedChange={setFaturaSendAsaas} data-testid="switch-send-asaas" />
-                </div>
-              </div>
-            )}
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setFaturaDialog(null)} className="text-xs font-bold uppercase" data-testid="button-cancel-fatura">
-                Cancelar
-              </Button>
-              <Button
-                onClick={() => {
-                  if (faturaDialog) {
-                    gerarFaturaMutation.mutate({
-                      clientId: faturaDialog.clientId,
-                      billingType: faturaBillingType,
-                      sendToAsaas: faturaSendAsaas,
-                      dueDate: faturaDueDate,
-                    });
-                  }
-                }}
-                disabled={gerarFaturaMutation.isPending}
-                className="bg-indigo-600 hover:bg-indigo-700 text-xs font-bold uppercase gap-2"
-                data-testid="button-confirm-fatura"
-              >
-                {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-                Gerar Fatura {faturaDialog ? fmt(faturaDialog.total) : ""}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -118,7 +118,7 @@ export default function AlertasDashboard() {
             </p>
             <div className="flex gap-3 mt-2">
               <Link
-                href="/admin/boletim-medicao?status=APROVADA"
+                href="/admin/relatorio-faturamento"
                 className="text-xs font-bold text-indigo-700 bg-indigo-100 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition-colors"
                 data-testid="link-gerar-faturas"
               >
