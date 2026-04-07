@@ -3,7 +3,12 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
-import { Clock, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Trash2, Timer, Plane } from "lucide-react";
+import { Clock, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Trash2, Timer, Plane, ShieldAlert, MapPin } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function _ensureUTC(ts: string) { return /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z"; }
 
@@ -39,10 +44,37 @@ export default function PontoOperacionalPage() {
   const mesOptions = getMesOptions();
   const [mes, setMes] = useState(mesOptions[0].value);
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null);
+  const [liberarDialog, setLiberarDialog] = useState(false);
+  const [liberarEmpId, setLiberarEmpId] = useState("");
+  const [liberarAction, setLiberarAction] = useState("clock_in");
+  const [liberarMotivo, setLiberarMotivo] = useState("Falha de GPS / Sinal instável");
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/ponto-operacional/resumo-mensal", mes],
     queryFn: () => authFetch(`/api/ponto-operacional/resumo-mensal?mes=${mes}`).then(r => r.json()),
+  });
+
+  const { data: empList } = useQuery<any[]>({
+    queryKey: ["/api/employees"],
+    queryFn: () => authFetch("/api/employees").then(r => r.json()),
+  });
+
+  const liberarMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const r = await authFetch("/api/admin/ponto/liberar-remoto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ponto-operacional/resumo-mensal"] });
+      toast({ title: "Ponto liberado remotamente" });
+      setLiberarDialog(false);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -60,20 +92,32 @@ export default function PontoOperacionalPage() {
 
   return (
     <AdminLayout>
+      <>
       <div className="space-y-6" data-testid="admin-ponto-operacional">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-neutral-900 uppercase tracking-wider" data-testid="text-page-title">Ponto Operacional</h1>
             <p className="text-sm text-neutral-500 mt-1">Controle de jornada de longa duração</p>
           </div>
-          <select
-            value={mes}
-            onChange={(e) => setMes(e.target.value)}
-            className="border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white"
-            data-testid="select-mes"
-          >
-            {mesOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setLiberarDialog(true)}
+              variant="outline"
+              className="gap-2 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-50"
+              data-testid="button-liberar-ponto"
+            >
+              <ShieldAlert className="w-4 h-4" />
+              Autorizar Ponto Fora da Base
+            </Button>
+            <select
+              value={mes}
+              onChange={(e) => setMes(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 text-sm bg-white"
+              data-testid="select-mes"
+            >
+              {mesOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -220,6 +264,89 @@ export default function PontoOperacionalPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={liberarDialog} onOpenChange={setLiberarDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-600" />
+              Autorizar Ponto Fora da Base
+            </DialogTitle>
+            <DialogDescription>
+              Libere o batimento de ponto manualmente quando o GPS do agente estiver instável ou fora de alcance.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label className="text-xs font-bold uppercase text-neutral-500">Agente</Label>
+              <Select value={liberarEmpId} onValueChange={setLiberarEmpId}>
+                <SelectTrigger className="mt-1" data-testid="select-liberar-employee">
+                  <SelectValue placeholder="Selecione o agente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(empList || []).map((e: any) => (
+                    <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-bold uppercase text-neutral-500">Tipo de Batimento</Label>
+              <Select value={liberarAction} onValueChange={setLiberarAction}>
+                <SelectTrigger className="mt-1" data-testid="select-liberar-action">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clock_in">Entrada</SelectItem>
+                  <SelectItem value="lunch_out">Saída Almoço</SelectItem>
+                  <SelectItem value="lunch_in">Retorno Almoço</SelectItem>
+                  <SelectItem value="clock_out">Saída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-bold uppercase text-neutral-500">Motivo</Label>
+              <Input
+                value={liberarMotivo}
+                onChange={e => setLiberarMotivo(e.target.value)}
+                className="mt-1 text-sm"
+                placeholder="Ex: Falha de GPS, sinal instável"
+                data-testid="input-liberar-motivo"
+              />
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <p className="text-[11px] text-amber-700">
+                  Este registro será marcado como <strong>"LIBERAÇÃO REMOTA"</strong> no endereço do ponto, com o nome do autorizador e motivo.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" onClick={() => setLiberarDialog(false)} className="text-xs font-bold" data-testid="button-cancel-liberar">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (!liberarEmpId) return toast({ title: "Selecione um agente", variant: "destructive" });
+                liberarMutation.mutate({
+                  employeeId: parseInt(liberarEmpId),
+                  action: liberarAction,
+                  motivo: liberarMotivo,
+                });
+              }}
+              disabled={liberarMutation.isPending || !liberarEmpId}
+              className="bg-amber-600 hover:bg-amber-700 text-xs font-black uppercase gap-2"
+              data-testid="button-confirm-liberar"
+            >
+              <ShieldAlert className="w-4 h-4" />
+              {liberarMutation.isPending ? "Processando..." : "Autorizar Batimento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </>
     </AdminLayout>
   );
 }

@@ -7,9 +7,9 @@ import type { Express } from "express";
   import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
   import { haversineDist, createAutoTransaction } from "./_helpers";
 
-  const HQ_FALLBACK_LAT = -23.489;
+  const HQ_FALLBACK_LAT = -23.4890;
   const HQ_FALLBACK_LNG = -46.7234;
-  const HQ_FALLBACK_RADIUS = 800;
+  const HQ_FALLBACK_RADIUS = 2000;
 
   async function getBaseCoords(): Promise<{ lat: number; lng: number; radius: number; name: string }> {
     const bases = await db.select().from(referencePoints).limit(1);
@@ -159,6 +159,62 @@ import type { Express } from "express";
         hqRadius: base.radius,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/admin/ponto/liberar-remoto", requireAdminRole, async (req: any, res) => {
+    try {
+      const { employeeId, action, latitude, longitude, motivo } = req.body;
+      if (!employeeId || !action) return res.status(400).json({ message: "employeeId e action são obrigatórios" });
+
+      const user = req.user;
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const existing = await db.select().from(employeeTimesheets).where(and(
+        eq(employeeTimesheets.employeeId, employeeId),
+        gte(employeeTimesheets.date, today),
+        lte(employeeTimesheets.date, tomorrow),
+      )).limit(1);
+
+      const record = existing[0];
+      const obs = `[LIBERAÇÃO REMOTA por ${user?.name || "Admin"}: ${motivo || "Falha de GPS"}]`;
+
+      if (action === "clock_in") {
+        if (record?.clockIn) return res.status(400).json({ message: "Entrada já registrada hoje" });
+        if (record) {
+          const [updated] = await db.update(employeeTimesheets)
+            .set({ clockIn: timeStr, clockInLat: latitude || null, clockInLng: longitude || null, clockInAddress: obs })
+            .where(eq(employeeTimesheets.id, record.id)).returning();
+          return res.json({ ...updated, liberadoRemotamente: true });
+        }
+        const [created] = await db.insert(employeeTimesheets).values({
+          employeeId, date: now,
+          clockIn: timeStr, clockInLat: latitude || null, clockInLng: longitude || null, clockInAddress: obs,
+        }).returning();
+        return res.json({ ...created, liberadoRemotamente: true });
+      }
+
+      if (!record) return res.status(400).json({ message: "Registre a entrada primeiro" });
+
+      const updateMap: Record<string, any> = {
+        lunch_out: { lunchOut: timeStr, lunchOutLat: latitude || null, lunchOutLng: longitude || null, lunchOutAddress: obs },
+        lunch_in: { lunchIn: timeStr, lunchInLat: latitude || null, lunchInLng: longitude || null, lunchInAddress: obs },
+        clock_out: { clockOut: timeStr, clockOutLat: latitude || null, clockOutLng: longitude || null, clockOutAddress: obs },
+      };
+      const updates = updateMap[action];
+      if (!updates) return res.status(400).json({ message: "Ação inválida" });
+
+      const [updated] = await db.update(employeeTimesheets)
+        .set(updates)
+        .where(eq(employeeTimesheets.id, record.id)).returning();
+
+      console.log(`[ponto] LIBERAÇÃO REMOTA: ${user?.name} liberou ${action} para employee ${employeeId}. Motivo: ${motivo || "Falha GPS"}`);
+      res.json({ ...updated, liberadoRemotamente: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // ─── MOBILE: Abastecimento ──────────────────────────────────────────
