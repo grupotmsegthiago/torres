@@ -287,7 +287,7 @@ import type { Express } from "express";
     res.json(results);
   });
 
-  app.get("/api/api-logs", requireAuth, async (req, res) => {
+  app.get("/api/api-logs", requireAuth, requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const logs = await storage.getRecentApiLogs(limit);
@@ -299,7 +299,7 @@ import type { Express } from "express";
     res.json(safeLogs);
   });
 
-  app.get("/api/api-logs/stats", requireAuth, async (req, res) => {
+  app.get("/api/api-logs/stats", requireAuth, requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -319,7 +319,7 @@ import type { Express } from "express";
     });
   });
 
-  app.get("/api/api-logs/:id", requireAuth, async (req, res) => {
+  app.get("/api/api-logs/:id", requireAuth, requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const logs = await storage.getRecentApiLogs(500);
     const log = logs.find(l => l.id === Number(req.params.id));

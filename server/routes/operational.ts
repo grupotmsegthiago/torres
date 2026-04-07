@@ -2,7 +2,7 @@ import type { Express } from "express";
   import { storage } from "../storage";
   import { db } from "../db";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth } from "../auth";
+  import { requireAuth, requireAdminRole } from "../auth";
   import { missionUpdates, missionPositions } from "@shared/schema";
   import { eq, desc, and, gte, lte } from "drizzle-orm";
   import * as truckscontrol from "../truckscontrol";
@@ -22,7 +22,7 @@ import type { Express } from "express";
   export function registerOperationalRoutes(app: Express) {
     // ====================== OPERATIONAL GRID ======================
 
-  app.get("/api/operational-grid", requireAuth, async (_req, res) => {
+  app.get("/api/operational-grid", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
     const orders = await storage.getServiceOrders();
@@ -463,7 +463,7 @@ import type { Express } from "express";
     res.json(enriched);
   });
 
-  app.get("/api/vehicle-tracking", requireAuth, async (_req, res) => {
+  app.get("/api/vehicle-tracking", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
     const allVehicles = await storage.getVehicles();

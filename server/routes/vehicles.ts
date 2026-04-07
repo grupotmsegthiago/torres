@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
   import { eq } from "drizzle-orm";
 
@@ -17,7 +17,7 @@ import type { Express } from "express";
     res.json(data);
   });
 
-  app.post("/api/vehicles", requireAuth, async (req, res) => {
+  app.post("/api/vehicles", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertVehicleSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createVehicle(parsed.data);
@@ -27,7 +27,7 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/vehicles/:id", requireAuth, async (req, res) => {
+  app.patch("/api/vehicles/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertVehicleSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateVehicle(Number(req.params.id), parsed.data);

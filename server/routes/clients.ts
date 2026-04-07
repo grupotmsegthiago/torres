@@ -1,18 +1,18 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertClientSchema, vehicles } from "@shared/schema";
   import { eq } from "drizzle-orm";
   import { generateContractPDF } from "../contract-pdf";
 
   export function registerClientRoutes(app: Express) {
-    app.get("/api/clients", requireAuth, async (_req, res) => {
+    app.get("/api/clients", requireAuth, requireAdminRole, async (_req, res) => {
     const data = await storage.getClients();
     res.json(data);
   });
 
-  app.get("/api/clients/:id", requireAuth, async (req, res) => {
+  app.get("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
     const data = await storage.getClient(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
     res.json(data);
@@ -48,7 +48,7 @@ import type { Express } from "express";
     }
   });
 
-  app.post("/api/clients", requireAuth, async (req, res) => {
+  app.post("/api/clients", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertClientSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createClient(parsed.data);
@@ -59,7 +59,7 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/clients/:id", requireAuth, async (req, res) => {
+  app.patch("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertClientSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateClient(Number(req.params.id), parsed.data);
@@ -79,12 +79,12 @@ import type { Express } from "express";
     }
   });
 
-  app.get("/api/clients/:id/vehicles", requireAuth, async (req, res) => {
+  app.get("/api/clients/:id/vehicles", requireAuth, requireAdminRole, async (req, res) => {
     const data = await storage.getClientVehicles(Number(req.params.id));
     res.json(data);
   });
 
-  app.post("/api/clients/:id/vehicles", requireAuth, async (req, res) => {
+  app.post("/api/clients/:id/vehicles", requireAuth, requireAdminRole, async (req, res) => {
     const clientId = Number(req.params.id);
     const { plate, model, brand, color, driverName, driverPhone, notes } = req.body;
     if (!plate) return res.status(400).json({ message: "Placa é obrigatória" });
@@ -94,7 +94,7 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/client-vehicles/:id", requireAuth, async (req, res) => {
+  app.patch("/api/client-vehicles/:id", requireAuth, requireAdminRole, async (req, res) => {
     const existing = await storage.getClientVehicle(Number(req.params.id));
     if (!existing) return res.status(404).json({ message: "Veículo não encontrado" });
     if (req.body.plate && req.body.plate.toUpperCase() !== existing.plate) {
@@ -110,7 +110,7 @@ import type { Express } from "express";
     res.json({ message: "Veículo removido" });
   });
 
-  app.get("/api/clients/:id/billing-config", requireAuth, async (req, res) => {
+  app.get("/api/clients/:id/billing-config", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { id } = req.params;
       const { data, error } = await supabaseAdmin

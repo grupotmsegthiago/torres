@@ -110,9 +110,14 @@ export const GLOBAL_QUERY_KEYS = {
   vehicleTracking: ["/api/vehicle-tracking"],
   fueling: ["/api/fueling"],
   missionUpdates: ["/api/mission/updates"],
+  clients: ["/api/clients"],
+  invoices: ["/api/invoices"],
+  ponto: ["/api/ponto-operacional"],
+  timesheets: ["/api/employees"],
+  holerites: ["/api/holerites"],
 };
 
-type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update";
+type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update" | "client" | "invoice" | "hr" | "jornada-diretoria";
 
 const _channel: BroadcastChannel | null = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("torres-sync")
@@ -191,6 +196,34 @@ function _invalidateLocal(scope: InvalidationScope) {
     inv(keys.operationalGrid);
     inv(keys.serviceOrders);
   }
+  if (scope === "client") {
+    inv(keys.clients);
+    inv(keys.escortContracts);
+    inv(keys.escortBillings);
+    inv(keys.serviceOrders);
+    inv(keys.operationalGrid);
+  }
+  if (scope === "invoice") {
+    inv(keys.invoices);
+    inv(keys.escortBillings);
+    inv(keys.financialTx);
+    inv(keys.financialResumo);
+    inv(keys.financialDashboard);
+  }
+  if (scope === "hr") {
+    inv(keys.employees);
+    inv(keys.ponto);
+    inv(keys.timesheets);
+    inv(keys.holerites);
+    queryClient.invalidateQueries({ queryKey: ["/api/my/hr-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/mobile/ponto/today"] });
+  }
+  if (scope === "jornada-diretoria") {
+    queryClient.invalidateQueries({ queryKey: ["/api/jornada-diretoria"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/jornada-diretoria/alertas"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/jornada-calculos"] });
+    inv(keys.holerites);
+  }
 }
 
 export function invalidateRelatedQueries(scope: InvalidationScope) {
@@ -266,6 +299,36 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_presence" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/chat/presence"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => {
+        _invalidateLocal("invoice");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
+        _invalidateLocal("client");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
+        _invalidateLocal("employee");
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicles" }, () => {
+        _invalidateLocal("vehicle");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ponto_registros" }, () => {
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "timesheets" }, () => {
+        _invalidateLocal("hr");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "holerites" }, () => {
+        _invalidateLocal("hr");
+        _invalidateLocal("jornada-diretoria");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/messages"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       });
   }
 

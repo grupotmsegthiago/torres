@@ -35,7 +35,7 @@ import type { Express } from "express";
     res.json(data);
   });
 
-  app.post("/api/employees", requireAuth, async (req, res) => {
+  app.post("/api/employees", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
@@ -94,7 +94,7 @@ import type { Express } from "express";
     res.status(201).json({ ...data, autoUserCreated, autoUserError });
   });
 
-  app.patch("/api/employees/:id", requireAuth, async (req, res) => {
+  app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
     const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
@@ -334,7 +334,7 @@ import type { Express } from "express";
     horaExtraValor: 22.99,
   };
 
-  app.get("/api/employees/monthly-hours", requireAuth, async (req, res) => {
+  app.get("/api/employees/monthly-hours", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const month = Number(req.query.month) || new Date().getMonth() + 1;
       const year = Number(req.query.year) || new Date().getFullYear();
@@ -375,7 +375,7 @@ import type { Express } from "express";
     }
   });
 
-  app.get("/api/employees/:id/cost-detail", requireAuth, async (req, res) => {
+  app.get("/api/employees/:id/cost-detail", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const empId = Number(req.params.id);
       const emp = await storage.getEmployee(empId);

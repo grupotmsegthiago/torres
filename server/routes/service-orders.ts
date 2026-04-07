@@ -41,7 +41,7 @@ import type { Express } from "express";
     res.json(enriched);
   });
 
-  app.get("/api/boletim-medicao/os-concluidas", requireAuth, async (_req, res) => {
+  app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireAdminRole, async (_req, res) => {
     try {
       const allOrders = await storage.getServiceOrders();
       const concluidas = allOrders.filter(o =>
@@ -254,11 +254,8 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/boletim-medicao/os/:id/diretoria-override", requireAuth, async (req, res) => {
+  app.patch("/api/boletim-medicao/os/:id/diretoria-override", requireAuth, requireDiretoria, async (req, res) => {
     try {
-      if (req.user!.role !== "diretoria") {
-        return res.status(403).json({ message: "Apenas diretoria pode alterar esses campos" });
-      }
       const osId = Number(req.params.id);
       const so = await storage.getServiceOrder(osId);
       if (!so) return res.status(404).json({ message: "OS não encontrada" });
@@ -676,7 +673,7 @@ import type { Express } from "express";
     }
   });
 
-  app.post("/api/service-orders", requireAuth, async (req, res) => {
+  app.post("/api/service-orders", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
 
@@ -914,7 +911,7 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/service-orders/:id", requireAuth, async (req, res) => {
+  app.patch("/api/service-orders/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
 

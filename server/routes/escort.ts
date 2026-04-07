@@ -284,7 +284,7 @@ import type { Express } from "express";
     }
   });
 
-  app.get("/api/fleet-summary", requireAuth, async (req, res) => {
+  app.get("/api/fleet-summary", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const dateParam = (req.query.date as string) || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const { data, error } = await supabaseAdmin.rpc("get_daily_fleet_summary", { p_date: dateParam });
@@ -843,7 +843,7 @@ import type { Express } from "express";
   });
 
   // ==================== SERVICE CONTRACTS ====================
-  app.get("/api/service-contracts", requireAuth, async (req, res) => {
+  app.get("/api/service-contracts", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { client_id } = req.query;
       let query = supabaseAdmin.from("service_contracts").select("*").order("created_at", { ascending: false });
@@ -2271,7 +2271,7 @@ import type { Express } from "express";
   });
 
   // Client Billing Report (monthly)
-  app.get("/api/escort/relatorio/:clientId", requireAuth, async (req, res) => {
+  app.get("/api/escort/relatorio/:clientId", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const clientId = parseInt(req.params.clientId);
       const now = new Date();
