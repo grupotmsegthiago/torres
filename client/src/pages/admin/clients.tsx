@@ -90,6 +90,122 @@ interface ClientVehicle {
 
 type ClientTab = "VEICULOS" | "TABELA" | "CONTRATO" | "RELATORIO_MISSOES" | "RELATORIO_FATURAMENTO" | "HOMOLOGACAO";
 
+const TAG_COLORS = {
+  orange: {
+    bg: "bg-orange-50",
+    border: "border-orange-300",
+    text: "text-orange-800",
+    icon: "text-orange-500",
+    close: "text-orange-400 hover:text-orange-700",
+    button: "bg-orange-500 hover:bg-orange-600 text-white",
+    ring: "focus:ring-orange-400",
+  },
+  green: {
+    bg: "bg-green-50",
+    border: "border-green-300",
+    text: "text-green-800",
+    icon: "text-green-500",
+    close: "text-green-400 hover:text-green-700",
+    button: "bg-green-500 hover:bg-green-600 text-white",
+    ring: "focus:ring-green-400",
+  },
+  blue: {
+    bg: "bg-blue-50",
+    border: "border-blue-300",
+    text: "text-blue-800",
+    icon: "text-blue-500",
+    close: "text-blue-400 hover:text-blue-700",
+    button: "bg-blue-500 hover:bg-blue-600 text-white",
+    ring: "focus:ring-blue-400",
+  },
+} as const;
+
+function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  colorScheme: keyof typeof TAG_COLORS;
+  testId?: string;
+}) {
+  const [inputVal, setInputVal] = useState("");
+  const colors = TAG_COLORS[colorScheme];
+
+  const emails = value
+    .split(/[;\n,]+/)
+    .map(e => e.trim().toLowerCase())
+    .filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+  const addEmail = () => {
+    const cleaned = inputVal.trim().toLowerCase();
+    if (!cleaned || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) return;
+    if (emails.includes(cleaned)) { setInputVal(""); return; }
+    const updated = [...emails, cleaned];
+    onChange(updated.join("; "));
+    setInputVal("");
+  };
+
+  const removeEmail = (index: number) => {
+    const updated = emails.filter((_, i) => i !== index);
+    onChange(updated.join("; "));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addEmail();
+    }
+  };
+
+  return (
+    <div data-testid={testId}>
+      <div className="flex gap-1.5">
+        <div className="relative flex-1">
+          <Mail className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${colors.icon}`} />
+          <input
+            type="email"
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className={`w-full rounded-md border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 ${colors.ring} focus:border-transparent`}
+            data-testid={testId ? `${testId}-input` : undefined}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={addEmail}
+          className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${colors.button} transition-colors shadow-sm`}
+          data-testid={testId ? `${testId}-add` : undefined}
+        >
+          <Plus className="w-5 h-5" />
+        </button>
+      </div>
+      {emails.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {emails.map((email, i) => (
+            <span
+              key={`${email}-${i}`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium ${colors.bg} ${colors.border} ${colors.text}`}
+              data-testid={testId ? `${testId}-tag-${i}` : undefined}
+            >
+              <Mail className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate max-w-[240px]">{email}</span>
+              <button
+                type="button"
+                onClick={() => removeEmail(i)}
+                className={`flex-shrink-0 ml-0.5 ${colors.close} transition-colors`}
+                data-testid={testId ? `${testId}-remove-${i}` : undefined}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
   const [cnpjLoading, setCnpjLoading] = useState(false);
@@ -102,8 +218,11 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       .filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
   };
 
+  const emailsToString = (arr: string[]): string => arr.join("; ");
+  const stringToEmails = (str: string): string[] => parseEmails(str);
+
   const sendTestEmail = async () => {
-    const allRaw = [form.emailOperacional, form.emailFinanceiro, form.email].join("\n");
+    const allRaw = [form.emailOperacional, form.emailFinanceiro, form.emailMedicao, form.emailContratual, form.email].join("\n");
     const emails = parseEmails(allRaw);
     if (emails.length === 0) {
       toast({ title: "Preencha ao menos um e-mail válido", variant: "destructive" });
@@ -134,6 +253,8 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     email: client?.email || "",
     emailOperacional: client?.emailOperacional || "",
     emailFinanceiro: client?.emailFinanceiro || "",
+    emailContratual: (client as any)?.emailContratual || (client as any)?.email_contratual || "",
+    emailMedicao: (client as any)?.emailMedicao || (client as any)?.email_medicao || "",
     phone: client?.phone || "",
     contactPerson: client?.contactPerson || "",
     address: client?.address || "",
@@ -251,60 +372,133 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CPF</label>
           <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} data-testid="input-client-cpf" />
         </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Geral</label>
-          <textarea value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Um e-mail por linha" data-testid="input-client-email" />
-          {parseEmails(form.email).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.email).length} e-mails</span>}
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Operacional</label>
-          <textarea value={form.emailOperacional} onChange={(e) => setForm({ ...form, emailOperacional: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Recebe pré-alertas de escolta&#10;Um e-mail por linha" data-testid="input-client-email-operacional" />
-          {parseEmails(form.emailOperacional).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.emailOperacional).length} e-mails</span>}
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">E-mail Financeiro</label>
-          <textarea value={form.emailFinanceiro} onChange={(e) => setForm({ ...form, emailFinanceiro: e.target.value })} rows={2} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none" placeholder="Recebe boletins e faturas&#10;Um e-mail por linha" data-testid="input-client-email-financeiro" />
-          {parseEmails(form.emailFinanceiro).length > 1 && <span className="text-[10px] text-neutral-400 mt-0.5 block">{parseEmails(form.emailFinanceiro).length} e-mails</span>}
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nota Fiscal</label>
-          <div className="flex items-center gap-3 mt-1">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, emiteNf: !form.emiteNf })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.emiteNf ? "bg-emerald-600" : "bg-neutral-300"}`}
-              data-testid="toggle-emite-nf"
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.emiteNf ? "translate-x-6" : "translate-x-1"}`} />
-            </button>
-            <span className={`text-sm font-medium ${form.emiteNf ? "text-emerald-700" : "text-neutral-500"}`}>
-              {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
-            </span>
+        <div className="md:col-span-2 border-t border-neutral-200 pt-4 mt-2">
+          <p className="text-sm font-bold text-neutral-900 mb-4 flex items-center gap-2 uppercase tracking-wide">
+            <MapPin className="w-4 h-4 text-emerald-600" /> Localização e Contato
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Contratual</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Input
+                  value={form.emailContratual}
+                  onChange={(e) => setForm({ ...form, emailContratual: e.target.value })}
+                  className="pl-9"
+                  placeholder="contrato@empresa.com.br"
+                  data-testid="input-client-email-contratual"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Operacional (OS)</label>
+              <EmailTagInput
+                value={form.emailOperacional}
+                onChange={(val) => setForm({ ...form, emailOperacional: val })}
+                placeholder="Digite o e-mail..."
+                colorScheme="orange"
+                testId="input-client-email-operacional"
+              />
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Telefone</label>
-          <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} data-testid="input-client-phone" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Pessoa de Contato</label>
-          <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} data-testid="input-client-contact" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CEP</label>
-          <Input value={form.zip} onChange={(e) => setForm({ ...form, zip: e.target.value })} data-testid="input-client-zip" />
-        </div>
-        <div className="md:col-span-2">
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Endereço</label>
-          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-client-address" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Cidade</label>
-          <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} data-testid="input-client-city" />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Estado</label>
-          <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} data-testid="input-client-state" />
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Medição</label>
+              <EmailTagInput
+                value={form.emailMedicao}
+                onChange={(val) => setForm({ ...form, emailMedicao: val })}
+                placeholder="Digite o e-mail..."
+                colorScheme="green"
+                testId="input-client-email-medicao"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Telefone / WhatsApp</label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Input
+                  value={form.phone}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                    let masked = digits;
+                    if (digits.length > 2) masked = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+                    if (digits.length > 6) masked = `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+                    if (digits.length > 7) masked = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+                    setForm({ ...form, phone: masked });
+                  }}
+                  className="pl-9"
+                  placeholder="(11) 3030-4040"
+                  data-testid="input-client-phone"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">CEP</label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Input
+                  value={form.zip}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+                    setForm({ ...form, zip: digits });
+                  }}
+                  className="pl-9"
+                  placeholder="04571900"
+                  data-testid="input-client-zip"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Financeiro</label>
+              <EmailTagInput
+                value={form.emailFinanceiro}
+                onChange={(val) => setForm({ ...form, emailFinanceiro: val })}
+                placeholder="Digite o e-mail..."
+                colorScheme="blue"
+                testId="input-client-email-financeiro"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Nota Fiscal</label>
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, emiteNf: !form.emiteNf })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.emiteNf ? "bg-emerald-600" : "bg-neutral-300"}`}
+                  data-testid="toggle-emite-nf"
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.emiteNf ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+                <span className={`text-sm font-medium ${form.emiteNf ? "text-emerald-700" : "text-neutral-500"}`}>
+                  {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Pessoa de Contato</label>
+            <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} data-testid="input-client-contact" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div className="md:col-span-2">
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Endereço</label>
+              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} data-testid="input-client-address" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Cidade</label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} data-testid="input-client-city" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Estado</label>
+              <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} data-testid="input-client-state" />
+            </div>
+          </div>
         </div>
         <div className="md:col-span-2 border-t border-neutral-200 pt-4 mt-2">
           <p className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" /> Ciclo Financeiro</p>

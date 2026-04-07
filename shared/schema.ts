@@ -42,6 +42,8 @@ export const clients = pgTable("clients", {
   email: text("email"),
   emailOperacional: text("email_operacional"),
   emailFinanceiro: text("email_financeiro"),
+  emailContratual: text("email_contratual"),
+  emailMedicao: text("email_medicao"),
   phone: text("phone"),
   contactPerson: text("contact_person"),
   address: text("address"),

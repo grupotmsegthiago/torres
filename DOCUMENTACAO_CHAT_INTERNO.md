@@ -1182,3 +1182,34 @@ O Thiago precisa acessar o painel Asaas (https://www.asaas.com) → Configuraç�
 - `client/src/pages/admin/faturas.tsx` — NotificationTracker + novo InvoiceDetailDialog
 
 **Status:** Implementado e funcional. Pendente: ativar notificações no painel Asaas.
+
+---
+
+### [07/04/2026 09:17 BRT] Interface de Contatos — Padrão Multi-Tag
+
+**Descrição:** Remodelação completa da seção "Localização e Contato" no cadastro de clientes, substituindo textareas de e-mail pelo padrão visual de Tags coloridas com botão (+).
+
+**Campos Implementados:**
+1. **E-mail Contratual** — Input de texto simples (1 e-mail apenas)
+2. **E-mail Operacional (OS)** — Tags com fundo laranja claro e bordas laranja, botão (+) laranja
+3. **E-mail Medição** — Tags com fundo verde claro e bordas verdes, botão (+) verde
+4. **E-mail Financeiro** — Tags com fundo azul claro e bordas azuis, botão (+) azul
+5. **Telefone / WhatsApp** — Máscara automática: (11) 3030-4040
+6. **CEP** — Máscara numérica: 04571900
+
+**Componente EmailTagInput:**
+- Input com ícone de e-mail colorido + botão (+) colorido ao lado
+- Adiciona tag ao pressionar Enter ou clicar no (+)
+- Tags com ícone de e-mail, texto do e-mail e botão (×) para remover
+- Validação de formato de e-mail antes de adicionar
+- Prevenção de e-mails duplicados
+- Dados salvos no banco como string separada por "; " (compatível com Asaas)
+
+**Banco de Dados:**
+- Novas colunas: `email_contratual TEXT`, `email_medicao TEXT` na tabela `clients`
+- E-mails armazenados como string (ex: "email1@x.com; email2@x.com")
+- Compatível com parser do Asaas (split por ; ou ,)
+
+**Arquivos Alterados:**
+- `shared/schema.ts` — Adicionados campos emailContratual e emailMedicao
+- `client/src/pages/admin/clients.tsx` — Componente EmailTagInput + novo layout Localização e Contato
