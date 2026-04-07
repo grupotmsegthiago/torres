@@ -29,7 +29,7 @@ function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada`,
+    observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
     taxes: {
       retainIss: false,
       iss: ISS_ALIQUOTA,
@@ -549,7 +549,7 @@ export function registerAsaasRoutes(app: Express) {
       const periodoInicio = datasOs[0]?.split("T")[0] || invoiceDueDate;
       const periodoFim = datasOs[datasOs.length - 1]?.split("T")[0] || invoiceDueDate;
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
-      const descricaoInterna = osDescriptions.join("\n");
+      console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
       const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
@@ -576,7 +576,7 @@ export function registerAsaasRoutes(app: Express) {
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
-            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL} - Atividades de Vigilância e Segurança Privada. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`;
+            consolidadoPayload.fiscalObservations = `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`;
           }
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
@@ -634,7 +634,7 @@ export function registerAsaasRoutes(app: Express) {
         bank_slip_url: bankSlipUrl,
         pix_qr_code: pixQrCode,
         pix_copia_e_cola: pixCopiaECola,
-        notes: `Boletim de Medição: ${billings.length} OS(s). CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.\n\nDetalhamento:\n${descricaoInterna}\n\nIDs: ${billingIds.join(", ")}`,
+        notes: `Referente aos serviços de Escolta Armada Caracterizada - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         created_by: user?.id,
       }).select().single();

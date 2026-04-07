@@ -1069,3 +1069,32 @@ supabaseAdmin
 ```
 
 **Status:** Implementado. Fatura #4 estornada. Base limpa. Pronto para nova emissão com período correto.
+
+---
+
+#### 07/04/2026 — 11:58 BRT | LIMPEZA RADICAL DE OBSERVAÇÕES
+
+**Problema:** Campo `notes` e `observations` da fatura continham detalhamento técnico (lista de BOs, endereços, IDs) que poluía o boleto.
+
+**3 Campos Limpos:**
+
+1. **`notes` (invoice no banco):**
+   - ANTES: `"Boletim de Medição: 14 OS(s)...\n\nDetalhamento:\nBO-20260401-ETZ1 01/04/2026 Universal...\nBO-20260330-QDH0...\n\nIDs: uuid1, uuid2..."`
+   - DEPOIS: `"Referente aos serviços de Escolta Armada Caracterizada - Período: 2026-03-30 a 2026-04-07. 14 missão(ões) aprovada(s)."`
+
+2. **`observations` (payload fiscal Asaas — NF):**
+   - ANTES: `"CNAE 7870 - Atividades de Vigilância e Segurança Privada"`
+   - DEPOIS: `"Referente aos serviços de Escolta Armada Caracterizada. CNAE 7870."`
+
+3. **`fiscalObservations` (payload Asaas quando emite NF):**
+   - ANTES: `"CNAE 7870 - Atividades de Vigilância e Segurança Privada. Período: X a Y. N missão(ões)."`
+   - DEPOIS: `"Referente aos serviços de Escolta Armada Caracterizada. CNAE 7870. Período: X a Y."`
+
+**Detalhamento Técnico:**
+- O loop `osDescriptions` ainda existe mas agora é usado APENAS para log de auditoria no console do servidor
+- A variável `descricaoInterna` foi removida
+- Nenhum detalhamento de BOs/endereços/IDs vai para o banco ou para o Asaas
+
+**Fatura #4 (R$ 13k):** Já estava deletada desde 11:52. Base limpa.
+
+**Status:** Implementado. Todos os campos de texto da fatura agora seguem o padrão Torres.
