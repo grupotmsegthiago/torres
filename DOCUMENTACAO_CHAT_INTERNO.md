@@ -778,3 +778,27 @@ O boletim de medição dizia "REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITO
 **Arquivo alterado:** `client/src/pages/admin/relatorio-faturamento.tsx` (linhas 774-873)
 
 **Status:** Implementado. Servidor reiniciado sem erros. Modal redesenhado com padrão profissional.
+
+---
+
+#### 07/04/2026 — 11:04 BRT | Trava de Automação Asaas + Correção Filtro OS
+
+**3 Correções Aplicadas:**
+
+1. **Switch Removido** — O toggle "Enviar cobrança via Asaas" foi eliminado. Agora o envio via Asaas é **obrigatório e automático** ao clicar no botão azul. `sendToAsaas: true` é fixo no payload.
+
+2. **Filtro OS Expandido** — A query no backend (`POST /api/boletim-medicao/gerar-fatura/:clientId`) buscava apenas `status = 'APROVADA'`, causando erro 400 "Nenhuma OS aprovada encontrada". Agora aceita: `APROVADA`, `A_VERIFICAR`, `VERIFICADA`, `PENDENTE`. Se a OS está no Boletim de Medição, ela é faturável.
+
+3. **CNAE Travado** — O payload sempre usa CNAE 7870, descrição "Ref. ao Serviço de Escolta Armada", ISS 5%, código serviço 11.02. Valores hardcoded em `server/asaas.ts` (constantes no topo do arquivo). Nenhum valor antigo pode sobrescrever.
+
+**Query corrigida (server/asaas.ts, linhas 491-495):**
+```sql
+.eq("client_id", clientId)
+.in("status", ["APROVADA", "A_VERIFICAR", "VERIFICADA", "PENDENTE"])
+```
+
+**Arquivos alterados:**
+- `client/src/pages/admin/relatorio-faturamento.tsx` — Switch removido, sendToAsaas fixo em true, import Switch removido
+- `server/asaas.ts` — Filtro `.eq("status", "APROVADA")` → `.in("status", [...])`
+
+**Status:** Implementado. Servidor reiniciado sem erros. Fluxo simplificado: sem escolha manual.

@@ -489,11 +489,11 @@ export function registerAsaasRoutes(app: Express) {
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .eq("status", "APROVADA");
+        .in("status", ["APROVADA", "A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
 
       if (billErr) throw billErr;
       if (!billings || billings.length === 0) {
-        return res.status(400).json({ message: "Nenhuma OS aprovada encontrada para este cliente" });
+        return res.status(400).json({ message: "Nenhuma OS faturável encontrada para este cliente. Status aceitos: APROVADA, A_VERIFICAR, VERIFICADA, PENDENTE." });
       }
 
       const clientName = billings[0].client_name || "Cliente";

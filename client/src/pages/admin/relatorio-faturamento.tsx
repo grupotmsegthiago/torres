@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+
 import * as XLSX from "xlsx";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 
@@ -65,7 +65,6 @@ export default function RelatorioFaturamentoPage() {
     const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
     return d.toISOString().split("T")[0];
   });
-  const [faturaSendAsaas, setFaturaSendAsaas] = useState(false);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -839,12 +838,9 @@ export default function RelatorioFaturamentoPage() {
               </Select>
             </div>
 
-            <div className="flex items-center justify-between bg-neutral-50 rounded-lg p-3 border">
-              <div>
-                <p className="text-xs font-bold text-neutral-700">Enviar cobrança via Asaas</p>
-                <p className="text-[10px] text-neutral-400">Gera boleto/PIX + NFS-e automática (CNAE 7870)</p>
-              </div>
-              <Switch checked={faturaSendAsaas} onCheckedChange={setFaturaSendAsaas} data-testid="switch-send-asaas" />
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+              <Check size={14} className="text-emerald-600 flex-shrink-0" />
+              <p className="text-[10px] text-emerald-700 font-medium">Cobrança será gerada automaticamente via Asaas com NFS-e (CNAE 7870)</p>
             </div>
           </div>
 
@@ -857,7 +853,7 @@ export default function RelatorioFaturamentoPage() {
                 gerarFaturaMutation.mutate({
                   clientId: parseInt(selectedClient),
                   billingType: faturaBillingType,
-                  sendToAsaas: faturaSendAsaas,
+                  sendToAsaas: true,
                   dueDate: faturaDueDate,
                 });
               }}
