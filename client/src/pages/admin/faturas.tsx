@@ -16,7 +16,7 @@ import {
   FileText, DollarSign, Calendar, CheckCircle2, XCircle,
   Clock, AlertTriangle, Send, Copy, Eye, Trash2,
   Building2, Download, Receipt, Mail, MailCheck, MailX,
-  Activity, Bell,
+  Activity, Bell, Paperclip, Upload, Link2,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -47,6 +47,8 @@ interface Invoice {
   payment_date: string | null;
   external_reference: string | null;
   notes: string | null;
+  nfse_url: string | null;
+  nf_anexo_url: string | null;
   created_at: string;
 }
 
@@ -442,13 +444,20 @@ export default function FaturasPage() {
                             <span className="text-xs text-neutral-500">{BILLING_TYPES[inv.billing_type] || inv.billing_type}</span>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
-                            {inv.asaas_payment_id ? (
-                              <Badge className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200">
-                                {inv.status}
-                              </Badge>
-                            ) : (
-                              <span className="text-[10px] text-neutral-400">Local</span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {inv.asaas_payment_id ? (
+                                <Badge className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200">
+                                  {inv.status}
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-neutral-400">Local</span>
+                              )}
+                              {(inv.nfse_url || inv.nf_anexo_url) && (
+                                <Badge className="text-[9px] bg-violet-50 text-violet-600 border border-violet-200">
+                                  NF
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -835,6 +844,123 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
   );
 }
 
+function NfAttachSection({ invoice }: { invoice: Invoice }) {
+  const { toast } = useToast();
+  const [showAttach, setShowAttach] = useState(false);
+  const [nfUrl, setNfUrl] = useState("");
+  const [attaching, setAttaching] = useState(false);
+
+  const handleAttach = async () => {
+    if (!nfUrl.trim()) return;
+    setAttaching(true);
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/attach-nf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nf_anexo_url: nfUrl.trim() }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "NF anexada com sucesso" });
+      setShowAttach(false);
+      setNfUrl("");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/attach-nf`, { method: "DELETE" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Anexo de NF removido" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold text-neutral-700 flex items-center gap-1">
+          <Paperclip className="w-3.5 h-3.5" /> Nota Fiscal
+        </p>
+        {!invoice.nf_anexo_url && !invoice.nfse_url && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-7 text-violet-700 border-violet-200 hover:bg-violet-50"
+            onClick={() => setShowAttach(!showAttach)}
+            data-testid="button-attach-nf"
+          >
+            <Upload className="w-3 h-3 mr-1" /> Anexar NF
+          </Button>
+        )}
+      </div>
+
+      {invoice.nfse_url && (
+        <div className="flex items-center gap-2 text-xs">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="text-emerald-700 font-medium">NFS-e emitida via Asaas</span>
+        </div>
+      )}
+
+      {invoice.nf_anexo_url && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs">
+            <CheckCircle2 className="w-3.5 h-3.5 text-violet-600" />
+            <span className="text-violet-700 font-medium">NF anexada manualmente</span>
+          </div>
+          <div className="flex gap-1">
+            <a href={invoice.nf_anexo_url} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="sm" className="h-6 text-xs text-violet-600" data-testid="button-open-nf-anexo">
+                <ExternalLink className="w-3 h-3 mr-1" /> Abrir
+              </Button>
+            </a>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-red-500" onClick={handleRemove} data-testid="button-remove-nf-anexo">
+              <Trash2 className="w-3 h-3 mr-1" /> Remover
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!invoice.nfse_url && !invoice.nf_anexo_url && !showAttach && (
+        <p className="text-[11px] text-neutral-400">Nenhuma NF vinculada. Use "Anexar NF" para adicionar o link da nota fiscal.</p>
+      )}
+
+      {showAttach && (
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Label className="text-[10px] text-neutral-500">URL da Nota Fiscal (link do PDF ou portal)</Label>
+            <div className="flex items-center gap-1 mt-1">
+              <Link2 className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
+              <Input
+                className="h-8 text-xs"
+                placeholder="https://... (link da NF)"
+                value={nfUrl}
+                onChange={(e) => setNfUrl(e.target.value)}
+                data-testid="input-nf-url"
+              />
+            </div>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 bg-violet-600 hover:bg-violet-700"
+            onClick={handleAttach}
+            disabled={!nfUrl.trim() || attaching}
+            data-testid="button-confirm-attach-nf"
+          >
+            {attaching ? <Loader2 className="w-3 h-3 animate-spin" /> : "Salvar"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing }: {
   invoice: Invoice;
   onClose: () => void;
@@ -959,14 +1085,21 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             {invoice.invoice_url && (
               <a href={invoice.invoice_url} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm" data-testid="button-view-invoice">
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver Cobrança
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Ver Cobranca
                 </Button>
               </a>
             )}
-            {(invoice as any).nfse_url && (
-              <a href={(invoice as any).nfse_url} target="_blank" rel="noopener noreferrer">
+            {invoice.nfse_url && (
+              <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm" className="text-indigo-700 border-indigo-200 hover:bg-indigo-50" data-testid="button-view-nfse">
-                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF
+                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF (Asaas)
+                </Button>
+              </a>
+            )}
+            {invoice.nf_anexo_url && (
+              <a href={invoice.nf_anexo_url} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="text-violet-700 border-violet-200 hover:bg-violet-50" data-testid="button-view-nf-anexo">
+                  <FileText className="w-3.5 h-3.5 mr-1" /> Ver NF Anexada
                 </Button>
               </a>
             )}
@@ -983,6 +1116,8 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
               </Button>
             )}
           </div>
+
+          <NfAttachSection invoice={invoice} />
 
           {invoice.pix_qr_code && (
             <div className="text-center bg-white border rounded-xl p-4">

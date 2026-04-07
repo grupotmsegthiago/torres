@@ -1261,3 +1261,32 @@ O Thiago precisa acessar o painel Asaas (https://www.asaas.com) → Configuraç�
 
 **Arquivos Alterados:**
 - `client/src/components/admin/layout.tsx` — Nova estrutura `menuSections[]` + `rootItems[]` + renderização por blocos
+
+---
+
+### [07/04/2026 14:46 BRT] Fix Erro Gerar Fatura + Sistema NF + Controle de Baixa
+
+**Problema 1 - Erro "Nenhuma OS faturável":**
+- As 2 OS da MMCM em abril (TOR-0015, TOR-0016) já estavam com status `FATURADO` na `escort_billings`
+- Fatura #6 já existia (pay_a7xy1i8qe4ce9wgu, R$2.751,30)
+- Mensagem de erro melhorada: agora diferencia "todas já faturadas" vs "nenhuma aprovada no período"
+
+**Problema 2 - Sistema de NF:**
+- Colunas `nfse_url` e `nf_anexo_url` adicionadas na tabela `invoices`
+- Sync com Asaas agora busca `fiscalInfo` e salva `externalUrl` como `nfse_url`
+- NFS-e automática via Asaas: funciona quando `emite_nf=true` no cliente + municipal settings configurado
+- **IMPORTANTE**: NFS-e emission still requires Thiago to configure: Asaas → Configurações → Nota Fiscal
+
+**Problema 3 - Controle de Baixa + Anexo NF:**
+- Baixa já existia: botão "Confirmar Pgto" → status `RECEIVED_IN_CASH`
+- **NOVO**: Seção "Nota Fiscal" no detalhe da fatura com:
+  - Botão "Anexar NF" → input de URL + salvar
+  - Visualização "Ver NF Anexada" (violeta) / "Ver NF (Asaas)" (indigo)
+  - Botão "Remover" anexo
+  - Badge "NF" na tabela de faturas quando NF vinculada
+- Endpoints: `POST /api/invoices/:id/attach-nf` e `DELETE /api/invoices/:id/attach-nf`
+- Auditoria: ação `ANEXAR_NF` registrada
+
+**Arquivos Alterados:**
+- `server/asaas.ts` — Mensagem de erro melhorada + sync NFS-e + endpoints attach-nf
+- `client/src/pages/admin/faturas.tsx` — Interface Invoice atualizada + NfAttachSection + badges NF

@@ -342,6 +342,54 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  app.post("/api/invoices/:id/attach-nf", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nf_anexo_url } = req.body;
+      if (!nf_anexo_url) return res.status(400).json({ message: "URL do anexo da NF é obrigatória" });
+
+      const { data: existing } = await supabaseAdmin.from("invoices").select("id").eq("id", id).single();
+      if (!existing) return res.status(404).json({ message: "Fatura não encontrada" });
+
+      const { data, error } = await supabaseAdmin
+        .from("invoices")
+        .update({ nf_anexo_url, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const user = (req as any).user;
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "ANEXAR_NF", targetId: String(id), targetType: "invoice",
+        details: `NF anexada à fatura #${id}`,
+        ipAddress: (req as any).ip,
+      });
+
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/invoices/:id/attach-nf", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { data, error } = await supabaseAdmin
+        .from("invoices")
+        .update({ nf_anexo_url: null, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.delete("/api/invoices/:id", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -382,6 +430,18 @@ export function registerAsaasRoutes(app: Express) {
         updated_at: new Date().toISOString(),
       };
       if (payment.paymentDate) updates.payment_date = payment.paymentDate;
+
+      try {
+        const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+        if (fiscalInfo?.rpsSerie || fiscalInfo?.rpsNumber || fiscalInfo?.externalUrl) {
+          if (fiscalInfo.externalUrl) {
+            updates.nfse_url = fiscalInfo.externalUrl;
+          }
+          console.log(`[asaas] NFS-e sync OK: status=${fiscalInfo.status}, url=${fiscalInfo.externalUrl || 'N/A'}`);
+        }
+      } catch (nfErr: any) {
+        console.log(`[asaas] NFS-e fetch (non-blocking): ${nfErr.message}`);
+      }
 
       const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
       if (error) throw error;
@@ -652,7 +712,20 @@ export function registerAsaasRoutes(app: Express) {
 
       if (billErr) throw billErr;
       if (!billings || billings.length === 0) {
-        return res.status(400).json({ message: `Nenhuma OS faturável no período ${startDate} a ${endDate}. Verifique o filtro de datas e status.` });
+        const { data: allBillings } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, status")
+          .eq("client_id", clientId)
+          .gte("data_missao", fromDate)
+          .lte("data_missao", toDate);
+        
+        const total = allBillings?.length || 0;
+        const faturados = allBillings?.filter((b: any) => b.status === "FATURADO" || b.status === "FATURADA").length || 0;
+        
+        if (faturados > 0) {
+          return res.status(400).json({ message: `Todas as ${faturados} OS neste período já foram faturadas. Para gerar nova fatura, exclua a fatura existente primeiro.` });
+        }
+        return res.status(400).json({ message: `Nenhuma OS faturável no período ${startDate} a ${endDate}. Verifique se existem OS com status "APROVADA" neste período.` });
       }
 
       console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Período: ${startDate} a ${endDate}. Status: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
