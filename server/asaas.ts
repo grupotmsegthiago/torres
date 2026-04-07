@@ -481,14 +481,53 @@ export function registerAsaasRoutes(app: Express) {
       if (!cpfCnpj) return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
 
       const fiscalPayload = buildFiscalPayload(parseFloat(invoice.value), cpfCnpj);
-      const result = await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/fiscalInfo`, fiscalPayload);
+      let result: any;
+      let method = "fiscalInfo";
+
+      try {
+        result = await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/fiscalInfo`, fiscalPayload);
+      } catch (fiscalErr: any) {
+        console.log(`[asaas] fiscalInfo failed (${fiscalErr.message}), trying invoices API...`);
+        try {
+          const now = new Date();
+          const deduction = parseFloat(invoice.value) * (ISS_ALIQUOTA / 100);
+          const invoicePayload = {
+            payment: invoice.asaas_payment_id,
+            serviceDescription: invoice.description || DESCRICAO_SERVICO_FIXA,
+            observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
+            value: parseFloat(invoice.value),
+            deductions: 0,
+            effectiveDatePeriod: "MONTHLY",
+            municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
+            municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+            municipalServiceName: DESCRICAO_SERVICO_FIXA,
+            taxes: {
+              retainIss: false,
+              iss: ISS_ALIQUOTA,
+              cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
+            },
+          };
+          result = await asaasRequest("POST", "/invoices", invoicePayload);
+          method = "invoices";
+        } catch (invErr: any) {
+          const is404 = fiscalErr.message.includes("404");
+          const errDetail = is404
+            ? "O módulo de Nota Fiscal (NFS-e) não está ativado na sua conta Asaas. " +
+              "Para ativar: acesse Asaas → Configurações → Nota Fiscal → configure a Inscrição Municipal e os dados da prefeitura. " +
+              "Após a configuração, tente novamente."
+            : `Erro Asaas: ${fiscalErr.message}`;
+          throw new Error(errDetail);
+        }
+      }
 
       const updates: Record<string, any> = {
         nfse_status: result.status || "SCHEDULED",
         updated_at: new Date().toISOString(),
       };
       if (result.externalUrl) updates.nfse_url = result.externalUrl;
+      if (result.invoiceUrl) updates.nfse_url = result.invoiceUrl;
       if (result.number) updates.nfse_number = String(result.number);
+      if (result.id && method === "invoices") updates.nfse_number = String(result.id);
 
       const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
       if (error) throw error;
@@ -497,15 +536,15 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "EMITIR_NFSE", targetId: invoice.asaas_payment_id, targetType: "invoice",
-        details: `NFS-e solicitada para fatura #${id} (${invoice.asaas_payment_id}). Status: ${result.status || 'SCHEDULED'}`,
+        details: `NFS-e solicitada (${method}) para fatura #${id} (${invoice.asaas_payment_id}). Status: ${result.status || 'SCHEDULED'}`,
         ipAddress: (req as any).ip,
       });
 
-      console.log(`[asaas] NFS-e emitida: payment=${invoice.asaas_payment_id}, status=${result.status}`);
+      console.log(`[asaas] NFS-e emitida via ${method}: payment=${invoice.asaas_payment_id}, status=${result.status}`);
       res.json({ ...data, nfseResult: result });
     } catch (err: any) {
       console.error("[asaas] Erro NFS-e:", err.message);
-      res.status(500).json({ message: `Erro ao emitir NFS-e: ${err.message}` });
+      res.status(500).json({ message: err.message });
     }
   });
 
