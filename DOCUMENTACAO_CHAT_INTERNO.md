@@ -1549,8 +1549,32 @@ Todo o sistema já usa `timeZone: "America/Sao_Paulo"` em todas as formatações
 | `client/src/pages/admin/operational-grid.tsx` | +`useBRTClock()`, relógio central no header |
 
 ---
+
+### [07/04/2026 19:30 BRT] Fix Completo Timezone — Writes BRT para Supabase + Drizzle
+
+**Problema:** Todas as escritas de `new Date()` em colunas `timestamp without tz` geravam valor UTC literal (ex: `22:04` quando BRT era `19:04`). Ao ler de volta, o type parser OID 1114 (que agora interpreta como BRT) produzia hora UTC errada (+3h de desvio em cascata).
+
+**Correções aplicadas:**
+
+1. **`server/routes/_helpers.ts`** — Nova função `nowBRTString()` retorna `"YYYY-MM-DDTHH:MM:SS"` em BRT (formato sv-SE sem timezone). Usada em todas as escritas via Supabase client (`storage.updateServiceOrder`).
+
+2. **`server/routes/mission.ts`** — Todas as escritas corrigidas:
+   - `completedDate: new Date()` → `completedDate: nowBRTString()` (4 instâncias)
+   - `missionStartedAt: new Date()` → `missionStartedAt: nowBRTString()` (2 instâncias)
+   - `missionStartedAt: sql\`GREATEST(NOW(),...)\`` → comparação string BRT (1 instância)
+   - Já corrigido anteriormente: `copiadoEm: sql\`NOW()\`` (via Drizzle db.update)
+
+3. **`server/routes/mobile.ts`** — `lastKmUpdate: new Date()` → `lastKmUpdate: sql\`NOW()\`` (Drizzle write)
+
+**Regra de ouro para futuras escritas:**
+- **Via Drizzle (`db.update`/`db.insert`):** usar `sql\`NOW()\``
+- **Via Supabase (`storage.updateServiceOrder`):** usar `nowBRTString()` de `_helpers.ts`
+- **Nunca** usar `new Date()` em colunas timestamp
+
+---
 **Laudo gerado em:** 07/04/2026 18:52 BRT  
 **Laudo saneamento matemático:** 07/04/2026 19:05 BRT  
 **Laudo relógio central:** 07/04/2026 19:08 BRT  
+**Laudo fix timezone writes:** 07/04/2026 19:30 BRT  
 **Para auditoria de:** Mickael  
 **Validado por:** Agent AI

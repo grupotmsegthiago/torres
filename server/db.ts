@@ -3,7 +3,7 @@ import { Pool, types } from "pg";
 import * as schema from "@shared/schema";
 
 types.setTypeParser(1114, (val: string) => {
-  return val + "-03:00";
+  return new Date(val.replace(" ", "T") + "-03:00");
 });
 
 const connectionString = process.env.SUPABASE_DATABASE_URL;

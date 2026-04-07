@@ -1,6 +1,10 @@
 import { supabaseAdmin } from "../supabase";
 import nodemailer from "nodemailer";
 
+export function nowBRTString(): string {
+  return new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+}
+
 export function parseEmailList(raw: string | null | undefined): string[] {
   if (!raw) return [];
   return raw.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));

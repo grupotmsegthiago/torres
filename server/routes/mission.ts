@@ -4,10 +4,10 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertGerenciadoraSchema, missionUpdates, telemetryEvents, missionPositions } from "@shared/schema";
-  import { eq, desc } from "drizzle-orm";
+  import { eq, desc, sql } from "drizzle-orm";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
-  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString } from "./_helpers";
   import { calcularEscolta } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
@@ -614,9 +614,8 @@ import type { Express } from "express";
     try {
       const updateId = Number(req.params.id);
       const userName = req.user?.name || req.user?.email || "Admin";
-      const now = new Date();
 
-      await db.update(missionUpdates).set({ copiadoPor: userName, copiadoEm: now }).where(eq(missionUpdates.id, updateId));
+      await db.update(missionUpdates).set({ copiadoPor: userName, copiadoEm: sql`NOW()` }).where(eq(missionUpdates.id, updateId));
       res.json({ success: true });
     } catch (err: any) {
       console.error("copy-audit error:", err);
@@ -1023,7 +1022,7 @@ import type { Express } from "express";
       const updates: any = {
         status: "cancelada",
         missionStatus: so.missionStatus,
-        completedDate: new Date(),
+        completedDate: nowBRTString(),
       };
 
       if (so.kitId) {
@@ -1202,7 +1201,7 @@ import type { Express } from "express";
       const updates: any = {
         status: "concluída",
         missionStatus: "encerrada",
-        completedDate: new Date(),
+        completedDate: nowBRTString(),
       };
 
       if (so.kitId) {
@@ -1337,17 +1336,17 @@ import type { Express } from "express";
     const updates: any = { missionStatus: nextStep };
 
     if (!so.missionStartedAt && ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep)) {
-      const now = new Date();
+      const nowBRT = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
       if (so.scheduledDate) {
-        const scheduled = new Date(so.scheduledDate);
-        updates.missionStartedAt = now < scheduled ? scheduled : now;
+        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        updates.missionStartedAt = nowBRT < scheduledStr ? scheduledStr : nowBRT;
       } else {
-        updates.missionStartedAt = now;
+        updates.missionStartedAt = nowBRT;
       }
     }
 
     if (nextStep === "finalizada") {
-      updates.completedDate = new Date();
+      updates.completedDate = nowBRTString();
       updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
       try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
@@ -1682,7 +1681,7 @@ import type { Express } from "express";
 
       if (action === "start_mission" && currentStep === "iniciar_missao") {
         if (!so.missionStartedAt) {
-          await storage.updateServiceOrder(serviceOrderId, { missionStartedAt: new Date() });
+          await storage.updateServiceOrder(serviceOrderId, { missionStartedAt: nowBRTString() });
         }
         return res.json({ message: "Missao iniciada (simulacao)" });
       }
@@ -1712,7 +1711,7 @@ import type { Express } from "express";
         const updates: any = { missionStatus: nextStep };
 
         if (nextStep === "finalizada") {
-          updates.completedDate = new Date();
+          updates.completedDate = nowBRTString();
         }
 
         if (nextStep === "encerrada") {

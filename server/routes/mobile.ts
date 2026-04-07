@@ -296,7 +296,7 @@ import type { Express } from "express";
         createdByUserId: req.user?.id || null,
       }).returning();
 
-      await db.update(vehicles).set({ km, lastKmUpdate: new Date() }).where(eq(vehicles.id, vehicleId));
+      await db.update(vehicles).set({ km, lastKmUpdate: sql`NOW()` }).where(eq(vehicles.id, vehicleId));
 
       const derivedTotal = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
       if (fueling && derivedTotal > 0) {
