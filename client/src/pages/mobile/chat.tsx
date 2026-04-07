@@ -11,6 +11,7 @@ import {
   Check, CheckCheck, ChevronLeft, Loader2, Camera,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useNotificationSound } from "@/hooks/use-notification-sound";
 
 interface ChatUser {
   id: number;
@@ -109,13 +110,43 @@ export default function MobileChatPage() {
     return m;
   }, [chatUsers]);
 
+  useNotificationSound(messages as any[]);
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const showBrowserNotification = (senderName: string, content: string) => {
+    if (Notification.permission === "granted" && document.hidden) {
+      new Notification(`${senderName}`, {
+        body: content.length > 50 ? content.slice(0, 50) + "..." : content,
+        icon: "/logo-torres.svg",
+        badge: "/logo-torres.svg",
+        tag: "chat-message",
+      });
+    }
+  };
+
   useEffect(() => {
     if (!user?.id) return;
     authFetch("/api/chat/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ online: true }) }).catch(() => {});
     const iv = setInterval(() => {
       authFetch("/api/chat/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ online: true }) }).catch(() => {});
     }, 60000);
-    return () => clearInterval(iv);
+    const handleOffline = () => {
+      const token = localStorage.getItem("auth_token") || "";
+      const data = JSON.stringify({ online: false, token });
+      navigator.sendBeacon?.("/api/chat/presence-beacon", data);
+    };
+    window.addEventListener("beforeunload", handleOffline);
+    window.addEventListener("pagehide", handleOffline);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("beforeunload", handleOffline);
+      window.removeEventListener("pagehide", handleOffline);
+    };
   }, [user?.id]);
 
   useEffect(() => {
@@ -125,10 +156,14 @@ export default function MobileChatPage() {
         const msg = payload.new as any;
         if (msg.conversation_id === activeConvId) refetchMsgs();
         refetchConvs();
+        if (msg.sender_id !== user?.id) {
+          const sender = userMap[msg.sender_id];
+          showBrowserNotification(sender?.name || "Mensagem", msg.content || "Nova mensagem");
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [activeConvId]);
+  }, [activeConvId, user?.id, userMap]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

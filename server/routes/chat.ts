@@ -313,6 +313,26 @@ export function registerChatRoutes(app: Express) {
     }
   });
 
+  app.post("/api/chat/presence-beacon", (req, res) => {
+    try {
+      let body = req.body;
+      if (typeof body === "string") {
+        try { body = JSON.parse(body); } catch { body = {}; }
+      }
+      const online = body?.online ?? false;
+      const userId = (req as any).user?.id || (req as any).session?.passport?.user;
+      if (!userId) { res.status(401).json({ message: "Sem sessão" }); return; }
+      supabaseAdmin
+        .from("chat_presence")
+        .upsert({ user_id: userId, online: !!online, last_seen: new Date().toISOString() }, { onConflict: "user_id" })
+        .then(() => res.json({ ok: true }))
+        .catch((err: any) => { console.error("[chat] beacon error:", err.message); res.status(500).json({ ok: false }); });
+    } catch (err: any) {
+      console.error("[chat] presence-beacon error:", err.message);
+      res.status(500).json({ message: "Erro" });
+    }
+  });
+
   app.get("/api/chat/users", requireAuth, async (_req, res) => {
     try {
       const { data, error } = await supabaseAdmin

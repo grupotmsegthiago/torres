@@ -4,16 +4,9 @@ import "./index.css";
 import "./styles/typography.css";
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister();
-    }
-  });
-  if (caches) {
-    caches.keys().then((names) => {
-      for (const name of names) caches.delete(name);
-    });
-  }
+  navigator.serviceWorker.register("/sw.js")
+    .then(reg => console.log("SW registrado:", reg.scope))
+    .catch(err => console.log("SW erro:", err));
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

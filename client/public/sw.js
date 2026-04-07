@@ -3,12 +3,25 @@ self.addEventListener("install", () => {
 });
 
 self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("push", (event) => {
+  const data = event.data?.json() || {};
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => caches.delete(k)))
-    )
+    self.registration.showNotification(data.title || "Torres Chat", {
+      body: data.body || "Você tem uma nova mensagem",
+      icon: "/logo-torres.svg",
+      badge: "/logo-torres.svg",
+      tag: "chat-message",
+      requireInteraction: false,
+    })
   );
-  self.clients.claim();
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow("/mobile/chat"));
 });
 
 self.addEventListener("fetch", () => {});

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
@@ -80,6 +81,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const { user, logout } = useAuth();
   const [location] = useLocation();
+
+  const { data: chatUnread } = useQuery<{ total: number }>({
+    queryKey: ["/api/chat/unread-count"],
+    refetchInterval: 30000,
+  });
+  const unreadCount = chatUnread?.total || 0;
 
   const toggleGroup = (label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -161,6 +168,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 >
                   <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
                   {item.label}
+                  {item.label === "Chat" && unreadCount > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-1" data-testid="badge-chat-unread">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
                 </span>
               </Link>
             );

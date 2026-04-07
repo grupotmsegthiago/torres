@@ -4,6 +4,7 @@ import { useGeolocation } from "@/hooks/use-geolocation";
 import { useAuditLog, useScreenshotDetection } from "@/hooks/use-audit";
 import { titleCase } from "@/lib/utils";
 import { useMemo, useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2, Shield, CloudOff, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { subscribeQueue } from "@/lib/offlineQueue";
@@ -95,6 +96,12 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   const { denied, position, loading, error, requestPermission } = useGeolocation();
   useAuditLog(location);
   useScreenshotDetection(location);
+
+  const { data: chatUnread } = useQuery<{ total: number }>({
+    queryKey: ["/api/chat/unread-count"],
+    refetchInterval: 30000,
+  });
+  const unreadCount = chatUnread?.total || 0;
 
   if (!position) {
     return (
@@ -203,10 +210,17 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
             return (
               <Link key={item.path} href={item.path}>
                 <button
-                  className={`flex flex-col items-center gap-0.5 px-3 py-2 min-w-[64px] rounded-lg transition-colors ${isActive ? "text-neutral-900" : "text-neutral-400"}`}
+                  className={`relative flex flex-col items-center gap-0.5 px-3 py-2 min-w-[64px] rounded-lg transition-colors ${isActive ? "text-neutral-900" : "text-neutral-400"}`}
                   data-testid={`nav-mobile-${item.label.toLowerCase().replace(/\s/g, '-')}`}
                 >
-                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.5} />
+                  <div className="relative">
+                    <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.5} />
+                    {item.label === "Chat" && unreadCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-0.5" data-testid="badge-mobile-chat-unread">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
+                  </div>
                   <span className={`text-[10px] uppercase tracking-wider ${isActive ? "font-bold" : "font-medium"}`}>
                     {item.label}
                   </span>

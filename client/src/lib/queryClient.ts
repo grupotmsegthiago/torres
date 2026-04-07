@@ -260,6 +260,12 @@ if (typeof window !== "undefined") {
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_alerts" }, () => {
         _invalidateLocal("jornada-diretoria");
         _invalidateLocal("billing");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_conversations" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_presence" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/presence"] });
       });
   }
 
