@@ -215,34 +215,36 @@ async function syncMissingAutoTransactions() {
 async function syncFuelingMissionCosts() {
   try {
     const { data: activeOs } = await supabaseAdmin.from("service_orders")
-      .select("id, os_number, vehicle_id, created_at")
+      .select("id, os_number, vehicle_id, created_at, scheduled_date, mission_status")
       .in("status", ["ativa", "em_andamento", "em andamento"]);
     if (!activeOs?.length) return;
 
-    const { data: existingFuelCosts } = await supabaseAdmin.from("mission_costs")
-      .select("description")
-      .in("service_order_id", activeOs.map((o: any) => o.id))
-      .ilike("category", "%ombust%");
-    const existingFuelIds = new Set<number>();
-    for (const c of (existingFuelCosts || [])) {
-      const match = (c.description || "").match(/\[F#(\d+)\]/);
-      if (match) existingFuelIds.add(Number(match[1]));
-    }
-
     for (const os of activeOs) {
       if (!os.vehicle_id) continue;
+
+      const missionStarted = os.mission_status && !["aguardando", "agendada"].includes(os.mission_status);
+      if (!missionStarted) continue;
+
+      const osDateBRT = new Date(os.scheduled_date || os.created_at)
+        .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
       const { data: vData } = await supabaseAdmin.from("vehicles").select("plate").eq("id", os.vehicle_id).single();
       const plate = vData?.plate || "";
 
       const { data: fuelings } = await supabaseAdmin.from("vehicle_fueling")
-        .select("id, vehicle_id, driver_id, total_cost, fuel_type, liters, station, latitude, longitude, created_at")
+        .select("id, vehicle_id, driver_id, total_cost, fuel_type, liters, station, latitude, longitude, created_at, date")
         .eq("vehicle_id", os.vehicle_id)
-        .gte("created_at", os.created_at)
+        .eq("date", osDateBRT)
         .order("created_at", { ascending: true });
 
       for (const f of (fuelings || [])) {
         if (!f.total_cost || Number(f.total_cost) <= 0) continue;
-        if (existingFuelIds.has(f.id)) continue;
+
+        const { data: alreadyLinked } = await supabaseAdmin.from("mission_costs")
+          .select("id")
+          .ilike("description", `%[F#${f.id}]%`)
+          .limit(1);
+        if (alreadyLinked?.length) continue;
 
         const desc = `Abastecimento ${plate} - ${f.fuel_type || "gasolina"} ${f.liters}L (${f.station || "posto"}) [F#${f.id}]`;
         const { error } = await supabaseAdmin.from("mission_costs").insert({
@@ -257,8 +259,7 @@ async function syncFuelingMissionCosts() {
           longitude: f.longitude || null,
         });
         if (!error) {
-          console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${os.os_number}`);
-          existingFuelIds.add(f.id);
+          console.log(`[Sync] Linked fueling #${f.id} R$${f.total_cost} to ${os.os_number} (date: ${osDateBRT})`);
         }
       }
     }

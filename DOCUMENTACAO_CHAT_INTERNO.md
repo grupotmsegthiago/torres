@@ -464,3 +464,53 @@ O Supabase armazena timestamps sem sufixo de timezone (ex: `"2026-04-07T06:05:00
 O filtro `created_at >= os.created_at` não verifica se o abastecimento já foi contabilizado em outra OS concluída da mesma viatura. Como a TOR-0018 é a única OS ativa do vehicle_id=8, o sync atribuiu todos os abastecimentos recentes da viatura a ela, independentemente de terem ocorrido durante missões anteriores já encerradas.
 
 **Status:** Falha documentada. Correção pendente de autorização. RULES.md consultado — regra de ghost costs se aplica aqui (custos não devem ser atribuídos sem comprovação real vinculada à missão).
+
+---
+
+#### 07/04/2026 — 10:05 BRT | Correção de Isolamento de Custos — Eliminação de Herança de Combustível
+
+**Descrição Tática:**
+1. **`syncFuelingMissionCosts()` reescrita** em `server/routes.ts` (linha 218):
+   - **ANTES:** Query usava `.gte("created_at", os.created_at)` — buscava todos os abastecimentos desde a criação da OS, puxando registros de dias/semanas anteriores de outras missões da mesma viatura.
+   - **DEPOIS:** Query usa `.eq("date", osDateBRT)` — busca SOMENTE abastecimentos cuja data (`vehicle_fueling.date`) corresponde EXATAMENTE à data agendada da missão (campo `scheduled_date`), convertida para BRT.
+2. **Filtro de missão ativa adicionado:** Antes de buscar abastecimentos, verifica se `mission_status` NÃO é "aguardando" nem "agendada". Missões não iniciadas não recebem custo de combustível.
+3. **Check de duplicidade cross-OS implementado:** Antes de inserir um `mission_cost`, o sistema consulta `mission_costs` com `ILIKE '%[F#<id>]%'` para verificar se aquele abastecimento já foi vinculado a QUALQUER outra OS (não apenas as ativas). Se já existe, pula o registro.
+4. **Registros fantasma removidos do banco:** `mission_costs` id=48 (R$ 292,76, F#12 de 03/04) e id=49 (R$ 298,12, F#13 de 05/04) deletados da TOR-0018 (OS id=35).
+5. **Validação pós-correção:** Servidor reiniciado, sync executou após 5s, TOR-0018 permanece com R$ 0,00 em combustível — nenhum registro fantasma recriado.
+6. **Fechamento de brace no operational.ts** (linha 321): Adicionado `}` de fechamento do bloco `if (missionHasStarted)` que estava faltando antes do `catch`, causando erro de compilação.
+
+**Blocos de código alterados:**
+
+**server/routes.ts — Query de busca (ANTES):**
+```typescript
+const { data: fuelings } = await supabaseAdmin.from("vehicle_fueling")
+  .select("id, vehicle_id, driver_id, total_cost, ...")
+  .eq("vehicle_id", os.vehicle_id)
+  .gte("created_at", os.created_at)           // ← FALHA: puxa histórico inteiro
+  .order("created_at", { ascending: true });
+```
+
+**server/routes.ts — Query de busca (DEPOIS):**
+```typescript
+const osDateBRT = new Date(os.scheduled_date || os.created_at)
+  .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const { data: fuelings } = await supabaseAdmin.from("vehicle_fueling")
+  .select("id, vehicle_id, driver_id, total_cost, ..., date")
+  .eq("vehicle_id", os.vehicle_id)
+  .eq("date", osDateBRT)                      // ← CORREÇÃO: data exata da missão
+  .order("created_at", { ascending: true });
+```
+
+**server/routes.ts — Check de duplicidade (NOVO):**
+```typescript
+const { data: alreadyLinked } = await supabaseAdmin.from("mission_costs")
+  .select("id")
+  .ilike("description", `%[F#${f.id}]%`)
+  .limit(1);
+if (alreadyLinked?.length) continue;           // ← já vinculado em outra OS
+```
+
+**Justificativa Técnica:**
+A lógica anterior de "Último Lançamento" (`created_at >= os.created_at`) permitia herança de custos entre missões da mesma viatura. A nova lógica de "Lançamento por Data da Missão" (`date = scheduled_date em BRT`) garante isolamento total: cada OS só contabiliza abastecimentos realizados na data exata da sua operação. O check de duplicidade cross-OS impede que o mesmo registro F#N seja contabilizado duas vezes, mesmo em cenários de viatura compartilhada entre múltiplas OS no mesmo dia.
+
+**Status:** Testado e aplicado. Servidor rodando sem erros. SYSTEM_BRAIN.md L002 respeitado ("Custos reais de combustível NUNCA devem ser herdados de missões anteriores da mesma viatura"). RULES.md Regra 6 respeitada ("NUNCA puxar registros de abastecimento de dias anteriores").

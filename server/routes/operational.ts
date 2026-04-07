@@ -315,6 +315,7 @@ import type { Express } from "express";
                     }
                   }
                 }
+              }
             } catch (_e) {}
 
             resultado.faturamento.total += receitasOsGrid + custoPedagio;
