@@ -816,7 +816,7 @@ export default function RelatorioFaturamentoPage() {
                 <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail Financeiro</Label>
                 <Input
                   type="email"
-                  value={clientData?.email_financeiro || clientData?.emailFinanceiro || "financeiro@torresseguranca.com.br"}
+                  value={clientData?.email_financeiro || clientData?.emailFinanceiro || "escolta@torresseguranca.com.br"}
                   readOnly
                   className="mt-1 text-xs font-mono bg-gray-50"
                   data-testid="input-fatura-email"

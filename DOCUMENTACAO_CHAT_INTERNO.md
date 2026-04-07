@@ -1008,3 +1008,25 @@ receita_cliente = pedagioIdaVolta ? pedagioEstimado × 2 : pedagioEstimado
 - Filtro de billing atualizado: `.not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")')` — adicionado `FATURADO` ao blacklist
 
 **Status:** API de produção ativa. Base limpa. Pronto para gerar fatura real da TM SEGURANÇA.
+
+---
+
+#### 07/04/2026 — 11:42 BRT | VERIFICAÇÃO PRÉ-EMISSÃO — Produção Asaas
+
+**E-mail de Fallback Corrigido:**
+- Fallback alterado de `financeiro@torresseguranca.com.br` → `escolta@torresseguranca.com.br`
+- Modal de faturamento (`relatorio-faturamento.tsx` linha 822) atualizado
+- Backend já usava `escolta@torresseguranca.com.br` como padrão em todo o sistema
+
+**Verificação de Valor — DIVERGÊNCIA IDENTIFICADA:**
+- Boletim de Medição esperado pelo usuário: R$ 5.299,10
+- Soma real dos 14 billings faturáveis: **R$ 13.942,80**
+- Motivo provável: Existem 14 OSs no status APROVADA, mas o boletim original pode ter sido para apenas um subconjunto
+- 4 billings sem boletim_numero (IDs UUID) — podem ser OSs de teste ou duplicatas
+- 1 billing com data_missao em 2026-07-06 e outro em 2026-04-30 — fora do período 30/03 a 06/04
+- AÇÃO NECESSÁRIA: Mickael precisa validar quais OSs devem entrar na fatura
+
+**API de Produção:**
+- `ASAAS_API_KEY` ativa: `$aact_prod_*`
+- Sistema pronto para emissão real
+- Validação de CPF/CNPJ do Asaas pode retornar erro — logado em auditoria
