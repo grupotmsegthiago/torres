@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Send, Search, Plus, MessageCircle, Users, Image, MapPin,
-  Check, CheckCheck, Circle, ChevronLeft, Loader2, Paperclip,
+  Check, CheckCheck, Circle, ChevronLeft, Loader2, Paperclip, X, Shield,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNotificationSound } from "@/hooks/use-notification-sound";
+import { MissionInviteCard } from "@/components/chat-widget";
 
 interface ChatUser {
   id: number;
@@ -80,8 +81,13 @@ export default function ChatPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState("");
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  const [showSendOS, setShowSendOS] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isAdmin = user?.role === "admin" || user?.role === "diretoria";
 
   const { data: conversations = [], refetch: refetchConvs } = useQuery<ChatConversation[]>({
     queryKey: ["/api/chat/conversations"],
@@ -203,21 +209,66 @@ export default function ChatPage() {
   });
 
   const createConvMutation = useMutation({
-    mutationFn: async (participantId: number) => {
+    mutationFn: async (params: { participantIds: number[]; type: string; name?: string }) => {
       const res = await authFetch("/api/chat/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "direct", participantIds: [participantId] }),
+        body: JSON.stringify(params),
       });
       if (!res.ok) throw new Error("Erro ao criar");
       return res.json();
     },
     onSuccess: (conv) => {
       setShowNewChat(false);
+      setGroupMode(false);
+      setGroupName("");
+      setSelectedUsers([]);
       setActiveConvId(conv.id);
       refetchConvs();
     },
   });
+
+  const { data: availableOS = [] } = useQuery<any[]>({
+    queryKey: ["/api/chat/service-orders-available"],
+    enabled: showSendOS && isAdmin,
+  });
+
+  const sendMissionInviteMutation = useMutation({
+    mutationFn: async (serviceOrderId: number) => {
+      const res = await authFetch("/api/chat/send-mission-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceOrderId, conversationId: activeConvId }),
+      });
+      if (!res.ok) throw new Error("Erro ao enviar OS");
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowSendOS(false);
+      toast({ title: "OS enviada para o chat" });
+      refetchMsgs();
+      refetchConvs();
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "Erro ao enviar OS", variant: "destructive" });
+    },
+  });
+
+  const toggleUserSelection = (uid: number) => {
+    setSelectedUsers(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
+  };
+
+  const handleCreateGroup = () => {
+    if (selectedUsers.length < 2) {
+      toast({ title: "Selecione pelo menos 2 participantes", variant: "destructive" });
+      return;
+    }
+    if (!groupName.trim()) {
+      toast({ title: "Informe o nome do grupo", variant: "destructive" });
+      return;
+    }
+    createConvMutation.mutate({ participantIds: selectedUsers, type: "group", name: groupName.trim() });
+  };
 
   const handleSend = () => {
     if (!msgText.trim() || !activeConvId) return;
@@ -313,8 +364,8 @@ export default function ChatPage() {
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
                       <span className="text-[11px] text-neutral-500 truncate">
-                        {conv.lastMessage?.type === "system" ? "📋 " : ""}
-                        {conv.lastMessage?.type === "image" ? "📷 Foto" : conv.lastMessage?.type === "location" ? "📍 Localização" : (conv.lastMessage?.content || "").substring(0, 40)}
+                        {conv.lastMessage?.type === "system" ? "📋 " : conv.lastMessage?.type === "mission_invite" ? "🎯 " : ""}
+                        {conv.lastMessage?.type === "mission_invite" ? "Convite de Missão" : conv.lastMessage?.type === "image" ? "📷 Foto" : conv.lastMessage?.type === "location" ? "📍 Localização" : (conv.lastMessage?.content || "").substring(0, 40)}
                       </span>
                       {conv.unreadCount > 0 && (
                         <span className="bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1" data-testid={`badge-unread-${conv.id}`}>
@@ -379,6 +430,13 @@ export default function ChatPage() {
                       </div>
                     );
                   }
+                  if (msg.type === "mission_invite") {
+                    return (
+                      <div key={msg.id} className="flex justify-center">
+                        <MissionInviteCard msg={msg} conversationId={activeConvId!} onAccepted={() => { refetchMsgs(); refetchConvs(); }} />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[75%] rounded-lg px-3 py-2 shadow-sm ${isMine ? "bg-[#dcf8c6] rounded-tr-none" : "bg-white rounded-tl-none"}`}>
@@ -413,6 +471,11 @@ export default function ChatPage() {
                 <button onClick={handleSendLocation} className="p-2 text-neutral-400 hover:text-red-500 transition-colors" data-testid="button-send-location" title="Enviar localização">
                   <MapPin className="w-5 h-5" />
                 </button>
+                {isAdmin && (
+                  <button onClick={() => setShowSendOS(true)} className="p-2 text-neutral-400 hover:text-amber-500 transition-colors" data-testid="button-send-os-chat" title="Enviar OS para Chat">
+                    <Shield className="w-5 h-5" />
+                  </button>
+                )}
                 <Input
                   ref={inputRef}
                   value={msgText}
@@ -431,18 +494,50 @@ export default function ChatPage() {
         </div>
 
         {showNewChat && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowNewChat(false)}>
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => { setShowNewChat(false); setGroupMode(false); setSelectedUsers([]); setGroupName(""); }}>
             <div className="bg-white rounded-xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()} data-testid="modal-new-chat">
               <div className="p-4 border-b">
-                <h3 className="text-sm font-bold text-neutral-900">Nova Conversa</h3>
-                <Input placeholder="Buscar usuário..." value={newChatSearch} onChange={(e) => setNewChatSearch(e.target.value)} className="mt-2 h-8 text-xs" data-testid="input-new-chat-search" />
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-neutral-900">{groupMode ? "Novo Grupo" : "Nova Conversa"}</h3>
+                  <div className="flex items-center gap-1">
+                    {!groupMode ? (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setGroupMode(true)} data-testid="button-group-mode">
+                        <Users className="w-3 h-3 mr-1" /> Grupo
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setGroupMode(false); setSelectedUsers([]); setGroupName(""); }}>
+                        Voltar
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {groupMode && (
+                  <Input placeholder="Nome do grupo..." value={groupName} onChange={(e) => setGroupName(e.target.value)} className="h-8 text-xs mb-2" data-testid="input-group-name" />
+                )}
+                <Input placeholder="Buscar usuário..." value={newChatSearch} onChange={(e) => setNewChatSearch(e.target.value)} className="h-8 text-xs" data-testid="input-new-chat-search" />
+                {groupMode && selectedUsers.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedUsers.map(uid => (
+                      <span key={uid} className="bg-neutral-100 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                        {userMap[uid]?.name?.split(" ")[0] || "?"}
+                        <button onClick={() => toggleUserSelection(uid)}><X className="w-2.5 h-2.5" /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto">
                 {filteredNewUsers.map(u => (
                   <button
                     key={u.id}
-                    onClick={() => createConvMutation.mutate(u.id)}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-neutral-50 text-left border-b border-neutral-50"
+                    onClick={() => {
+                      if (groupMode) {
+                        toggleUserSelection(u.id);
+                      } else {
+                        createConvMutation.mutate({ participantIds: [u.id], type: "direct" });
+                      }
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 text-left border-b border-neutral-50 transition-colors ${groupMode && selectedUsers.includes(u.id) ? "bg-blue-50" : "hover:bg-neutral-50"}`}
                     data-testid={`new-chat-user-${u.id}`}
                   >
                     <div className="relative">
@@ -451,9 +546,52 @@ export default function ChatPage() {
                       </div>
                       <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${presenceMap[u.id]?.online ? "bg-green-500" : "bg-neutral-400"}`} />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-xs font-bold text-neutral-900">{u.name}</p>
                       <p className="text-[10px] text-neutral-400">{u.role}</p>
+                    </div>
+                    {groupMode && selectedUsers.includes(u.id) && <Check className="w-4 h-4 text-blue-600" />}
+                  </button>
+                ))}
+              </div>
+              {groupMode && (
+                <div className="p-3 border-t">
+                  <Button size="sm" className="w-full bg-neutral-900 hover:bg-neutral-800 text-xs" onClick={handleCreateGroup} disabled={createConvMutation.isPending} data-testid="button-create-group">
+                    {createConvMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Users className="w-3 h-3 mr-1" />}
+                    Criar Grupo ({selectedUsers.length} selecionados)
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showSendOS && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowSendOS(false)}>
+            <div className="bg-white rounded-xl w-full max-w-md max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()} data-testid="modal-send-os">
+              <div className="p-4 border-b">
+                <h3 className="text-sm font-bold text-neutral-900">Enviar OS para Chat</h3>
+                <p className="text-[11px] text-neutral-400 mt-1">Selecione a Ordem de Serviço para enviar como convite de missão</p>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {availableOS.length === 0 && (
+                  <p className="p-6 text-center text-xs text-neutral-400">Nenhuma OS disponível</p>
+                )}
+                {availableOS.map((os: any) => (
+                  <button
+                    key={os.id}
+                    onClick={() => sendMissionInviteMutation.mutate(os.id)}
+                    disabled={sendMissionInviteMutation.isPending}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-neutral-50 text-left border-b border-neutral-50"
+                    data-testid={`send-os-item-${os.id}`}
+                  >
+                    <div className="w-9 h-9 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                      <Shield className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-neutral-900">{os.osNumber}</p>
+                      <p className="text-[10px] text-neutral-500 truncate">{os.origin} → {os.destination}</p>
+                      <p className="text-[10px] text-neutral-400">{os.type} | {os.missionStatus || "aguardando"}</p>
                     </div>
                   </button>
                 ))}

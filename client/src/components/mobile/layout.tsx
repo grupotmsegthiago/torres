@@ -9,6 +9,7 @@ import { Home, Crosshair, ClipboardCheck, UserCircle, MapPin, FileText, Loader2,
 import { Button } from "@/components/ui/button";
 import { subscribeQueue } from "@/lib/offlineQueue";
 import logoSrc from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
+import ChatWidget from "@/components/chat-widget";
 
 const navItems = [
   { path: "/mobile", label: "Início", icon: Home },
@@ -202,6 +203,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
 
+      <ChatWidget />
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 safe-area-bottom" data-testid="mobile-bottom-nav">
         <div className="flex items-center justify-around py-1">
           {navItems.map((item) => {

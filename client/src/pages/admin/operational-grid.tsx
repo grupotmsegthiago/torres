@@ -23,7 +23,7 @@ import {
 import { Link, useLocation } from "wouter";
 import { SiWhatsapp } from "react-icons/si";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
-import { titleCase, formatDateBRT } from "@/lib/utils";
+import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
@@ -376,7 +376,7 @@ function formatPhone(phone: string): string {
 
 function getLastPositionInfo(lastPositionTime?: string) {
   if (!lastPositionTime) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
-  const parsed = new Date(ensureUTC(lastPositionTime)!).getTime();
+  const parsed = parseUTCDate(lastPositionTime).getTime();
   if (isNaN(parsed)) return { text: "—", color: "text-neutral-400", dotColor: "bg-neutral-300", diffMin: -1, noSignal: false };
   const diffMin = Math.floor((Date.now() - parsed) / 60000);
   if (diffMin < 0) return { text: "agora", color: "text-neutral-800", dotColor: "bg-neutral-700", diffMin: 0, noSignal: false };
@@ -428,6 +428,8 @@ function getTransitStatus(missionStatus: string | null): string {
   switch (missionStatus) {
     case "aguardando":
       return "MISSÃO AGENDADA";
+    case "aceita":
+      return "MISSÃO ACEITA";
     case "checkout_armamento":
     case "checkout_viatura":
     case "checkout_km_saida":
@@ -457,23 +459,16 @@ function getTransitStatus(missionStatus: string | null): string {
   }
 }
 
-function ensureUTC(ts: string | null | undefined): string | null {
-  if (!ts) return null;
-  const s = String(ts);
-  if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
-  return s + "Z";
-}
-
 function getHoursUntilMission(scheduledDate: string | null | undefined): number | null {
   if (!scheduledDate) return null;
   const now = new Date();
-  const scheduled = new Date(ensureUTC(scheduledDate)!);
+  const scheduled = parseUTCDate(scheduledDate);
   return (scheduled.getTime() - now.getTime()) / (1000 * 60 * 60);
 }
 
 function getMissionProgress(missionStatus: string | null): number {
   const steps = [
-    "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+    "aguardando", "aceita", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
     "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado", "checkin_dados_motorista",
     "iniciar_missao", "em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno",
     "finalizada", "retorno_base", "chegada_base", "encerrada",
@@ -795,7 +790,7 @@ function fireCopyAudit(updateId: number | undefined | null) {
 
 function CopyAuditStamp({ copiadoPor, copiadoEm }: { copiadoPor?: string | null; copiadoEm?: string | null }) {
   if (!copiadoPor || !copiadoEm) return null;
-  const dt = new Date(copiadoEm);
+  const dt = parseUTCDate(copiadoEm);
   const formatted = dt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
   return (
     <span className="text-[9px] text-blue-400 italic" data-testid="copy-audit-stamp">
@@ -886,8 +881,8 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   if (!os) return null;
 
   const now = new Date();
-  const date = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const date = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
   const agentMsg = os.lastAgentUpdate?.message?.trim();
   const statusLabel = os.lastAgentUpdate?.missionStep
@@ -1114,7 +1109,7 @@ function getPriorityDisplay(priority: string) {
 
 function formatElapsedTime(dateStr: string | null | undefined): string {
   if (!dateStr) return "";
-  const d = new Date(ensureUTC(dateStr)!);
+  const d = parseUTCDate(dateStr);
   if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return "";
   const diff = Date.now() - d.getTime();
   if (diff < 0) return "";
@@ -1129,7 +1124,7 @@ function formatElapsedTime(dateStr: string | null | undefined): string {
 
 function getTimeAgoUrgency(dateStr: string | null | undefined): { text: string; colorClass: string; minutesAgo: number } {
   if (!dateStr) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
-  const d = new Date(ensureUTC(dateStr)!);
+  const d = parseUTCDate(dateStr);
   if (isNaN(d.getTime()) || d.getFullYear() <= 1970) return { text: "", colorClass: "text-neutral-400", minutesAgo: -1 };
   const diff = Date.now() - d.getTime();
   if (diff < 0) return { text: "agora", colorClass: "text-green-600", minutesAgo: 0 };
@@ -1223,6 +1218,8 @@ function getStatusDisplay(missionStatus: string, osStatus: string) {
   switch (missionStatus) {
     case "aguardando":
       return { label: "Missão Agendada", icon: CalendarClock, className: "bg-blue-50 text-blue-700 border-blue-200" };
+    case "aceita":
+      return { label: "Missão Aceita", icon: CircleCheckBig, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
     case "checkout_armamento":
     case "checkout_viatura":
     case "checkout_km_saida":
@@ -1280,7 +1277,7 @@ function isRodizioSP(plate: string): boolean {
 }
 
 function formatTimeDiff(since: string): string {
-  const diffMin = Math.floor((Date.now() - new Date(ensureUTC(since)!).getTime()) / 60000);
+  const diffMin = Math.floor((Date.now() - parseUTCDate(since).getTime()) / 60000);
   if (diffMin < 1) return "< 1min";
   const hours = Math.floor(diffMin / 60);
   const mins = diffMin % 60;
@@ -1300,7 +1297,7 @@ function getIdleMinutes(v: TrackedVehicle): number {
   if ((v.tracker.speed ?? 0) > 2) return 0;
   const since = v.tracker.stoppedSince || v.tracker.lastPositionTime;
   if (!since) return 0;
-  return Math.floor((Date.now() - new Date(ensureUTC(since)!).getTime()) / 60000);
+  return Math.floor((Date.now() - parseUTCDate(since).getTime()) / 60000);
 }
 
 function getIgnitionOnTime(v: TrackedVehicle): string | null {
@@ -1581,7 +1578,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         const _agent1 = v.activeOs?.employee1?.name || "—";
         const _agent2 = v.activeOs?.employee2?.name || "—";
         const _dateStr = v.tracker.lastPositionTime ? formatDateBRT(v.tracker.lastPositionTime) : "—";
-        const _timeStr = v.tracker.lastPositionTime ? new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+        const _timeStr = v.tracker.lastPositionTime ? parseUTCDate(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" }) : "—";
 
         const _plateFormatted = v.plate.replace(/^(.{3})(.+)$/, "$1-$2");
         const _ignStatus = v.tracker.ignition ? `<span style="color:#16a34a;font-weight:700;">Ligada</span>` : `<span style="color:#dc2626;font-weight:700;">Desligada</span>`;
@@ -3370,7 +3367,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             <div className={`px-4 py-2 ${photoModalUrl && photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
               <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
               <p className="text-[10px] mt-1 opacity-60">
-                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
+                {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : ""}
               </p>
               {(() => {
                 const mu = getTimeAgoUrgency(v.activeOs!.lastAgentUpdate!.createdAt);
@@ -3387,7 +3384,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
                   <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`history-update-${u.id}`}>
                     {(() => {
                       const hu2 = getTimeAgoUrgency(u.createdAt);
-                      const t2 = u.createdAt ? new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                      const t2 = u.createdAt ? formatTimeBRT(u.createdAt) : "--:--";
                       return <span className={`font-mono flex-shrink-0 font-bold ${hu2.colorClass}`} title={hu2.text}>{t2}</span>;
                     })()}
                     <span className="text-neutral-400">—</span>
@@ -3776,8 +3773,8 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
     const isFinA = a.status === "concluida" || a.status === "concluída" || a.status === "cancelada" ? 1 : 0;
     const isFinB = b.status === "concluida" || b.status === "concluída" || b.status === "cancelada" ? 1 : 0;
     if (isFinA !== isFinB) return isFinA - isFinB;
-    const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
-    const db = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+    const da = a.scheduledDate ? parseUTCDate(a.scheduledDate).getTime() : 0;
+    const db = b.scheduledDate ? parseUTCDate(b.scheduledDate).getTime() : 0;
     return da - db;
   });
 
@@ -3821,7 +3818,7 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
               {o.scheduledDate && (
                 <p className="text-xs text-neutral-400">
                   <CalendarClock className="w-3 h-3 inline mr-1" />
-                  {new Date(ensureUTC(o.scheduledDate)!).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                  {parseUTCDate(o.scheduledDate).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                 </p>
               )}
             </div>
@@ -4355,7 +4352,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             {v.activeOs?.lastAgentUpdate && (
               <div className={`px-4 py-2 ${photoModalUrl !== "__no_photo__" ? "text-neutral-300" : "text-neutral-600"}`}>
                 <p className="text-sm font-medium">"{v.activeOs.lastAgentUpdate.message}"</p>
-                <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}</p>
+                <p className="text-[10px] mt-1 opacity-60">{titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : ""}</p>
               </div>
             )}
             {(v.activeOs?.recentUpdates?.length ?? 0) > 0 && (
@@ -4366,7 +4363,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
                     <div key={u.id} className="flex items-start gap-2 text-[11px]" data-testid={`ctx-history-${u.id}`}>
                       {(() => {
                         const hu = getTimeAgoUrgency(u.createdAt);
-                        const tStr = u.createdAt ? new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                        const tStr = u.createdAt ? formatTimeBRT(u.createdAt) : "--:--";
                         return (
                           <span className={`font-mono flex-shrink-0 font-bold ${hu.colorClass}`} title={hu.text}>
                             {tStr}
@@ -5252,9 +5249,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <div className={`inline-flex items-center gap-1.5 ${posInfo.color}`}>
                               {posInfo.noSignal ? <WifiOff className="w-3 h-3 flex-shrink-0" /> : <Clock className="w-3 h-3 flex-shrink-0" />}
                               <span className="text-xs font-semibold tabular-nums">
-                                {new Date(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                                {parseUTCDate(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "America/Sao_Paulo" })}
                                 {" - "}
-                                {new Date(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                {parseUTCDate(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" })}
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -5282,9 +5279,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <div className="inline-flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
                               <span className="text-[11px] font-semibold text-neutral-700 tabular-nums">
-                                {v.lastAlert.createdAt ? new Date(ensureUTC(v.lastAlert.createdAt)!).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }) : "—"}
+                                {v.lastAlert.createdAt ? parseUTCDate(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }) : "—"}
                                 {" "}
-                                {v.lastAlert.createdAt ? new Date(ensureUTC(v.lastAlert.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
+                                {v.lastAlert.createdAt ? formatTimeBRT(v.lastAlert.createdAt) : ""}
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -5442,7 +5439,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   const urgency = getTimeAgoUrgency(v.activeOs.lastAgentUpdate.createdAt);
                                   if (!urgency.text) return null;
                                   const timeStr = v.activeOs.lastAgentUpdate.createdAt
-                                    ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+                                    ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt)
                                     : "";
                                   return (
                                     <span className={`text-[10px] font-bold ${urgency.colorClass}`} data-testid={`elapsed-${v.id}`}>
@@ -5466,7 +5463,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <TooltipContent side="bottom" className="max-w-[280px]">
                                   <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
                                   <p className="text-[10px] text-neutral-400 mt-0.5">
-                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? new Date(ensureUTC(v.activeOs.lastAgentUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""}
+                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : ""}
                                     {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷 Foto" : ""}
                                   </p>
                                   {(() => {
@@ -5483,7 +5480,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {v.activeOs.scheduledDate && (
                               <span className="ml-1 text-[10px] text-neutral-400">
                                 · {(() => {
-                                  const sd = new Date(ensureUTC(v.activeOs.scheduledDate)!);
+                                  const sd = parseUTCDate(v.activeOs.scheduledDate);
                                   const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                   const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                   const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -5497,8 +5494,8 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const vtrItems = gridData.filter((g: GridItem) => g.vehicle?.plate === v.plate);
                             if (vtrItems.length === 0) return null;
                             const vtrWithCost = [...vtrItems].sort((a, b) => {
-                              const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
-                              const db2 = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
+                              const da = a.scheduledDate ? parseUTCDate(a.scheduledDate).getTime() : 0;
+                              const db2 = b.scheduledDate ? parseUTCDate(b.scheduledDate).getTime() : 0;
                               return da - db2;
                             });
                             const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
@@ -5548,7 +5545,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
                                       {vtrWithCost.map(g => {
                                         const st = statusLabel(g);
-                                        const hora = (g.missionStartedAt || g.scheduledDate) ? new Date(ensureUTC(g.missionStartedAt || g.scheduledDate)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "--:--";
+                                        const hora = (g.missionStartedAt || g.scheduledDate) ? formatTimeBRT((g.missionStartedAt || g.scheduledDate)!) : "--:--";
                                         const he = g.liveCost?.fat_hora_extra || 0;
                                         const ke = g.liveCost?.fat_km_extra || 0;
                                         const heHours = g.liveCost?.horas_excedentes || 0;
@@ -5674,7 +5671,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                               {(() => {
                                 const dateRef = v.activeOs.missionStartedAt || v.activeOs.scheduledDate;
                                 if (!dateRef) return "";
-                                const sd = new Date(ensureUTC(dateRef)!);
+                                const sd = parseUTCDate(dateRef);
                                 const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
                                 const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
@@ -5696,7 +5693,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                           </div>
                           {v.scheduledOs.scheduledDate && (
                             <p className="text-xs text-neutral-500 font-medium">
-                              {new Date(ensureUTC(v.scheduledOs.scheduledDate)!).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                              {parseUTCDate(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                             </p>
                           )}
                         </div>
@@ -5813,11 +5810,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
             });
           }
         }
-        allNext.sort((a, b) => new Date(ensureUTC(a.os.scheduledDate)!).getTime() - new Date(ensureUTC(b.os.scheduledDate)!).getTime());
+        allNext.sort((a, b) => parseUTCDate(a.os.scheduledDate).getTime() - parseUTCDate(b.os.scheduledDate).getTime());
         if (allNext.length === 0) return null;
 
         const nextOs = allNext[0];
-        const nextDt = nextOs.os.scheduledDate ? new Date(ensureUTC(nextOs.os.scheduledDate)!) : null;
+        const nextDt = nextOs.os.scheduledDate ? parseUTCDate(nextOs.os.scheduledDate) : null;
         const nextDiff = nextDt ? nextDt.getTime() - Date.now() : 0;
         const nextIsPast = nextDiff < 0;
         const nextIsUrgent = nextDiff > 0 && nextDiff < 3600000;
@@ -5894,7 +5891,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
               });
             }
           }
-          allNext.sort((a, b) => new Date(ensureUTC(a.os.scheduledDate)!).getTime() - new Date(ensureUTC(b.os.scheduledDate)!).getTime());
+          allNext.sort((a, b) => parseUTCDate(a.os.scheduledDate).getTime() - parseUTCDate(b.os.scheduledDate).getTime());
 
           if (allNext.length === 0) return <p className="text-sm text-neutral-400 text-center py-6">Nenhum agendamento pendente</p>;
 
@@ -5902,7 +5899,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
             <div className="space-y-3">
               {allNext.map((item, idx) => {
                 const { os, veh } = item;
-                const scheduledDt = os.scheduledDate ? new Date(ensureUTC(os.scheduledDate)!) : null;
+                const scheduledDt = os.scheduledDate ? parseUTCDate(os.scheduledDate) : null;
                 const diff = scheduledDt ? scheduledDt.getTime() - Date.now() : 0;
                 const isPast = diff < 0;
                 const isUrgent = diff > 0 && diff < 3600000;
@@ -6014,7 +6011,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       <DialogContent className="max-w-md">
         {nextOsDetail && (() => {
           const { os, vehicle: veh } = nextOsDetail;
-          const scheduledDt = os.scheduledDate ? new Date(ensureUTC(os.scheduledDate)!) : null;
+          const scheduledDt = os.scheduledDate ? parseUTCDate(os.scheduledDate) : null;
           const timeUntil = scheduledDt ? (() => {
             const diff = scheduledDt.getTime() - Date.now();
             if (diff < 0) return "Já passou";
@@ -6187,7 +6184,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-neutral-800">"{rowForwardUpdate.message}"</p>
                   <p className="text-[10px] text-neutral-500 mt-1">
-                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? new Date(ensureUTC(rowForwardUpdate.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
+                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? formatTimeBRT(rowForwardUpdate.createdAt) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
                   </p>
                 </div>
               </div>
@@ -6303,7 +6300,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <span className="text-neutral-400">·</span>
                         <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}..."` : "—"}</span>
                         {fwd.photoIncluded && <span className="text-neutral-400">📷</span>}
-                        <span className="text-neutral-400 ml-auto flex-shrink-0">{new Date(ensureUTC(fwd.createdAt)!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span>
+                        <span className="text-neutral-400 ml-auto flex-shrink-0">{parseUTCDate(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span>
                       </div>
                     ))}
                   </div>
@@ -6654,8 +6651,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     }
     const groups = Array.from(map.values());
     groups.sort((a, b) => {
-      const aTime = new Date(ensureUTC(a.updates[0]?.createdAt) || 0).getTime();
-      const bTime = new Date(ensureUTC(b.updates[0]?.createdAt) || 0).getTime();
+      const aTime = parseUTCDate(a.updates[0]?.createdAt || "1970-01-01").getTime();
+      const bTime = parseUTCDate(b.updates[0]?.createdAt || "1970-01-01").getTime();
       return bTime - aTime;
     });
     return groups;
@@ -6697,7 +6694,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     const currentOffline = new Set<string>();
     const currentCritical = new Set<string>();
     for (const g of vtrGroups) {
-      const latestTs = g.updates[0]?.createdAt ? new Date(ensureUTC(g.updates[0].createdAt)!).getTime() : 0;
+      const latestTs = g.updates[0]?.createdAt ? parseUTCDate(g.updates[0].createdAt).getTime() : 0;
       const elapsed = nowMs - latestTs;
       if (elapsed > 15 * 60 * 1000) {
         currentCritical.add(g.osNumber);
@@ -6783,10 +6780,10 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           const isExpanded = expandedVtrs.has(group.osNumber);
           const isFlashing = flashVtrs.has(group.osNumber);
           const latest = group.updates[0];
-          const latestTime = latest?.createdAt ? new Date(ensureUTC(latest.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }) : "—";
+          const latestTime = latest?.createdAt ? formatTimeBRT(latest.createdAt) : "—";
           const gridItem = gridData.find((g: GridItem) => g.osNumber === group.osNumber);
           const statusLabel = latest?.missionStep ? getMissionLabel(latest.missionStep) : (gridItem?.missionStatus ? getMissionLabel(gridItem.missionStatus) : "—");
-          const msSinceLastUpdate = latest?.createdAt ? Date.now() - new Date(ensureUTC(latest.createdAt)!).getTime() : Infinity;
+          const msSinceLastUpdate = latest?.createdAt ? Date.now() - parseUTCDate(latest.createdAt).getTime() : Infinity;
           const isVtrOffline = msSinceLastUpdate > 5 * 60 * 1000;
           const isVtrCritical = msSinceLastUpdate > 15 * 60 * 1000;
           const minSinceLast = Math.floor(msSinceLastUpdate / 60000);
@@ -6857,7 +6854,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             const nu = getTimeAgoUrgency(u.createdAt);
                             return (
                               <span className={`text-[10px] font-bold ${nu.colorClass}`}>
-                                {new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({nu.text})
+                                {formatTimeBRT(u.createdAt)} ({nu.text})
                               </span>
                             );
                           })()}
@@ -6993,8 +6990,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
             const locationAddr = matchedVehicle?.tracker?.address || "—";
             const now = new Date();
-            const dateStr = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-            const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+            const dateStr = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+            const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
             const routeP = getRouteProgress({
               originLat: matchedVehicle?.activeOs?.originLat, originLng: matchedVehicle?.activeOs?.originLng,
               destLat: matchedVehicle?.activeOs?.destinationLat, destLng: matchedVehicle?.activeOs?.destinationLng,
@@ -7297,7 +7294,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             {fwd.photoIncluded && <span className="text-neutral-400 ml-1">📷</span>}
                           </div>
                           <span className="text-neutral-400 flex-shrink-0">
-                            {new Date(ensureUTC(fwd.createdAt)!).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+                            {parseUTCDate(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                           </span>
                         </div>
                       ))}
@@ -7329,7 +7326,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
 }
 
 function timeAgo(dateStr: string) {
-  const ts = new Date(ensureUTC(dateStr)!).getTime();
+  const ts = parseUTCDate(dateStr).getTime();
   if (isNaN(ts)) return "—";
   const diff = Date.now() - ts;
   if (diff < 0) return "agora";
@@ -7359,7 +7356,7 @@ function AlertsTimeline() {
   });
 
 
-  const recentCount = allUpdates.filter(u => (Date.now() - new Date(ensureUTC(u.createdAt)!).getTime()) < 600000).length;
+  const recentCount = allUpdates.filter(u => (Date.now() - parseUTCDate(u.createdAt).getTime()) < 600000).length;
 
   return (
     <>
@@ -7406,7 +7403,7 @@ function AlertsTimeline() {
               </div>
             ) : (
               allUpdates.map((u: any, idx: number) => {
-                const ageMs = Date.now() - new Date(ensureUTC(u.createdAt)!).getTime();
+                const ageMs = Date.now() - parseUTCDate(u.createdAt).getTime();
                 const isCritical = ageMs < 600000;
                 const isNewest = idx === 0;
                 const hasPhoto = u.hasPhoto || (!!u.photoUrl && u.photoUrl !== "[has_photo]");
@@ -7525,7 +7522,7 @@ function AlertsTimeline() {
                               return (
                                 <span className={`text-[11px] font-bold flex items-center gap-1 ${tl.colorClass}`}>
                                   <Clock className="w-3 h-3" />
-                                  {new Date(ensureUTC(u.createdAt)!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })} ({tl.text})
+                                  {formatTimeBRT(u.createdAt)} ({tl.text})
                                 </span>
                               );
                             })()}
@@ -7769,7 +7766,7 @@ export default function OperationalGridPage() {
   const noSignalCount = onlyVehicles.filter((v) => !!v.noSignalSince && v.tracker?.isLiveData === false).length;
   const activeOsCount = gridData.length;
 
-  const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
 
   return (
     <OpNotifProvider>

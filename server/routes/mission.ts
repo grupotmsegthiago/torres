@@ -9,6 +9,8 @@ import type { Express } from "express";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS } from "./_helpers";
   import { calcularEscolta } from "../billing-calc";
+  import { logSystemAudit } from "../audit";
+  import { randomUUID } from "crypto";
 
   export function registerMissionRoutes(app: Express) {
     app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
@@ -1782,6 +1784,387 @@ import type { Express } from "express";
       missionStatus: "em_transito_destino",
     });
     res.json(updated);
+  });
+
+  app.get("/api/missions/:osId/acceptances", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const isAdmin = req.user!.role === "admin" || req.user!.role === "diretoria";
+      const employeeId = req.user!.employeeId;
+
+      if (!isAdmin) {
+        const os = await storage.getServiceOrder(osId);
+        if (!os) return res.status(404).json({ message: "OS não encontrada" });
+        if (os.assignedEmployeeId !== employeeId && os.assignedEmployee2Id !== employeeId) {
+          return res.status(403).json({ message: "Acesso negado a esta missão" });
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("mission_acceptances").select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+
+      const enriched = await Promise.all((data || []).map(async (a: any) => {
+        const emp = await storage.getEmployee(a.employee_id);
+        const base: any = { ...a, employeeName: emp?.name || "Agente" };
+        if (isAdmin) {
+          base.employeeCpf = emp?.cpf || null;
+          base.employeeMatricula = emp?.matricula || null;
+        }
+        return base;
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/employees/:id/acceptances", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const employeeId = Number(req.params.id);
+      const { data, error } = await supabaseAdmin
+        .from("mission_acceptances").select("*")
+        .eq("employee_id", employeeId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const enriched = await Promise.all((data || []).map(async (a: any) => {
+        const os = await storage.getServiceOrder(a.service_order_id);
+        return { ...a, osNumber: os?.osNumber || "?", osDate: os?.scheduledDate, osType: os?.type };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/missions/:osId/accept", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const userId = req.user!.id;
+      const { locationLat, locationLng, deviceInfo, conversationId } = req.body;
+      const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "";
+
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) return res.status(404).json({ message: "Funcionário não vinculado ao usuário" });
+      const emp = await storage.getEmployee(employeeId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const osCheck = await storage.getServiceOrder(osId);
+      if (!osCheck) return res.status(404).json({ message: "OS não encontrada" });
+      if (osCheck.assignedEmployeeId !== emp.id && osCheck.assignedEmployee2Id !== emp.id) {
+        return res.status(403).json({ message: "Você não está designado para esta missão" });
+      }
+
+      let { data: acceptance } = await supabaseAdmin
+        .from("mission_acceptances").select("*")
+        .eq("service_order_id", osId)
+        .eq("employee_id", emp.id)
+        .eq("status", "pendente")
+        .single();
+
+      if (!acceptance) {
+        const { data: existing } = await supabaseAdmin
+          .from("mission_acceptances").select("status")
+          .eq("service_order_id", osId)
+          .eq("employee_id", emp.id)
+          .single();
+        if (existing?.status === "aceito") return res.status(400).json({ message: "Missão já aceita" });
+
+        const { data: created } = await supabaseAdmin.from("mission_acceptances").insert({
+          id: randomUUID(),
+          service_order_id: osId,
+          employee_id: emp.id,
+          status: "pendente",
+          acceptance_token: randomUUID(),
+        }).select().single();
+        acceptance = created;
+        if (!acceptance) return res.status(500).json({ message: "Erro ao criar registro de aceite" });
+      }
+
+      const now = new Date();
+      await supabaseAdmin.from("mission_acceptances").update({
+        status: "aceito",
+        responded_at: now.toISOString(),
+        ip_address: ipAddress,
+        device_info: deviceInfo || null,
+        location_lat: locationLat || null,
+        location_lng: locationLng || null,
+      }).eq("id", acceptance.id);
+
+      await storage.updateServiceOrder(osId, { missionStatus: "aceita" });
+
+      const { data: allAcceptances } = await supabaseAdmin
+        .from("mission_acceptances").select("status")
+        .eq("service_order_id", osId);
+      const allAccepted = (allAcceptances || []).every((a: any) => a.status === "aceito");
+
+      const timeBRT = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+
+      await logSystemAudit({
+        userId, userName: req.user!.name || emp.name, userRole: req.user!.role,
+        action: "mission_acceptance_accept",
+        targetId: String(osId), targetType: "service_order",
+        details: JSON.stringify({
+          osNumber: osCheck.osNumber, employeeId: emp.id, employeeName: emp.name,
+          respondedAt: timeBRT, ipAddress, deviceInfo, locationLat, locationLng,
+          acceptanceToken: acceptance.acceptance_token,
+          allAccepted,
+        }),
+        ipAddress,
+      });
+
+      const targetConvId = conversationId || null;
+      if (targetConvId) {
+        const { data: convPart } = await supabaseAdmin
+          .from("chat_participants").select("id")
+          .eq("conversation_id", targetConvId)
+          .eq("user_id", userId)
+          .limit(1);
+        if (convPart?.length) {
+          await supabaseAdmin.from("chat_messages").insert({
+            id: randomUUID(),
+            conversation_id: targetConvId,
+            sender_id: userId,
+            type: "system",
+            content: `✅ ${emp.name} aceitou a missão ${osCheck.osNumber} — ${timeBRT}`,
+          });
+        }
+      } else {
+        const { data: convs } = await supabaseAdmin
+          .from("chat_participants").select("conversation_id")
+          .eq("user_id", userId);
+        if (convs?.length) {
+          for (const c of convs) {
+            const { data: msgs } = await supabaseAdmin
+              .from("chat_messages").select("id, content")
+              .eq("conversation_id", c.conversation_id)
+              .eq("type", "mission_invite")
+              .limit(20);
+            const match = (msgs || []).find((m: any) => {
+              try { return JSON.parse(m.content || "{}").osId === osId; } catch { return false; }
+            });
+            if (match) {
+              await supabaseAdmin.from("chat_messages").insert({
+                id: randomUUID(),
+                conversation_id: c.conversation_id,
+                sender_id: userId,
+                type: "system",
+                content: `✅ ${emp.name} aceitou a missão ${osCheck.osNumber} — ${timeBRT}`,
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      res.json({ success: true, allAccepted });
+    } catch (err: any) {
+      console.error("[mission] accept error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/missions/:osId/refuse", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const userId = req.user!.id;
+      const { notes, deviceInfo, conversationId } = req.body;
+      const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "";
+
+      if (!notes || !notes.trim()) return res.status(400).json({ message: "Justificativa obrigatória para recusa" });
+
+      const employeeId = req.user!.employeeId;
+      if (!employeeId) return res.status(404).json({ message: "Funcionário não vinculado ao usuário" });
+      const emp = await storage.getEmployee(employeeId);
+      if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
+
+      const osCheck = await storage.getServiceOrder(osId);
+      if (!osCheck) return res.status(404).json({ message: "OS não encontrada" });
+      if (osCheck.assignedEmployeeId !== emp.id && osCheck.assignedEmployee2Id !== emp.id) {
+        return res.status(403).json({ message: "Você não está designado para esta missão" });
+      }
+
+      let { data: acceptance } = await supabaseAdmin
+        .from("mission_acceptances").select("*")
+        .eq("service_order_id", osId)
+        .eq("employee_id", emp.id)
+        .eq("status", "pendente")
+        .single();
+
+      if (!acceptance) {
+        const { data: created } = await supabaseAdmin.from("mission_acceptances").insert({
+          id: randomUUID(),
+          service_order_id: osId,
+          employee_id: emp.id,
+          status: "pendente",
+          acceptance_token: randomUUID(),
+        }).select().single();
+        acceptance = created;
+        if (!acceptance) return res.status(500).json({ message: "Erro ao criar registro de aceite" });
+      }
+
+      const now = new Date();
+      await supabaseAdmin.from("mission_acceptances").update({
+        status: "recusado",
+        responded_at: now.toISOString(),
+        ip_address: ipAddress,
+        device_info: deviceInfo || null,
+        notes: notes.trim(),
+      }).eq("id", acceptance.id);
+
+      const timeBRT = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+
+      await logSystemAudit({
+        userId, userName: req.user!.name || emp.name, userRole: req.user!.role,
+        action: "mission_acceptance_refuse",
+        targetId: String(osId), targetType: "service_order",
+        details: JSON.stringify({
+          osNumber: osCheck.osNumber, employeeId: emp.id, employeeName: emp.name,
+          respondedAt: timeBRT, ipAddress, deviceInfo, reason: notes.trim(),
+          acceptanceToken: acceptance.acceptance_token,
+        }),
+        ipAddress,
+      });
+
+      const targetConvId = conversationId || null;
+      if (targetConvId) {
+        const { data: convPart } = await supabaseAdmin
+          .from("chat_participants").select("id")
+          .eq("conversation_id", targetConvId)
+          .eq("user_id", userId)
+          .limit(1);
+        if (convPart?.length) {
+          await supabaseAdmin.from("chat_messages").insert({
+            id: randomUUID(),
+            conversation_id: targetConvId,
+            sender_id: userId,
+            type: "system",
+            content: `🔴 ${emp.name} RECUSOU a missão ${osCheck.osNumber} — Motivo: ${notes.trim()} — ${timeBRT}`,
+          });
+        }
+      } else {
+        const { data: convs } = await supabaseAdmin
+          .from("chat_participants").select("conversation_id")
+          .eq("user_id", userId);
+        if (convs?.length) {
+          for (const c of convs) {
+            const { data: msgs } = await supabaseAdmin
+              .from("chat_messages").select("id, content")
+              .eq("conversation_id", c.conversation_id)
+              .eq("type", "mission_invite")
+              .limit(20);
+            const match = (msgs || []).find((m: any) => {
+              try { return JSON.parse(m.content || "{}").osId === osId; } catch { return false; }
+            });
+            if (match) {
+              await supabaseAdmin.from("chat_messages").insert({
+                id: randomUUID(),
+                conversation_id: c.conversation_id,
+                sender_id: userId,
+                type: "system",
+                content: `🔴 ${emp.name} RECUSOU a missão ${osCheck.osNumber} — Motivo: ${notes.trim()} — ${timeBRT}`,
+              });
+              break;
+            }
+          }
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[mission] refuse error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/missions/:osId/acceptances/:employeeId/comprovante", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const employeeId = Number(req.params.employeeId);
+
+      const { data: acceptance } = await supabaseAdmin
+        .from("mission_acceptances").select("*")
+        .eq("service_order_id", osId)
+        .eq("employee_id", employeeId)
+        .eq("status", "aceito")
+        .single();
+
+      if (!acceptance) return res.status(404).json({ message: "Aceite não encontrado" });
+
+      const os = await storage.getServiceOrder(osId);
+      const emp = await storage.getEmployee(employeeId);
+      if (!os || !emp) return res.status(404).json({ message: "OS ou funcionário não encontrado" });
+
+      const respondedBRT = acceptance.responded_at
+        ? new Date(acceptance.responded_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+        : "N/A";
+
+      res.json({
+        osNumber: os.osNumber,
+        osType: os.type,
+        scheduledDate: os.scheduledDate,
+        origin: os.origin,
+        destination: os.destination,
+        employeeName: emp.name,
+        employeeCpf: emp.cpf,
+        employeeMatricula: emp.matricula,
+        status: acceptance.status,
+        respondedAt: respondedBRT,
+        ipAddress: acceptance.ip_address,
+        deviceInfo: acceptance.device_info,
+        locationLat: acceptance.location_lat,
+        locationLng: acceptance.location_lng,
+        acceptanceToken: acceptance.acceptance_token,
+        notifiedAt: acceptance.notified_at,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/relatorio-aceites", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { startDate, endDate, employeeId, status } = req.query;
+      let query = supabaseAdmin.from("mission_acceptances").select("*").order("created_at", { ascending: false });
+
+      if (startDate) query = query.gte("created_at", startDate as string);
+      if (endDate) query = query.lte("created_at", endDate as string);
+      if (employeeId) query = query.eq("employee_id", Number(employeeId));
+      if (status) query = query.eq("status", status as string);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const enriched = await Promise.all((data || []).map(async (a: any) => {
+        const emp = await storage.getEmployee(a.employee_id);
+        const os = await storage.getServiceOrder(a.service_order_id);
+        return {
+          ...a,
+          employeeName: emp?.name || "?",
+          osNumber: os?.osNumber || "?",
+          osDate: os?.scheduledDate,
+          osType: os?.type,
+        };
+      }));
+
+      const total = enriched.length;
+      const aceitos = enriched.filter(a => a.status === "aceito").length;
+      const recusados = enriched.filter(a => a.status === "recusado").length;
+      const expirados = enriched.filter(a => a.status === "expirado").length;
+      const pendentes = enriched.filter(a => a.status === "pendente").length;
+
+      res.json({
+        summary: { total, aceitos, recusados, expirados, pendentes },
+        data: enriched,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
 

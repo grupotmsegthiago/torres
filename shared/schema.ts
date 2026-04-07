@@ -943,3 +943,22 @@ export const jornadaCalculos = pgTable("jornada_calculos", {
 export const insertJornadaCalculoSchema = createInsertSchema(jornadaCalculos).omit({ id: true, createdAt: true });
 export type InsertJornadaCalculo = z.infer<typeof insertJornadaCalculoSchema>;
 export type JornadaCalculo = typeof jornadaCalculos.$inferSelect;
+
+export const missionAcceptances = pgTable("mission_acceptances", {
+  id: text("id").primaryKey(),
+  serviceOrderId: integer("service_order_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  userId: integer("user_id"),
+  status: text("status").notNull().default("pendente"),
+  notifiedAt: timestamp("notified_at").defaultNow(),
+  respondedAt: timestamp("responded_at"),
+  ipAddress: text("ip_address"),
+  deviceInfo: text("device_info"),
+  locationLat: decimal("location_lat", { precision: 10, scale: 7 }),
+  locationLng: decimal("location_lng", { precision: 10, scale: 7 }),
+  acceptanceToken: text("acceptance_token"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type MissionAcceptance = typeof missionAcceptances.$inferSelect;

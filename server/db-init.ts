@@ -622,6 +622,25 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mission_acceptances (
+        id TEXT PRIMARY KEY,
+        service_order_id INTEGER NOT NULL,
+        employee_id INTEGER NOT NULL,
+        user_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        notified_at TIMESTAMP DEFAULT NOW(),
+        responded_at TIMESTAMP,
+        ip_address TEXT,
+        device_info TEXT,
+        location_lat DECIMAL(10,7),
+        location_lng DECIMAL(10,7),
+        acceptance_token TEXT,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     console.log("[db-init] Schema verified OK");
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));

@@ -8,6 +8,7 @@ import {
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ChatWidget from "@/components/chat-widget";
 
 type MenuItem = {
   path?: string;
@@ -233,6 +234,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </main>
       </div>
+      <ChatWidget />
     </div>
   );
 }

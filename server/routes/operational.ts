@@ -75,15 +75,13 @@ import type { Express } from "express";
         .order("created_at", { ascending: false })
         .limit(200);
       if (allFuelRecords) {
-        const seenPlates = new Set<string>();
         for (const fr of allFuelRecords) {
           const desc = (fr.description || "").toUpperCase();
           for (const gv of gridVehicles) {
             const plate = gv.plate?.toUpperCase() || "";
-            if (!plate || seenPlates.has(plate)) continue;
+            if (!plate) continue;
             if (desc.includes(plate)) {
-              vehicleFuelCache.set(plate, Number(fr.amount || 0));
-              seenPlates.add(plate);
+              vehicleFuelCache.set(plate, (vehicleFuelCache.get(plate) || 0) + Number(fr.amount || 0));
             }
           }
         }
@@ -306,7 +304,8 @@ import type { Express } from "express";
                 if (custoCombustivel === 0 && o.vehicleId) {
                   const oDate = toDateBRT(o.scheduledDate);
                   const vPlate = vehicle?.plate?.toUpperCase() || "";
-                  if (vPlate) {
+                  const missionActive = o.missionStatus && !["aguardando", "agendada"].includes(o.missionStatus);
+                  if (vPlate && oDate === todayStr && missionActive) {
                     const fuelKey = `${vPlate}:${oDate}`;
                     const firstOsForFuel = vehicleFuelFirstOS.get(fuelKey);
                     if (firstOsForFuel !== o.id) {
@@ -316,7 +315,6 @@ import type { Express } from "express";
                     }
                   }
                 }
-              }
             } catch (_e) {}
 
             resultado.faturamento.total += receitasOsGrid + custoPedagio;

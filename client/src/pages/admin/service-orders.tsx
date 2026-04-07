@@ -602,6 +602,62 @@ function StepAdjustmentSection({ orderId, osNumber, onRegisterHandle }: { orderI
   );
 }
 
+function AcceptanceStatusSection({ orderId }: { orderId: number }) {
+  const { data: acceptances = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/missions", orderId, "acceptances"],
+  });
+
+  if (isLoading) return <div className="py-2"><Loader2 className="w-4 h-4 animate-spin mx-auto" /></div>;
+  if (acceptances.length === 0) return null;
+
+  const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
+    aceito: { bg: "bg-green-100", text: "text-green-800", label: "✅ Aceito" },
+    recusado: { bg: "bg-red-100", text: "text-red-800", label: "🔴 Recusado" },
+    expirado: { bg: "bg-yellow-100", text: "text-yellow-800", label: "⏰ Expirado" },
+    pendente: { bg: "bg-neutral-100", text: "text-neutral-600", label: "🟡 Pendente" },
+  };
+
+  return (
+    <div className="mt-3 border border-neutral-200 rounded-xl p-3 bg-neutral-50/50" data-testid="section-acceptance-status">
+      <div className="flex items-center gap-2 mb-2">
+        <Shield className="w-3.5 h-3.5 text-emerald-600" />
+        <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-600">Status de Aceite da Missão</span>
+      </div>
+      <div className="space-y-2">
+        {acceptances.map((a: any) => {
+          const cfg = statusConfig[a.status] || statusConfig.pendente;
+          return (
+            <div key={a.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-neutral-100" data-testid={`acceptance-agent-${a.employee_id}`}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] font-bold text-neutral-500">
+                  {(a.employeeName || "?").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-neutral-900">{a.employeeName}</p>
+                  {a.responded_at && (
+                    <p className="text-[10px] text-neutral-400">
+                      {new Date(a.responded_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge className={`${cfg.bg} ${cfg.text} hover:${cfg.bg} text-[10px]`}>{cfg.label}</Badge>
+                {a.status === "recusado" && a.notes && (
+                  <span className="text-[10px] text-red-500 max-w-[120px] truncate" title={a.notes}>{a.notes}</span>
+                )}
+                {a.status === "aceito" && a.location_lat && (
+                  <span className="text-[10px] text-green-500" title={`GPS: ${a.location_lat}, ${a.location_lng}`}>📍</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings }: {
   order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean; billings?: any[];
 }) {
@@ -1347,6 +1403,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             </div>
             {emp1 && <div className="mb-3"><AgentSection emp={emp1} label="1" /></div>}
             {emp2 && <div className="mb-3"><AgentSection emp={emp2} label="2" /></div>}
+            {order && <AcceptanceStatusSection orderId={order.id} />}
           </div>
         )}
 
@@ -1611,6 +1668,10 @@ export default function ServiceOrdersPage() {
   const [editingTimeOs, setEditingTimeOs] = useState<number | null>(null);
   const [editInicioMissao, setEditInicioMissao] = useState("");
   const [editFimMissao, setEditFimMissao] = useState("");
+  const [chatDispatchOs, setChatDispatchOs] = useState<ServiceOrder | null>(null);
+  const [chatConversations, setChatConversations] = useState<any[]>([]);
+  const [chatSelectedConv, setChatSelectedConv] = useState<string>("");
+  const [chatDispatchLoading, setChatDispatchLoading] = useState(false);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/service-orders/${id}`); },
@@ -1656,6 +1717,40 @@ export default function ServiceOrdersPage() {
       toast({ title: "Erro ao voltar etapa", description: err.message, variant: "destructive" });
     },
   });
+
+  const openChatDispatch = async (os: ServiceOrder) => {
+    setChatDispatchOs(os);
+    setChatSelectedConv("");
+    try {
+      const res = await authFetch("/api/chat/conversations");
+      if (res.ok) {
+        const convs = await res.json();
+        setChatConversations(convs);
+      }
+    } catch { setChatConversations([]); }
+  };
+
+  const handleChatDispatch = async () => {
+    if (!chatDispatchOs || !chatSelectedConv) return;
+    setChatDispatchLoading(true);
+    try {
+      const res = await authFetch("/api/chat/send-mission-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceOrderId: chatDispatchOs.id, conversationId: chatSelectedConv }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({ message: "Erro" }));
+        throw new Error(d.message || "Erro ao despachar");
+      }
+      toast({ title: "OS enviada para o chat", description: `OS ${chatDispatchOs.osNumber} despachada com sucesso.` });
+      setChatDispatchOs(null);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setChatDispatchLoading(false);
+    }
+  };
 
   const saveTimeMutation = useMutation({
     mutationFn: async ({ id, missionStartedAt, completedDate }: { id: number; missionStartedAt?: string | null; completedDate?: string | null }) => {
@@ -2156,6 +2251,7 @@ export default function ServiceOrdersPage() {
                             }} title="Editar Horários da Missão" data-testid={`button-edit-times-${o.id}`}><Timer className="w-4 h-4 text-amber-500" /></Button>
                           )
                         )}
+                        <Button variant="ghost" size="icon" onClick={() => openChatDispatch(o)} title="Enviar OS para Chat" data-testid={`button-send-chat-${o.id}`}><Shield className="w-4 h-4 text-emerald-600" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => {
                           if (!o.assignedEmployeeId || !o.vehicleId || !o.kitId || !o.origin || !o.destination || !o.scheduledDate) {
                             toast({ title: "Dados incompletos", description: "Preencha agente, viatura, kit, origem, destino e data para enviar o relatório.", variant: "destructive" });
@@ -2175,6 +2271,34 @@ export default function ServiceOrdersPage() {
           );
         })()}
       </Card>
+
+      {chatDispatchOs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setChatDispatchOs(null)} data-testid="modal-chat-dispatch">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-1 flex items-center gap-2"><Shield className="w-5 h-5 text-emerald-600" /> Despachar OS para Chat</h3>
+            <p className="text-sm text-muted-foreground mb-4">OS {chatDispatchOs.osNumber} — {chatDispatchOs.type}</p>
+            <label className="text-sm font-medium mb-1 block">Selecionar Conversa</label>
+            <select
+              className="w-full border rounded p-2 mb-4 text-sm bg-white dark:bg-zinc-800"
+              value={chatSelectedConv}
+              onChange={e => setChatSelectedConv(e.target.value)}
+              data-testid="select-chat-conversation"
+            >
+              <option value="">-- Selecione --</option>
+              {chatConversations.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.name || c.participantNames?.join(", ") || "Conversa"}</option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setChatDispatchOs(null)} data-testid="button-cancel-dispatch">Cancelar</Button>
+              <Button disabled={!chatSelectedConv || chatDispatchLoading} onClick={handleChatDispatch} data-testid="button-confirm-dispatch">
+                {chatDispatchLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Shield className="w-4 h-4 mr-1" />}
+                Enviar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </AdminLayout>
   );

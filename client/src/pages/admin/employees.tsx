@@ -1229,7 +1229,7 @@ const HR_TABS: { key: HRTab; label: string; icon: any }[] = [
   { key: "payslips", label: "Holerite", icon: DollarSign },
 ];
 
-type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato";
+type PastaTab = "documentos" | "multas" | "disciplinar" | "faltas" | "ponto" | "holerite" | "salarios" | "contrato" | "aceites";
 const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "documentos", label: "Documentos", icon: FileText },
   { key: "contrato", label: "Contrato", icon: ClipboardList },
@@ -1239,6 +1239,7 @@ const PASTA_TABS: { key: PastaTab; label: string; icon: any }[] = [
   { key: "ponto", label: "Ponto", icon: Clock },
   { key: "holerite", label: "Holerite", icon: DollarSign },
   { key: "salarios", label: "Salários", icon: DollarSign },
+  { key: "aceites", label: "Missões", icon: Shield },
 ];
 
 const ABSENCE_TYPES = ["Falta", "Atestado Médico", "Licença", "Suspensão", "Outro"];
@@ -2448,6 +2449,11 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
   const allDocsComplete = missingDocs.length === 0;
   const isDiretoria = user?.role === "diretoria";
 
+  const { data: empAcceptances = [] } = useQuery<any[]>({
+    queryKey: ["/api/employees", employee.id, "acceptances"],
+    enabled: tab === "aceites",
+  });
+
   const tabCounts: Record<PastaTab, number> = {
     documentos: docs.length,
     contrato: 0,
@@ -2457,6 +2463,7 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
     ponto: timesheets.length,
     holerite: payslips.length,
     salarios: salaries.length,
+    aceites: empAcceptances.length,
   };
 
   return (
@@ -3040,6 +3047,72 @@ function EmployeePastaView({ employee, onClose, onEdit }: { employee: Employee; 
         )}
 
         {tab === "salarios" && <SalaryTabContent employee={employee} isDiretoria={isDiretoria} salaries={salaries} loadingSal={loadingSal} showSalForm={showSalForm} setShowSalForm={setShowSalForm} salForm={salForm} setSalForm={setSalForm} addSalary={addSalary} deleteSalary={deleteSalary} />}
+
+        {tab === "aceites" && (
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-emerald-600" />
+              <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-600">Histórico de Missões e Aceites</h3>
+            </div>
+            {empAcceptances.length > 0 && (
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="bg-neutral-50 rounded-lg p-3 text-center">
+                  <p className="text-lg font-bold text-neutral-900">{empAcceptances.length}</p>
+                  <p className="text-[10px] text-neutral-500 uppercase">Total</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <p className="text-lg font-bold text-green-700">{empAcceptances.filter((a: any) => a.status === "aceito").length}</p>
+                  <p className="text-[10px] text-green-600 uppercase">Aceitos</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <p className="text-lg font-bold text-red-700">{empAcceptances.filter((a: any) => a.status === "recusado").length}</p>
+                  <p className="text-[10px] text-red-600 uppercase">Recusados</p>
+                </div>
+                <div className="bg-yellow-50 rounded-lg p-3 text-center">
+                  <p className="text-lg font-bold text-yellow-700">{empAcceptances.filter((a: any) => a.status === "expirado").length}</p>
+                  <p className="text-[10px] text-yellow-600 uppercase">Expirados</p>
+                </div>
+              </div>
+            )}
+            {empAcceptances.length === 0 ? (
+              <p className="text-xs text-neutral-400 text-center py-6">Nenhum registro de aceite de missão</p>
+            ) : (
+              <div className="border border-neutral-200 rounded-xl overflow-hidden">
+                <table className="w-full text-xs" data-testid="table-employee-acceptances">
+                  <thead>
+                    <tr className="bg-neutral-50 border-b">
+                      <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">OS</th>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Data Missão</th>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Status</th>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Respondido em</th>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase text-neutral-500 font-bold">Motivo Recusa</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {empAcceptances.map((a: any) => (
+                      <tr key={a.id} className="hover:bg-neutral-50" data-testid={`row-acceptance-${a.id}`}>
+                        <td className="px-3 py-2 font-bold">{a.osNumber}</td>
+                        <td className="px-3 py-2">{a.osDate ? new Date(a.osDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</td>
+                        <td className="px-3 py-2">
+                          <Badge className={
+                            a.status === "aceito" ? "bg-green-100 text-green-800 hover:bg-green-100" :
+                            a.status === "recusado" ? "bg-red-100 text-red-800 hover:bg-red-100" :
+                            a.status === "expirado" ? "bg-yellow-100 text-yellow-800 hover:bg-yellow-100" :
+                            "bg-neutral-100 text-neutral-600 hover:bg-neutral-100"
+                          }>
+                            {a.status === "aceito" ? "✅ Aceito" : a.status === "recusado" ? "🔴 Recusado" : a.status === "expirado" ? "⏰ Expirado" : "🟡 Pendente"}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2">{a.responded_at ? new Date(a.responded_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                        <td className="px-3 py-2 text-neutral-500">{a.notes || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );

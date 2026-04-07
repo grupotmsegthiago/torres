@@ -555,5 +555,29 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT)", "cron");
+  cron.schedule("*/30 * * * *", async () => {
+    try {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const { data: expired } = await supabaseAdmin
+        .from("mission_acceptances").select("id, service_order_id, employee_id")
+        .eq("status", "pendente")
+        .lt("notified_at", twoHoursAgo);
+
+      if (!expired?.length) return;
+
+      for (const acc of expired) {
+        await supabaseAdmin.from("mission_acceptances").update({
+          status: "expirado",
+          responded_at: new Date().toISOString(),
+          notes: "Expirado automaticamente — sem resposta em 2 horas",
+        }).eq("id", acc.id);
+      }
+
+      log(`CRON AceiteExpirado: ${expired.length} aceite(s) expirado(s)`, "cron");
+    } catch (err: any) {
+      log(`CRON AceiteExpirado: Erro: ${err.message}`, "cron");
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min)", "cron");
 }

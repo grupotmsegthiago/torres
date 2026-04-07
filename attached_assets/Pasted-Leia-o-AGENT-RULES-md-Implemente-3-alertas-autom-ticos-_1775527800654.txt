@@ -1,0 +1,43 @@
+Leia o AGENT_RULES.md. Implemente 3 alertas automáticos que aparecem toda vez que o usuário Mickael (role diretoria/admin) faz login ou abre o sistema:
+🔴 ALERTA 1 — OS PENDENTES:
+Verificar em service_orders onde status = 'pendente'
+Se houver, exibir modal/banner no topo:
+⚠️ Você tem X OS pendentes aguardando análise
+[Ver OS Pendentes] [Dispensar por hoje]
+Botão "Ver OS Pendentes" filtra automaticamente a tela de OS por status Pendente
+🔴 ALERTA 2 — DOCUMENTAÇÃO INCOMPLETA:
+Verificar em employees ativos se faltam documentos obrigatórios:
+
+CNV vencida ou ausente (cnv_expiry < hoje ou null)
+CNH vencida ou ausente (cnh_expiry < hoje ou null)
+Curso de reciclagem vencido (CNV > 2 anos)
+Exame médico vencido
+
+Se houver, exibir:
+📋 X agentes com documentação pendente/vencida
+[Ver Funcionários] [Dispensar por hoje]
+Botão leva para lista de funcionários filtrada pelos que têm docs pendentes
+🔴 ALERTA 3 — BOLETIM COM FATURA PENDENTE:
+Verificar em escort_billings onde status = 'APROVADA' — ou seja, aprovadas mas ainda não faturadas
+Se houver, exibir:
+💰 X medições aprovadas aguardando geração de fatura
+[Gerar Faturas] [Dispensar por hoje]
+Botão "Gerar Faturas" leva direto para o Boletim de Medição com filtro status=APROVADA
+🔴 IMPLEMENTAÇÃO:
+1. Criar componente client/src/components/admin/AlertasDashboard.tsx
+2. Verificar alertas via GET /api/dashboard/alertas-mickael no backend
+3. Backend verifica as 3 condições e retorna contadores
+4. Exibir alertas em cards coloridos no topo do dashboard logo após login
+5. "Dispensar por hoje" salva em localStorage com a data — não aparece mais naquele dia
+6. Aparece SOMENTE para usuários com nome "Mickael" ou role diretoria
+🔴 BOTÃO "GERAR FATURA" NO BOLETIM:
+Na tela client/src/pages/admin/boletim-medicao.tsx:
+Para cada medição com status = 'APROVADA', adicionar botão "💰 Gerar Fatura" na linha
+Ao clicar:
+
+Confirmar: "Gerar fatura de R$ X,XX para [cliente] no Asaas?"
+Chamar endpoint existente POST /api/boletim-medicao/gerar-fatura/:clientId
+Atualizar status para FATURADO
+Toast de sucesso com número da fatura gerada
+
+Mostre: arquivos + linhas + código completo para revisão."

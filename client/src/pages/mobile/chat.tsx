@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Send, Search, Plus, MessageCircle, Users, MapPin,
-  Check, CheckCheck, ChevronLeft, Loader2, Camera,
+  Check, CheckCheck, ChevronLeft, Loader2, Camera, X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNotificationSound } from "@/hooks/use-notification-sound";
+import { MissionInviteCard } from "@/components/chat-widget";
 
 interface ChatUser {
   id: number;
@@ -78,7 +79,12 @@ export default function MobileChatPage() {
   const [msgText, setMsgText] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState("");
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const isAdmin = user?.role === "admin" || user?.role === "diretoria";
 
   const { data: conversations = [], refetch: refetchConvs } = useQuery<ChatConversation[]>({
     queryKey: ["/api/chat/conversations"],
@@ -189,16 +195,32 @@ export default function MobileChatPage() {
   });
 
   const createConvMutation = useMutation({
-    mutationFn: async (participantId: number) => {
+    mutationFn: async (params: { participantIds: number[]; type: string; name?: string }) => {
       const res = await authFetch("/api/chat/conversations", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "direct", participantIds: [participantId] }),
+        body: JSON.stringify(params),
       });
       if (!res.ok) throw new Error("Erro");
       return res.json();
     },
-    onSuccess: (conv) => { setShowNewChat(false); setActiveConvId(conv.id); refetchConvs(); },
+    onSuccess: (conv) => { setShowNewChat(false); setGroupMode(false); setGroupName(""); setSelectedUsers([]); setActiveConvId(conv.id); refetchConvs(); },
   });
+
+  const toggleUserSelection = (uid: number) => {
+    setSelectedUsers(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
+  };
+
+  const handleCreateGroup = () => {
+    if (selectedUsers.length < 2) {
+      toast({ title: "Selecione pelo menos 2 participantes", variant: "destructive" });
+      return;
+    }
+    if (!groupName.trim()) {
+      toast({ title: "Informe o nome do grupo", variant: "destructive" });
+      return;
+    }
+    createConvMutation.mutate({ participantIds: selectedUsers, type: "group", name: groupName.trim() });
+  };
 
   const handleSend = () => {
     if (!msgText.trim() || !activeConvId) return;
@@ -265,6 +287,13 @@ export default function MobileChatPage() {
             const sender = userMap[msg.sender_id];
             if (msg.type === "system") {
               return <div key={msg.id} className="flex justify-center"><span className="bg-white/80 text-[10px] text-neutral-500 px-3 py-1 rounded-full">{msg.content}</span></div>;
+            }
+            if (msg.type === "mission_invite") {
+              return (
+                <div key={msg.id} className="flex justify-center">
+                  <MissionInviteCard msg={msg} conversationId={activeConvId!} onAccepted={() => { refetchMsgs(); refetchConvs(); }} />
+                </div>
+              );
             }
             return (
               <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
@@ -358,28 +387,72 @@ export default function MobileChatPage() {
       </div>
 
       {showNewChat && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end" onClick={() => setShowNewChat(false)}>
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end" onClick={() => { setShowNewChat(false); setGroupMode(false); setSelectedUsers([]); setGroupName(""); }}>
           <div className="bg-white rounded-t-2xl w-full max-h-[70vh] flex flex-col safe-area-bottom" onClick={(e) => e.stopPropagation()} data-testid="modal-mobile-new-chat">
             <div className="p-4 border-b">
               <div className="w-10 h-1 bg-neutral-300 rounded-full mx-auto mb-3" />
-              <h3 className="text-sm font-bold">Nova Conversa</h3>
-              <Input placeholder="Buscar..." value={newChatSearch} onChange={(e) => setNewChatSearch(e.target.value)} className="mt-2 h-9 text-sm" data-testid="input-mobile-new-chat-search" />
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold">{groupMode ? "Novo Grupo" : "Nova Conversa"}</h3>
+                {!groupMode ? (
+                  isAdmin && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setGroupMode(true)} data-testid="button-mobile-group-mode">
+                    <Users className="w-3 h-3 mr-1" /> Grupo
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setGroupMode(false); setSelectedUsers([]); setGroupName(""); }}>
+                    Voltar
+                  </Button>
+                )}
+              </div>
+              {groupMode && (
+                <Input placeholder="Nome do grupo..." value={groupName} onChange={(e) => setGroupName(e.target.value)} className="h-9 text-sm mb-2" data-testid="input-mobile-group-name" />
+              )}
+              <Input placeholder="Buscar..." value={newChatSearch} onChange={(e) => setNewChatSearch(e.target.value)} className="h-9 text-sm" data-testid="input-mobile-new-chat-search" />
+              {groupMode && selectedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {selectedUsers.map(uid => (
+                    <span key={uid} className="bg-neutral-100 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                      {userMap[uid]?.name?.split(" ")[0] || "?"}
+                      <button onClick={() => toggleUserSelection(uid)}><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {filteredNewUsers.length === 0 && <p className="p-4 text-xs text-neutral-400 text-center">Nenhum contato disponível</p>}
               {filteredNewUsers.map(u => (
-                <button key={u.id} onClick={() => createConvMutation.mutate(u.id)} className="w-full flex items-center gap-3 p-3 border-b border-neutral-50" data-testid={`mobile-new-chat-user-${u.id}`}>
+                <button
+                  key={u.id}
+                  onClick={() => {
+                    if (groupMode) {
+                      toggleUserSelection(u.id);
+                    } else {
+                      createConvMutation.mutate({ participantIds: [u.id], type: "direct" });
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 border-b border-neutral-50 ${groupMode && selectedUsers.includes(u.id) ? "bg-blue-50" : ""}`}
+                  data-testid={`mobile-new-chat-user-${u.id}`}
+                >
                   <div className="relative">
                     <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center text-white text-xs font-bold">{getInitials(u.name)}</div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${presenceMap[u.id]?.online ? "bg-green-500" : "bg-neutral-400"}`} />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-bold text-neutral-900">{u.name}</p>
                     <p className="text-[10px] text-neutral-400">{u.role}</p>
                   </div>
+                  {groupMode && selectedUsers.includes(u.id) && <Check className="w-4 h-4 text-blue-600" />}
                 </button>
               ))}
             </div>
+            {groupMode && (
+              <div className="p-3 border-t">
+                <Button size="sm" className="w-full bg-neutral-900 hover:bg-neutral-800 text-xs" onClick={handleCreateGroup} disabled={createConvMutation.isPending} data-testid="button-mobile-create-group">
+                  {createConvMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Users className="w-3 h-3 mr-1" />}
+                  Criar Grupo ({selectedUsers.length})
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -62,10 +62,25 @@ export function ensureUTC(ts: string | null | undefined): string | null {
   return s + "Z";
 }
 
+export function parseUTCDate(ts: string | Date | null | undefined): Date {
+  if (!ts) return new Date(NaN);
+  if (ts instanceof Date) return ts;
+  const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
+  const withZ = normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : normalized + "Z";
+  return new Date(withZ);
+}
+
+export function formatTimeBRT(date: string | Date | null | undefined): string {
+  if (!date) return '—';
+  return parseUTCDate(date).toLocaleTimeString('pt-BR', {
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Sao_Paulo'
+  });
+}
+
 export function formatBRT(date: string | Date | null | undefined): string {
   if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
-  return d.toLocaleString('pt-BR', {
+  return parseUTCDate(date).toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
@@ -74,18 +89,8 @@ export function formatBRT(date: string | Date | null | undefined): string {
 
 export function formatDateBRT(date: string | Date | null | undefined): string {
   if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
-  return d.toLocaleDateString('pt-BR', {
+  return parseUTCDate(date).toLocaleDateString('pt-BR', {
     timeZone: 'America/Sao_Paulo'
-  });
-}
-
-export function formatTimeBRT(date: string | Date | null | undefined): string {
-  if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(ensureUTC(date)!) : date;
-  return d.toLocaleTimeString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    hour: '2-digit', minute: '2-digit'
   });
 }
 

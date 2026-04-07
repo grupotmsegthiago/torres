@@ -1,5 +1,8 @@
 # Torres Vigilância Patrimonial - Website & Sistema Interno
 
+## ⚠️ SISTEMA DE CONTEXTO MESTRE
+**Antes de qualquer tarefa, leia o arquivo `SYSTEM_BRAIN.md` na raiz do projeto.** Ele contém regras primordiais de timezone, finanças, arquitetura, dependências e lições aprendidas que NUNCA devem ser violadas.
+
 ## Overview
 This project delivers an institutional landing page and an internal management system for Torres Vigilância Patrimonial, a Brazilian security company. The system's core purpose is to streamline operational workflows, manage company assets, track personnel and vehicles, and enhance overall operational efficiency. It provides robust user and role management, detailed asset tracking (vehicles, weapons), automated operational processes (service orders, mission workflows), and real-time operational oversight. The strategic goal is to provide a comprehensive, integrated platform that supports company growth, ensures regulatory compliance, and elevates the quality of security services.
 
@@ -147,6 +150,15 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Blindagem Financeira (API):** Todas as rotas `/api/financial/*`, `/api/escort/billings/*`, `/api/escort/contracts`, `/api/employees/:id/salary-*` exigem `requireAdminRole` (role `admin` ou `diretoria`). Agentes recebem 403 Forbidden.
 - **Omissão no App Mobile:** App de abastecimento mostra apenas dados operacionais (litros, km, relação etanol/gasolina). Nenhum dado de faturamento, lucro, margem ou DRE é acessível via rotas mobile.
 - **REGRA INVIOLÁVEL:** É terminantemente proibido exibir dados financeiros para perfis de agentes. O acesso web é restrito a administradores. Agentes operam exclusivamente via App Mobile.
+
+### Chat Despacho Tático de Missões
+- **Widget Flutuante:** Botão preto fixo no canto inferior direito (z-60) em AdminLayout e MobileLayout. Abre painel lateral com chat completo sem navegar. Badge com contagem de não lidas via `/api/chat/unread-count`.
+- **Criação de Grupos:** Modal "Nova Conversa" permite selecionar múltiplos usuários e criar conversas tipo `group` com nome personalizado. Funciona em admin, mobile e widget.
+- **Mensagem `mission_invite`:** Novo tipo de mensagem renderizado como card especial (fundo escuro, ícone Shield, dados da OS). Sem dados de cliente ou valores financeiros. Card exibe: número da OS, tipo, horário, origem, destino.
+- **Enviar OS para Chat:** Botão Shield na área de input do chat admin. Abre seletor de OS disponíveis e envia `mission_invite` via `POST /api/chat/send-mission-invite`.
+- **Aceite Tático:** Agente clica "Aceitar Missão e Termos de Conduta" no card. Backend `POST /api/chat/accept-mission` atualiza `mission_status` para "aceita", insere mensagem `system` confirmando, registra auditoria. Botão desaparece após aceite, mostrando "Missão aceita" com check verde.
+- **Reflexo no Grid:** `mission_status: "aceita"` aparece no Grid Operacional como "Missão Aceita" com badge emerald (verde). Adicionado em `getStatusDisplay`, `getTransitStatus` e `getMissionProgress`.
+- **Endpoint `GET /api/chat/service-orders-available`:** Lista OS disponíveis para envio (sem concluídas/canceladas/encerradas), filtrando dados sensíveis.
 
 ### Identidade Tática (Tactical Identity)
 - **Reverse Geocoding:** `GET /api/reverse-geocode?lat=X&lng=Y` usa Nominatim (OpenStreetMap) para converter coordenadas GPS em endereço completo (rua, número, bairro, cidade/UF). Cache client-side em `_reverseGeocodeCache`.

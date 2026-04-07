@@ -1,0 +1,204 @@
+Quando o admin escalar a equipe, deve chegar uma msg para eles solicitaram o aceite da missão .. coloque as regras para nos proteger sobre quaisquer problemas futuros, onde ele tenha ciência da missão
+
+23:02
+Excelente ideia! Isso é uma proteção jurídica importante. Vou montar o sistema completo:
+
+PLANO — ACEITE DE MISSÃO COM VALIDADE JURÍDICA:
+
+Cole isso no Replit:
+
+"Leia o AGENT_RULES.md. Implemente o sistema de Aceite de Missão com validade jurídica. Planeje tudo antes de executar:
+
+🔴 BANCO DE DADOS:
+
+sql
+CREATE TABLE mission_acceptances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_order_id INTEGER REFERENCES service_orders(id),
+  employee_id INTEGER REFERENCES employees(id),
+  user_id INTEGER REFERENCES users(id),
+  status TEXT CHECK (status IN ('pendente', 'aceito', 'recusado')) DEFAULT 'pendente',
+  notified_at TIMESTAMP DEFAULT NOW(),
+  responded_at TIMESTAMP,
+  ip_address TEXT,
+  device_info TEXT,
+  location_lat DECIMAL,
+  location_lng DECIMAL,
+  acceptance_token UUID DEFAULT gen_random_uuid(),
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+🔴 FLUXO COMPLETO:
+
+1. Admin atribui agente à OS → sistema automaticamente:
+
+Cria registro em mission_acceptances com status: 'pendente'
+Envia mensagem no chat interno para o agente com:
+🚨 NOVA MISSÃO ATRIBUÍDA — TOR-XXXX
+
+📅 Data: DD/MM/YYYY às HH:MM
+📍 Origem: [endereço]
+🏁 Destino: [endereço]
+👥 Equipe: você + [nome agente 2]
+🚗 Viatura: [placa]
+
+⚠️ Esta missão requer seu ACEITE FORMAL.
+Você tem 2 horas para responder.
+
+Ao aceitar, você declara ciência de:
+- Dados da missão acima
+- Responsabilidade pelo armamento designado
+- Obrigação de seguir protocolos Torres
+- Que está apto física e mentalmente para a missão
+
+[ACEITAR MISSÃO] [RECUSAR]
+2. No app mobile, mensagem de aceite tem 2 botões:
+
+ACEITAR: registra status: 'aceito', responded_at, ip_address, device_info, location_lat/lng
+RECUSAR: abre campo obrigatório para justificativa, registra status: 'recusado' com motivo
+3. Ao aceitar, agente vê termo completo para confirmar:
+
+TERMO DE CIÊNCIA E ACEITE DE MISSÃO
+
+Eu, [NOME COMPLETO], matrícula [XXXXXXX],
+declaro estar ciente e aceitar a missão TOR-XXXX
+conforme detalhes acima.
+
+Declaro ainda que:
+✓ Estou em plenas condições físicas e mentais
+✓ Não estou sob efeito de álcool ou substâncias
+✓ Estou ciente do armamento sob minha responsabilidade
+✓ Conheço os protocolos de segurança Torres
+✓ Aceito as condições e responsabilidades desta missão
+
+Data/Hora: [automático BRT]
+IP: [automático]
+Localização: [GPS automático]
+
+[CONFIRMAR E ASSINAR] [CANCELAR]
+4. Admin vê na OS o status de aceite de cada agente:
+
+🟡 Pendente — aguardando resposta
+✅ Aceito — com data/hora e localização
+🔴 Recusado — com motivo
+⏰ Expirado — não respondeu em 2h
+5. CRON job a cada 30min: verifica aceitações pendentes há mais de 2h → muda para expirado → notifica admin
+
+6. OS só pode ter status alterado para em_andamento se TODOS os agentes aceitaram
+
+🔴 BACKEND server/routes/chat.ts:
+
+POST /api/missions/:id/accept — aceitar missão com todos os dados de auditoria
+POST /api/missions/:id/refuse — recusar com justificativa obrigatória
+GET /api/missions/:id/acceptances — ver status de aceite de todos os agentes
+🔴 FRONTEND MOBILE: Na tela de chat, mensagem de missão tem botões especiais ACEITAR/RECUSAR. Ao clicar ACEITAR, abre modal com termo completo antes de confirmar.
+
+🔴 FRONTEND ADMIN: Na OS, nova seção "STATUS DE ACEITE" mostrando cada agente com status, data/hora e localização no momento do aceite.
+
+🔴 AUDITORIA: Cada aceite gera registro em system_audit_logs com todos os dados — inviolável.
+
+Mostre: SQL + arquivos + linhas + código completo para revisão fase por fase."
+
+Por que isso protege a Torres juridicamente:
+
+Proteção	Como funciona
+Ciência da missão	Agente leu e aceitou os detalhes
+Aptidão declarada	Agente declarou estar apto
+Responsabilidade de armamento	Agente declarou ciência
+Prova de aceite	IP + GPS + timestamp + device = inviolável
+Recusa documentada	Motivo registrado com auditoria
+Prazo de resposta	2h — protege contra alegação de "não recebi"
+Me manda o resultado fase por fase que valido antes de aplicar! 👊
+
+ok, cada OS precisa ter um histórico desses aceites e um relatório geral na ficha do funcionário .. inclua isso também
+
+23:05
+Cole isso no Replit — versão completa com histórico e relatório:
+
+"Leia o AGENT_RULES.md. Adicione ao sistema de Aceite de Missão:
+
+🔴 ADIÇÃO 1 — HISTÓRICO NA OS: Na tela de edição/visualização da OS em client/src/pages/admin/service-orders.tsx, adicione uma nova seção 'HISTÓRICO DE ACEITES' após a seção de agentes:
+
+Layout:
+
+HISTÓRICO DE ACEITES DA MISSÃO
+─────────────────────────────────────────────
+AGENTE 1: DAVID EDSON GONÇALVES NEVES
+  Status: ✅ ACEITO
+  Respondido em: 06/04/2026 08:32 (BRT)
+  Localização no aceite: Pirituba, SP (📍 Ver mapa)
+  IP: 189.xxx.xxx.xxx
+  Dispositivo: iPhone 14 / iOS 17
+  Token: abc-def-123 (prova criptográfica)
+
+AGENTE 2: PEDRO DOS SANTOS SANTANA  
+  Status: ✅ ACEITO
+  Respondido em: 06/04/2026 08:45 (BRT)
+  ...
+
+Botão: [📄 Gerar Relatório de Aceites PDF]
+🔴 ADIÇÃO 2 — RELATÓRIO NA FICHA DO FUNCIONÁRIO: Na tela do funcionário em client/src/pages/admin/employees.tsx, adicione uma nova aba 'Missões & Aceites' na ficha do funcionário:
+
+Layout da aba:
+
+HISTÓRICO DE MISSÕES E ACEITES
+─────────────────────────────────────────────
+Filtros: [Período] [Status: Todos/Aceito/Recusado/Expirado]
+
+Total de missões: 47
+Aceitas: 45 (95.7%)
+Recusadas: 1 (2.1%)
+Expiradas: 1 (2.1%)
+
+TABELA:
+OS | Data Missão | Status | Respondido em | Motivo Recusa | Ações
+TOR-0036 | 01/04/2026 | ✅ Aceito | 01/04 07:12 | — | [Ver OS] [Ver Comprovante]
+TOR-0020 | 06/04/2026 | ✅ Aceito | 06/04 08:32 | — | [Ver OS] [Ver Comprovante]
+TOR-0015 | 15/03/2026 | 🔴 Recusado | 15/03 06:55 | Problema familiar | [Ver OS]
+
+Botão: [📄 Exportar Histórico Completo PDF]
+        [📊 Exportar Excel]
+🔴 ADIÇÃO 3 — COMPROVANTE PDF POR ACEITE: Endpoint GET /api/missions/:osId/acceptances/:employeeId/comprovante gera PDF com:
+
+Cabeçalho Torres com logo
+COMPROVANTE DE ACEITE DE MISSÃO
+Dados da OS (número, data, origem, destino)
+Dados do agente (nome, CPF, matrícula, CNV)
+Termo completo que foi aceito
+Data/hora do aceite (BRT)
+IP + dispositivo + coordenadas GPS
+Token criptográfico de verificação
+QR Code com link de verificação da autenticidade
+Rodapé: "Documento com validade jurídica — Torres Vigilância Patrimonial"
+🔴 ADIÇÃO 4 — RELATÓRIO GERAL DE ACEITES: Nova tela client/src/pages/admin/relatorio-aceites.tsx rota /admin/relatorio-aceites, visível apenas para diretoria/admin:
+
+Dashboard com:
+
+Total de missões no período
+Taxa geral de aceite (%)
+Agentes com mais recusas (ranking)
+Missões com aceite expirado
+Tabela completa filtrável por período, agente, status
+Exportar tudo em Excel
+🔴 BACKEND — novos endpoints:
+
+GET /api/missions/:osId/acceptances — todos aceites da OS
+GET /api/employees/:id/acceptances — histórico do funcionário
+GET /api/missions/:osId/acceptances/:employeeId/comprovante — PDF comprovante
+GET /api/relatorio-aceites — relatório geral (diretoria)
+Regras:
+
+Todos os dados persistem no Supabase — nunca deletar aceites
+PDF usa timezone America/Sao_Paulo em todas as datas
+Token UUID é único e imutável — usado para verificar autenticidade
+Mostre: arquivos + linhas + código completo fase por fase para revisão."
+
+Por que isso é juridicamente sólido:
+
+Documento	Valor jurídico
+Comprovante PDF	Prova documental com dados técnicos
+Token criptográfico	Impossível adulterar
+QR Code verificação	Qualquer pessoa pode checar autenticidade
+IP + GPS + dispositivo	Prova de local e meio usado
+Histórico imutável	Banco de dados com auditoria
+Taxa de aceite por agente	Gestão de confiabilidade da equipe

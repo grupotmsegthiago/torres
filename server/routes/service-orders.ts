@@ -9,6 +9,8 @@ import type { Express } from "express";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex } from "./_helpers";
   import { calcularEscolta } from "../billing-calc";
+  import { logSystemAudit } from "../audit";
+  import { randomUUID } from "crypto";
 
   export function registerServiceOrderRoutes(app: Express) {
     app.get("/api/service-orders", requireAuth, async (_req, res) => {
@@ -953,6 +955,108 @@ import type { Express } from "express";
 
     const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
+
+    const newAssignedIds: number[] = [];
+    if (parsed.data.assignedEmployeeId !== undefined && parsed.data.assignedEmployeeId !== existing?.assignedEmployeeId && parsed.data.assignedEmployeeId) {
+      newAssignedIds.push(parsed.data.assignedEmployeeId);
+    }
+    if ((parsed.data as any).assignedEmployee2Id !== undefined && (parsed.data as any).assignedEmployee2Id !== existing?.assignedEmployee2Id && (parsed.data as any).assignedEmployee2Id) {
+      newAssignedIds.push((parsed.data as any).assignedEmployee2Id);
+    }
+    if (newAssignedIds.length > 0) {
+      (async () => {
+        try {
+          const allAssignedIds = [data.assignedEmployeeId, (data as any).assignedEmployee2Id].filter(Boolean) as number[];
+          const allEmployees = await Promise.all(allAssignedIds.map(id => storage.getEmployee(id)));
+          const teamNames = allEmployees.filter(Boolean).map(e => e!.name);
+          const vehicle = data.vehicleId ? await storage.getVehicle(data.vehicleId) : null;
+
+          const schedBRT = data.scheduledDate ? new Date(data.scheduledDate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "A definir";
+
+          for (const empId of newAssignedIds) {
+            const { data: existingAcc } = await supabaseAdmin
+              .from("mission_acceptances").select("id")
+              .eq("service_order_id", data.id)
+              .eq("employee_id", empId)
+              .limit(1);
+            if (existingAcc?.length) continue;
+
+            const token = randomUUID();
+            await supabaseAdmin.from("mission_acceptances").insert({
+              id: randomUUID(),
+              service_order_id: data.id,
+              employee_id: empId,
+              user_id: null,
+              status: "pendente",
+              acceptance_token: token,
+            });
+
+            const { data: empUser } = await supabaseAdmin
+              .from("users").select("id").eq("employee_id", empId).single();
+            if (!empUser) continue;
+
+            let conv: any = null;
+            const { data: adminUser } = await supabaseAdmin
+              .from("users").select("id").eq("id", req.user!.id).single();
+
+            if (adminUser) {
+              const { data: empConvs } = await supabaseAdmin
+                .from("chat_participants").select("conversation_id").eq("user_id", empUser.id);
+              const { data: adminConvs } = await supabaseAdmin
+                .from("chat_participants").select("conversation_id").eq("user_id", adminUser.id);
+              const empConvIds = (empConvs || []).map((p: any) => p.conversation_id);
+              const adminConvIds = (adminConvs || []).map((p: any) => p.conversation_id);
+              const sharedConvIds = empConvIds.filter((id: string) => adminConvIds.includes(id));
+
+              if (sharedConvIds.length > 0) {
+                const { data: directConv } = await supabaseAdmin
+                  .from("chat_conversations").select("*")
+                  .in("id", sharedConvIds)
+                  .eq("type", "direct")
+                  .limit(1);
+                if (directConv?.length) conv = directConv[0];
+              }
+
+              if (!conv) {
+                const newConvId = randomUUID();
+                await supabaseAdmin.from("chat_conversations").insert({
+                  id: newConvId, type: "direct", created_by: adminUser.id,
+                });
+                await supabaseAdmin.from("chat_participants").insert([
+                  { id: randomUUID(), conversation_id: newConvId, user_id: adminUser.id },
+                  { id: randomUUID(), conversation_id: newConvId, user_id: empUser.id },
+                ]);
+                conv = { id: newConvId };
+              }
+            }
+
+            if (conv) {
+              const missionMsg = `🚨 NOVA MISSÃO ATRIBUÍDA — ${data.osNumber}\n\n📅 Data: ${schedBRT}\n📍 Origem: ${data.origin || "A definir"}\n🏁 Destino: ${data.destination || "A definir"}\n👥 Equipe: ${teamNames.join(" + ")}\n🚗 Viatura: ${vehicle ? `${vehicle.plate} - ${vehicle.model || ""}` : "A definir"}\n\n⚠️ Esta missão requer seu ACEITE FORMAL.\nVocê tem 2 horas para responder.\n\nAo aceitar, você declara ciência de:\n• Dados da missão acima\n• Responsabilidade pelo armamento designado\n• Obrigação de seguir protocolos Torres\n• Que está apto física e mentalmente para a missão`;
+
+              await supabaseAdmin.from("chat_messages").insert({
+                id: randomUUID(),
+                conversation_id: conv.id,
+                sender_id: req.user!.id,
+                type: "mission_invite",
+                content: JSON.stringify({
+                  osId: data.id,
+                  osNumber: data.osNumber,
+                  type: data.type,
+                  scheduledDate: schedBRT,
+                  origin: data.origin || "A definir",
+                  destination: data.destination || "A definir",
+                  team: teamNames,
+                  vehicle: vehicle ? `${vehicle.plate} - ${vehicle.model || ""}` : null,
+                  requiresAcceptance: true,
+                }),
+              });
+            }
+          }
+        } catch (err: any) {
+          console.error("[os-assign] Error creating mission acceptances:", err.message);
+        }
+      })();
+    }
 
     const needsGeo = (!data.originLat && data.origin) || (!data.destinationLat && data.destination);
     const wpsNeedGeo = Array.isArray(data.waypoints) && (data.waypoints as any[]).some((wp: any) => wp.address && (!wp.lat || !wp.lng));
