@@ -114,25 +114,44 @@ async function ensureInvoicesTable() {
   }
 }
 
-async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string): Promise<string> {
+async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: string, phone?: string, address?: string, city?: string, state?: string, zip?: string): Promise<string> {
   const cleanDoc = cpfCnpj.replace(/[^\d]/g, "");
   if (!cleanDoc) throw new Error("CPF/CNPJ é obrigatório para criar cobrança no Asaas");
+
+  function parseAddress(raw?: string) {
+    if (!raw) return {};
+    const parts = raw.split(",").map(s => s.trim());
+    const street = parts[0] || "";
+    const number = parts[1] || "S/N";
+    const complement = parts.slice(2).join(", ") || undefined;
+    return { address: street, addressNumber: number, complement };
+  }
 
   try {
     const search = await asaasRequest("GET", `/customers?cpfCnpj=${cleanDoc}`);
     if (search.data && search.data.length > 0) {
       const existing = search.data[0];
+      const updatePayload: any = {};
       if (!existing.email && email) {
         const emails = email.split(/[;,]\s*/);
-        const primaryEmail = emails[0].trim();
+        updatePayload.email = emails[0].trim();
         const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",");
+        if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
+        updatePayload.notificationDisabled = false;
+      }
+      if (!existing.addressNumber && address) {
+        const parsed = parseAddress(address);
+        Object.assign(updatePayload, parsed);
+        if (city) updatePayload.cityName = city;
+        if (state) updatePayload.state = state;
+        if (zip) updatePayload.postalCode = zip.replace(/[^\d]/g, "");
+      }
+      if (Object.keys(updatePayload).length > 0) {
         try {
-          const updatePayload: any = { email: primaryEmail, notificationDisabled: false };
-          if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
           await asaasRequest("PUT", `/customers/${existing.id}`, updatePayload);
-          console.log(`[asaas] Customer ${existing.id} atualizado com email: ${primaryEmail}`);
+          console.log(`[asaas] Customer ${existing.id} atualizado: ${Object.keys(updatePayload).join(", ")}`);
         } catch (e: any) {
-          console.log(`[asaas] Falha ao atualizar email do customer: ${e.message}`);
+          console.log(`[asaas] Falha ao atualizar customer: ${e.message}`);
         }
       }
       return existing.id;
@@ -143,14 +162,19 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   const primaryEmail = emails[0]?.trim() || undefined;
   const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",") || undefined;
 
+  const parsed = parseAddress(address);
   const customerPayload: any = {
     name,
     cpfCnpj: cleanDoc,
     notificationDisabled: false,
+    ...parsed,
   };
   if (primaryEmail) customerPayload.email = primaryEmail;
   if (additionalEmails) customerPayload.additionalEmails = additionalEmails;
   if (phone) customerPayload.mobilePhone = phone.replace(/[^\d]/g, "");
+  if (city) customerPayload.cityName = city;
+  if (state) customerPayload.state = state;
+  if (zip) customerPayload.postalCode = zip.replace(/[^\d]/g, "");
 
   const customer = await asaasRequest("POST", "/customers", customerPayload);
   return customer.id;
@@ -231,12 +255,20 @@ export function registerAsaasRoutes(app: Express) {
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
         let clientEmail: string | undefined;
         let clientPhone: string | undefined;
+        let clientAddress: string | undefined;
+        let clientCity: string | undefined;
+        let clientState: string | undefined;
+        let clientZip: string | undefined;
         if (clientId) {
-          const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone").eq("id", clientId).single();
+          const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip").eq("id", clientId).single();
           clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
           clientPhone = cliInfo?.phone || undefined;
+          clientAddress = cliInfo?.address || undefined;
+          clientCity = cliInfo?.city || undefined;
+          clientState = cliInfo?.state || undefined;
+          clientZip = cliInfo?.zip || undefined;
         }
-        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone);
+        asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip);
 
         let emiteNf = false;
         if (clientId) {
@@ -449,17 +481,32 @@ export function registerAsaasRoutes(app: Express) {
       };
       if (payment.paymentDate) updates.payment_date = payment.paymentDate;
 
-      try {
-        const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
-        if (fiscalInfo) {
-          updates.nfse_status = fiscalInfo.status || null;
-          if (fiscalInfo.externalUrl) updates.nfse_url = fiscalInfo.externalUrl;
-          if (fiscalInfo.number) updates.nfse_number = String(fiscalInfo.number);
-          else if (fiscalInfo.rpsNumber) updates.nfse_number = `RPS-${fiscalInfo.rpsNumber}`;
-          console.log(`[asaas] NFS-e sync: status=${fiscalInfo.status}, number=${fiscalInfo.number || fiscalInfo.rpsNumber || 'N/A'}, url=${fiscalInfo.externalUrl || 'N/A'}`);
+      if (invoice.nfse_number && invoice.nfse_number.startsWith("inv_")) {
+        try {
+          const nfData = await asaasRequest("GET", `/invoices/${invoice.nfse_number}`);
+          if (nfData) {
+            updates.nfse_status = nfData.status || null;
+            if (nfData.pdfUrl) updates.nfse_url = nfData.pdfUrl;
+            else if (nfData.xmlUrl) updates.nfse_url = nfData.xmlUrl;
+            if (nfData.number) updates.nfse_number = String(nfData.number);
+            console.log(`[asaas] NFS-e sync via /invoices: status=${nfData.status}, number=${nfData.number || 'N/A'}, pdfUrl=${nfData.pdfUrl || 'N/A'}`);
+          }
+        } catch (nfErr: any) {
+          console.log(`[asaas] NFS-e /invoices fetch (non-blocking): ${nfErr.message}`);
         }
-      } catch (nfErr: any) {
-        console.log(`[asaas] NFS-e fetch (non-blocking): ${nfErr.message}`);
+      } else {
+        try {
+          const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+          if (fiscalInfo) {
+            updates.nfse_status = fiscalInfo.status || null;
+            if (fiscalInfo.externalUrl) updates.nfse_url = fiscalInfo.externalUrl;
+            if (fiscalInfo.number) updates.nfse_number = String(fiscalInfo.number);
+            else if (fiscalInfo.rpsNumber) updates.nfse_number = `RPS-${fiscalInfo.rpsNumber}`;
+            console.log(`[asaas] NFS-e sync via fiscalInfo: status=${fiscalInfo.status}, number=${fiscalInfo.number || fiscalInfo.rpsNumber || 'N/A'}, url=${fiscalInfo.externalUrl || 'N/A'}`);
+          }
+        } catch (nfErr: any) {
+          console.log(`[asaas] NFS-e fiscalInfo fetch (non-blocking): ${nfErr.message}`);
+        }
       }
 
       const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
@@ -870,7 +917,7 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, email, email_financeiro, phone").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
       const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || undefined;
@@ -888,7 +935,7 @@ export function registerAsaasRoutes(app: Express) {
 
       if (sendToAsaas && process.env.ASAAS_API_KEY && cpfCnpj) {
         try {
-          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado);
+          asaasCustomerId = await findOrCreateAsaasCustomer(clientName, cpfCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip);
           const consolidadoPayload: any = {
             customer: asaasCustomerId,
             billingType: billingType || "BOLETO",
@@ -918,14 +965,30 @@ export function registerAsaasRoutes(app: Express) {
 
           if (emiteNfConsolidado && asaasPaymentId) {
             try {
-              const fiscalPayload = buildFiscalPayload(totalValue, cpfCnpj);
-              const nfResult = await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
+              const nfsePayload = {
+                payment: asaasPaymentId,
+                serviceDescription: descricaoFiscal.substring(0, 500),
+                observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
+                value: totalValue,
+                deductions: 0,
+                effectiveDatePeriod: "MONTHLY",
+                municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
+                municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+                municipalServiceName: DESCRICAO_SERVICO_FIXA,
+                taxes: {
+                  retainIss: false,
+                  iss: ISS_ALIQUOTA,
+                  cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
+                },
+              };
+              const nfResult = await asaasRequest("POST", "/invoices", nfsePayload);
               nfseStatus = nfResult.status || "SCHEDULED";
+              if (nfResult.id) nfseNumber = String(nfResult.id);
               if (nfResult.number) nfseNumber = String(nfResult.number);
-              console.log(`[asaas] NFS-e configurada para payment ${asaasPaymentId} CNAE ${CNAE_PRINCIPAL}. Status: ${nfseStatus}`);
+              console.log(`[asaas] NFS-e emitida via /invoices para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
             } catch (nfErr: any) {
               nfseStatus = "ERROR";
-              console.log(`[asaas] NFS-e config error (non-blocking): ${nfErr.message}`);
+              console.log(`[asaas] NFS-e emission error (non-blocking): ${nfErr.message}`);
             }
           }
 
