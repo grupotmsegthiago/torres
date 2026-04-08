@@ -313,7 +313,9 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await execSql(`CREATE INDEX IF NOT EXISTS idx_alh_user_date ON agent_location_history(user_id, created_at)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_al_user_id ON agent_locations(user_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_al_updated ON agent_locations(updated_at DESC)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_alh_user_date ON agent_location_history(user_id, created_at DESC)`);
 
     await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
     await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
@@ -709,6 +711,7 @@ export async function ensureDbSchema() {
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mission_pos_so ON mission_positions(service_order_id)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mission_pos_so_created ON mission_positions(service_order_id, created_at DESC)`).catch(() => {});
 
     await execSql(`ALTER TABLE mission_costs ALTER COLUMN service_order_id DROP NOT NULL`).catch(() => {});
     await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS vehicle_id INTEGER`).catch(() => {});

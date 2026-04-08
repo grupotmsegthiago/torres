@@ -290,10 +290,15 @@ export function registerAsaasRoutes(app: Express) {
           emiteNf = cliData?.emite_nf === true;
         }
 
+        const parsedValue = parseFloat(value);
+        if (!parsedValue || parsedValue <= 0) {
+          return res.status(400).json({ message: "Valor da cobrança deve ser maior que R$ 0,00. OS recusada/cancelada não pode gerar cobrança." });
+        }
+
         const paymentPayload: any = {
           customer: asaasCustomerId,
           billingType: billingType || "BOLETO",
-          value: parseFloat(value),
+          value: parsedValue,
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
