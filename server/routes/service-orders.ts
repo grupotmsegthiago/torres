@@ -791,6 +791,15 @@ import type { Express } from "express";
       }
     };
     sanitizeDates(parsed.data);
+
+    if (parsed.data.scheduledDate) {
+      const sd = new Date(parsed.data.scheduledDate);
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+      if (sd < fiveMinAgo) {
+        return res.status(400).json({ message: "Data da Criação não pode ser anterior ao horário atual." });
+      }
+    }
+
     parsed.data.createdByUserId = req.user?.id || null;
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {

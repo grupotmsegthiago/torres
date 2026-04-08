@@ -272,7 +272,12 @@ export function initCronJobs() {
             placa_escoltado: so.escorted_vehicle_plate || null,
             motorista_escoltado: so.escorted_driver_name || null,
             despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras), receitas_os: r(receitas_os),
-            data_missao: so.mission_started_at || so.scheduled_date || new Date(),
+            data_missao: (() => {
+              const a = so.mission_started_at ? new Date(so.mission_started_at).getTime() : Infinity;
+              const b = so.scheduled_date ? new Date(so.scheduled_date).getTime() : Infinity;
+              if (a === Infinity && b === Infinity) return new Date();
+              return a <= b ? so.mission_started_at : so.scheduled_date;
+            })(),
             status: "A_VERIFICAR", created_by: "CRON",
           };
 

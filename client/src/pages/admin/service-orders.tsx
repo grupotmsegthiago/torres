@@ -1594,6 +1594,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     toast({ title: "Selecione o cliente", variant: "destructive" });
                     return;
                   }
+                  if (step === 1 && form.scheduledDate) {
+                    const selected = new Date(form.scheduledDate);
+                    const now = new Date();
+                    now.setSeconds(0, 0);
+                    const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+                    if (selected < fiveMinAgo) {
+                      toast({ title: "Data da Criação inválida", description: "Não é permitido criar OS com data anterior ao horário atual.", variant: "destructive" });
+                      return;
+                    }
+                  }
                   if (step === 2) {
                     const agents = [
                       { emp: emp1, label: emp1?.name || "Agente 1" },
