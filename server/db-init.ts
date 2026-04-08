@@ -1,19 +1,23 @@
-import { db } from "./db";
-import { sql } from "drizzle-orm";
 import { supabaseAdmin } from "./supabase";
 import { toCamelArray } from "./storage";
 
 async function execSql(query: string) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("DDL timeout 15s")), 15000));
-  await Promise.race([db.execute(sql.raw(query)), timeout]);
+  await Promise.race([
+    supabaseAdmin.rpc("exec_sql", { query }).then(({ error }) => { if (error) throw error; }),
+    timeout
+  ]);
 }
 
 export async function ensureDbSchema() {
   try {
-    const connTest = new Promise((_, reject) => setTimeout(() => reject(new Error("DB conn test timeout")), 10000));
-    await Promise.race([db.execute(sql.raw("SELECT 1")), connTest]);
+    const connTest = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase conn test timeout")), 10000));
+    await Promise.race([
+      supabaseAdmin.from("users").select("id").limit(1).then(({ error }) => { if (error) throw error; }),
+      connTest
+    ]);
   } catch (e: any) {
-    console.log("[db-init] Schema check skipped (DB unreachable):", e.message);
+    console.log("[db-init] Schema check skipped (Supabase unreachable):", e.message);
     return;
   }
   try {
@@ -759,13 +763,6 @@ async function backfillOrderCoords() {
 }
 
 export async function ensureCalcMissionRPC() {
-  try {
-    const connTest = new Promise((_, reject) => setTimeout(() => reject(new Error("DB conn test timeout")), 10000));
-    await Promise.race([db.execute(sql.raw("SELECT 1")), connTest]);
-  } catch (e: any) {
-    console.log("[db-init] RPC check skipped (DB unreachable):", e.message);
-    return;
-  }
   try {
     await execSql(`
       CREATE OR REPLACE FUNCTION calc_mission_elapsed_hours(p_os_id integer)

@@ -3,7 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
-  import { eq } from "drizzle-orm";
+
 
   export function registerVehicleRoutes(app: Express) {
     app.get("/api/vehicles", requireAuth, async (_req, res) => {

@@ -3,7 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireDiretoria } from "../auth";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
-  import { eq } from "drizzle-orm";
+
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction } from "./_helpers";
 
   export function registerFleetRoutes(app: Express) {

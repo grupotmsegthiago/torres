@@ -3,7 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertClientSchema, vehicles } from "@shared/schema";
-  import { eq } from "drizzle-orm";
+
   import { generateContractPDF } from "../contract-pdf";
 
   export function registerClientRoutes(app: Express) {
