@@ -32,7 +32,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (!sessionReady) {
+        console.warn("[auth] Supabase session check timed out — continuing without session");
+        setSessionReady(true);
+      }
+    }, 6000);
+
     supabase.auth.getSession().then(() => {
+      clearTimeout(timeout);
+      setSessionReady(true);
+    }).catch(() => {
+      clearTimeout(timeout);
       setSessionReady(true);
     });
 
@@ -44,15 +55,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const { data: user, isLoading: queryLoading } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return null;
       try {
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+        const result = await Promise.race([sessionPromise, timeoutPromise]);
+        if (!result || !('data' in result) || !result.data.session) return null;
+        const session = result.data.session;
         const res = await fetch("/api/auth/me", {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
