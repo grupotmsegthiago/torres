@@ -274,15 +274,17 @@ import type { Express } from "express";
       results.receita = { success: false, error: "CPF não suportado pela ReceitaWS" };
     }
 
-    await storage.createApiLog({
-      endpoint: "/receitaws/cnpj",
-      method: "GET",
-      requestData: JSON.stringify({ document: doc }),
-      responseStatus: results.receita?.success ? 200 : 400,
-      responseData: JSON.stringify(results).substring(0, 5000),
-      userId: req.user!.id,
-      source: "analise_risco",
-    });
+    if (!results.receita?.success) {
+      await storage.createApiLog({
+        endpoint: "/receitaws/cnpj",
+        method: "GET",
+        requestData: JSON.stringify({ document: doc }),
+        responseStatus: 400,
+        responseData: JSON.stringify(results).substring(0, 5000),
+        userId: req.user!.id,
+        source: "analise_risco",
+      });
+    }
 
     res.json(results);
   });

@@ -68,15 +68,17 @@ async function apiRequest(
       ? JSON.stringify(responseData).substring(0, 5000)
       : String(responseData).substring(0, 5000);
 
-    await storage.createApiLog({
-      endpoint,
-      method,
-      requestData: JSON.stringify(body),
-      responseStatus: status,
-      responseData: logData,
-      userId: userId ?? null,
-      source,
-    });
+    if (status >= 400 || !response.ok) {
+      await storage.createApiLog({
+        endpoint,
+        method,
+        requestData: JSON.stringify(body),
+        responseStatus: status,
+        responseData: logData,
+        userId: userId ?? null,
+        source,
+      });
+    }
 
     if (!response.ok) {
       const errMsg = responseData?.message || responseData?.error || `HTTP ${status}`;

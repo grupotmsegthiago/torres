@@ -156,15 +156,17 @@ import type { Express } from "express";
         signal: AbortSignal.timeout(10000),
       });
 
-      await storage.createApiLog({
-        endpoint: gerenciadora.apiUrl,
-        method: "POST",
-        requestData: JSON.stringify({ vehicleCount: vehicleData?.length || 0 }),
-        responseStatus: response.status,
-        responseData: response.ok ? "OK" : await response.text().catch(() => "error"),
-        userId: req.user?.id || null,
-        source: "mirror_gerenciadora",
-      });
+      if (!response.ok) {
+        await storage.createApiLog({
+          endpoint: gerenciadora.apiUrl,
+          method: "POST",
+          requestData: JSON.stringify({ vehicleCount: vehicleData?.length || 0 }),
+          responseStatus: response.status,
+          responseData: await response.text().catch(() => "error"),
+          userId: req.user?.id || null,
+          source: "mirror_gerenciadora",
+        });
+      }
 
       if (response.ok) {
         res.json({ success: true, message: `Espelhamento enviado para ${gerenciadora.name}` });

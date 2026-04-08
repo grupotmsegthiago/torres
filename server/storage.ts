@@ -172,7 +172,7 @@ export interface IStorage {
   createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto>;
   getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]>;
 
-  createApiLog(log: InsertApiLog): Promise<ApiLog>;
+  createApiLog(log: InsertApiLog): Promise<ApiLog | null>;
   getRecentApiLogs(limit?: number): Promise<ApiLog[]>;
 
   getEmployeeSalaries(employeeId: number): Promise<EmployeeSalary[]>;
@@ -567,10 +567,15 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createApiLog(logEntry: InsertApiLog): Promise<ApiLog> {
-    const { data, error } = await supabaseAdmin.from("api_logs").insert(toSnakeObj(logEntry as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<ApiLog>(data);
+  async createApiLog(logEntry: InsertApiLog): Promise<ApiLog | null> {
+    try {
+      const { data, error } = await supabaseAdmin.from("api_logs").insert(toSnakeObj(logEntry as any)).select().single();
+      if (error) { console.error("[api_logs] insert error:", error.message); return null; }
+      return toCamelObj<ApiLog>(data);
+    } catch (e: any) {
+      console.error("[api_logs] unexpected error:", e.message);
+      return null;
+    }
   }
 
   async getRecentApiLogs(limit = 100): Promise<ApiLog[]> {
