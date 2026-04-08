@@ -629,7 +629,7 @@ import type { Express } from "express";
                     longitude: trackerData.longitude,
                     speed: trackerData.speed ?? 0,
                     ignition: trackerData.ignition ? 1 : 0,
-                  }).catch((e) => console.error("[mission-pos] Insert error:", e.message));
+                  }).then(({ error }) => { if (error) console.error("[mission-pos] Insert error:", error.message); });
                 }
               }
             }

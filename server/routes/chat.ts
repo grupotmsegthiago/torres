@@ -345,8 +345,10 @@ export function registerChatRoutes(app: Express) {
       supabaseAdmin
         .from("chat_presence")
         .upsert({ user_id: userId, online: !!online, last_seen: new Date().toISOString() }, { onConflict: "user_id" })
-        .then(() => res.json({ ok: true }))
-        .catch((err: any) => { console.error("[chat] beacon error:", err.message); res.status(500).json({ ok: false }); });
+        .then(({ error: upsertErr }) => {
+          if (upsertErr) { console.error("[chat] beacon error:", upsertErr.message); return res.status(500).json({ ok: false }); }
+          res.json({ ok: true });
+        });
     } catch (err: any) {
       console.error("[chat] presence-beacon error:", err.message);
       res.status(500).json({ message: "Erro" });

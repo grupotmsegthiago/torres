@@ -227,7 +227,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async hasAnyUsers(): Promise<boolean> {
-    const { data } = await supabaseAdmin.from("users").select("id").limit(1);
+    const { data, error } = await supabaseAdmin.from("users").select("id").limit(1);
+    if (error) return true;
     return (data || []).length > 0;
   }
 
