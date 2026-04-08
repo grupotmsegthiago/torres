@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authFetch } from "@/lib/queryClient";
 
-const INTERVAL_MS = 10 * 60 * 1000;
+const INTERVAL_IDLE_MS = 10 * 60 * 1000;
+const INTERVAL_MISSION_MS = 30 * 1000;
 
 const GPS_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -10,7 +11,7 @@ const GPS_OPTIONS: PositionOptions = {
   maximumAge: 0,
 };
 
-export function useGeolocation() {
+export function useGeolocation(missionActive = false) {
   const { user } = useAuth();
   const [denied, setDenied] = useState(false);
   const [position, setPosition] = useState<GeolocationPosition | null>(null);
@@ -57,6 +58,7 @@ export function useGeolocation() {
 
   const startInterval = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
+    const ms = missionActive ? INTERVAL_MISSION_MS : INTERVAL_IDLE_MS;
     intervalRef.current = setInterval(() => {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(
@@ -64,8 +66,8 @@ export function useGeolocation() {
         () => {},
         GPS_OPTIONS
       );
-    }, INTERVAL_MS);
-  }, [sendLocation]);
+    }, ms);
+  }, [sendLocation, missionActive]);
 
   const handleGeoError = useCallback((err: GeolocationPositionError) => {
     setLoading(false);
@@ -99,6 +101,12 @@ export function useGeolocation() {
       GPS_OPTIONS
     );
   }, [sendLocation, startWatch, startInterval, handleGeoError]);
+
+  useEffect(() => {
+    if (initDone.current && intervalRef.current) {
+      startInterval();
+    }
+  }, [missionActive, startInterval]);
 
   useEffect(() => {
     if (!user || !navigator.geolocation || initDone.current) return;

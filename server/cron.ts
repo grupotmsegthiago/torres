@@ -592,5 +592,156 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min)", "cron");
+  cron.schedule("0 7 * * *", async () => {
+    try {
+      const { data: vehicles } = await supabaseAdmin.from("vehicles")
+        .select("id, plate, model, brand, km, last_oil_change_km, status")
+        .not("status", "eq", "inativo");
+
+      if (!vehicles?.length) return;
+      const alerts: string[] = [];
+
+      for (const v of vehicles) {
+        const currentKm = v.km || 0;
+        const lastOilKm = v.last_oil_change_km || 0;
+        const kmSinceOil = currentKm - lastOilKm;
+        const label = `${v.plate} (${v.brand || ""} ${v.model || ""})`.trim();
+
+        if (kmSinceOil >= 10000) {
+          alerts.push(`🔴 ${label}: Troca de óleo VENCIDA (${kmSinceOil.toLocaleString()} km desde última troca)`);
+          if (v.status !== "manutenção") {
+            await supabaseAdmin.from("vehicles").update({ status: "manutenção" }).eq("id", v.id);
+          }
+        } else if (kmSinceOil >= 8000) {
+          alerts.push(`🟡 ${label}: Troca de óleo em ${(10000 - kmSinceOil).toLocaleString()} km`);
+        }
+
+        const { data: nextMaint } = await supabaseAdmin.from("vehicle_maintenance")
+          .select("id, type, next_maintenance_km, next_maintenance_date")
+          .eq("vehicle_id", v.id).eq("status", "scheduled")
+          .order("next_maintenance_km", { ascending: true }).limit(1);
+
+        if (nextMaint?.length && nextMaint[0].next_maintenance_km) {
+          const kmUntil = nextMaint[0].next_maintenance_km - currentKm;
+          if (kmUntil <= 0) {
+            alerts.push(`🔴 ${label}: Manutenção "${nextMaint[0].type}" VENCIDA (KM ${nextMaint[0].next_maintenance_km.toLocaleString()} ultrapassado)`);
+          } else if (kmUntil <= 1000) {
+            alerts.push(`🟡 ${label}: Manutenção "${nextMaint[0].type}" em ${kmUntil.toLocaleString()} km`);
+          }
+        }
+
+        if (nextMaint?.length && nextMaint[0].next_maintenance_date) {
+          const dueDate = new Date(nextMaint[0].next_maintenance_date);
+          const daysUntil = Math.floor((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          if (daysUntil < 0) {
+            alerts.push(`🔴 ${label}: Manutenção "${nextMaint[0].type}" vencida há ${Math.abs(daysUntil)} dia(s)`);
+          } else if (daysUntil <= 7) {
+            alerts.push(`🟡 ${label}: Manutenção "${nextMaint[0].type}" em ${daysUntil} dia(s)`);
+          }
+        }
+      }
+
+      if (alerts.length > 0) {
+        await supabaseAdmin.from("audit_logs").insert({
+          user_name: "SISTEMA", user_role: "system",
+          action: "CRON_ALERTA_FROTA",
+          details: `${alerts.length} alerta(s) de frota:\n${alerts.join("\n")}`,
+        });
+      }
+      log(`CRON AlertaFrota: ${alerts.length} alerta(s) de ${vehicles.length} veículo(s)`, "cron");
+    } catch (err: any) {
+      log(`CRON AlertaFrota: Erro: ${err.message}`, "cron");
+    }
+  });
+
+  cron.schedule("0 8 * * *", async () => {
+    try {
+      const { data: employees } = await supabaseAdmin.from("employees")
+        .select("id, name, status, cnh_expiry, cnv_expiry, cnv_number, vest_expiry")
+        .eq("status", "ativo");
+
+      if (!employees?.length) return;
+      const today = new Date();
+      const alerts: string[] = [];
+
+      const checkExpiry = (name: string, docName: string, expiryStr: string | null) => {
+        if (!expiryStr) return;
+        const expiry = new Date(expiryStr);
+        const daysUntil = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysUntil < 0) {
+          alerts.push(`🔴 ${name}: ${docName} VENCIDO há ${Math.abs(daysUntil)} dia(s)`);
+        } else if (daysUntil <= 30) {
+          alerts.push(`🟡 ${name}: ${docName} vence em ${daysUntil} dia(s) (${expiry.toLocaleDateString("pt-BR")})`);
+        }
+      };
+
+      const checkReciclagem = (name: string, cnvExpiry: string | null) => {
+        if (!cnvExpiry) return;
+        const cnvDate = new Date(cnvExpiry);
+        const twoYearsFromCnv = new Date(cnvDate);
+        twoYearsFromCnv.setFullYear(twoYearsFromCnv.getFullYear() + 2);
+        const daysUntilRecicla = Math.floor((twoYearsFromCnv.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysUntilRecicla < 0) {
+          alerts.push(`🔴 ${name}: Reciclagem VENCIDA há ${Math.abs(daysUntilRecicla)} dia(s)`);
+        } else if (daysUntilRecicla <= 60) {
+          alerts.push(`🟡 ${name}: Reciclagem em ${daysUntilRecicla} dia(s)`);
+        }
+      };
+
+      for (const emp of employees) {
+        checkExpiry(emp.name, "CNH", emp.cnh_expiry);
+        checkExpiry(emp.name, "CNV", emp.cnv_expiry);
+        checkExpiry(emp.name, "Colete Balístico", emp.vest_expiry);
+        checkReciclagem(emp.name, emp.cnv_expiry);
+      }
+
+      const { data: weapons } = await supabaseAdmin.from("weapons")
+        .select("id, model, serial_number, registration_expiry, assigned_employee_id")
+        .not("registration_expiry", "is", null);
+
+      if (weapons?.length) {
+        for (const w of weapons) {
+          const expiry = new Date(w.registration_expiry);
+          const daysUntil = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const label = `Arma ${w.model || ""} (${w.serial_number || "S/N"})`;
+          if (daysUntil < 0) {
+            alerts.push(`🔴 ${label}: Registro VENCIDO há ${Math.abs(daysUntil)} dia(s)`);
+          } else if (daysUntil <= 60) {
+            alerts.push(`🟡 ${label}: Registro vence em ${daysUntil} dia(s)`);
+          }
+        }
+      }
+
+      const { data: docs } = await supabaseAdmin.from("employee_documents")
+        .select("id, employee_id, type, expiry_date, file_name")
+        .not("expiry_date", "is", null);
+
+      if (docs?.length) {
+        const empMap = new Map(employees.map(e => [e.id, e.name]));
+        for (const doc of docs) {
+          const expiry = new Date(doc.expiry_date);
+          const daysUntil = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const empName = empMap.get(doc.employee_id) || `Func. #${doc.employee_id}`;
+          if (daysUntil < 0) {
+            alerts.push(`🔴 ${empName}: Documento "${doc.type}" VENCIDO há ${Math.abs(daysUntil)} dia(s)`);
+          } else if (daysUntil <= 30) {
+            alerts.push(`🟡 ${empName}: Documento "${doc.type}" vence em ${daysUntil} dia(s)`);
+          }
+        }
+      }
+
+      if (alerts.length > 0) {
+        await supabaseAdmin.from("audit_logs").insert({
+          user_name: "SISTEMA", user_role: "system",
+          action: "CRON_ALERTA_DOCUMENTOS_RH",
+          details: `${alerts.length} alerta(s) de documentos:\n${alerts.join("\n")}`,
+        });
+      }
+      log(`CRON AlertaDocRH: ${alerts.length} alerta(s) de ${employees.length} funcionário(s)`, "cron");
+    } catch (err: any) {
+      log(`CRON AlertaDocRH: Erro: ${err.message}`, "cron");
+    }
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00)", "cron");
 }

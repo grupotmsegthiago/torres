@@ -94,7 +94,8 @@ function PendingBadge() {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { denied, position, loading, error, requestPermission } = useGeolocation();
+  const isMissionActive = location.startsWith("/mobile/missao");
+  const { denied, position, loading, error, requestPermission } = useGeolocation(isMissionActive);
   useAuditLog(location);
   useScreenshotDetection(location);
 
