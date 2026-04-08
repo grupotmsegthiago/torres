@@ -1603,5 +1603,30 @@ Todo o sistema já usa `timeZone: "America/Sao_Paulo"` em todas as formatações
 **Laudo relógio central:** 07/04/2026 19:08 BRT  
 **Laudo fix timezone writes:** 07/04/2026 19:30 BRT  
 **Laudo comparativo TOR-22/23/24:** 07/04/2026 19:40 BRT  
+**Laudo fix TOR-0025/0021 datas erradas:** 07/04/2026 21:22 BRT  
+
+### Fix TOR-0025 Datas 2027 (07/04/2026 21:22 BRT)
+
+**Problema:** TOR-0025 `scheduled_date` e `mission_started_at` estavam com ANO 2027 (deveria ser 2026). Isso causava:
+- RPC `calc_mission_elapsed_hours` retornando -8767h (negativo → clamped to 0)
+- Valores de faturamento incorretos no grid
+- Badge "HE" aparecendo indevidamente (agregado com TOR-0022)
+
+**Problema TOR-0021:** `mission_started_at` = `2026-07-06T11:00:00` (julho em vez de abril)
+
+**Correções de dados:**
+1. TOR-0025 `scheduled_date`: `2027-04-08T05:00:00` → `2026-04-08T05:00:00`
+2. TOR-0025 `mission_started_at`: `2027-04-08T05:00:00` → `2026-04-07T20:06:30` (horário real do checkout)
+3. TOR-0025 billing `data_missao`: atualizado para 2026
+4. TOR-0021 `mission_started_at`: `2026-07-06T11:00:00` → `2026-04-07T11:00:00`
+
+**Correção de código (mission.ts):**
+A lógica de `missionStartedAt` usava `GREATEST(NOW, scheduledDate)` sem limite. Se `scheduledDate` fosse um ano no futuro, usava a data futura. Fix: só usa `scheduledDate` se estiver dentro de 30 minutos no futuro. Caso contrário, usa NOW (tempo real do início).
+
+**Valores no grid após fix:**
+- TOR-0025 RPC: ~1.26h (correto, dentro da franquia 3h, sem HE)
+- TOR-0022 RPC: 3.41h (correto, missão concluída)
+- TOR-0021 RPC: 10.37h (correto para missão recusada)
+
 **Para auditoria de:** Mickael  
 **Validado por:** Agent AI

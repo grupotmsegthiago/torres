@@ -1347,7 +1347,14 @@ import type { Express } from "express";
       const nowBRT = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
       if (so.scheduledDate) {
         const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
-        updates.missionStartedAt = nowBRT < scheduledStr ? scheduledStr : nowBRT;
+        const nowMs = new Date().getTime();
+        const schedMs = new Date(scheduledStr + "-03:00").getTime();
+        const diffMin = (schedMs - nowMs) / 60000;
+        if (diffMin > 0 && diffMin <= 30) {
+          updates.missionStartedAt = scheduledStr;
+        } else {
+          updates.missionStartedAt = nowBRT;
+        }
       } else {
         updates.missionStartedAt = nowBRT;
       }
