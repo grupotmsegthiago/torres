@@ -15,7 +15,7 @@ function sendAudit(action: string, page: string, details: string, withGps = fals
     navigator.geolocation.getCurrentPosition(
       (pos) => send(pos.coords.latitude, pos.coords.longitude),
       () => send(),
-      { timeout: 5000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   } else {
     send();

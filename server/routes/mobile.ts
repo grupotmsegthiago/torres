@@ -295,7 +295,7 @@ import type { Express } from "express";
         vehicle_id: vehicleId, driver_id: employeeId, date: todayDate,
         liters: liters?.toString() || "0", cost_per_liter: costPerLiter?.toString(), total_cost: totalCost?.toString(),
         km, fuel_type: fuelType || "gasolina", full_tank: true, station,
-        receipt_photo: receiptPhoto, pump_photo: pumpPhoto, odometer_photo: odometerPhoto, plate_photo: platePhoto, latitude, longitude, address,
+        receipt_photo: receiptPhoto, pump_photo: pumpPhoto, odometer_photo: odometerPhoto, plate_photo: platePhoto, latitude: latitude ? Number(latitude) : null, longitude: longitude ? Number(longitude) : null, address,
         gasoline_price: gasolinePrice ? gasolinePrice.toString() : null,
         ethanol_price: ethanolPrice ? ethanolPrice.toString() : null,
         fuel_recommendation: fuelRecommendation || null,
@@ -338,8 +338,8 @@ import type { Express } from "express";
             description: `Abastecimento ${plateStr} - ${fuelType || "gasolina"} ${liters}L (${station || "posto"}) [F#${fueling.id}]`,
             amount: derivedTotal.toFixed(2),
             cost_type: "expense",
-            latitude: latitude ? String(latitude) : null,
-            longitude: longitude ? String(longitude) : null,
+            latitude: latitude ? Number(latitude) : null,
+            longitude: longitude ? Number(longitude) : null,
           });
           console.log(`[Fueling→DRE] Linked fueling #${fueling.id} R$${derivedTotal.toFixed(2)} to OS #${activeOs[0].os_number} (id=${linkedOsId})`);
         }
@@ -420,8 +420,8 @@ import type { Express } from "express";
         amount: finalAmount.toFixed(2),
         cost_type: "expense",
         photo_url: photoUrl,
-        latitude: latitude ? String(latitude) : null,
-        longitude: longitude ? String(longitude) : null,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
       }).select().single();
       if (costErr) throw new Error(costErr.message);
 
@@ -434,8 +434,8 @@ import type { Express } from "express";
         amount: finalAmount.toFixed(2),
         cost_type: "revenue",
         photo_url: photoUrl,
-        latitude: latitude ? String(latitude) : null,
-        longitude: longitude ? String(longitude) : null,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
       }).select().single();
       if (revErr) {
         await supabaseAdmin.from("mission_costs").delete().eq("id", costRecord.id);
@@ -530,8 +530,8 @@ import type { Express } from "express";
         amount: parsedAmount.toFixed(2),
         cost_type: "expense",
         photo_url: photoUrl,
-        latitude: String(latitude),
-        longitude: String(longitude),
+        latitude: Number(latitude),
+        longitude: Number(longitude),
       }).select().single();
 
       if (insertError) throw new Error(insertError.message);

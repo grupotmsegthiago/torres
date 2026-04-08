@@ -698,8 +698,8 @@ import type { Express } from "express";
           }
 
           storage.updateVehicle(v.id, {
-            lastLatitude: String(trackerData.latitude),
-            lastLongitude: String(trackerData.longitude),
+            lastLatitude: trackerData.latitude,
+            lastLongitude: trackerData.longitude,
             lastIgnition: trackerData.ignition ? 1 : 0,
             lastSpeed: trackerData.speed ?? 0,
             lastGpsSignal: trackerData.gpsSignal ? 1 : 0,
@@ -722,8 +722,8 @@ import type { Express } from "express";
             }
 
             trackerData = {
-              latitude: parseFloat(v.lastLatitude),
-              longitude: parseFloat(v.lastLongitude),
+              latitude: Number(v.lastLatitude),
+              longitude: Number(v.lastLongitude),
               ignition: false,
               lastPositionTime: v.lastPositionTime || undefined,
               gpsSignal: false,

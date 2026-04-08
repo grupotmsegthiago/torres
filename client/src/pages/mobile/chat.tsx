@@ -231,7 +231,8 @@ export default function MobileChatPage() {
     if (!activeConvId) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => sendMutation.mutate({ type: "location", lat: pos.coords.latitude, lng: pos.coords.longitude, content: `📍 ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}` }),
-      () => toast({ title: "GPS indisponível", variant: "destructive" })
+      () => toast({ title: "GPS indisponível", variant: "destructive" }),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 

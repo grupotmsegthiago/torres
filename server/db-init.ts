@@ -751,6 +751,15 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE mission_photos ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE mission_photos ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE vehicles ALTER COLUMN last_latitude TYPE real USING last_latitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE vehicles ALTER COLUMN last_longitude TYPE real USING last_longitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
+
     await ensureRealtimePublication();
 
     console.log("[db-init] Schema verified OK");
