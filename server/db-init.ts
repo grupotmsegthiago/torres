@@ -1,12 +1,51 @@
 import { supabaseAdmin } from "./supabase";
 import { toCamelArray } from "./storage";
 
+async function execSqlViaRpc(query: string) {
+  const { error } = await supabaseAdmin.rpc("exec_sql", { query });
+  if (error) throw error;
+}
+
+async function execSqlViaPg(query: string) {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("No DATABASE_URL");
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 10000, statement_timeout: 15000 });
+  try {
+    await client.connect();
+    await client.query(query);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+let _useDirectPg = false;
+
 async function execSql(query: string) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("DDL timeout 15s")), 15000));
-  await Promise.race([
-    supabaseAdmin.rpc("exec_sql", { query }).then(({ error }) => { if (error) throw error; }),
-    timeout
-  ]);
+  if (_useDirectPg) {
+    await Promise.race([execSqlViaPg(query), timeout]);
+    return;
+  }
+  try {
+    await Promise.race([execSqlViaRpc(query), timeout]);
+  } catch (e: any) {
+    if (e.message?.includes("exec_sql") || e.message?.includes("schema cache")) {
+      if (!_useDirectPg) {
+        console.log("[db-init] exec_sql RPC not found, creating via direct PG and switching to PG mode...");
+        await execSqlViaPg(`
+          CREATE OR REPLACE FUNCTION exec_sql(query text)
+          RETURNS void AS $$ BEGIN EXECUTE query; END; $$ LANGUAGE plpgsql SECURITY DEFINER;
+        `);
+        await execSqlViaPg(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
+        console.log("[db-init] exec_sql RPC created OK — using direct PG for this session");
+        _useDirectPg = true;
+      }
+      await Promise.race([execSqlViaPg(query), timeout]);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function ensureDbSchema() {
