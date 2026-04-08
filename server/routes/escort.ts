@@ -369,11 +369,19 @@ import type { Express } from "express";
           const missionNotStartedYetEsc = !so.missionStatus || so.missionStatus === "aguardando";
           const horasMissao = missionNotStartedYetEsc ? 0 : await getHorasElapsedFromDB(osId);
 
+          let kmRotaEsc: number | undefined;
+          if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
+            const hvKm = haversineDist(Number(so.originLat), Number(so.originLng), Number(so.destinationLat), Number(so.destinationLng)) / 1000;
+            kmRotaEsc = Math.round(hvKm * 1.4);
+            if (so.pedagioIdaVolta) kmRotaEsc *= 2;
+          }
+
           const billing = calcularFaturamentoLive({
             horasMissao,
             kmInicial,
             kmFinal,
             contrato,
+            kmRota: kmRotaEsc,
           });
 
           const r = (v: number) => Math.round(v * 100) / 100;
@@ -1569,11 +1577,19 @@ import type { Express } from "express";
           const missionNotStartedYetEsc2 = !so.missionStatus || so.missionStatus === "aguardando";
           const horasMissao = missionNotStartedYetEsc2 ? 0 : await getHorasElapsedFromDB(so.id);
 
+          let kmRotaEsc2: number | undefined;
+          if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
+            const hvKm = haversineDist(Number(so.originLat), Number(so.originLng), Number(so.destinationLat), Number(so.destinationLng)) / 1000;
+            kmRotaEsc2 = Math.round(hvKm * 1.4);
+            if (so.pedagioIdaVolta) kmRotaEsc2 *= 2;
+          }
+
           const billing = calcularFaturamentoLive({
             horasMissao,
             kmInicial,
             kmFinal: kmAtual,
             contrato,
+            kmRota: kmRotaEsc2,
           });
 
           let despesas_pedagio = 0, despesas_combustivel = 0, despesas_outras = 0;

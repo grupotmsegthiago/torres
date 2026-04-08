@@ -256,11 +256,22 @@ import type { Express } from "express";
 
             const horasCalcRaw = skipBillingHours ? 0 : await getHorasElapsedFromDB(o.id);
 
+            let kmRota: number | undefined;
+            if (o.originLat && o.originLng && o.destinationLat && o.destinationLng) {
+              const haversineKm = haversineDist(
+                Number(o.originLat), Number(o.originLng),
+                Number(o.destinationLat), Number(o.destinationLng)
+              ) / 1000;
+              kmRota = Math.round(haversineKm * 1.4);
+              if (o.pedagioIdaVolta) kmRota *= 2;
+            }
+
             const billing = calcularFaturamentoLive({
               horasMissao: horasCalcRaw,
               kmInicial,
               kmFinal: kmFinalNorm,
               contrato,
+              kmRota,
             });
 
             const hasAcionamento = billing.has_acionamento;

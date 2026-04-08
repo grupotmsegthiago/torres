@@ -16,6 +16,7 @@ export function calcularFaturamentoLive(params: {
   kmInicial: number;
   kmFinal: number;
   contrato: any;
+  kmRota?: number;
 }): {
   fat_acionamento: number;
   fat_km: number;
@@ -27,8 +28,9 @@ export function calcularFaturamentoLive(params: {
   franquia_horas: number;
   franquia_km: number;
   has_acionamento: boolean;
+  km_rota_limitado: boolean;
 } {
-  const { horasMissao, kmInicial, kmFinal, contrato } = params;
+  const { horasMissao, kmInicial, kmFinal, contrato, kmRota } = params;
   const n2 = (v: any) => Number(v) || 0;
   const franquiaHoras = n2(contrato.franquia_horas);
   const franquiaKm = n2(contrato.franquia_km) || n2(contrato.franquia_minima_km);
@@ -37,7 +39,9 @@ export function calcularFaturamentoLive(params: {
   const valorKmExtra = n2(contrato.valor_km_extra) || n2(contrato.valor_km_carregado);
   const valorHoraExtra = n2(contrato.valor_hora_extra) || n2(contrato.valor_hora_estadia);
 
-  const kmTotal = Math.max(0, kmFinal - kmInicial);
+  const kmOdometro = Math.max(0, kmFinal - kmInicial);
+  const kmRotaLimitado = kmRota && kmRota > 0 && kmOdometro > kmRota;
+  const kmTotal = kmRotaLimitado ? kmRota : kmOdometro;
   const kmExcedente = Math.max(0, kmTotal - franquiaKm);
 
   let fatAcionamento = 0;
@@ -69,6 +73,7 @@ export function calcularFaturamentoLive(params: {
     franquia_horas: franquiaHoras,
     franquia_km: franquiaKm,
     has_acionamento: hasAcionamento,
+    km_rota_limitado: !!kmRotaLimitado,
   };
 }
 
