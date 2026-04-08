@@ -6,7 +6,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist } from "./_helpers";
-  import { calcularEscolta } from "../billing-calc";
+  import { calcularEscolta, extractKmFromText } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
@@ -1495,11 +1495,14 @@ import type { Express } from "express";
           const pedagioEstimado = Number((so as any).pedagioEstimado) || 0;
           if (pedagioEstimado > 0 && despPedagio === 0) despPedagio = pedagioEstimado;
 
+          const kmRotaEnc = extractKmFromText(so.destination) || extractKmFromText(so.route) || undefined;
+
           const resultado = calcularEscolta({
             km_inicial: kmInicial, km_final: kmFinal > kmInicial ? kmFinal : kmInicial, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: endTime, horario_agendado: scheduledTime,
             despesas_pedagio: despPedagio, despesas_combustivel: despCombustivel, despesas_outras: despOutras, receitas_os: receitasOsEnc, contrato,
+            kmRota: kmRotaEnc,
           });
 
           const client = so.clientId ? await storage.getClient(so.clientId) : null;

@@ -5,7 +5,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
-  import { getHorasElapsedFromDB, calcularFaturamentoLive } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcularFaturamentoLive, extractKmFromText } from "../billing-calc";
   import { haversineDist } from "./_helpers";
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
@@ -256,8 +256,11 @@ import type { Express } from "express";
 
             const horasCalcRaw = skipBillingHours ? 0 : await getHorasElapsedFromDB(o.id);
 
+            const kmTexto = extractKmFromText(o.destination) || extractKmFromText(o.route);
             let kmRota: number | undefined;
-            if (o.originLat && o.originLng && o.destinationLat && o.destinationLng) {
+            if (kmTexto) {
+              kmRota = kmTexto;
+            } else if (o.originLat && o.originLng && o.destinationLat && o.destinationLng) {
               const haversineKm = haversineDist(
                 Number(o.originLat), Number(o.originLng),
                 Number(o.destinationLat), Number(o.destinationLng)

@@ -11,6 +11,13 @@ export async function getHorasElapsedFromDB(osId: number): Promise<number> {
   }
 }
 
+export function extractKmFromText(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const match = text.match(/(\d+)\s*km/i);
+  if (match) return parseInt(match[1], 10);
+  return null;
+}
+
 export function calcularFaturamentoLive(params: {
   horasMissao: number;
   kmInicial: number;
@@ -104,8 +111,9 @@ export function calcularEscolta(dados: {
   despesas_pedagio: number; despesas_combustivel: number; despesas_outras: number;
   receitas_os?: number;
   contrato: any;
+  kmRota?: number;
 }) {
-  const { km_inicial, km_final, km_vazio, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, contrato } = dados;
+  const { km_inicial, km_final, km_vazio, horas_estadia, teve_pernoite, horario_inicio, horario_fim, horario_agendado, despesas_pedagio, despesas_combustivel, despesas_outras, contrato, kmRota } = dados;
   const receitas_os = Number(dados.receitas_os) || 0;
 
   if (km_final < km_inicial) throw new Error("KM final não pode ser menor que KM inicial");
@@ -124,7 +132,8 @@ export function calcularEscolta(dados: {
   const horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
   const horas_missao = horas_trabalhadas_calc > 0 ? horas_trabalhadas_calc : dados.horas_missao;
 
-  const km_total = km_final - km_inicial;
+  const kmOdometro = km_final - km_inicial;
+  const km_total = (kmRota && kmRota > 0 && kmOdometro > kmRota) ? kmRota : kmOdometro;
   const km_carregado = Math.max(0, km_total - km_vazio);
 
   const km_franquia = franquiaKm;

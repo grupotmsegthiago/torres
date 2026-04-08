@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
-  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, extractKmFromText } from "../billing-calc";
   import { logFinancialAudit, haversineDist } from "./_helpers";
 
   export function registerEscortRoutes(app: Express) {
@@ -369,8 +369,11 @@ import type { Express } from "express";
           const missionNotStartedYetEsc = !so.missionStatus || so.missionStatus === "aguardando";
           const horasMissao = missionNotStartedYetEsc ? 0 : await getHorasElapsedFromDB(osId);
 
+          const kmTextoEsc = extractKmFromText(so.destination) || extractKmFromText(so.route);
           let kmRotaEsc: number | undefined;
-          if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
+          if (kmTextoEsc) {
+            kmRotaEsc = kmTextoEsc;
+          } else if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
             const hvKm = haversineDist(Number(so.originLat), Number(so.originLng), Number(so.destinationLat), Number(so.destinationLng)) / 1000;
             kmRotaEsc = Math.round(hvKm * 1.4);
             if (so.pedagioIdaVolta) kmRotaEsc *= 2;
@@ -532,11 +535,13 @@ import type { Express } from "express";
           }
 
           const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
+          const kmRotaDre = extractKmFromText(so.destination) || extractKmFromText(so.route) || undefined;
           const resultadoCalc = calcularEscolta({
             km_inicial: kmInicial, km_final: kmFinalNorm, km_vazio: 0,
             horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
             horario_inicio: startTime, horario_fim: nowTime, horario_agendado: scheduledTime,
             despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0, contrato,
+            kmRota: kmRotaDre,
           });
           totalPagFromBilling = resultadoCalc.pagamento.total;
         } catch (_calcErr) {
@@ -1577,8 +1582,11 @@ import type { Express } from "express";
           const missionNotStartedYetEsc2 = !so.missionStatus || so.missionStatus === "aguardando";
           const horasMissao = missionNotStartedYetEsc2 ? 0 : await getHorasElapsedFromDB(so.id);
 
+          const kmTextoEsc2 = extractKmFromText(so.destination) || extractKmFromText(so.route);
           let kmRotaEsc2: number | undefined;
-          if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
+          if (kmTextoEsc2) {
+            kmRotaEsc2 = kmTextoEsc2;
+          } else if (so.originLat && so.originLng && so.destinationLat && so.destinationLng) {
             const hvKm = haversineDist(Number(so.originLat), Number(so.originLng), Number(so.destinationLat), Number(so.destinationLng)) / 1000;
             kmRotaEsc2 = Math.round(hvKm * 1.4);
             if (so.pedagioIdaVolta) kmRotaEsc2 *= 2;
