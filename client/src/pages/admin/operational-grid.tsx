@@ -5538,7 +5538,15 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             )}
                           </p>
                           {(() => {
-                            const vtrItems = gridData.filter((g: GridItem) => g.vehicle?.plate === v.plate && g.status !== "recusada");
+                            const todayLocalStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                            const vtrItems = gridData.filter((g: GridItem) => {
+                              if (g.vehicle?.plate !== v.plate || g.status === "recusada") return false;
+                              if (g.scheduledDate) {
+                                const sd = new Date(g.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+                                if (sd > todayLocalStr) return false;
+                              }
+                              return true;
+                            });
                             if (vtrItems.length === 0) return null;
                             const vtrWithCost = [...vtrItems].sort((a, b) => {
                               const da = a.scheduledDate ? parseUTCDate(a.scheduledDate).getTime() : 0;

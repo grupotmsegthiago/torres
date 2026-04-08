@@ -28,8 +28,8 @@ import type { Express } from "express";
     const activeOrders = orders.filter(
       (o) => {
         const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        if (sdBRT && sdBRT > todayBRT) return false;
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") {
-          if (o.status === "agendada" && sdBRT && sdBRT > todayBRT) return false;
           return true;
         }
         const isConcluida = o.status === "concluida" || o.status === "concluída";
