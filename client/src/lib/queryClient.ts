@@ -147,10 +147,36 @@ if (_channel) {
   };
 }
 
-function _invalidateLocal(scope: InvalidationScope) {
-  const keys = GLOBAL_QUERY_KEYS;
-  const inv = (k: string[]) => queryClient.invalidateQueries({ queryKey: k });
+let _pendingScopes = new Set<InvalidationScope>();
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+function _flushInvalidations() {
+  const scopes = [..._pendingScopes];
+  _pendingScopes.clear();
+  _debounceTimer = null;
+
+  const keys = GLOBAL_QUERY_KEYS;
+  const done = new Set<string>();
+  const inv = (k: string[]) => {
+    const key = k.join("|");
+    if (done.has(key)) return;
+    done.add(key);
+    queryClient.invalidateQueries({ queryKey: k });
+  };
+
+  for (const scope of scopes) {
+    _applyInvalidation(scope, inv, keys);
+  }
+}
+
+function _invalidateLocal(scope: InvalidationScope) {
+  _pendingScopes.add(scope);
+  if (!_debounceTimer) {
+    _debounceTimer = setTimeout(_flushInvalidations, 500);
+  }
+}
+
+function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void, keys: typeof GLOBAL_QUERY_KEYS) {
   if (scope === "vehicle") {
     inv(keys.vehicles);
     inv(keys.fueling);
@@ -249,7 +275,7 @@ export function invalidateAllQueries() {
   _channel?.postMessage({ type: "invalidate-all" });
 }
 
-const AUTO_REFRESH_MS = 30_000;
+const AUTO_REFRESH_MS = 120_000;
 let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startAutoRefresh() {

@@ -5015,7 +5015,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   useNotificationSound(unreadUpdates);
@@ -6445,7 +6445,7 @@ function TrucksControlStatus() {
   );
 }
 
-const REFRESH_INTERVAL_MS = 30 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
 function useBRTClock() {
   const [now, setNow] = useState(getNowBRT());
@@ -6673,7 +6673,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   const { enabled: soundEnabled, toggle: toggleSound } = useNotificationSound(updates);

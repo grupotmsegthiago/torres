@@ -900,7 +900,7 @@ export default function MobileMissaoPage() {
       if (!r.ok) return null;
       return r.json();
     },
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const { data: scheduledList = [] } = useQuery<any[]>({

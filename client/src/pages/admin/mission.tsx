@@ -975,7 +975,7 @@ export default function MissionPage() {
 
   const { data: mission, isLoading } = useQuery<ActiveMission | null>({
     queryKey: ["/api/mission/active"],
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const { data: scheduledMissions } = useQuery<ScheduledMissionInfo[]>({

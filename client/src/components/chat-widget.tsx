@@ -93,7 +93,7 @@ function MissionInviteCard({ msg, conversationId, onAccepted }: { msg: ChatMessa
   const { data: myAcceptance, refetch: refetchAcceptance } = useQuery<any[]>({
     queryKey: ["/api/missions", missionData?.osId, "acceptances"],
     enabled: !!missionData?.osId,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const myStatus = (() => {
@@ -357,7 +357,7 @@ export default function ChatWidget() {
   const { data: messages = [], refetch: refetchMsgs } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/conversations", activeConvId, "messages"],
     enabled: !!activeConvId && open,
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const presenceMap = useMemo(() => {

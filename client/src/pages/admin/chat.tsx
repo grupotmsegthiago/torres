@@ -106,7 +106,7 @@ export default function ChatPage() {
   const { data: messages = [], refetch: refetchMsgs } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat/conversations", activeConvId, "messages"],
     enabled: !!activeConvId,
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const presenceMap = useMemo(() => {
