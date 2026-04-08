@@ -827,6 +827,13 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function extractKmFromText(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const match = text.match(/(\d+)\s*km/i);
+  if (match) return parseInt(match[1], 10);
+  return null;
+}
+
 const GPS_STALE_MINUTES = 5;
 const _lastValidGpsCache: Record<string, { lat: number; lng: number; km: number }> = {};
 
@@ -970,11 +977,16 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
   const destLat = os.destinationLat;
   const destLng = os.destinationLng;
   let etaLine = "";
+  const kmTextLimit = extractKmFromText(os.destination) || extractKmFromText(os.route);
   if (lat && lng && destLat && destLng) {
     const dist = haversineKm(lat, lng, destLat, destLng);
-    const roadDist = Math.round(dist * 1.4);
+    let roadDist = Math.round(dist * 1.4);
+    if (kmTextLimit && kmTextLimit > 0) roadDist = Math.min(roadDist, kmTextLimit);
     const eta = calcEta(roadDist, v.tracker?.speed);
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${roadDist} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
+  } else if (kmTextLimit && kmTextLimit > 0) {
+    const eta = calcEta(kmTextLimit, v.tracker?.speed);
+    etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${kmTextLimit} km\n⏱️ *PREVISÃO DE CHEGADA:* ${eta}`;
   } else {
     etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* Calculando...\n⏱️ *PREVISÃO DE CHEGADA:* Calculando...`;
   }
@@ -1049,10 +1061,13 @@ async function generateReportAsync(v: TrackedVehicle, gridItem?: GridItem | null
       if (resp.ok) {
         const rd = await resp.json();
         if (rd.distKm && rd.durationMin) {
-          const h = Math.floor(rd.durationMin / 60);
-          const m = rd.durationMin % 60;
+          const kmLimitReport = extractKmFromText(os?.destination) || extractKmFromText(os?.route);
+          const distFinal = (kmLimitReport && kmLimitReport > 0) ? Math.min(rd.distKm, kmLimitReport) : rd.distKm;
+          const durFinal = (kmLimitReport && kmLimitReport > 0 && distFinal < rd.distKm) ? Math.round(distFinal / rd.distKm * rd.durationMin) : rd.durationMin;
+          const h = Math.floor(durFinal / 60);
+          const m = durFinal % 60;
           const etaStr = h > 0 ? `~${h}h${m.toString().padStart(2, "0")}` : `~${m} min`;
-          vars.etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${rd.distKm} km\n⏱️ *PREVISÃO DE CHEGADA:* ${etaStr}`;
+          vars.etaLine = `\n\n🛣️ *DISTÂNCIA ATÉ DESTINO:* ${distFinal} km\n⏱️ *PREVISÃO DE CHEGADA:* ${etaStr}`;
         }
       }
     } catch {}
@@ -7187,7 +7202,9 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                   const dLng = matchedVehicle?.activeOs?.destinationLng;
                   if (!lat || !lng || !dLat || !dLng) return null;
                   const dist = haversineKm(Number(lat), Number(lng), Number(dLat), Number(dLng));
-                  const roadDist = Math.round(dist * 1.3);
+                  const kmLimitCard = extractKmFromText(matchedVehicle?.activeOs?.destination) || extractKmFromText(matchedVehicle?.activeOs?.route);
+                  let roadDist = Math.round(dist * 1.3);
+                  if (kmLimitCard && kmLimitCard > 0) roadDist = Math.min(roadDist, kmLimitCard);
                   const eta = calcEta(roadDist, matchedVehicle?.tracker?.speed);
                   return (
                     <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-3">
