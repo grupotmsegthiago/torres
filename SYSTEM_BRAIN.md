@@ -10,10 +10,13 @@
 
 | Regra | Detalhes |
 |-------|---------|
-| **Armazenamento** | Supabase armazena timestamps em UTC, **sem sufixo 'Z'** (ex: `2026-04-07T06:30:00`). |
-| **Parsing no Frontend** | Sempre usar `parseUTCDate(ts)` de `client/src/lib/utils.ts`. Nunca `new Date(ts)` diretamente — interpreta como hora local do navegador. |
+| **Armazenamento** | Supabase armazena timestamps **em BRT nativo**, sem sufixo (ex: `2026-04-07T03:30:00` = 03:30 BRT). O pool DB usa `SET timezone = 'America/Sao_Paulo'`. |
+| **OID Parser 1114** | Em `db.ts`, o parser de `timestamp without timezone` (OID 1114) adiciona `-03:00` ao ler, criando um `Date` correto em BRT. |
+| **`localInputToUtc()` — DESATIVADA** | Função em `service-orders.tsx` **NÃO converte mais BRT→UTC**. Repassa o valor BRT diretamente ao banco. A conversão dupla causava shift de +3h. Corrigido em 08/04/2026. |
+| **Parsing no Frontend** | Sempre usar `parseUTCDate(ts)` de `client/src/lib/utils.ts`. Adiciona `-03:00` a strings sem offset. Nunca `new Date(ts)` diretamente. |
 | **Exibição** | Sempre passar `timeZone: "America/Sao_Paulo"` em `toLocaleTimeString()` / `toLocaleString()`. Usar `formatTimeBRT()`, `formatDateBRT()`, `formatBRT()` de utils.ts. |
-| **Parsing no Backend** | Usar `ensureUTC(ts)` (append 'Z') antes de criar `new Date()`. Funções `toBRT()` locais nos routes já fazem isso. |
+| **Parsing no Backend** | `ensureUTC(ts)` adiciona `-03:00` (NÃO `Z`). `nowBRTString()` gera timestamps BRT. |
+| **PROIBIDO** | NUNCA usar `.toISOString()` para gravar — converte para UTC e causa shift de +3h. NUNCA usar `new Date().toISOString()` como fonte de hora — usar `nowBRTString()`. |
 | **`data_missao`** | Deve ser armazenada como ISO timestamp completo (ex: `"2026-04-02T11:00:00"`), **nunca** como date-only (`"2026-04-02"`) — PostgreSQL interpreta date-only como UTC midnight, deslocando a data BRT em -1 dia. |
 | **CRON Jobs** | Todos os horários são definidos em UTC mas documentados em BRT. Ex: `06:30 BRT = 09:30 UTC`. |
 | **Cálculo de Duração** | Usar `parseUTCDate(start).getTime()` e `Date.now()` para diferenças em milissegundos. |
