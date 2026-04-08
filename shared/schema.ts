@@ -231,8 +231,12 @@ export const serviceOrders = pgTable("service_orders", {
 });
 
 const coerceDate = z.preprocess(
-  (val) => (val === null || val === undefined || val === "" ? null : val),
-  z.union([z.coerce.date(), z.null()])
+  (val) => {
+    if (val === null || val === undefined || val === "") return null;
+    if (val instanceof Date) return val.toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+    return String(val);
+  },
+  z.union([z.string(), z.null()])
 ).optional();
 const coerceReal = z.preprocess(
   (val) => {
