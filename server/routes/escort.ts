@@ -366,7 +366,8 @@ import type { Express } from "express";
           const kmFinal = Number(kmFinalP?.kmValue || 0);
           const nb = (v: any) => Number(v) || 0;
 
-          const horasMissao = await getHorasElapsedFromDB(osId);
+          const missionNotStartedYetEsc = !so.missionStatus || so.missionStatus === "aguardando";
+          const horasMissao = missionNotStartedYetEsc ? 0 : await getHorasElapsedFromDB(osId);
 
           const billing = calcularFaturamentoLive({
             horasMissao,
@@ -1565,7 +1566,8 @@ import type { Express } from "express";
           const kmInicial = nb(kmChegadaP?.kmValue) || nb(kmSaidaP?.kmValue);
           const kmAtual = nb(kmFinalP?.kmValue || kmInicial);
 
-          const horasMissao = await getHorasElapsedFromDB(so.id);
+          const missionNotStartedYetEsc2 = !so.missionStatus || so.missionStatus === "aguardando";
+          const horasMissao = missionNotStartedYetEsc2 ? 0 : await getHorasElapsedFromDB(so.id);
 
           const billing = calcularFaturamentoLive({
             horasMissao,

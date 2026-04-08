@@ -242,7 +242,16 @@ import type { Express } from "express";
             const n2 = (v: any) => Number(v) || 0;
             const kmFinalNorm = kmAtual > kmInicial ? kmAtual : kmInicial;
 
-            const horasCalcRaw = await getHorasElapsedFromDB(o.id);
+            const missionNotStartedYet = !o.missionStatus || o.missionStatus === "aguardando";
+            const scheduledInFuture = (() => {
+              if (!o.scheduledDate) return false;
+              const sched = new Date(String(o.scheduledDate).includes("-03:00") ? String(o.scheduledDate) : String(o.scheduledDate) + "-03:00");
+              const nowBRT = new Date();
+              return sched.getTime() > nowBRT.getTime();
+            })();
+            const skipBillingHours = missionNotStartedYet || (o.status === "agendada" && scheduledInFuture);
+
+            const horasCalcRaw = skipBillingHours ? 0 : await getHorasElapsedFromDB(o.id);
 
             const billing = calcularFaturamentoLive({
               horasMissao: horasCalcRaw,

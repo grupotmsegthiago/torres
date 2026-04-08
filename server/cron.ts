@@ -201,7 +201,15 @@ export function initCronJobs() {
           const billingStartDate = missionStartDate || scheduledDate;
           const inicioConsiderado = billingStartDate ? toBRT(billingStartDate) : (startTime || scheduledTime || "00:00");
 
-          const horasMissao = await getHorasElapsedFromDB(so.id);
+          const missionNotStartedYet = !so.mission_status || so.mission_status === "aguardando";
+          const scheduledInFutureCron = (() => {
+            if (!so.scheduled_date) return false;
+            const sched = new Date(String(so.scheduled_date).includes("-03:00") ? String(so.scheduled_date) : String(so.scheduled_date) + "-03:00");
+            return sched.getTime() > Date.now();
+          })();
+          const skipBillingHoursCron = missionNotStartedYet || (so.status === "agendada" && scheduledInFutureCron);
+
+          const horasMissao = skipBillingHoursCron ? 0 : await getHorasElapsedFromDB(so.id);
 
           const km_total = kmFinal - kmInicial;
           const km_carregado = Math.max(0, km_total);
