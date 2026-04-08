@@ -201,14 +201,25 @@ export async function cacheRows(table: string, rows: any[]): Promise<void> {
     }
 
     await client.query("BEGIN");
+    try {
+      await client.query(`ALTER TABLE "${table}" DISABLE TRIGGER ALL`);
+    } catch {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.query("BEGIN");
+    }
     await client.query(`DELETE FROM "${table}"`);
     for (const row of rows) {
       const vals = cols.map((c) => row[c]);
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
       try {
+        await client.query("SAVEPOINT sp");
         await client.query(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`, vals);
-      } catch {}
+        await client.query("RELEASE SAVEPOINT sp");
+      } catch {
+        await client.query("ROLLBACK TO SAVEPOINT sp").catch(() => {});
+      }
     }
+    await client.query(`ALTER TABLE "${table}" ENABLE TRIGGER ALL`).catch(() => {});
     await client.query("COMMIT");
   } catch (err: any) {
     await client.query("ROLLBACK").catch(() => {});

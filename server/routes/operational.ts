@@ -1,5 +1,5 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
+  import { storage, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole } from "../auth";
   import * as truckscontrol from "../truckscontrol";
@@ -130,21 +130,74 @@ import type { Express } from "express";
       }
     } catch (_e) {}
 
+    const formatName = (name?: string) => {
+      if (!name) return null;
+      const parts = name.trim().split(/\s+/);
+      if (parts.length <= 1) return name;
+      return `${parts[0]} ${parts[parts.length - 1]}`;
+    };
+
+    const osIds = activeOrders.map(o => o.id);
+
+    const [allClients, allEmployees, updatesRes, tcPositions, photosRes, contractsRes, missionCostsRes] = await Promise.all([
+      storage.getClients(),
+      storage.getEmployees(),
+      osIds.length > 0
+        ? supabaseAdmin.from("mission_updates").select("*").in("service_order_id", osIds).order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] as any[] }),
+      truckscontrol.getCachedPositions(),
+      osIds.length > 0
+        ? supabaseAdmin.from("mission_photos").select("*").in("service_order_id", osIds)
+        : Promise.resolve({ data: [] as any[] }),
+      supabaseAdmin.from("escort_contracts").select("*"),
+      osIds.length > 0
+        ? supabaseAdmin.from("mission_costs").select("*").in("service_order_id", osIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const clientMap = new Map(allClients.map(c => [c.id, c]));
+    const vehicleMap = new Map(gridVehicles.map(v => [v.id, v]));
+    const empMap = new Map(allEmployees.map(e => [e.id, e]));
+
+    const allUpdates = toCamelArray(updatesRes.data || []);
+    const updatesByOS = new Map<number, any[]>();
+    for (const u of allUpdates) {
+      const arr = updatesByOS.get(u.serviceOrderId) || [];
+      arr.push(u);
+      updatesByOS.set(u.serviceOrderId, arr);
+    }
+
+    const allPhotos = toCamelArray(photosRes.data || []);
+    const photosByOS = new Map<number, any[]>();
+    for (const p of allPhotos) {
+      const arr = photosByOS.get(p.serviceOrderId) || [];
+      arr.push(p);
+      photosByOS.set(p.serviceOrderId, arr);
+    }
+
+    const allContracts = contractsRes.data || [];
+    const contractById = new Map(allContracts.map((c: any) => [c.id, c]));
+    const activeContractsByClient = new Map<number, any>();
+    for (const c of allContracts) {
+      if (c.status === "Ativo" && c.client_id && !activeContractsByClient.has(c.client_id)) {
+        activeContractsByClient.set(c.client_id, c);
+      }
+    }
+
+    const allMissionCosts = toCamelArray(missionCostsRes.data || []);
+    const missionCostsByOS = new Map<number, any[]>();
+    for (const mc of allMissionCosts) {
+      const arr = missionCostsByOS.get(mc.serviceOrderId) || [];
+      arr.push(mc);
+      missionCostsByOS.set(mc.serviceOrderId, arr);
+    }
+
     const enriched = await Promise.all(
       activeOrders.map(async (o) => {
-        const [client, vehicle, emp1, emp2] = await Promise.all([
-          storage.getClient(o.clientId),
-          o.vehicleId ? storage.getVehicle(o.vehicleId) : null,
-          o.assignedEmployeeId ? storage.getEmployee(o.assignedEmployeeId) : null,
-          o.assignedEmployee2Id ? storage.getEmployee(o.assignedEmployee2Id) : null,
-        ]);
-
-        const formatName = (name?: string) => {
-          if (!name) return null;
-          const parts = name.trim().split(/\s+/);
-          if (parts.length <= 1) return name;
-          return `${parts[0]} ${parts[parts.length - 1]}`;
-        };
+        const client = clientMap.get(o.clientId);
+        const vehicle = o.vehicleId ? vehicleMap.get(o.vehicleId) : null;
+        const emp1 = o.assignedEmployeeId ? empMap.get(o.assignedEmployeeId) : null;
+        const emp2 = o.assignedEmployee2Id ? empMap.get(o.assignedEmployee2Id) : null;
 
         let trackerData: {
           latitude?: number;
@@ -161,7 +214,6 @@ import type { Express } from "express";
 
         if (vehicle && vTrackerType === "truckscontrol") {
           vHasTracker = true;
-          const tcPositions = await truckscontrol.getCachedPositions();
           if (tcPositions.length > 0) {
             let pos = vehicle.truckscontrolIdentifier
               ? truckscontrol.findPositionByIdentifier(tcPositions, vehicle.truckscontrolIdentifier)
@@ -184,7 +236,7 @@ import type { Express } from "express";
           try {
             const url = new URL(vehicle.trackerApiUrl);
             if (url.protocol === "https:") {
-              const resp = await fetch(vehicle.trackerApiUrl, { signal: AbortSignal.timeout(5000) });
+              const resp = await fetch(vehicle.trackerApiUrl, { signal: AbortSignal.timeout(3000) });
               if (resp.ok) {
                 trackerData = await resp.json();
               }
@@ -194,15 +246,9 @@ import type { Express } from "express";
           }
         }
 
-        const { data: lastUpdate } = await supabaseAdmin.from("mission_updates").select("*")
-          .eq("service_order_id", o.id).eq("read_by_admin", 0)
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        const { data: recentUpdates } = await supabaseAdmin.from("mission_updates").select("*")
-          .eq("service_order_id", o.id)
-          .order("created_at", { ascending: false })
-          .limit(5);
+        const osUpdates = updatesByOS.get(o.id) || [];
+        const lastUpdate = osUpdates.filter(u => !u.readByAdmin || u.readByAdmin === 0 || u.readByAdmin === "0").slice(0, 1);
+        const recentUpdates = osUpdates.slice(0, 5);
 
         let liveCost: {
           km_inicial: number; km_atual: number; km_total: number;
@@ -215,7 +261,7 @@ import type { Express } from "express";
 
         if ((o.status === "em_andamento" || o.status === "agendada" || o.status === "concluida" || o.status === "concluída" || o.status === "cancelada" || o.missionStatus === "encerrada") && o.type === "escolta" && o.status !== "recusada") {
           try {
-            const photos = await storage.getMissionPhotosByOS(o.id);
+            const photos = photosByOS.get(o.id) || [];
             const kmSaidaPhoto = photos.find((p: any) => p.step === "km_saida");
             const kmChegadaPhoto = photos.find((p: any) => p.step === "km_chegada");
             const kmFinalPhoto = photos.find((p: any) => p.step === "km_final");
@@ -235,11 +281,11 @@ import type { Express } from "express";
             let contratoNome: string | null = null;
 
             if (o.escortContractId) {
-              const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", o.escortContractId).limit(1);
-              if (cc?.length) { contrato = cc[0]; contratoNome = cc[0].contract_name || cc[0].client_name || null; }
+              const cc = contractById.get(o.escortContractId);
+              if (cc) { contrato = cc; contratoNome = cc.contract_name || cc.client_name || null; }
             } else if (o.clientId) {
-              const { data: clientContracts } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", o.clientId).eq("status", "Ativo").limit(1);
-              if (clientContracts?.length) { contrato = clientContracts[0]; contratoNome = clientContracts[0].contract_name || clientContracts[0].client_name || null; }
+              const cc = activeContractsByClient.get(o.clientId);
+              if (cc) { contrato = cc; contratoNome = cc.contract_name || cc.client_name || null; }
             }
 
             const n2 = (v: any) => Number(v) || 0;
@@ -302,7 +348,7 @@ import type { Express } from "express";
             const missionHasStarted = o.status !== "agendada" && o.status !== "aberta";
 
             try {
-              const osMissionCosts = await storage.getMissionCostsByOS(o.id);
+              const osMissionCosts = missionCostsByOS.get(o.id) || [];
               for (const mc of osMissionCosts) {
                 const amt = Number((mc as any).amount || 0);
                 if ((mc as any).costType === "revenue") { receitasOsGrid += amt; continue; }
