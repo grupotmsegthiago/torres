@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
-  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist } from "./_helpers";
   import { calcularEscolta } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
@@ -1274,7 +1274,7 @@ import type { Express } from "express";
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
-    const { serviceOrderId } = req.body;
+    const { serviceOrderId, latitude, longitude } = req.body;
     const so = await storage.getServiceOrder(serviceOrderId);
     if (!so) return res.status(404).json({ message: "OS não encontrada" });
 
@@ -1299,7 +1299,18 @@ import type { Express } from "express";
       const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
       const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
       if (diffMin > 30 && !so.earlyStartApproved) {
-        return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde. Aguarde autorização da central.", code: "EARLY_START" });
+        let withinOriginRadius = false;
+        if (latitude && longitude && so.originLat && so.originLng) {
+          const distM = haversineDist(Number(latitude), Number(longitude), Number(so.originLat), Number(so.originLng));
+          const ORIGIN_RADIUS_M = 1000;
+          withinOriginRadius = distM <= ORIGIN_RADIUS_M;
+          if (withinOriginRadius) {
+            console.log(`[early-start] OS ${so.osNumber}: Agent within ${Math.round(distM)}m of origin (limit ${ORIGIN_RADIUS_M}m) — early start allowed`);
+          }
+        }
+        if (!withinOriginRadius) {
+          return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde. Aguarde autorização da central.", code: "EARLY_START" });
+        }
       }
     }
 
@@ -1649,7 +1660,15 @@ import type { Express } from "express";
         const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
         const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
         if (diffMin > 30 && !so.earlyStartApproved) {
-          return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde.", code: "EARLY_START" });
+          let withinOriginSim = false;
+          const { latitude: simLat, longitude: simLng } = req.body;
+          if (simLat && simLng && so.originLat && so.originLng) {
+            const distM = haversineDist(Number(simLat), Number(simLng), Number(so.originLat), Number(so.originLng));
+            withinOriginSim = distM <= 1000;
+          }
+          if (!withinOriginSim) {
+            return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde.", code: "EARLY_START" });
+          }
         }
       }
 
