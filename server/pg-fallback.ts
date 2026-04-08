@@ -42,28 +42,22 @@ function formatBRT(d: Date): string {
 const CORE_TABLES = [
   "users", "employees", "vehicles", "clients", "service_orders",
   "escort_billings", "escort_contracts", "financial_transactions",
-  "mission_photos", "timesheets", "mission_costs", "client_vehicles",
-  "gerenciadoras", "weapons", "weapon_kits", "weapon_kit_items",
-  "weapon_assignments", "vehicle_assignments", "vehicle_maintenance",
-  "vehicle_fueling", "trips", "employee_salaries", "employee_documents",
-  "perfis_acesso", "agent_locations", "invoices", "billing_alerts",
-  "chat_conversations", "chat_messages", "mission_acceptances",
-  "mission_updates", "mission_positions", "audit_logs", "system_settings",
-  "ponto_registros", "holerites", "telemetry_events", "client_forwards",
+  "timesheets", "mission_costs", "perfis_acesso", "system_settings",
+  "weapon_kits", "vehicle_fueling", "invoices", "billing_alerts",
 ];
 
 let pool: pg.Pool | null = null;
 let supabaseHealthy = true;
 let lastSyncTime = 0;
-const SYNC_INTERVAL_MS = 60_000;
+const SYNC_INTERVAL_MS = 5 * 60_000;
 let syncInProgress = false;
 
 function getPool(): pg.Pool {
   if (!pool) {
     pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 10,
-      idleTimeoutMillis: 30_000,
+      max: 5,
+      idleTimeoutMillis: 20_000,
       connectionTimeoutMillis: 5_000,
     });
     pool.on("error", (err) => {

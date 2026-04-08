@@ -359,7 +359,7 @@ async function ensureSystemSettingsTable() {
     });
 
     syncAllTables(supabaseAdmin).catch(() => {});
-    setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 60_000);
+    setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 5 * 60_000);
 
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {
@@ -1183,11 +1183,22 @@ Regras:
     }
   });
 
+  const _lastGpsUpdate = new Map<number, number>();
   app.post("/api/agent/location", requireAuth, async (req, res) => {
     const user = req.user!;
     const { latitude, longitude, accuracy, speed, heading } = req.body;
     if (latitude == null || longitude == null) {
       return res.status(400).json({ message: "Latitude e longitude são obrigatórios" });
+    }
+    const now = Date.now();
+    const lastUpdate = _lastGpsUpdate.get(user.id) || 0;
+    if (now - lastUpdate < 15_000) {
+      return res.json({ throttled: true, message: "Aguarde 15s entre atualizações de GPS" });
+    }
+    _lastGpsUpdate.set(user.id, now);
+    if (_lastGpsUpdate.size > 200) {
+      const oldest = [..._lastGpsUpdate.entries()].sort((a, b) => a[1] - b[1]);
+      for (let i = 0; i < 50; i++) _lastGpsUpdate.delete(oldest[i][0]);
     }
     const locData = {
       userId: user.id,

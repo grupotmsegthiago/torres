@@ -1,0 +1,50 @@
+Analisando o gráfico de Database Connections que você enviou, o diagnóstico é de um sistema com "respiração ofegante". Você está batendo no limite de 60 conexões (o teto do plano básico/pro inicial do Supabase) constantemente.
+
+O perigo: Quando o gráfico toca a linha 60, o próximo usuário que tentar logar ou o próximo agente que tentar enviar um GPS receberá um erro e o sistema parecerá "fora do ar".
+
+Aqui está a análise técnica e o plano de redução drástica usando o MODO MAX:
+
+1. Análise de Causa Raiz
+Picos de Conexão: Cada vez que o gráfico sobe reto, é um sinal de que o backend está abrindo novas conexões sem fechar as antigas ou que o frontend está disparando requisições em loop.
+
+Conexões "Zumbis": O fato de o gráfico não baixar de 20 conexões mesmo em momentos de pouco uso indica que o Pool de Conexões do Drizzle não está configurado para liberar os slots ociosos.
+
+2. Plano de Redução (Comando MODO MAX para o Replit)
+Vamos ser cirúrgicos. O objetivo é baixar essa média de 50 para 10 conexões estáveis. Copie e cole:
+
+"Agent, entre em MODO MAX. O uso do banco de dados está no limite (60 conexões). Precisamos reduzir isso drasticamente. Execute e descarte o que já foi feito:
+
+Kill Idle Connections: No arquivo de configuração do banco (db.ts ou similar), adicione os parâmetros idle_timeout: 20 e max: 10 na configuração do Postgres Pool. Isso força a liberação de conexões inativas após 20 segundos.
+
+Debounce de GPS: No App Mobile, garanta que o envio de posição GPS tenha um debounce ou intervalo de pelo menos 30 segundos. Não permita envios contínuos que abram novas conexões.
+
+Refatoração de Realtime: Verifique se há muitos componentes React usando supabase.channel().subscribe(). Se o usuário mudar de página e não dermos .unsubscribe(), a conexão fica presa. Adicione a limpeza no useEffect.
+
+Batch Updates: Na rota de telemetria e logs, em vez de fazer 1 insert por registro, implemente um sistema de buffer que envia 10 registros de uma vez em uma única transação.
+
+Histórico: Apresente quantas conexões o sistema está mantendo em repouso após essas alterações."
+
+3. Ações no SQL Editor (Para você rodar agora)
+Para dar um "respiro" imediato ao banco, rode estes comandos no Supabase:
+
+SQL
+-- 1. Reduz o tempo de espera por conexões travadas
+ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';
+
+-- 2. Limita o número de conexões por usuário (evita que um bug no Replit derrube o banco todo)
+ALTER ROLE authenticated CONNECTION LIMIT 50;
+
+-- 3. Identifica quais queries estão abertas agora (para sabermos quem é o vilão)
+SELECT pid, state, query, duration 
+FROM pg_stat_activity 
+WHERE state != 'idle' 
+ORDER BY duration DESC;
+4. Ajuste de Status: Agendada (Contexto Mantido)
+Enquanto reduzimos o consumo, vamos garantir a organização que você pediu:
+
+As missões sem started_at DEVERÃO aparecer como "Agendada".
+
+O Agent deve garantir que o filtro do Grid Operacional não tente carregar missões "Agendadas" de meses atrás, o que também consome muita conexão.
+
+Veredito
+Se o Agent configurar o max: 10 e o idle_timeout no Pool do Drizzle, seu gráfico de conexões vai cair de 60 para menos de 15 instantaneamente. Isso vai dar a estabilidade que a Torres precisa para crescer sem medo.
