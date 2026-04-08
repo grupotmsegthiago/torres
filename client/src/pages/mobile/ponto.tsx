@@ -21,7 +21,7 @@ export default function MobilePontoPage() {
   const { toast } = useToast();
   const [capturing, setCapturing] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
-  const [geofenceBlock, setGeofenceBlock] = useState<{ distance: number; address: string } | null>(null);
+  const [geofenceBlock, setGeofenceBlock] = useState<{ distance: number; address: string; serverMessage: string } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -108,6 +108,7 @@ export default function MobilePontoPage() {
           setGeofenceBlock({
             distance: data.distance || 0,
             address: geoAddress || "Localização fora da sede",
+            serverMessage: data.message || "",
           });
           stopCamera();
           throw new Error("__GEOFENCE__");
@@ -225,7 +226,7 @@ export default function MobilePontoPage() {
                 <div>
                   <p className="text-xs font-bold text-red-700 uppercase">Distância da Base</p>
                   <p className="text-2xl font-black text-red-600">{geofenceBlock.distance >= 1000 ? `${(geofenceBlock.distance / 1000).toFixed(1)} km` : `${Math.round(geofenceBlock.distance)}m`}</p>
-                  <p className="text-[10px] text-red-500">Máximo permitido: 500m</p>
+                  <p className="text-[10px] text-red-500">{geofenceBlock.serverMessage || "Você está fora do raio permitido"}</p>
                 </div>
               </div>
 

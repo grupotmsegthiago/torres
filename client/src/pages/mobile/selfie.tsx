@@ -186,15 +186,23 @@ export default function SelfiePage() {
             {new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}
           </p>
           <div className="flex items-center justify-center gap-1 mt-1">
-            <MapPin className="w-3 h-3 text-emerald-500" />
             {locationLoading ? (
-              <span className="text-[10px] text-neutral-400">Capturando localização...</span>
+              <>
+                <MapPin className="w-3 h-3 text-amber-500 animate-pulse" />
+                <span className="text-[10px] text-amber-600 font-semibold animate-pulse">Buscando GPS de alta precisão...</span>
+              </>
             ) : locationInfo ? (
-              <span className="text-[10px] text-emerald-600 font-semibold">
-                Localização capturada ({parseFloat(locationInfo.lat).toFixed(6)}, {parseFloat(locationInfo.lng).toFixed(6)})
-              </span>
+              <>
+                <MapPin className="w-3 h-3 text-emerald-500" />
+                <span className="text-[10px] text-emerald-600 font-semibold">
+                  GPS capturado · Precisão: {parseFloat(locationInfo.accuracy).toFixed(0)}m
+                </span>
+              </>
             ) : (
-              <span className="text-[10px] text-red-500">Localização indisponível</span>
+              <>
+                <MapPin className="w-3 h-3 text-red-500" />
+                <span className="text-[10px] text-red-500">GPS indisponível — ative a localização</span>
+              </>
             )}
           </div>
         </div>
