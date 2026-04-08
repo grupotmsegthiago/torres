@@ -68,11 +68,13 @@ import type { Express } from "express";
         if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
           return res.status(400).json({ message: "Coordenadas de localizacao invalidas" });
         }
+        const GEOFENCE_RADIUS_METERS = 300;
         const base = await getBaseCoords();
         const distToHQ = haversineDist(parsedLat, parsedLng, base.lat, base.lng);
-        if (distToHQ > base.radius) {
+        const effectiveRadius = Math.max(base.radius, GEOFENCE_RADIUS_METERS);
+        if (distToHQ > effectiveRadius) {
           return res.status(403).json({
-            message: `Você está a ${Math.round(distToHQ)}m da base (${base.name}). Máximo permitido: ${base.radius}m.`,
+            message: `Você está a ${Math.round(distToHQ)}m da base (${base.name}). Máximo permitido: ${effectiveRadius}m. Ative o GPS e tente novamente.`,
             code: "GEOFENCE_BLOCKED",
             distance: Math.round(distToHQ),
           });
@@ -96,6 +98,20 @@ import type { Express } from "express";
       const pLng = parseFloat(longitude);
       if (!Number.isFinite(pLat) || !Number.isFinite(pLng) || pLat < -90 || pLat > 90 || pLng < -180 || pLng > 180) {
         return res.status(400).json({ message: "Coordenadas de localização inválidas" });
+      }
+
+      const GEOFENCE_RADIUS_METERS = 300;
+      if (action === "clock_out") {
+        const base = await getBaseCoords();
+        const distToBase = haversineDist(pLat, pLng, base.lat, base.lng);
+        const effectiveRadius = Math.max(base.radius, GEOFENCE_RADIUS_METERS);
+        if (distToBase > effectiveRadius) {
+          return res.status(403).json({
+            message: `Você está a ${Math.round(distToBase)}m da base (${base.name}). Máximo permitido: ${effectiveRadius}m. Ative o GPS e tente novamente.`,
+            code: "GEOFENCE_BLOCKED",
+            distance: Math.round(distToBase),
+          });
+        }
       }
 
       const updateMap: Record<string, any> = {

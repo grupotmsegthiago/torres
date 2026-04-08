@@ -107,7 +107,7 @@ export default function SelfiePage() {
           accuracy: String(pos.coords.accuracy),
         }),
         () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     });
   };
