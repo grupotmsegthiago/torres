@@ -3156,6 +3156,9 @@ export default function EmployeesPage() {
   const [accessEmployee, setAccessEmployee] = useState<Employee | null>(null);
   const [pastaEmployee, setPastaEmployee] = useState<Employee | null>(null);
   const [docAlertOpen, setDocAlertOpen] = useState(false);
+  const [empPage, setEmpPage] = useState(1);
+  const [searchEmp, setSearchEmp] = useState("");
+  const EMP_PER_PAGE = 20;
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
@@ -3264,11 +3267,34 @@ export default function EmployeesPage() {
           })()}
 
           <Card className="bg-white border-neutral-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-neutral-200">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Input
+                  placeholder="Buscar por nome, CPF ou matrícula..."
+                  value={searchEmp}
+                  onChange={e => { setSearchEmp(e.target.value); setEmpPage(1); }}
+                  className="pl-10 h-9"
+                  data-testid="input-search-employees"
+                />
+              </div>
+            </div>
             {isLoading ? (
               <div className="p-8 text-center text-neutral-400">Carregando...</div>
             ) : (employees || []).length === 0 ? (
               <div className="p-8 text-center text-neutral-400">Nenhum funcionário cadastrado</div>
-            ) : (
+            ) : (() => {
+              const filtered = searchEmp.trim()
+                ? (employees || []).filter(e => {
+                    const s = searchEmp.toLowerCase();
+                    return e.name?.toLowerCase().includes(s) || e.cpf?.toLowerCase().includes(s) || e.matricula?.toLowerCase().includes(s);
+                  })
+                : (employees || []);
+              const totalEmpPages = Math.ceil(filtered.length / EMP_PER_PAGE);
+              const safeEmpPage = Math.min(empPage, totalEmpPages || 1);
+              const paginated = filtered.slice((safeEmpPage - 1) * EMP_PER_PAGE, safeEmpPage * EMP_PER_PAGE);
+              return (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="table-employees">
                   <thead className="bg-neutral-50 border-b border-neutral-200">
@@ -3285,7 +3311,7 @@ export default function EmployeesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(employees || []).map((e) => {
+                    {paginated.map((e) => {
                       const missingDocs: string[] = [];
                       if (!e.photoUrl) missingDocs.push("Foto");
                       if (!e.cnhNumber) missingDocs.push("CNH");
@@ -3357,7 +3383,18 @@ export default function EmployeesPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              {totalEmpPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-200">
+                  <span className="text-xs text-neutral-500">{filtered.length} funcionário{filtered.length !== 1 ? "s" : ""} — Página {safeEmpPage} de {totalEmpPages}</span>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" disabled={safeEmpPage <= 1} onClick={() => setEmpPage(p => Math.max(1, p - 1))} data-testid="button-emp-prev">Anterior</Button>
+                    <Button variant="outline" size="sm" disabled={safeEmpPage >= totalEmpPages} onClick={() => setEmpPage(p => Math.min(totalEmpPages, p + 1))} data-testid="button-emp-next">Próxima</Button>
+                  </div>
+                </div>
+              )}
+              </>
+              );
+            })()}
           </Card>
         </>
       )}

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
+  import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertEmployeeSchema } from "@shared/schema";
@@ -8,7 +8,26 @@ import type { Express } from "express";
 
   export function registerEmployeeRoutes(app: Express) {
     app.get("/api/employees", requireAuth, async (req, res) => {
-    const data = await storage.getEmployees();
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const offset = (page - 1) * limit;
+
+    const EMP_LIST_COLS = "id,name,full_name,role,cpf,matricula,phone,email,status,hire_date,cnh_category,cnh_expiry,cnv_expiry,vacation_expiry,block_type,block_reason,photo_url,created_at";
+
+    let data: any[];
+    try {
+      const { data: rows, error } = await supabaseAdmin.from("employees")
+        .select(EMP_LIST_COLS)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (error) throw error;
+      data = rows?.map((r: any) => toCamelObj(r)) || [];
+    } catch (err: any) {
+      console.warn(`[emp-list] supabase error, falling back: ${err.message}`);
+      const all = await storage.getEmployees();
+      data = all.slice(offset, offset + limit);
+    }
+
     if (req.user!.role !== "diretoria") {
       const sanitized = data.map((e: any) => ({ ...e, blockType: null, blockReason: null }));
       return res.json(sanitized);

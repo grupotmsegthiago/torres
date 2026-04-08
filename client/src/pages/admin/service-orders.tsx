@@ -1691,6 +1691,9 @@ export default function ServiceOrdersPage() {
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
   const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterPeriod, searchOS, filterVehicleId]);
   const { toast } = useToast();
   const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -2060,10 +2063,15 @@ export default function ServiceOrdersPage() {
             const numB = parseInt(b.osNumber.replace(/\D/g, ""), 10) || 0;
             return numB - numA;
           });
-          if (displayOrders.length === 0) return (
+          const totalFiltered = displayOrders.length;
+          const totalPages = Math.ceil(totalFiltered / ITEMS_PER_PAGE);
+          const safePage = Math.min(currentPage, totalPages || 1);
+          const paginatedOrders = displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+          if (totalFiltered === 0) return (
             <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada com os filtros selecionados</div>
           );
           return (
+          <div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm table-fixed" data-testid="table-orders">
               <thead className="bg-neutral-50 border-b border-neutral-200">
@@ -2086,7 +2094,7 @@ export default function ServiceOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {displayOrders.map((o) => (
+                {paginatedOrders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`row-order-${o.id}`}>
                     <td className="p-2 font-medium text-neutral-900 whitespace-nowrap">
                       <div className="flex items-center gap-1">
@@ -2326,6 +2334,35 @@ export default function ServiceOrdersPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-200 bg-neutral-50" data-testid="pagination-orders">
+              <span className="text-xs text-neutral-500">
+                {((safePage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(safePage * ITEMS_PER_PAGE, totalFiltered)} de {totalFiltered}
+              </span>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setCurrentPage(safePage - 1)} data-testid="button-prev-page">
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let p: number;
+                  if (totalPages <= 7) { p = i + 1; }
+                  else if (safePage <= 4) { p = i + 1; }
+                  else if (safePage >= totalPages - 3) { p = totalPages - 6 + i; }
+                  else { p = safePage - 3 + i; }
+                  return (
+                    <Button key={p} variant={p === safePage ? "default" : "outline"} size="sm"
+                      onClick={() => setCurrentPage(p)} className="min-w-[32px]" data-testid={`button-page-${p}`}>
+                      {p}
+                    </Button>
+                  );
+                })}
+                <Button variant="outline" size="sm" disabled={safePage >= totalPages} onClick={() => setCurrentPage(safePage + 1)} data-testid="button-next-page">
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
           </div>
           );
         })()}

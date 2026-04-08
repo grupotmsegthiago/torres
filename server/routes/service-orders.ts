@@ -1,5 +1,5 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
+  import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertServiceOrderSchema } from "@shared/schema";
@@ -12,30 +12,64 @@ import type { Express } from "express";
   import { estimateTolls, getAllTollPlazas } from "../toll-engine";
 
   export function registerServiceOrderRoutes(app: Express) {
-    app.get("/api/service-orders", requireAuth, async (_req, res) => {
-    const data = await storage.getServiceOrders();
-    const enriched = await Promise.all(data.map(async (os) => {
-      const photos = await storage.getMissionPhotosByOS(os.id);
+    app.get("/api/service-orders", requireAuth, async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const offset = (page - 1) * limit;
+
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,scheduled_time,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escort_contract_id,fuel_allocated,created_by_user_id,route_distance_km";
+
+    let data: any[];
+    try {
+      const { data: rows, error } = await supabaseAdmin.from("service_orders")
+        .select(SO_LIST_COLS)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (error) throw error;
+      data = rows?.map((r: any) => toCamelObj(r)) || [];
+    } catch (err: any) {
+      console.warn(`[so-list] supabase error, falling back: ${err.message}`);
+      const all = await storage.getServiceOrders();
+      data = all.slice(offset, offset + limit);
+    }
+
+    const osIds = data.map((o: any) => o.id).filter(Boolean);
+    let photosByOs: Map<number, any[]> = new Map();
+    if (osIds.length > 0) {
+      try {
+        const { data: allPhotos } = await supabaseAdmin.from("mission_photos")
+          .select("service_order_id, step, km_value")
+          .in("service_order_id", osIds);
+        for (const p of (allPhotos || [])) {
+          const arr = photosByOs.get(p.service_order_id) || [];
+          arr.push(p);
+          photosByOs.set(p.service_order_id, arr);
+        }
+      } catch (_e) {}
+    }
+
+    const enriched = data.map((os: any) => {
+      const photos = photosByOs.get(os.id) || [];
       const findLast = (step: string) => {
         for (let i = photos.length - 1; i >= 0; i--) {
           if (photos[i].step === step) return photos[i];
         }
         return undefined;
       };
-      const kmSaida = photos.find(p => p.step === "km_saida");
+      const kmSaida = photos.find((p: any) => p.step === "km_saida");
       const kmChegada = findLast("km_chegada");
       const kmFinal = findLast("km_final");
       const baseHodometro = findLast("base_hodometro");
       return {
         ...os,
         missionKm: {
-          saida_base: kmSaida?.kmValue ?? null,
-          chegada_origem: kmChegada?.kmValue ?? null,
-          chegada_destino: kmFinal?.kmValue ?? null,
-          fim_missao: baseHodometro?.kmValue ?? kmFinal?.kmValue ?? null,
+          saida_base: kmSaida?.km_value ?? null,
+          chegada_origem: kmChegada?.km_value ?? null,
+          chegada_destino: kmFinal?.km_value ?? null,
+          fim_missao: baseHodometro?.km_value ?? kmFinal?.km_value ?? null,
         },
       };
-    }));
+    });
     res.json(enriched);
   });
 
@@ -48,17 +82,50 @@ import type { Express } from "express";
         o.status === "cancelada" || o.status === "recusada"
       );
 
-      const enriched = await Promise.all(concluidas.map(async (os) => {
-        const [client, vehicle, emp1, emp2, kit] = await Promise.all([
-          os.clientId ? storage.getClient(os.clientId) : null,
-          os.vehicleId ? storage.getVehicle(os.vehicleId) : null,
-          os.assignedEmployeeId ? storage.getEmployee(os.assignedEmployeeId) : null,
-          os.assignedEmployee2Id ? storage.getEmployee(os.assignedEmployee2Id) : null,
-          os.kitId ? storage.getWeaponKit(os.kitId) : null,
-        ]);
+      const osIds = concluidas.map(o => o.id);
+      const clientIds = [...new Set(concluidas.map(o => o.clientId).filter(Boolean))] as number[];
+      const vehicleIds = [...new Set(concluidas.map(o => o.vehicleId).filter(Boolean))] as number[];
+      const empIds = [...new Set([
+        ...concluidas.map(o => o.assignedEmployeeId),
+        ...concluidas.map(o => o.assignedEmployee2Id),
+      ].filter(Boolean))] as number[];
+      const kitIds = [...new Set(concluidas.map(o => o.kitId).filter(Boolean))] as number[];
 
-        const photos = await storage.getMissionPhotosByOS(os.id);
-        const kmSaidaPhoto = [...photos].reverse().find(p => p.step === "km_saida");
+      const [allClients, allVehicles, allEmployees, allKits, billingsRes, contractsRes, photosRes] = await Promise.all([
+        storage.getClients(),
+        storage.getVehicles(),
+        storage.getEmployees(),
+        Promise.all(kitIds.map(id => storage.getWeaponKit(id))),
+        osIds.length > 0
+          ? supabaseAdmin.from("escort_billings").select("*").in("service_order_id", osIds)
+          : Promise.resolve({ data: [] as any[] }),
+        supabaseAdmin.from("escort_contracts").select("*"),
+        osIds.length > 0
+          ? supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", osIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      const clientMap = new Map(allClients.map(c => [c.id, c]));
+      const vehicleMap = new Map(allVehicles.map(v => [v.id, v]));
+      const empMap = new Map(allEmployees.map(e => [e.id, e]));
+      const kitMap = new Map(allKits.filter(Boolean).map(k => [k!.id, k!]));
+      const billingMap = new Map((billingsRes.data || []).map((b: any) => [b.service_order_id, b]));
+      const contractArr = contractsRes.data || [];
+      const photosByOs = new Map<number, any[]>();
+      for (const p of (photosRes.data || [])) {
+        const arr = photosByOs.get(p.service_order_id) || [];
+        arr.push(p);
+        photosByOs.set(p.service_order_id, arr);
+      }
+
+      const enriched = concluidas.map((os) => {
+        const client = os.clientId ? clientMap.get(os.clientId) : null;
+        const vehicle = os.vehicleId ? vehicleMap.get(os.vehicleId) : null;
+        const emp1 = os.assignedEmployeeId ? empMap.get(os.assignedEmployeeId) : null;
+        const emp2 = os.assignedEmployee2Id ? empMap.get(os.assignedEmployee2Id) : null;
+        const kit = os.kitId ? kitMap.get(os.kitId) : null;
+
+        const photos = photosByOs.get(os.id) || [];
         const kmChegadaPhoto = [...photos].reverse().find(p => p.step === "km_chegada");
         const kmFinalPhoto = [...photos].reverse().find(p => p.step === "km_final");
 
@@ -73,18 +140,13 @@ import type { Express } from "express";
         const horaChegadaOrigem = getLogTime(["checkin_chegada_km", "em_transito_origem"]);
         const horaFimMissao = os.completedDate || getLogTime(["encerrada", "finalizada", "checkout_km_final"]);
 
-        const { data: billing } = await supabaseAdmin.from("escort_billings")
-          .select("*").eq("service_order_id", os.id).limit(1);
+        const billing = billingMap.get(os.id) || null;
 
         let clientContract: any = null;
         if (os.escortContractId) {
-          const { data: contracts } = await supabaseAdmin.from("escort_contracts")
-            .select("*").eq("id", os.escortContractId).limit(1);
-          if (contracts?.length) clientContract = contracts[0];
+          clientContract = contractArr.find((c: any) => c.id === os.escortContractId) || null;
         } else if (os.clientId) {
-          const { data: contracts } = await supabaseAdmin.from("escort_contracts")
-            .select("*").eq("client_id", os.clientId).eq("status", "Ativo").limit(1);
-          if (contracts?.length) clientContract = contracts[0];
+          clientContract = contractArr.find((c: any) => c.client_id === os.clientId && c.status === "Ativo") || null;
         }
 
         return {
@@ -100,13 +162,13 @@ import type { Express } from "express";
           employee1Name: emp1?.name || null,
           employee2Name: emp2?.name || null,
           kitName: kit?.name || null,
-          km_inicial: kmChegadaPhoto?.kmValue || 0,
-          km_chegada_origem: kmChegadaPhoto?.kmValue || null,
-          km_final: kmFinalPhoto?.kmValue || 0,
-          km_total: (kmFinalPhoto?.kmValue || 0) - (kmChegadaPhoto?.kmValue || 0),
+          km_inicial: kmChegadaPhoto?.km_value || 0,
+          km_chegada_origem: kmChegadaPhoto?.km_value || null,
+          km_final: kmFinalPhoto?.km_value || 0,
+          km_total: (kmFinalPhoto?.km_value || 0) - (kmChegadaPhoto?.km_value || 0),
           hora_chegada_origem: horaChegadaOrigem,
           hora_fim_missao: horaFimMissao,
-          billing: billing?.[0] || null,
+          billing: billing,
           hasContract: !!clientContract,
           contractId: clientContract?.id || null,
           contractName: clientContract?.name || null,
@@ -120,7 +182,7 @@ import type { Express } from "express";
             valor_km_extra: clientContract.valor_km_extra || clientContract.valor_km_carregado,
           } : null,
         };
-      }));
+      });
 
       res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
