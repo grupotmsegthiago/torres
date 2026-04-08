@@ -139,7 +139,7 @@ export function initCronJobs() {
       if (!allOrders?.length) return;
 
       const isConcluded = (so: any) =>
-        ["concluida", "concluída", "cancelada"].includes(so.status) ||
+        ["concluida", "concluída", "cancelada", "recusada"].includes(so.status) ||
         ["encerrada", "finalizada"].includes(so.mission_status);
 
       const activeOrders = allOrders.filter((so: any) =>
