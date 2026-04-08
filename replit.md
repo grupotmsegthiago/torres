@@ -29,12 +29,17 @@ I prefer clear and direct communication. When making changes, prioritize iterati
     2. `supabaseAdmin.from(...)` — chamadas REST API diretas em CRON, routes e operações específicas. Retorna snake_case. Helpers `resilientSupabaseSelect`/`resilientSupabaseSingle` em `_helpers.ts` fornecem fallback.
     3. ❌ `db.*` (Drizzle ORM) — **PROIBIDO para CRUD**. Só permitido em `db-init.ts` para DDL de schema.
 - **Resiliência de Banco (pg-fallback):** O sistema implementa fallback automático para um PostgreSQL local (DATABASE_URL) quando o Supabase REST API está indisponível. Componentes:
-    1. `server/supabase.ts` — Retry automático (3 tentativas, backoff exponencial 500ms→2s) + timeout 8s por tentativa + health tracking.
-    2. `server/pg-fallback.ts` — Pool de conexão ao PostgreSQL local, sincronização periódica de 38 tabelas (a cada 60s quando online), fallback de leitura.
-    3. `server/storage.ts` — Todos os métodos GET usam `resilientList`/`resilientGet` que tentam Supabase primeiro, salvam no cache local em caso de sucesso, e fazem fallback para o PostgreSQL local em caso de falha.
+    1. `server/supabase.ts` — Retry automático (2 tentativas, timeout 5s) + health tracking com cooldown 30s.
+    2. `server/pg-fallback.ts` — Pool singleton ao PostgreSQL local (DATABASE_URL do Replit), sync periódico de tabelas core (60s), fallback de leitura. `cacheRows` usa `DISABLE TRIGGER ALL` + SAVEPOINTs para evitar erros de FK constraint.
+    3. `server/storage.ts` — Todos os métodos GET usam `resilientList`/`resilientGet` com fallback automático.
     4. `GET /api/health` — Retorna `supabase: "online"/"offline"`, `localDb: "online"/"offline"`, `mode: "primary"/"fallback"`.
-    5. **Alertas por E-mail:** `pg-fallback.ts` envia e-mail automático para `thiago@grupotmseg.com.br` quando Supabase cai (alerta vermelho) e quando volta (alerta verde com tempo de indisponibilidade). Cooldown de 10 minutos entre alertas do mesmo tipo para evitar spam.
-    5. Escritas (INSERT/UPDATE/DELETE) continuam dependendo do Supabase — quando offline, escritas falham com erro HTTP 500.
+    5. **Alertas por E-mail:** `pg-fallback.ts` envia alerta automático para `thiago@grupotmseg.com.br` (Supabase down/up). Cooldown 10min.
+    6. Escritas (INSERT/UPDATE/DELETE) continuam dependendo do Supabase — quando offline, escritas falham com erro HTTP 500.
+- **Conexões de Banco:**
+    - `DATABASE_URL` (runtime-managed pelo Replit) — PostgreSQL local para fallback/cache.
+    - `SUPABASE_DATABASE_URL` (env var compartilhada) — Conexão direta ao Supabase via pgbouncer na porta 6543 (`?pgbouncer=true`). Usado pelo `db-init.ts` (DDL) e `drizzle.config.ts` (migrações).
+    - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — REST API do Supabase (principal via de acesso a dados).
+    - `db-init.ts` usa PG client singleton (não cria novo Client a cada DDL), fecha automaticamente após init.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.

@@ -1,21 +1,48 @@
 import { supabaseAdmin } from "./supabase";
 import { toCamelArray } from "./storage";
+import pg from "pg";
 
 async function execSqlViaRpc(query: string) {
   const { error } = await supabaseAdmin.rpc("exec_sql", { query });
   if (error) throw error;
 }
 
+let _pgClient: pg.Client | null = null;
+let _pgClientConnecting = false;
+
+async function getSupaPgClient(): Promise<pg.Client> {
+  if (_pgClient) return _pgClient;
+  if (_pgClientConnecting) {
+    await new Promise(r => setTimeout(r, 500));
+    if (_pgClient) return _pgClient;
+  }
+  _pgClientConnecting = true;
+  const dbUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("No SUPABASE_DATABASE_URL or DATABASE_URL");
+  const client = new pg.Client({
+    connectionString: dbUrl,
+    connectionTimeoutMillis: 10000,
+    statement_timeout: 15000,
+  });
+  client.on("error", (err) => {
+    console.error("[db-init] PG client error:", err.message);
+    _pgClient = null;
+  });
+  await client.connect();
+  _pgClient = client;
+  _pgClientConnecting = false;
+  return client;
+}
+
 async function execSqlViaPg(query: string) {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("No DATABASE_URL");
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 10000, statement_timeout: 15000 });
-  try {
-    await client.connect();
-    await client.query(query);
-  } finally {
-    await client.end().catch(() => {});
+  const client = await getSupaPgClient();
+  await client.query(query);
+}
+
+export async function closeDbInitClient() {
+  if (_pgClient) {
+    await _pgClient.end().catch(() => {});
+    _pgClient = null;
   }
 }
 
@@ -731,6 +758,8 @@ export async function ensureDbSchema() {
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
+  } finally {
+    await closeDbInitClient();
   }
 }
 
@@ -879,5 +908,7 @@ export async function ensureCalcMissionRPC() {
     console.log("[db-init] calc_mission_elapsed_hours RPC created OK");
   } catch (e: any) {
     console.error("[db-init] calc_mission_elapsed_hours error:", e.message);
+  } finally {
+    await closeDbInitClient();
   }
 }
