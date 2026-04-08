@@ -123,6 +123,7 @@ export default function SelfiePage() {
         longitude: pos?.lng || null,
       });
       toast({ title: "Selfie registrada com sucesso!" });
+      sessionStorage.setItem("selfieOk", "1");
       setLocation("/mobile");
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });

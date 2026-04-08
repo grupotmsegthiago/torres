@@ -100,12 +100,18 @@ function MobileProtectedRoute({ component: Component, skipSelfieCheck }: { compo
 
   useEffect(() => {
     if (user && user.role === "funcionario" && !skipSelfieCheck) {
+      if (sessionStorage.getItem("selfieOk") === "1") {
+        setSelfieOk(true);
+        setSelfieChecked(true);
+        return;
+      }
       apiRequest("GET", "/api/auth/login-selfie-today")
         .then(r => r.ok ? r.json() : { hasSelfieToday: false })
         .then(data => {
           if (!data.hasSelfieToday) {
             setLocation("/mobile/selfie");
           } else {
+            sessionStorage.setItem("selfieOk", "1");
             setSelfieOk(true);
           }
           setSelfieChecked(true);

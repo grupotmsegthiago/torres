@@ -586,12 +586,12 @@ async function ensureSystemSettingsTable() {
 
   app.get("/api/auth/login-selfie-today", requireAuth, async (req, res) => {
     const user = req.user!;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const midnightUTC = new Date(todayBRT + "T03:00:00.000Z");
 
     const { data: result } = await supabaseAdmin.from("login_selfies").select("id")
       .eq("user_id", user.id)
-      .gte("created_at", today.toISOString())
+      .gte("created_at", midnightUTC.toISOString())
       .limit(1);
 
     res.json({ hasSelfieToday: (result?.length || 0) > 0 });
