@@ -181,6 +181,16 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Ícone Shield:** Nas atualizações de missão, `ShieldCheck` substitui `MapPin` para reforçar identidade tática/segurança patrimonial.
 - **Nominatim Rate Limit:** 1 req/seg. Cache evita chamadas duplicadas. Endereços formatados: "Rua X, 123, Bairro, Cidade/UF".
 
+### Otimizações de Memória e Performance (Backend)
+- **Logging middleware (index.ts):** `capturedJsonResponse` é limpo após log (`= undefined`). Arrays logam apenas `[Array(N)]` em vez de serializar o conteúdo inteiro.
+- **Maps com pruning automático:** `lastMissionPos`, `lastRecordedPos` (operational.ts), `speedAlertCooldown`, `idleAlertSent` (telemetry-engine.ts) possuem cap de 500/300 entradas com limpeza periódica.
+- **`_roadDistCache` (service-orders.ts):** Cap de 200 entradas + TTL de 5min. Prune automático ao inserir.
+- **`syncAllTables` (pg-fallback.ts):** Tabelas grandes (audit_logs, telemetry_events, mission_positions, chat_messages) limitadas a 5000 linhas no sync.
+- **Billing backfill (routes.ts):** Usa batch loading (3 queries) em vez de N+1. Filtra apenas billings com campos null.
+- **Startup deferral:** `syncMissingAutoTransactions` inicia após 10s, `syncFuelingMissionCosts` após 25s para não sobrecarregar o boot.
+- **Endpoint `/api/health/memory`:** Retorna RSS, heap, uptime para monitoramento.
+- **Maps duplicados removidos:** `lastMissionPos` e `lastRecordedPos` de `routes.ts` removidos (duplicatas das de `operational.ts`).
+
 ## External Dependencies
 -   **Supabase:** Provides authentication (Supabase Auth) and PostgreSQL database hosting.
 -   **OpenAI Vision:** Used for OCR capabilities in document processing.

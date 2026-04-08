@@ -7,6 +7,7 @@ const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
 const speedAlertCooldown = new Map<string, number>();
 const idleAlertSent = new Map<string, boolean>();
+const TELEMETRY_MAP_MAX = 300;
 
 const SPEED_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -30,6 +31,15 @@ export function processTelemetry(vehicles: VehicleTelemetryData[]): void {
   for (const v of vehicles) {
     checkSpeedViolation(v, now);
     checkIdleViolation(v, now);
+  }
+
+  if (speedAlertCooldown.size > TELEMETRY_MAP_MAX) {
+    const expired = now - SPEED_COOLDOWN_MS;
+    for (const [k, t] of speedAlertCooldown) { if (t < expired) speedAlertCooldown.delete(k); }
+  }
+  if (idleAlertSent.size > TELEMETRY_MAP_MAX) {
+    const activePlates = new Set(vehicles.map(v => v.plate));
+    for (const k of idleAlertSent.keys()) { if (!activePlates.has(k)) idleAlertSent.delete(k); }
   }
 }
 

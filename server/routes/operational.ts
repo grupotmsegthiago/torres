@@ -15,6 +15,9 @@ import type { Express } from "express";
   const SMART_INTERVAL_DEFAULT_MS = 10 * 60 * 1000;
   const SMART_INTERVAL_FAST_MS = 1 * 60 * 1000;
   const SMART_INTERVAL_DISPLACEMENT_M = 500;
+  function pruneMap<K, V>(map: Map<K, V>, max = 500) {
+    if (map.size > max) { const excess = map.size - max; const iter = map.keys(); for (let i = 0; i < excess; i++) { const k = iter.next().value; if (k !== undefined) map.delete(k); } }
+  }
 
   export function registerOperationalRoutes(app: Express) {
     // ====================== OPERATIONAL GRID ======================
@@ -696,6 +699,7 @@ import type { Express } from "express";
                 if (isNewMission || elapsed >= interval) {
                   lastRecordedPos.set(v.id, { lat: trackerData.latitude, lng: trackerData.longitude, time: now, osId });
                   lastMissionPos.set(osId, { lat: trackerData.latitude, lng: trackerData.longitude });
+                  pruneMap(lastRecordedPos); pruneMap(lastMissionPos);
                   supabaseAdmin.from("mission_positions").insert({
                     service_order_id: osId,
                     vehicle_id: v.id,

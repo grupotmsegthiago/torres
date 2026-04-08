@@ -59,12 +59,17 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        const jsonStr = JSON.stringify(capturedJsonResponse);
-        logLine += ` :: ${jsonStr.length > 500 ? jsonStr.slice(0, 500) + "..." : jsonStr}`;
+        let preview: string;
+        if (Array.isArray(capturedJsonResponse)) {
+          preview = `[Array(${capturedJsonResponse.length})]`;
+        } else {
+          try { preview = JSON.stringify(capturedJsonResponse).slice(0, 300); } catch { preview = "[unserializable]"; }
+        }
+        logLine += ` :: ${preview}`;
       }
-
       log(logLine);
     }
+    capturedJsonResponse = undefined;
   });
 
   next();

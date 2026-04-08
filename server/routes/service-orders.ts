@@ -2214,6 +2214,19 @@ import type { Express } from "express";
   });
 
   const _roadDistCache: Record<string, { distKm: number; durationMin: number; ts: number }> = {};
+  const ROAD_CACHE_MAX = 200;
+  const ROAD_CACHE_TTL = 5 * 60 * 1000;
+  function pruneRoadCache() {
+    const keys = Object.keys(_roadDistCache);
+    if (keys.length <= ROAD_CACHE_MAX) return;
+    const now = Date.now();
+    for (const k of keys) { if (now - _roadDistCache[k].ts > ROAD_CACHE_TTL) delete _roadDistCache[k]; }
+    const remaining = Object.keys(_roadDistCache);
+    if (remaining.length > ROAD_CACHE_MAX) {
+      remaining.sort((a, b) => _roadDistCache[a].ts - _roadDistCache[b].ts);
+      for (let i = 0; i < remaining.length - ROAD_CACHE_MAX; i++) delete _roadDistCache[remaining[i]];
+    }
+  }
   app.get("/api/reverse-geocode", requireAuth, async (req, res) => {
     try {
       const lat = parseFloat(req.query.lat as string);
@@ -2272,6 +2285,7 @@ import type { Express } from "express";
       const durationMin = Math.round(totalDurS / 60);
 
       _roadDistCache[cacheKey] = { distKm, durationMin, ts: Date.now() };
+      pruneRoadCache();
 
       res.json({ distKm, durationMin, source: "directions" });
     } catch (err: any) {

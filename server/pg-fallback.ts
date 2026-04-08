@@ -229,6 +229,11 @@ export async function cacheRows(table: string, rows: any[]): Promise<void> {
   }
 }
 
+const LARGE_TABLES = new Set([
+  "audit_logs", "telemetry_events", "mission_positions", "chat_messages",
+]);
+const SYNC_ROW_LIMIT = 5000;
+
 export async function syncAllTables(supabaseAdmin: any): Promise<void> {
   const now = Date.now();
   if (syncInProgress || now - lastSyncTime < SYNC_INTERVAL_MS) return;
@@ -238,10 +243,11 @@ export async function syncAllTables(supabaseAdmin: any): Promise<void> {
   try {
     for (const table of CORE_TABLES) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        const { data, error } = await supabaseAdmin.from(table).select("*");
-        clearTimeout(timeout);
+        let query = supabaseAdmin.from(table).select("*");
+        if (LARGE_TABLES.has(table)) {
+          query = query.order("id", { ascending: false }).limit(SYNC_ROW_LIMIT);
+        }
+        const { data, error } = await query;
         if (error || !data) {
           failed++;
           continue;

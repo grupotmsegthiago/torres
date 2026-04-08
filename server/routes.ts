@@ -31,13 +31,6 @@ import {
   createAutoTransaction, removeAutoTransaction,
 } from "./routes/_helpers";
 
-const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
-const lastRecordedPos: Map<number, { lat: number; lng: number; time: number; osId?: number }> = new Map();
-const MISSION_POS_MIN_DISTANCE = 50;
-const OFF_ROUTE_THRESHOLD_M = 200;
-const SMART_INTERVAL_DEFAULT_MS = 10 * 60 * 1000;
-const SMART_INTERVAL_FAST_MS = 1 * 60 * 1000;
-const SMART_INTERVAL_DISPLACEMENT_M = 500;
 
 async function ensureFinancialOriginColumns() {
   const migrations = [
@@ -113,21 +106,37 @@ async function ensureFinancialOriginColumns() {
   }
 
   try {
-    const { data: billingsToFix } = await supabaseAdmin.from("escort_billings").select("id, service_order_id, vigilante2_id, placa_viatura");
+    const { data: billingsToFix } = await supabaseAdmin.from("escort_billings")
+      .select("id, service_order_id, vigilante2_id, placa_viatura")
+      .or("vigilante2_id.is.null,placa_viatura.is.null");
     if (billingsToFix && billingsToFix.length > 0) {
+      const soIds = [...new Set(billingsToFix.map((b: any) => b.service_order_id).filter(Boolean))];
+      const { data: orders } = await supabaseAdmin.from("service_orders")
+        .select("id, assigned_employee_2_id, vehicle_id").in("id", soIds);
+      const soMap = new Map((orders || []).map((o: any) => [o.id, o]));
+
+      const empIds = [...new Set((orders || []).map((o: any) => o.assigned_employee_2_id).filter(Boolean))];
+      const vehIds = [...new Set((orders || []).map((o: any) => o.vehicle_id).filter(Boolean))];
+      const [{ data: emps }, { data: vehs }] = await Promise.all([
+        empIds.length ? supabaseAdmin.from("employees").select("id, name").in("id", empIds) : { data: [] },
+        vehIds.length ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehIds) : { data: [] },
+      ]);
+      const empMap = new Map((emps || []).map((e: any) => [e.id, e.name]));
+      const vehMap = new Map((vehs || []).map((v: any) => [v.id, v.plate]));
+
       let fixedV2 = 0, fixedPlate = 0;
       for (const b of billingsToFix) {
         if (!b.service_order_id) continue;
-        const so = await storage.getServiceOrder(b.service_order_id);
+        const so = soMap.get(b.service_order_id);
         if (!so) continue;
         const updates: any = {};
-        if (!b.vigilante2_id && so.assignedEmployee2Id) {
-          const emp2 = await storage.getEmployee(so.assignedEmployee2Id);
-          if (emp2) { updates.vigilante2_id = so.assignedEmployee2Id; updates.vigilante2_name = emp2.name; fixedV2++; }
+        if (!b.vigilante2_id && so.assigned_employee_2_id) {
+          const name = empMap.get(so.assigned_employee_2_id);
+          if (name) { updates.vigilante2_id = so.assigned_employee_2_id; updates.vigilante2_name = name; fixedV2++; }
         }
-        if (!b.placa_viatura && so.vehicleId) {
-          const veh = await storage.getVehicle(so.vehicleId);
-          if (veh?.plate) { updates.placa_viatura = veh.plate; fixedPlate++; }
+        if (!b.placa_viatura && so.vehicle_id) {
+          const plate = vehMap.get(so.vehicle_id);
+          if (plate) { updates.placa_viatura = plate; fixedPlate++; }
         }
         if (Object.keys(updates).length > 0) {
           await supabaseAdmin.from("escort_billings").update(updates).eq("id", b.id);
@@ -250,7 +259,10 @@ async function syncFuelingMissionCosts() {
   }
 }
 
-setTimeout(() => { syncMissingAutoTransactions(); syncFuelingMissionCosts(); }, 5000);
+setTimeout(() => {
+  syncMissingAutoTransactions().catch(e => console.error("[Sync] auto-tx error:", e.message));
+  setTimeout(() => syncFuelingMissionCosts().catch(e => console.error("[Sync] fueling-cost error:", e.message)), 15000);
+}, 10000);
 
 const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 *OS {{osNumber}}* | *STATUS:* {{transitStatus}}
@@ -332,6 +344,17 @@ async function ensureSystemSettingsTable() {
         supabase: isSupabaseHealthy() ? "online" : "offline",
         localDb: localDb ? "online" : "offline",
         mode: isSupabaseHealthy() ? "primary" : "fallback",
+      });
+    });
+
+    app.get("/api/health/memory", requireAuth, (_req, res) => {
+      const mem = process.memoryUsage();
+      res.json({
+        rss_mb: Math.round(mem.rss / 1048576),
+        heapTotal_mb: Math.round(mem.heapTotal / 1048576),
+        heapUsed_mb: Math.round(mem.heapUsed / 1048576),
+        external_mb: Math.round(mem.external / 1048576),
+        uptime_min: Math.round(process.uptime() / 60),
       });
     });
 
