@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle,
-  Briefcase, Radar, UserCheck, Landmark
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
@@ -118,6 +118,75 @@ const rootItems: MenuItem[] = [
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];
 
+function SystemStatusBadge({ compact = false }: { compact?: boolean }) {
+  const { data: health } = useQuery<{ supabase: string; localDb: string; mode: string }>({
+    queryKey: ["/api/health"],
+    queryFn: async () => {
+      const res = await fetch("/api/health");
+      return res.json();
+    },
+    refetchInterval: 15000,
+    retry: false,
+  });
+
+  if (!health) return null;
+
+  const isOnline = health.supabase === "online";
+  const isFallback = health.mode === "fallback";
+
+  if (compact) {
+    return (
+      <div
+        className="flex items-center gap-1.5"
+        title={isOnline ? "Sistema online (Supabase)" : isFallback ? "Modo fallback (banco local)" : "Sistema offline"}
+        data-testid="system-status-compact"
+      >
+        <div className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-400 animate-pulse" : isFallback ? "bg-amber-400 animate-pulse" : "bg-red-500"}`} />
+        <span className={`text-[10px] font-medium ${isOnline ? "text-emerald-400" : isFallback ? "text-amber-400" : "text-red-400"}`}>
+          {isOnline ? "ONLINE" : isFallback ? "FALLBACK" : "OFFLINE"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2 rounded-lg border border-white/10 bg-white/5" data-testid="system-status-panel">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Activity className="w-3.5 h-3.5 text-white/60" />
+        <span className="text-[10px] font-bold tracking-wider text-white/60">STATUS DO SISTEMA</span>
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/50">Supabase</span>
+          <div className="flex items-center gap-1.5">
+            {isOnline ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-red-400" />}
+            <span className={`text-[10px] font-semibold ${isOnline ? "text-emerald-400" : "text-red-400"}`}>
+              {isOnline ? "Online" : "Offline"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/50">Banco Local</span>
+          <div className="flex items-center gap-1.5">
+            {health.localDb === "online" ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-red-400" />}
+            <span className={`text-[10px] font-semibold ${health.localDb === "online" ? "text-emerald-400" : "text-red-400"}`}>
+              {health.localDb === "online" ? "Online" : "Offline"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/50">Modo</span>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+            isOnline ? "bg-emerald-500/20 text-emerald-400" : isFallback ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"
+          }`}>
+            {isOnline ? "PRIMÁRIO" : isFallback ? "FALLBACK" : "OFFLINE"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
@@ -131,6 +200,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   });
   const unreadCount = chatUnread?.total || 0;
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";
+  const isDiretoria = user?.role === "diretoria";
 
   const toggleGroup = (label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -262,7 +332,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        <div className="shrink-0 p-4 border-t border-white/10">
+        <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
+          {isDiretoria && <SystemStatusBadge />}
           <Link href="/admin/perfil">
             <div className="flex items-center gap-3 cursor-pointer hover:bg-white/5 rounded-md p-1 -m-1 transition-colors" data-testid="link-profile">
               {user?.role === "diretoria" ? (
@@ -309,7 +380,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             <Menu className="w-5 h-5" />
           </Button>
-          <span className="font-bold text-sm">TORRES - Área Interna</span>
+          <span className="font-bold text-sm flex-1">TORRES - Área Interna</span>
+          {isDiretoria && <SystemStatusBadge compact />}
         </header>
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
