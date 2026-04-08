@@ -317,7 +317,7 @@ export async function ensureDbSchema() {
         vehicle_id INTEGER,
         date TIMESTAMP NOT NULL,
         infraction TEXT NOT NULL,
-        amount REAL,
+        amount DECIMAL(10,2),
         points INTEGER,
         status TEXT NOT NULL DEFAULT 'pendente',
         notes TEXT,
@@ -359,25 +359,46 @@ export async function ensureDbSchema() {
         employee_id INTEGER NOT NULL,
         month INTEGER NOT NULL,
         year INTEGER NOT NULL,
-        gross_salary REAL,
-        net_salary REAL,
-        deductions REAL,
-        benefits REAL,
+        gross_salary DECIMAL(10,2),
+        net_salary DECIMAL(10,2),
+        deductions DECIMAL(10,2),
+        benefits DECIMAL(10,2),
         document_url TEXT,
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS salario_base REAL`).catch(() => {});
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras REAL`).catch(() => {});
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno REAL`).catch(() => {});
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade REAL`).catch(() => {});
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios REAL`).catch(() => {});
-    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS salario_base DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios DECIMAL(10,2)`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos DECIMAL(10,2)`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS data_pagamento TEXT`).catch(() => {});
     await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS financial_transaction_id INTEGER`).catch(() => {});
+
+    const decimalMigrations = [
+      `ALTER TABLE employee_payslips ALTER COLUMN gross_salary TYPE DECIMAL(10,2) USING gross_salary::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN net_salary TYPE DECIMAL(10,2) USING net_salary::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN deductions TYPE DECIMAL(10,2) USING deductions::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN benefits TYPE DECIMAL(10,2) USING benefits::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN salario_base TYPE DECIMAL(10,2) USING salario_base::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN horas_extras TYPE DECIMAL(10,2) USING horas_extras::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN adicional_noturno TYPE DECIMAL(10,2) USING adicional_noturno::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN periculosidade TYPE DECIMAL(10,2) USING periculosidade::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN beneficios TYPE DECIMAL(10,2) USING beneficios::DECIMAL(10,2)`,
+      `ALTER TABLE employee_payslips ALTER COLUMN descontos TYPE DECIMAL(10,2) USING descontos::DECIMAL(10,2)`,
+      `ALTER TABLE employee_fines ALTER COLUMN amount TYPE DECIMAL(10,2) USING amount::DECIMAL(10,2)`,
+    ];
+    for (const sql of decimalMigrations) {
+      try { await execSql(sql); } catch (e: any) {
+        if (!e.message?.includes("already") && !e.message?.includes("type \"numeric\"")) {
+          console.warn(`[db-init] DECIMAL migration warning: ${e.message?.slice(0, 100)}`);
+        }
+      }
+    }
 
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
     await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});

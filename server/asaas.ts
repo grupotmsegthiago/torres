@@ -244,6 +244,20 @@ export function registerAsaasRoutes(app: Express) {
         return res.status(400).json({ message: "Campos obrigatórios: clientName, value, dueDate, description" });
       }
 
+      if (serviceOrderId) {
+        const { data: existingInvoice } = await supabaseAdmin.from("invoices")
+          .select("id, asaas_payment_id, status")
+          .eq("service_order_id", serviceOrderId)
+          .in("status", ["PENDING", "CONFIRMED", "RECEIVED", "OVERDUE"])
+          .limit(1);
+        if (existingInvoice?.length) {
+          return res.status(409).json({
+            message: `Já existe fatura ativa (ID ${existingInvoice[0].id}) para esta OS. Cancele-a primeiro se deseja gerar outra.`,
+            existingInvoiceId: existingInvoice[0].id,
+          });
+        }
+      }
+
       let asaasCustomerId: string | null = null;
       let asaasPaymentId: string | null = null;
       let invoiceUrl: string | null = null;
@@ -345,7 +359,23 @@ export function registerAsaasRoutes(app: Express) {
         created_by: userId,
       }).select().single();
 
-      if (error) throw error;
+      if (error) {
+        if (asaasPaymentId) {
+          try {
+            await asaasRequest("DELETE", `/payments/${asaasPaymentId}`);
+            console.error(`[Asaas] Cobrança ${asaasPaymentId} cancelada (falha no DB: ${error.message})`);
+            await logSystemAudit({
+              userId: (req as any).user?.id, userName: (req as any).user?.name, userRole: (req as any).user?.role,
+              action: "ASAAS_COBRANCA_COMPENSACAO", targetId: asaasPaymentId, targetType: "invoice",
+              details: `Cobrança ${asaasPaymentId} cancelada automaticamente após falha no DB: ${error.message}`,
+              ipAddress: (req as any).ip,
+            });
+          } catch (cancelErr: any) {
+            console.error(`[Asaas] CRÍTICO: Falha ao cancelar cobrança órfã ${asaasPaymentId}: ${cancelErr.message}`);
+          }
+        }
+        throw error;
+      }
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
