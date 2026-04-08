@@ -33,6 +33,7 @@ import BoletimMedicaoPage from "@/pages/admin/boletim-medicao";
 import RelatorioFaturamentoPage from "@/pages/admin/relatorio-faturamento";
 import BalancoGerencialPage from "@/pages/admin/balanco-gerencial";
 import SimuladorMissaoPage from "@/pages/admin/simulador-missao";
+import RelatorioOSPage from "@/pages/admin/relatorio-os";
 import CotacaoGastoPage from "@/pages/admin/cotacao-gasto";
 import FaturasPage from "@/pages/admin/faturas";
 import MobileHomePage from "@/pages/mobile/home";
@@ -160,6 +161,7 @@ function Router() {
       <Route path="/admin/telemetria">{() => <ProtectedRoute component={TelemetryPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
+      <Route path="/admin/relatorio-os">{() => <ProtectedRoute component={RelatorioOSPage} />}</Route>
       <Route path="/admin/cotacao-gasto">{() => <ProtectedRoute component={CotacaoGastoPage} />}</Route>
       <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
       <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>

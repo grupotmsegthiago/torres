@@ -51,7 +51,7 @@ const menuSections: MenuSection[] = [
         iconColor: "text-amber-500",
         children: [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
-          { path: "/admin/mission", label: "Missão Ativa", icon: Target },
+          { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
           { path: "/admin/simulador-missao", label: "Simulador Missão", icon: Play },
         ],
       },
