@@ -1,10 +1,8 @@
 import type { Express } from "express";
   import { storage } from "../storage";
-  import { db } from "../db";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
-  import { insertEmployeeSchema, employees, employeeSalaryDiscounts } from "@shared/schema";
-  import { eq, desc, and, gte } from "drizzle-orm";
+  import { insertEmployeeSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
 
@@ -160,10 +158,10 @@ import type { Express } from "express";
     const empId = Number(req.params.id);
     const month = req.query.month ? Number(req.query.month) : new Date().getMonth() + 1;
     const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
-    const rows = await db.select().from(employeeSalaryDiscounts)
-      .where(and(eq(employeeSalaryDiscounts.employeeId, empId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)))
-      .orderBy(desc(employeeSalaryDiscounts.createdAt));
-    res.json(rows);
+    const { data: rows } = await supabaseAdmin.from("employee_salary_discounts").select("*")
+      .eq("employee_id", empId).eq("month", month).eq("year", year)
+      .order("created_at", { ascending: false });
+    res.json(rows || []);
   });
 
   app.post("/api/employees/:id/salary-discounts", requireAdminRole, async (req, res) => {
@@ -172,15 +170,15 @@ import type { Express } from "express";
     const { month, year, type, description, amount } = req.body;
     if (!type || !description || !amount || !month || !year) return res.status(400).json({ message: "Campos obrigatórios: tipo, descrição, valor, mês e ano" });
     const adminName = req.user!.name || req.user!.username || "Admin";
-    const [row] = await db.insert(employeeSalaryDiscounts).values({
-      employeeId: empId, month: Number(month), year: Number(year),
-      type, description, amount: String(amount), createdBy: adminName,
-    }).returning();
+    const { data: row } = await supabaseAdmin.from("employee_salary_discounts").insert({
+      employee_id: empId, month: Number(month), year: Number(year),
+      type, description, amount: String(amount), created_by: adminName,
+    }).select().single();
     res.status(201).json(row);
   });
 
   app.delete("/api/salary-discounts/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await db.delete(employeeSalaryDiscounts).where(eq(employeeSalaryDiscounts.id, Number(req.params.id)));
+    await supabaseAdmin.from("employee_salary_discounts").delete().eq("id", Number(req.params.id));
     res.json({ ok: true });
   });
 
@@ -220,9 +218,9 @@ import type { Express } from "express";
       const cestaProporcional = +(CCT.cestaBasica * fatorProporcional).toFixed(2);
       const totalVencimentos = +(salarioProporcional + periculosidadeProporcional + vrProporcional + cestaProporcional).toFixed(2);
 
-      const discounts = await db.select().from(employeeSalaryDiscounts)
-        .where(and(eq(employeeSalaryDiscounts.employeeId, empId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
-      const totalDescontos = discounts.reduce((sum, d) => sum + Number(d.amount), 0);
+      const { data: discounts } = await supabaseAdmin.from("employee_salary_discounts").select("*")
+        .eq("employee_id", empId).eq("month", month).eq("year", year);
+      const totalDescontos = (discounts || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
       const liquido = +(totalVencimentos - totalDescontos).toFixed(2);
 
       res.json({
@@ -281,9 +279,9 @@ import type { Express } from "express";
           }
         }
 
-        const discounts = await db.select().from(employeeSalaryDiscounts)
-          .where(and(eq(employeeSalaryDiscounts.employeeId, emp.id), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
-        const totalDescontos = discounts.reduce((sum, d) => sum + Number(d.amount), 0);
+        const { data: discounts2 } = await supabaseAdmin.from("employee_salary_discounts").select("*")
+          .eq("employee_id", emp.id).eq("month", month).eq("year", year);
+        const totalDescontos = (discounts2 || []).reduce((sum: number, d: any) => sum + Number(d.amount), 0);
         const liquido = +((totalBruto * fatorProporcional) - totalDescontos).toFixed(2);
 
         await createAutoTransaction({

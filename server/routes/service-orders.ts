@@ -1,10 +1,8 @@
 import type { Express } from "express";
   import { storage } from "../storage";
-  import { db } from "../db";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
-  import { insertServiceOrderSchema, serviceOrders, vehicles, missionUpdates, missionPositions, missionPhotos } from "@shared/schema";
-  import { eq, sql } from "drizzle-orm";
+  import { insertServiceOrderSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { nominatimGeocode, nominatimReverseGeocode } from "../db-init";
   import { parseEmailList, createSmtpTransporter, getSmtpFrom, SMTP_BCC_OS, haversineDist, decodePolyline, distToPolyline, findClosestIndex, createAutoTransaction, removeAutoTransaction } from "./_helpers";
@@ -280,9 +278,9 @@ import type { Express } from "express";
         const photos = await storage.getMissionPhotosByOS(osId);
         const existing = [...photos].reverse().find(p => p.step === "km_chegada");
         if (existing) {
-          await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_chegada_origem)} WHERE id = ${existing.id}`);
+          await supabaseAdmin.from("mission_photos").update({ km_value: Number(km_chegada_origem) }).eq("id", existing.id);
         } else {
-          await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${"km_chegada"}, ${"[ajuste-manual]"}, ${Number(km_chegada_origem)}, ${"Ajuste Manual"})`);
+          await supabaseAdmin.from("mission_photos").insert({ service_order_id: osId, employee_id: 0, step: "km_chegada", photo_data: "[ajuste-manual]", km_value: Number(km_chegada_origem), notes: "Ajuste Manual" });
         }
       }
 
@@ -290,9 +288,9 @@ import type { Express } from "express";
         const photos = await storage.getMissionPhotosByOS(osId);
         const existing = [...photos].reverse().find(p => p.step === "km_final");
         if (existing) {
-          await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(km_fim_missao)} WHERE id = ${existing.id}`);
+          await supabaseAdmin.from("mission_photos").update({ km_value: Number(km_fim_missao) }).eq("id", existing.id);
         } else {
-          await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${"km_final"}, ${"[ajuste-manual]"}, ${Number(km_fim_missao)}, ${"Ajuste Manual"})`);
+          await supabaseAdmin.from("mission_photos").insert({ service_order_id: osId, employee_id: 0, step: "km_final", photo_data: "[ajuste-manual]", km_value: Number(km_fim_missao), notes: "Ajuste Manual" });
         }
       }
 
@@ -480,10 +478,10 @@ import type { Express } from "express";
           const existing = [...photos].reverse().find(p => p.step === adj.kmStep);
           if (existing && adj.km !== null) {
             const oldKm = existing.kmValue;
-            await db.execute(sql`UPDATE mission_photos SET km_value = ${Number(adj.km)} WHERE id = ${existing.id}`);
+            await supabaseAdmin.from("mission_photos").update({ km_value: Number(adj.km) }).eq("id", existing.id);
             auditEntries.push(`KM "${adj.kmStep}" alterado de ${oldKm ?? 'vazio'} para ${adj.km}`);
           } else if (!existing && adj.km !== null) {
-            await db.execute(sql`INSERT INTO mission_photos (service_order_id, employee_id, step, photo_data, km_value, notes) VALUES (${osId}, ${0}, ${adj.kmStep}, ${'[ajuste-manual]'}, ${Number(adj.km)}, ${`Ajuste manual por ${adminName}`})`);
+            await supabaseAdmin.from("mission_photos").insert({ service_order_id: osId, employee_id: 0, step: adj.kmStep, photo_data: "[ajuste-manual]", km_value: Number(adj.km), notes: `Ajuste manual por ${adminName}` });
             auditEntries.push(`KM "${adj.kmStep}" inserido manualmente: ${adj.km}`);
           }
           if (adj.km !== null && os.vehicleId && ["km_saida", "km_chegada", "km_final", "base_hodometro"].includes(adj.kmStep)) {
@@ -589,7 +587,7 @@ import type { Express } from "express";
       if (!os) return res.status(404).json({ message: "OS não encontrada" });
 
       const { allocated } = req.body as { allocated: boolean };
-      await db.update(serviceOrders).set({ fuelAllocated: allocated }).where(eq(serviceOrders.id, osId));
+      await supabaseAdmin.from("service_orders").update({ fuel_allocated: allocated }).eq("id", osId);
 
       if (allocated && os.vehicleId) {
         const vehicle = await storage.getVehicle(os.vehicleId);
@@ -608,7 +606,7 @@ import type { Express } from "express";
           );
           for (const other of sameDaySameVehicle) {
             if (other.fuelAllocated === true) {
-              await db.update(serviceOrders).set({ fuelAllocated: false }).where(eq(serviceOrders.id, other.id));
+              await supabaseAdmin.from("service_orders").update({ fuel_allocated: false }).eq("id", other.id);
             }
           }
         }
@@ -958,7 +956,7 @@ import type { Express } from "express";
             const photosToReassign = photos.filter(p => removedIds.includes(p.employeeId));
             if (photosToReassign.length > 0 && newA1) {
               for (const photo of photosToReassign) {
-                await db.update(missionPhotos).set({ employeeId: newA1 }).where(eq(missionPhotos.id, photo.id));
+                await supabaseAdmin.from("mission_photos").update({ employee_id: newA1 }).eq("id", photo.id);
               }
             }
             const fixedLogs = stepLogs.map((l: any) => {
@@ -1995,11 +1993,12 @@ import type { Express } from "express";
         y += 4;
       }
 
-      const missionPhotoRows = await db.select().from(missionPhotos)
-        .where(eq(missionPhotos.serviceOrderId, osId))
-        .orderBy(missionPhotos.createdAt);
+      const { data: missionPhotoRows } = await supabaseAdmin.from("mission_photos").select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+      const missionPhotoRowsSafe = missionPhotoRows || [];
 
-      if (missionPhotoRows.length > 0 && y < MAX_Y) {
+      if (missionPhotoRowsSafe.length > 0 && y < MAX_Y) {
         sectionHeader("Registro Fotogr\u00e1fico da Miss\u00e3o");
 
         const stepLabels: Record<string, string> = {
@@ -2016,7 +2015,7 @@ import type { Express } from "express";
           encerrada: "Encerrada",
         };
 
-        const photosToShow = missionPhotoRows.slice(0, 4);
+        const photosToShow = missionPhotoRowsSafe.slice(0, 4);
         const mpGap = 8;
         const cols = Math.min(photosToShow.length, 2);
         const rows = Math.ceil(photosToShow.length / 2);
@@ -2141,10 +2140,10 @@ import type { Express } from "express";
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "ID inválido" });
-      const positions = await db.select().from(missionPositions)
-        .where(eq(missionPositions.serviceOrderId, id))
-        .orderBy(missionPositions.createdAt);
-      res.json(positions);
+      const { data: positions } = await supabaseAdmin.from("mission_positions").select("*")
+        .eq("service_order_id", id)
+        .order("created_at", { ascending: true });
+      res.json(positions || []);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -2397,9 +2396,9 @@ import type { Express } from "express";
       const os = await storage.getServiceOrder(id);
       if (!os) return res.status(404).json({ message: "OS não encontrada" });
 
-      const positions = await db.select().from(missionPositions)
-        .where(eq(missionPositions.serviceOrderId, id))
-        .orderBy(missionPositions.createdAt);
+      const { data: positions } = await supabaseAdmin.from("mission_positions").select("*")
+        .eq("service_order_id", id)
+        .order("created_at", { ascending: true });
 
       let plannedRoute: string | null = os.route || null;
 
@@ -2537,7 +2536,7 @@ import type { Express } from "express";
       const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
       const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
       const photos = await storage.getMissionPhotosByOS(os.id);
-      const updates = await db.select().from(missionUpdates).where(eq(missionUpdates.serviceOrderId, os.id)).orderBy(missionUpdates.createdAt);
+      const { data: updates } = await supabaseAdmin.from("mission_updates").select("*").eq("service_order_id", os.id).order("created_at", { ascending: true });
       const stepLogs: any[] = Array.isArray(os.stepLogs) ? os.stepLogs : [];
 
       let kitItems: any[] = [];

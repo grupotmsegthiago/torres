@@ -39,7 +39,7 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
 
-function toSnakeObj(obj: Record<string, any>): Record<string, any> {
+export function toSnakeObj(obj: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined) continue;
@@ -48,7 +48,7 @@ function toSnakeObj(obj: Record<string, any>): Record<string, any> {
   return out;
 }
 
-function toCamelObj<T = any>(obj: Record<string, any>): T {
+export function toCamelObj<T = any>(obj: Record<string, any>): T {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(obj)) {
     out[snakeToCamel(k)] = v;
@@ -56,7 +56,7 @@ function toCamelObj<T = any>(obj: Record<string, any>): T {
   return out as T;
 }
 
-function toCamelArray<T = any>(arr: any[]): T[] {
+export function toCamelArray<T = any>(arr: any[]): T[] {
   return arr.map((r) => toCamelObj<T>(r));
 }
 
@@ -187,8 +187,6 @@ export interface IStorage {
   getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]>;
   createClientForward(forward: InsertClientForward): Promise<ClientForward>;
 }
-
-export { toSnakeObj, toCamelObj, toCamelArray };
 
 export class DatabaseStorage implements IStorage {
 

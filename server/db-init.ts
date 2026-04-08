@@ -1,29 +1,34 @@
 import { db } from "./db";
-import { sql, and, or, eq, isNull } from "drizzle-orm";
-import { serviceOrders } from "@shared/schema";
+import { sql } from "drizzle-orm";
+import { supabaseAdmin } from "./supabase";
+import { toCamelArray } from "./storage";
+
+async function execSql(query: string) {
+  await db.execute(sql.raw(query));
+}
 
 export async function ensureDbSchema() {
   try {
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_uid TEXT UNIQUE
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT UNIQUE
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ALTER COLUMN username DROP NOT NULL
     `).catch(() => {});
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE users ALTER COLUMN password DROP NOT NULL
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS perfis_acesso (
         id SERIAL PRIMARY KEY,
         role TEXT NOT NULL UNIQUE,
@@ -32,7 +37,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       INSERT INTO perfis_acesso (role, label, permissions) VALUES
       ('diretoria', 'Diretoria', '["*"]'),
       ('admin', 'Administrador', '["dashboard","clients","employees","vehicles","trips","fueling","maintenance","timesheets","tracker","service_orders","mission","operational_grid","consultas","guia_missao","users"]'),
@@ -40,7 +45,7 @@ export async function ensureDbSchema() {
       ON CONFLICT (role) DO NOTHING
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_documents (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -55,7 +60,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS weapons (
         id SERIAL PRIMARY KEY,
         type TEXT NOT NULL,
@@ -73,7 +78,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS weapon_assignments (
         id SERIAL PRIMARY KEY,
         weapon_id INTEGER NOT NULL,
@@ -85,7 +90,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS vehicle_assignments (
         id SERIAL PRIMARY KEY,
         vehicle_id INTEGER NOT NULL,
@@ -98,67 +103,67 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE employees ADD COLUMN IF NOT EXISTS block_type TEXT
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE employees ADD COLUMN IF NOT EXISTS block_reason TEXT
     `);
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tracker_type TEXT
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS truckscontrol_identifier TEXT
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
     `);
 
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS icon_type TEXT DEFAULT 'polo'`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_ignition INTEGER`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_speed INTEGER`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_gps_signal INTEGER`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_address TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_time TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS stopped_since TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ignition_on_since TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS no_signal_since TEXT`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS frota TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS route TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_driver_phone TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_return_km TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_clean_status TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_clean_notes TEXT`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_checklist_confirmed BOOLEAN`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_number TEXT`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_brand TEXT`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_protection TEXT`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS full_tank BOOLEAN DEFAULT true`);
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS receipt_photo TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS icon_type TEXT DEFAULT 'polo'`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_ignition INTEGER`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_speed INTEGER`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_gps_signal INTEGER`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_address TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_time TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS stopped_since TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ignition_on_since TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS no_signal_since TEXT`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS frota TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS route TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS requester_name TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escorted_driver_phone TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_return_km TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_clean_status TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_clean_notes TEXT`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS base_checklist_confirmed BOOLEAN`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnh_expiry TIMESTAMP`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_number TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS cnv_expiry TIMESTAMP`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_number TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_brand TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_protection TEXT`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS vest_expiry TIMESTAMP`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS ammo_count INTEGER`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS initial_km INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_km_update TIMESTAMP`);
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS document_file TEXT`);
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS full_tank BOOLEAN DEFAULT true`);
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS receipt_photo TEXT`);
 
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lat REAL`);
-    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lng REAL`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`);
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lat REAL`);
+    await execSql(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_lng REAL`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`);
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS gerenciadoras (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -182,7 +187,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS telemetry_events (
         id SERIAL PRIMARY KEY,
         vehicle_id INTEGER,
@@ -199,11 +204,11 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_event_type ON telemetry_events(event_type)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry_events(created_at)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_telemetry_plate ON telemetry_events(plate)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_telemetry_event_type ON telemetry_events(event_type)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry_events(created_at)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_telemetry_plate ON telemetry_events(plate)`);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS agent_locations (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
@@ -217,7 +222,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS agent_location_history (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
@@ -230,17 +235,17 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_alh_user_date ON agent_location_history(user_id, created_at)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_alh_user_date ON agent_location_history(user_id, created_at)`);
 
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_tie INTEGER DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_validade TEXT`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_posso_cancelar INTEGER DEFAULT 1`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_comando_exclusivo INTEGER DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_compartilhar_dados INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_permissao_comando INTEGER DEFAULT 1`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_ie INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_tie INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_validade TEXT`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_posso_cancelar INTEGER DEFAULT 1`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_comando_exclusivo INTEGER DEFAULT 0`);
+    await execSql(`ALTER TABLE gerenciadoras ADD COLUMN IF NOT EXISTS tc_compartilhar_dados INTEGER DEFAULT 0`);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_absences (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -254,7 +259,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_fines (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -269,7 +274,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_disciplinary (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -282,7 +287,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_timesheets (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -297,7 +302,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_payslips (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -313,21 +318,21 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS salario_base REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS data_pagamento TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS financial_transaction_id INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS salario_base REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS horas_extras REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS adicional_noturno REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS periculosidade REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS beneficios REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS descontos REAL`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pendente'`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS data_pagamento TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_payslips ADD COLUMN IF NOT EXISTS financial_transaction_id INTEGER`).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
-    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_user_agent TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_ip_address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_user_agent TEXT`).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS audit_logs (
         id SERIAL PRIMARY KEY,
         user_id INTEGER,
@@ -343,26 +348,26 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS latitude REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS longitude REAL`).catch(() => {});
+    await execSql(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS latitude REAL`).catch(() => {});
+    await execSql(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS longitude REAL`).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cycle TEXT
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS prazo_aprovacao_dias INTEGER
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cutoff_day INTEGER
     `);
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_financeiro TEXT
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS billing_alerts (
         id SERIAL PRIMARY KEY,
         client_id INTEGER NOT NULL,
@@ -380,7 +385,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS system_audit_logs (
         id SERIAL PRIMARY KEY,
         user_id INTEGER,
@@ -395,7 +400,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS token_failure_logs (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER,
@@ -407,7 +412,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS login_selfies (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
@@ -422,7 +427,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS company_documents (
         id SERIAL PRIMARY KEY,
         doc_type TEXT NOT NULL,
@@ -434,7 +439,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS homologation_logs (
         id SERIAL PRIMARY KEY,
         client_id INTEGER NOT NULL,
@@ -448,7 +453,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS mission_updates (
         id SERIAL PRIMARY KEY,
         service_order_id INTEGER NOT NULL,
@@ -465,37 +470,37 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS photo_url TEXT
     `).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_oil_change_km INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_oil_change_km INTEGER`).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS pump_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS odometer_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS plate_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS pump_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS odometer_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS plate_photo TEXT`).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_photo TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lat TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lng TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lat TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lng TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lat TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lng TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lat TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lng TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_address TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_address TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_address TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_photo TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lat TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_lng TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lat TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_lng TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lat TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_lng TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lat TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_lng TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_in_address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS clock_out_address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_out_address TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE employee_timesheets ADD COLUMN IF NOT EXISTS lunch_in_address TEXT`).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS employee_occurrences (
         id SERIAL PRIMARY KEY,
         employee_id INTEGER NOT NULL,
@@ -511,7 +516,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS reference_points (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -523,59 +528,59 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       UPDATE service_orders SET mission_status = 'aguardando' WHERE mission_status = 'missao_paga'
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS escort_contract_id TEXT
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS waypoints JSONB DEFAULT '[]'::jsonb
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS cost_type TEXT DEFAULT 'expense'
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS receitas_os NUMERIC(10,2) DEFAULT 0
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS faturado_em TIMESTAMPTZ
     `).catch(() => {});
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS faturado_por TEXT
     `).catch(() => {});
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS invoice_id INTEGER
     `).catch(() => {});
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS pago_em TIMESTAMPTZ
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       UPDATE vehicles SET last_latitude = NULL, last_longitude = NULL
       WHERE CAST(COALESCE(NULLIF(last_latitude, ''), '1') AS NUMERIC) = 0
         AND CAST(COALESCE(NULLIF(last_longitude, ''), '1') AS NUMERIC) = 0
     `).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
     `).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lat REAL`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS origin_lng REAL`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lat REAL`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS destination_lng REAL`).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS mission_positions (
         id SERIAL PRIMARY KEY,
         service_order_id INTEGER NOT NULL,
@@ -587,20 +592,20 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_so ON mission_positions(service_order_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mission_pos_so ON mission_positions(service_order_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_mission_pos_created ON mission_positions(created_at)`);
 
-    await db.execute(sql`ALTER TABLE mission_costs ALTER COLUMN service_order_id DROP NOT NULL`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS vehicle_id INTEGER`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS employee_id INTEGER`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS photo_url TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ALTER COLUMN service_order_id DROP NOT NULL`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS vehicle_id INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS employee_id INTEGER`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS photo_url TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS latitude TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE mission_costs ADD COLUMN IF NOT EXISTS longitude TEXT`).catch(() => {});
 
-    await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_por TEXT`).catch(() => {});
-    await db.execute(sql`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_em TIMESTAMP`).catch(() => {});
+    await execSql(`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_por TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS copiado_em TIMESTAMP`).catch(() => {});
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS invoices (
         id SERIAL PRIMARY KEY,
         client_id INTEGER,
@@ -628,7 +633,7 @@ export async function ensureDbSchema() {
       )
     `);
 
-    await db.execute(sql`
+    await execSql(`
       CREATE TABLE IF NOT EXISTS mission_acceptances (
         id TEXT PRIMARY KEY,
         service_order_id INTEGER NOT NULL,
@@ -714,19 +719,11 @@ export async function nominatimGeocode(address: string): Promise<{ lat: number; 
 }
 
 async function backfillOrderCoords() {
-  const orders = await db.select({
-    id: serviceOrders.id,
-    osNumber: serviceOrders.osNumber,
-    origin: serviceOrders.origin,
-    destination: serviceOrders.destination,
-    originLat: serviceOrders.originLat,
-    destinationLat: serviceOrders.destinationLat,
-  }).from(serviceOrders).where(
-    and(
-      or(eq(serviceOrders.status, "em_andamento"), eq(serviceOrders.status, "agendada")),
-      or(isNull(serviceOrders.originLat), isNull(serviceOrders.destinationLat))
-    )
-  );
+  const { data: ordersRaw } = await supabaseAdmin.from("service_orders")
+    .select("id, os_number, origin, destination, origin_lat, destination_lat")
+    .in("status", ["em_andamento", "agendada"])
+    .or("origin_lat.is.null,destination_lat.is.null");
+  const orders = toCamelArray(ordersRaw || []) as any[];
   if (orders.length === 0) return;
   console.log(`[db-init] Backfilling coordinates for ${orders.length} order(s)...`);
   for (const o of orders) {
@@ -742,7 +739,12 @@ async function backfillOrderCoords() {
       await new Promise(r => setTimeout(r, 1100));
     }
     if (Object.keys(updates).length > 0) {
-      await db.update(serviceOrders).set(updates).where(eq(serviceOrders.id, o.id));
+      const snakeUpdates: any = {};
+      if (updates.originLat !== undefined) snakeUpdates.origin_lat = updates.originLat;
+      if (updates.originLng !== undefined) snakeUpdates.origin_lng = updates.originLng;
+      if (updates.destinationLat !== undefined) snakeUpdates.destination_lat = updates.destinationLat;
+      if (updates.destinationLng !== undefined) snakeUpdates.destination_lng = updates.destinationLng;
+      await supabaseAdmin.from("service_orders").update(snakeUpdates).eq("id", o.id);
       console.log(`[db-init] Geocoded ${o.osNumber}: origin=${updates.originLat ? "OK" : "skip"} dest=${updates.destinationLat ? "OK" : "skip"}`);
     }
   }
@@ -750,7 +752,7 @@ async function backfillOrderCoords() {
 
 export async function ensureCalcMissionRPC() {
   try {
-    await db.execute(sql`
+    await execSql(`
       CREATE OR REPLACE FUNCTION calc_mission_elapsed_hours(p_os_id integer)
       RETURNS numeric AS $$
         SELECT COALESCE(

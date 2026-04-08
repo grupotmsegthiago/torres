@@ -1,10 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
-  import { db } from "../db";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole } from "../auth";
-  import { missionUpdates, missionPositions } from "@shared/schema";
-  import { eq, desc, and, gte, lte } from "drizzle-orm";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
@@ -194,16 +191,14 @@ import type { Express } from "express";
           }
         }
 
-        const lastUpdate = await db.select()
-          .from(missionUpdates)
-          .where(and(eq(missionUpdates.serviceOrderId, o.id), eq(missionUpdates.readByAdmin, 0)))
-          .orderBy(desc(missionUpdates.createdAt))
+        const { data: lastUpdate } = await supabaseAdmin.from("mission_updates").select("*")
+          .eq("service_order_id", o.id).eq("read_by_admin", 0)
+          .order("created_at", { ascending: false })
           .limit(1);
 
-        const recentUpdates = await db.select()
-          .from(missionUpdates)
-          .where(eq(missionUpdates.serviceOrderId, o.id))
-          .orderBy(desc(missionUpdates.createdAt))
+        const { data: recentUpdates } = await supabaseAdmin.from("mission_updates").select("*")
+          .eq("service_order_id", o.id)
+          .order("created_at", { ascending: false })
           .limit(5);
 
         let liveCost: {
@@ -615,9 +610,9 @@ import type { Express } from "express";
                 if (isNewMission || elapsed >= interval) {
                   lastRecordedPos.set(v.id, { lat: trackerData.latitude, lng: trackerData.longitude, time: now, osId });
                   lastMissionPos.set(osId, { lat: trackerData.latitude, lng: trackerData.longitude });
-                  db.insert(missionPositions).values({
-                    serviceOrderId: osId,
-                    vehicleId: v.id,
+                  supabaseAdmin.from("mission_positions").insert({
+                    service_order_id: osId,
+                    vehicle_id: v.id,
                     latitude: trackerData.latitude,
                     longitude: trackerData.longitude,
                     speed: trackerData.speed ?? 0,
@@ -710,15 +705,13 @@ import type { Express } from "express";
                 const kit = linkedOrder.kitId ? await storage.getWeaponKit(linkedOrder.kitId) : null;
                 const agentLoc1 = linkedOrder.assignedEmployeeId ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployeeId) : null;
                 const agentLoc2 = linkedOrder.assignedEmployee2Id ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployee2Id) : null;
-                const lastUpd = await db.select()
-                  .from(missionUpdates)
-                  .where(and(eq(missionUpdates.serviceOrderId, linkedOrder.id), eq(missionUpdates.readByAdmin, 0)))
-                  .orderBy(desc(missionUpdates.createdAt))
+                const { data: lastUpd } = await supabaseAdmin.from("mission_updates").select("*")
+                  .eq("service_order_id", linkedOrder.id).eq("read_by_admin", 0)
+                  .order("created_at", { ascending: false })
                   .limit(1);
-                const recentUpds = await db.select()
-                  .from(missionUpdates)
-                  .where(eq(missionUpdates.serviceOrderId, linkedOrder.id))
-                  .orderBy(desc(missionUpdates.createdAt))
+                const { data: recentUpds } = await supabaseAdmin.from("mission_updates").select("*")
+                  .eq("service_order_id", linkedOrder.id)
+                  .order("created_at", { ascending: false })
                   .limit(5);
                 return {
                   id: linkedOrder.id,

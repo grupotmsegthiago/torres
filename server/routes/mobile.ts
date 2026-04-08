@@ -1,10 +1,8 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
-  import { db } from "../db";
+  import { storage, toCamelObj, toCamelArray, toSnakeObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
-  import { employees, employeeTimesheets, employeeOccurrences, vehicles, vehicleFueling, referencePoints, insertReferencePointSchema } from "@shared/schema";
-  import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
+  import { insertReferencePointSchema } from "@shared/schema";
   import { haversineDist, createAutoTransaction } from "./_helpers";
 
   const HQ_FALLBACK_LAT = -23.4890;
@@ -12,9 +10,9 @@ import type { Express } from "express";
   const HQ_FALLBACK_RADIUS = 2000;
 
   async function getBaseCoords(): Promise<{ lat: number; lng: number; radius: number; name: string }> {
-    const bases = await db.select().from(referencePoints).limit(1);
-    if (bases.length > 0) {
-      return { lat: bases[0].latitude, lng: bases[0].longitude, radius: bases[0].radiusMeters, name: bases[0].name };
+    const { data: bases } = await supabaseAdmin.from("reference_points").select("*").limit(1);
+    if (bases && bases.length > 0) {
+      return { lat: bases[0].latitude, lng: bases[0].longitude, radius: bases[0].radius_meters, name: bases[0].name };
     }
     return { lat: HQ_FALLBACK_LAT, lng: HQ_FALLBACK_LNG, radius: HQ_FALLBACK_RADIUS, name: "Sede Torres" };
   }
@@ -28,13 +26,12 @@ import type { Express } from "express";
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const rows = await db.select().from(employeeTimesheets)
-        .where(and(
-          eq(employeeTimesheets.employeeId, employeeId),
-          gte(employeeTimesheets.date, today),
-          lte(employeeTimesheets.date, tomorrow),
-        )).limit(1);
-      res.json(rows[0] || null);
+      const { data: rows } = await supabaseAdmin.from("employee_timesheets").select("*")
+        .eq("employee_id", employeeId)
+        .gte("date", today.toISOString())
+        .lte("date", tomorrow.toISOString())
+        .limit(1);
+      res.json(rows && rows[0] ? toCamelObj(rows[0]) : null);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -56,14 +53,13 @@ import type { Express } from "express";
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const existing = await db.select().from(employeeTimesheets)
-        .where(and(
-          eq(employeeTimesheets.employeeId, employeeId),
-          gte(employeeTimesheets.date, today),
-          lte(employeeTimesheets.date, tomorrow),
-        )).limit(1);
+      const { data: existingRows } = await supabaseAdmin.from("employee_timesheets").select("*")
+        .eq("employee_id", employeeId)
+        .gte("date", today.toISOString())
+        .lte("date", tomorrow.toISOString())
+        .limit(1);
 
-      const record = existing[0];
+      const record = existingRows && existingRows[0] ? toCamelObj<any>(existingRows[0]) : null;
       if (action === "clock_in") {
         if (record?.clockIn) return res.status(400).json({ message: "Entrada já registrada hoje" });
         if (!latitude || !longitude) return res.status(400).json({ message: "Localizacao obrigatoria para bater o ponto de entrada" });
@@ -82,16 +78,16 @@ import type { Express } from "express";
           });
         }
         if (record) {
-          const [updated] = await db.update(employeeTimesheets)
-            .set({ clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude, clockInAddress: address || null })
-            .where(eq(employeeTimesheets.id, record.id)).returning();
-          return res.json(updated);
+          const { data: updated } = await supabaseAdmin.from("employee_timesheets")
+            .update({ clock_in: timeStr, clock_in_photo: photo, clock_in_lat: latitude, clock_in_lng: longitude, clock_in_address: address || null })
+            .eq("id", record.id).select().single();
+          return res.json(toCamelObj(updated));
         }
-        const [created] = await db.insert(employeeTimesheets).values({
-          employeeId, date: now,
-          clockIn: timeStr, clockInPhoto: photo, clockInLat: latitude, clockInLng: longitude, clockInAddress: address || null,
-        }).returning();
-        return res.json(created);
+        const { data: created } = await supabaseAdmin.from("employee_timesheets").insert({
+          employee_id: employeeId, date: now.toISOString(),
+          clock_in: timeStr, clock_in_photo: photo, clock_in_lat: latitude, clock_in_lng: longitude, clock_in_address: address || null,
+        }).select().single();
+        return res.json(toCamelObj(created));
       }
       if (!record) return res.status(400).json({ message: "Registre a entrada primeiro" });
 
@@ -103,9 +99,9 @@ import type { Express } from "express";
       }
 
       const updateMap: Record<string, any> = {
-        lunch_out: { lunchOut: timeStr, lunchOutPhoto: photo, lunchOutLat: latitude, lunchOutLng: longitude, lunchOutAddress: address || null },
-        lunch_in: { lunchIn: timeStr, lunchInPhoto: photo, lunchInLat: latitude, lunchInLng: longitude, lunchInAddress: address || null },
-        clock_out: { clockOut: timeStr, clockOutPhoto: photo, clockOutLat: latitude, clockOutLng: longitude, clockOutAddress: address || null },
+        lunch_out: { lunch_out: timeStr, lunch_out_photo: photo, lunch_out_lat: latitude, lunch_out_lng: longitude, lunch_out_address: address || null },
+        lunch_in: { lunch_in: timeStr, lunch_in_photo: photo, lunch_in_lat: latitude, lunch_in_lng: longitude, lunch_in_address: address || null },
+        clock_out: { clock_out: timeStr, clock_out_photo: photo, clock_out_lat: latitude, clock_out_lng: longitude, clock_out_address: address || null },
       };
       const updates = updateMap[action];
       if (!updates) return res.status(400).json({ message: "Ação inválida" });
@@ -115,10 +111,10 @@ import type { Express } from "express";
       if (action === "lunch_in" && record.lunchIn) return res.status(400).json({ message: "Retorno almoço já registrado" });
       if (action === "clock_out" && record.clockOut) return res.status(400).json({ message: "Saída já registrada" });
 
-      const [updated] = await db.update(employeeTimesheets)
-        .set(updates)
-        .where(eq(employeeTimesheets.id, record.id)).returning();
-      res.json(updated);
+      const { data: updated } = await supabaseAdmin.from("employee_timesheets")
+        .update(updates)
+        .eq("id", record.id).select().single();
+      res.json(toCamelObj(updated));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -127,9 +123,9 @@ import type { Express } from "express";
   app.get("/api/employees/:id/ponto-detalhado/:timesheetId", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const empId = Number(req.params.id);
-      const ts = await db.select().from(employeeTimesheets).where(and(eq(employeeTimesheets.id, Number(req.params.timesheetId)), eq(employeeTimesheets.employeeId, empId))).limit(1);
-      if (!ts[0]) return res.status(404).json({ message: "Registro nao encontrado" });
-      const record = ts[0];
+      const { data: tsRows } = await supabaseAdmin.from("employee_timesheets").select("*").eq("id", Number(req.params.timesheetId)).eq("employee_id", empId).limit(1);
+      if (!tsRows || !tsRows[0]) return res.status(404).json({ message: "Registro nao encontrado" });
+      const record = toCamelObj<any>(tsRows[0]);
 
       const employee = await storage.getEmployee(empId);
 
@@ -172,46 +168,46 @@ import type { Express } from "express";
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const existing = await db.select().from(employeeTimesheets).where(and(
-        eq(employeeTimesheets.employeeId, employeeId),
-        gte(employeeTimesheets.date, today),
-        lte(employeeTimesheets.date, tomorrow),
-      )).limit(1);
+      const { data: existingR } = await supabaseAdmin.from("employee_timesheets").select("*")
+        .eq("employee_id", employeeId)
+        .gte("date", today.toISOString())
+        .lte("date", tomorrow.toISOString())
+        .limit(1);
 
-      const record = existing[0];
+      const record = existingR && existingR[0] ? toCamelObj<any>(existingR[0]) : null;
       const obs = `[LIBERAÇÃO REMOTA por ${user?.name || "Admin"}: ${motivo || "Falha de GPS"}]`;
 
       if (action === "clock_in") {
         if (record?.clockIn) return res.status(400).json({ message: "Entrada já registrada hoje" });
         if (record) {
-          const [updated] = await db.update(employeeTimesheets)
-            .set({ clockIn: timeStr, clockInLat: latitude || null, clockInLng: longitude || null, clockInAddress: obs })
-            .where(eq(employeeTimesheets.id, record.id)).returning();
-          return res.json({ ...updated, liberadoRemotamente: true });
+          const { data: updated } = await supabaseAdmin.from("employee_timesheets")
+            .update({ clock_in: timeStr, clock_in_lat: latitude || null, clock_in_lng: longitude || null, clock_in_address: obs })
+            .eq("id", record.id).select().single();
+          return res.json({ ...toCamelObj(updated), liberadoRemotamente: true });
         }
-        const [created] = await db.insert(employeeTimesheets).values({
-          employeeId, date: now,
-          clockIn: timeStr, clockInLat: latitude || null, clockInLng: longitude || null, clockInAddress: obs,
-        }).returning();
-        return res.json({ ...created, liberadoRemotamente: true });
+        const { data: created } = await supabaseAdmin.from("employee_timesheets").insert({
+          employee_id: employeeId, date: now.toISOString(),
+          clock_in: timeStr, clock_in_lat: latitude || null, clock_in_lng: longitude || null, clock_in_address: obs,
+        }).select().single();
+        return res.json({ ...toCamelObj(created), liberadoRemotamente: true });
       }
 
       if (!record) return res.status(400).json({ message: "Registre a entrada primeiro" });
 
-      const updateMap: Record<string, any> = {
-        lunch_out: { lunchOut: timeStr, lunchOutLat: latitude || null, lunchOutLng: longitude || null, lunchOutAddress: obs },
-        lunch_in: { lunchIn: timeStr, lunchInLat: latitude || null, lunchInLng: longitude || null, lunchInAddress: obs },
-        clock_out: { clockOut: timeStr, clockOutLat: latitude || null, clockOutLng: longitude || null, clockOutAddress: obs },
+      const updateMap2: Record<string, any> = {
+        lunch_out: { lunch_out: timeStr, lunch_out_lat: latitude || null, lunch_out_lng: longitude || null, lunch_out_address: obs },
+        lunch_in: { lunch_in: timeStr, lunch_in_lat: latitude || null, lunch_in_lng: longitude || null, lunch_in_address: obs },
+        clock_out: { clock_out: timeStr, clock_out_lat: latitude || null, clock_out_lng: longitude || null, clock_out_address: obs },
       };
-      const updates = updateMap[action];
+      const updates = updateMap2[action];
       if (!updates) return res.status(400).json({ message: "Ação inválida" });
 
-      const [updated] = await db.update(employeeTimesheets)
-        .set(updates)
-        .where(eq(employeeTimesheets.id, record.id)).returning();
+      const { data: updated } = await supabaseAdmin.from("employee_timesheets")
+        .update(updates)
+        .eq("id", record.id).select().single();
 
       console.log(`[ponto] LIBERAÇÃO REMOTA: ${user?.name} liberou ${action} para employee ${employeeId}. Motivo: ${motivo || "Falha GPS"}`);
-      res.json({ ...updated, liberadoRemotamente: true });
+      res.json({ ...toCamelObj(updated), liberadoRemotamente: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -220,13 +216,10 @@ import type { Express } from "express";
   // ─── MOBILE: Abastecimento ──────────────────────────────────────────
   app.get("/api/mobile/abastecimento/vehicles", requireAuth, async (req: any, res) => {
     try {
-      const allVehicles = await db.execute(sql`
-        SELECT id, plate, model, km, last_oil_change_km, frota
-        FROM vehicles
-        WHERE status IS NULL OR status NOT IN ('inativo', 'vendido', 'baixado')
-        ORDER BY plate ASC
-      `);
-      res.json(allVehicles.rows || []);
+      const { data: allVehicles } = await supabaseAdmin.from("vehicles").select("id, plate, model, km, last_oil_change_km, frota")
+        .not("status", "in", '("inativo","vendido","baixado")')
+        .order("plate", { ascending: true });
+      res.json(allVehicles || []);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -236,15 +229,12 @@ import type { Express } from "express";
     try {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.json(null);
-      const assignments = await db.execute(sql`
-        SELECT v.id, v.plate, v.model, v.km, v.last_oil_change_km
-        FROM vehicle_assignments va
-        JOIN vehicles v ON v.id = va.vehicle_id
-        WHERE va.employee_id = ${employeeId}
-        ORDER BY va.created_at DESC
-        LIMIT 1
-      `);
-      res.json(assignments.rows?.[0] || null);
+      const { data: assignments } = await supabaseAdmin.from("vehicle_assignments").select("vehicle_id, vehicles(id, plate, model, km, last_oil_change_km)")
+        .eq("employee_id", employeeId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const veh = assignments?.[0]?.vehicles;
+      res.json(veh || null);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -260,8 +250,9 @@ import type { Express } from "express";
       if (!pumpPhoto || typeof pumpPhoto !== "string" || !pumpPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto da bomba obrigatória (formato inválido)" });
       if (!odometerPhoto || typeof odometerPhoto !== "string" || !odometerPhoto.startsWith("data:image/")) return res.status(400).json({ message: "Foto do hodômetro obrigatória (formato inválido)" });
 
-      const vehicle = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
-      if (!vehicle.length) return res.status(404).json({ message: "Veículo não encontrado" });
+      const { data: vehicleRows } = await supabaseAdmin.from("vehicles").select("*").eq("id", vehicleId).limit(1);
+      if (!vehicleRows || !vehicleRows.length) return res.status(404).json({ message: "Veículo não encontrado" });
+      const vehicle = vehicleRows;
       const currentKm = vehicle[0]?.km || 0;
       if (vehicle[0] && km < currentKm) {
         return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${currentKm})` });
@@ -284,19 +275,19 @@ import type { Express } from "express";
         return res.status(409).json({ message: "Abastecimento já registrado — registro duplicado detectado." });
       }
 
-      const [fueling] = await db.insert(vehicleFueling).values({
-        vehicleId, driverId: employeeId, date: todayDate,
-        liters: liters?.toString() || "0", costPerLiter: costPerLiter?.toString(), totalCost: totalCost?.toString(),
-        km, fuelType: fuelType || "gasolina", fullTank: true, station,
-        receiptPhoto, pumpPhoto, odometerPhoto, platePhoto, latitude, longitude, address,
-        gasolinePrice: gasolinePrice ? gasolinePrice.toString() : null,
-        ethanolPrice: ethanolPrice ? ethanolPrice.toString() : null,
-        fuelRecommendation: fuelRecommendation || null,
-        recommendationFollowed: recommendationFollowed != null ? recommendationFollowed : null,
-        createdByUserId: req.user?.id || null,
-      }).returning();
+      const { data: fueling } = await supabaseAdmin.from("vehicle_fueling").insert({
+        vehicle_id: vehicleId, driver_id: employeeId, date: todayDate,
+        liters: liters?.toString() || "0", cost_per_liter: costPerLiter?.toString(), total_cost: totalCost?.toString(),
+        km, fuel_type: fuelType || "gasolina", full_tank: true, station,
+        receipt_photo: receiptPhoto, pump_photo: pumpPhoto, odometer_photo: odometerPhoto, plate_photo: platePhoto, latitude, longitude, address,
+        gasoline_price: gasolinePrice ? gasolinePrice.toString() : null,
+        ethanol_price: ethanolPrice ? ethanolPrice.toString() : null,
+        fuel_recommendation: fuelRecommendation || null,
+        recommendation_followed: recommendationFollowed != null ? recommendationFollowed : null,
+        created_by_user_id: req.user?.id || null,
+      }).select().single();
 
-      await db.update(vehicles).set({ km, lastKmUpdate: sql`NOW()` }).where(eq(vehicles.id, vehicleId));
+      await supabaseAdmin.from("vehicles").update({ km, last_km_update: new Date().toISOString() }).eq("id", vehicleId);
 
       const derivedTotal = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
       if (fueling && derivedTotal > 0) {
@@ -559,10 +550,10 @@ import type { Express } from "express";
     try {
       const employeeId = req.user?.employeeId;
       if (!employeeId) return res.json([]);
-      const rows = await db.select().from(employeeOccurrences)
-        .where(eq(employeeOccurrences.employeeId, employeeId))
-        .orderBy(desc(employeeOccurrences.createdAt));
-      res.json(rows);
+      const { data: rows } = await supabaseAdmin.from("employee_occurrences").select("*")
+        .eq("employee_id", employeeId)
+        .order("created_at", { ascending: false });
+      res.json(toCamelArray(rows || []));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -577,11 +568,11 @@ import type { Express } from "express";
       const validTypes = ["acidente", "quebra", "avaria", "manutencao", "seguranca", "outro"];
       if (!validTypes.includes(type)) return res.status(400).json({ message: "Tipo inválido" });
       const validPhotos = (photos || []).filter((p: any) => typeof p === "string" && p.startsWith("data:image/")).slice(0, 5);
-      const [record] = await db.insert(employeeOccurrences).values({
-        employeeId, vehicleId: vehicleId || null, type, description: description.substring(0, 2000),
+      const { data: record } = await supabaseAdmin.from("employee_occurrences").insert({
+        employee_id: employeeId, vehicle_id: vehicleId || null, type, description: description.substring(0, 2000),
         photos: validPhotos, latitude, longitude,
-      }).returning();
-      res.status(201).json(record);
+      }).select().single();
+      res.status(201).json(toCamelObj(record));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -590,8 +581,8 @@ import type { Express } from "express";
   // ─── ADMIN: Ocorrências management ─────────────────────────────────
   app.get("/api/ocorrencias", requireAdminRole, async (_req, res) => {
     try {
-      const rows = await db.select().from(employeeOccurrences).orderBy(desc(employeeOccurrences.createdAt));
-      res.json(rows);
+      const { data: rows } = await supabaseAdmin.from("employee_occurrences").select("*").order("created_at", { ascending: false });
+      res.json(toCamelArray(rows || []));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -600,11 +591,14 @@ import type { Express } from "express";
   app.patch("/api/ocorrencias/:id", requireAdminRole, async (req, res) => {
     try {
       const { status, adminNotes } = req.body;
-      const [updated] = await db.update(employeeOccurrences)
-        .set({ ...(status && { status }), ...(adminNotes !== undefined && { adminNotes }) })
-        .where(eq(employeeOccurrences.id, Number(req.params.id))).returning();
+      const updateData: Record<string, any> = {};
+      if (status) updateData.status = status;
+      if (adminNotes !== undefined) updateData.admin_notes = adminNotes;
+      const { data: updated } = await supabaseAdmin.from("employee_occurrences")
+        .update(updateData)
+        .eq("id", Number(req.params.id)).select().single();
       if (!updated) return res.status(404).json({ message: "Ocorrência não encontrada" });
-      res.json(updated);
+      res.json(toCamelObj(updated));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -613,10 +607,10 @@ import type { Express } from "express";
   // ─── Oil change alert check ─────────────────────────────────────────
   app.get("/api/mobile/oil-alert/:vehicleId", requireAuth, async (req, res) => {
     try {
-      const v = await db.select().from(vehicles).where(eq(vehicles.id, Number(req.params.vehicleId))).limit(1);
-      if (!v[0]) return res.json({ alert: null });
-      const oilKm = v[0].lastOilChangeKm || 0;
-      const currentKm = v[0].km || 0;
+      const { data: vRows } = await supabaseAdmin.from("vehicles").select("*").eq("id", Number(req.params.vehicleId)).limit(1);
+      if (!vRows || !vRows[0]) return res.json({ alert: null });
+      const oilKm = vRows[0].last_oil_change_km || 0;
+      const currentKm = vRows[0].km || 0;
       if (oilKm === 0) return res.json({ alert: null, oilKm: 0, currentKm });
       const diff = currentKm - oilKm;
       let alert = null;
@@ -631,8 +625,8 @@ import type { Express } from "express";
   // ─── Reference Points CRUD ──────────────────────────────────────────
   app.get("/api/reference-points", requireAuth, async (_req, res) => {
     try {
-      const rows = await db.select().from(referencePoints).orderBy(referencePoints.name);
-      res.json(rows);
+      const { data: rows } = await supabaseAdmin.from("reference_points").select("*").order("name", { ascending: true });
+      res.json(toCamelArray(rows || []));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -641,8 +635,8 @@ import type { Express } from "express";
   app.post("/api/reference-points", requireAuth, async (req, res) => {
     try {
       const parsed = insertReferencePointSchema.parse(req.body);
-      const [row] = await db.insert(referencePoints).values(parsed).returning();
-      res.json(row);
+      const { data: row } = await supabaseAdmin.from("reference_points").insert(toSnakeObj(parsed)).select().single();
+      res.json(toCamelObj(row));
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }
@@ -656,11 +650,11 @@ import type { Express } from "express";
       if (name !== undefined) updates.name = name;
       if (latitude !== undefined) updates.latitude = latitude;
       if (longitude !== undefined) updates.longitude = longitude;
-      if (radiusMeters !== undefined) updates.radiusMeters = radiusMeters;
+      if (radiusMeters !== undefined) updates.radius_meters = radiusMeters;
       if (color !== undefined) updates.color = color;
-      const [row] = await db.update(referencePoints).set(updates).where(eq(referencePoints.id, id)).returning();
+      const { data: row } = await supabaseAdmin.from("reference_points").update(updates).eq("id", id).select().single();
       if (!row) return res.status(404).json({ message: "Ponto não encontrado" });
-      res.json(row);
+      res.json(toCamelObj(row));
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }
@@ -669,7 +663,7 @@ import type { Express } from "express";
   app.delete("/api/reference-points/:id", requireAuth, requireDiretoria, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      await db.delete(referencePoints).where(eq(referencePoints.id, id));
+      await supabaseAdmin.from("reference_points").delete().eq("id", id);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

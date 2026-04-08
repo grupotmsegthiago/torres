@@ -1,15 +1,9 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
-  import { db } from "../db";
+  import { storage, toCamelObj, toCamelArray, toSnakeObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { logSystemAudit } from "../audit";
-  import {
-    insertEmployeeDocumentSchema, employees, employeeAbsences, employeeFines,
-    employeeTimesheets, employeePayslips, employeeDisciplinary,
-    auditLogs, users, employeeSalaryDiscounts
-  } from "@shared/schema";
-  import { eq, desc, sql, and, gte, lte, or, ilike } from "drizzle-orm";
+  import { insertEmployeeDocumentSchema } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import OpenAI from "openai";
   import { createSmtpTransporter, getSmtpFrom, toSafeUser } from "./_helpers";
@@ -23,15 +17,15 @@ import type { Express } from "express";
     if (!action) return res.status(400).json({ message: "action obrigatória" });
     const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
-    await db.insert(auditLogs).values({
-      userId: user.id,
-      userName: user.name || user.username || "—",
-      userRole: user.role || "—",
+    await supabaseAdmin.from("audit_logs").insert({
+      user_id: user.id,
+      user_name: user.name || user.username || "—",
+      user_role: user.role || "—",
       action,
       page: page || null,
       details: details || null,
-      ipAddress,
-      userAgent,
+      ip_address: ipAddress,
+      user_agent: userAgent,
       latitude: latitude ? Number(latitude) : null,
       longitude: longitude ? Number(longitude) : null,
     });
@@ -113,76 +107,50 @@ import type { Express } from "express";
     const dateTo = req.query.dateTo ? String(req.query.dateTo) : null;
     const securityOnly = req.query.securityOnly === "true";
 
-    const conditions: any[] = [];
-    if (userId) conditions.push(eq(auditLogs.userId, userId));
-    if (action) conditions.push(eq(auditLogs.action, action));
-    if (search) conditions.push(or(
-      ilike(auditLogs.details, `%${search}%`),
-      ilike(auditLogs.userName, `%${search}%`),
-      ilike(auditLogs.page, `%${search}%`),
-    ));
-    if (dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(dateFrom)));
+    let query = supabaseAdmin.from("audit_logs").select("*", { count: "exact" });
+    if (userId) query = query.eq("user_id", userId);
+    if (action) query = query.eq("action", action);
+    if (search) query = query.or(`details.ilike.%${search}%,user_name.ilike.%${search}%,page.ilike.%${search}%`);
+    if (dateFrom) query = query.gte("created_at", new Date(dateFrom).toISOString());
     if (dateTo) {
       const endDate = new Date(dateTo);
       endDate.setHours(23, 59, 59, 999);
-      conditions.push(lte(auditLogs.createdAt, endDate));
+      query = query.lte("created_at", endDate.toISOString());
     }
-    if (securityOnly) {
-      conditions.push(or(
-        eq(auditLogs.action, "screenshot_attempt"),
-        eq(auditLogs.action, "tab_hidden"),
-        eq(auditLogs.action, "window_blur"),
-        eq(auditLogs.action, "context_menu"),
-      ));
-    }
+    if (securityOnly) query = query.in("action", ["screenshot_attempt", "tab_hidden", "window_blur", "context_menu"]);
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const { data: rows, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
 
-    const rows = whereClause
-      ? await db.select().from(auditLogs).where(whereClause).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset)
-      : await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
-
-    const countQuery = whereClause
-      ? await db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(whereClause)
-      : await db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs);
-
-    const total = Number(countQuery[0]?.count || 0);
-
-    res.json({ logs: rows, total });
+    res.json({ logs: toCamelArray(rows || []), total: count || 0 });
   });
 
   app.get("/api/audit-logs/stats", requireAuth, requireAdminRole, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [totalResult, todayResult, securityResult, usersResult] = await Promise.all([
-      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs),
-      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(gte(auditLogs.createdAt, today)),
-      db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(
-        or(
-          eq(auditLogs.action, "screenshot_attempt"),
-          eq(auditLogs.action, "tab_hidden"),
-          eq(auditLogs.action, "window_blur"),
-          eq(auditLogs.action, "context_menu"),
-        )
-      ),
-      db.select({
-        userId: auditLogs.userId,
-        userName: auditLogs.userName,
-        count: sql<number>`COUNT(*)`,
-      }).from(auditLogs).groupBy(auditLogs.userId, auditLogs.userName).orderBy(desc(sql`COUNT(*)`)).limit(10),
+    const [totalRes, todayRes, securityRes] = await Promise.all([
+      supabaseAdmin.from("audit_logs").select("*", { count: "exact", head: true }),
+      supabaseAdmin.from("audit_logs").select("*", { count: "exact", head: true }).gte("created_at", today.toISOString()),
+      supabaseAdmin.from("audit_logs").select("*", { count: "exact", head: true }).in("action", ["screenshot_attempt", "tab_hidden", "window_blur", "context_menu"]),
     ]);
 
-    const actionCounts = await db.select({
-      action: auditLogs.action,
-      count: sql<number>`COUNT(*)`,
-    }).from(auditLogs).groupBy(auditLogs.action).orderBy(desc(sql`COUNT(*)`));
+    const { data: allLogs } = await supabaseAdmin.from("audit_logs").select("user_id, user_name, action").limit(5000);
+    const userMap: Record<string, { userId: number; userName: string; count: number }> = {};
+    const actionMap: Record<string, number> = {};
+    for (const l of (allLogs || [])) {
+      const key = `${l.user_id}`;
+      if (!userMap[key]) userMap[key] = { userId: l.user_id, userName: l.user_name, count: 0 };
+      userMap[key].count++;
+      actionMap[l.action] = (actionMap[l.action] || 0) + 1;
+    }
+    const topUsers = Object.values(userMap).sort((a, b) => b.count - a.count).slice(0, 10);
+    const actionCounts = Object.entries(actionMap).map(([action, count]) => ({ action, count })).sort((a, b) => b.count - a.count);
 
     res.json({
-      total: Number(totalResult[0]?.count || 0),
-      today: Number(todayResult[0]?.count || 0),
-      securityAlerts: Number(securityResult[0]?.count || 0),
-      topUsers: usersResult,
+      total: totalRes.count || 0,
+      today: todayRes.count || 0,
+      securityAlerts: securityRes.count || 0,
+      topUsers,
       actionCounts,
     });
   });
@@ -194,34 +162,34 @@ import type { Express } from "express";
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
     const empId = user.employeeId;
 
-    const [absRows, fineRows, tsRows, psRows, discRows] = await Promise.all([
-      db.select().from(employeeAbsences).where(eq(employeeAbsences.employeeId, empId)).orderBy(desc(employeeAbsences.startDate)),
-      db.select().from(employeeFines).where(eq(employeeFines.employeeId, empId)).orderBy(desc(employeeFines.date)),
-      db.select().from(employeeTimesheets).where(eq(employeeTimesheets.employeeId, empId)).orderBy(desc(employeeTimesheets.date)),
-      db.select().from(employeePayslips).where(eq(employeePayslips.employeeId, empId)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month)),
-      db.select().from(employeeDisciplinary).where(eq(employeeDisciplinary.employeeId, empId)).orderBy(desc(employeeDisciplinary.date)),
+    const [absRes, fineRes, tsRes, psRes, discRes] = await Promise.all([
+      supabaseAdmin.from("employee_absences").select("*").eq("employee_id", empId).order("start_date", { ascending: false }),
+      supabaseAdmin.from("employee_fines").select("*").eq("employee_id", empId).order("date", { ascending: false }),
+      supabaseAdmin.from("employee_timesheets").select("*").eq("employee_id", empId).order("date", { ascending: false }),
+      supabaseAdmin.from("employee_payslips").select("*").eq("employee_id", empId).order("year", { ascending: false }).order("month", { ascending: false }),
+      supabaseAdmin.from("employee_disciplinary").select("*").eq("employee_id", empId).order("date", { ascending: false }),
     ]);
 
-    res.json({ absences: absRows, fines: fineRows, timesheets: tsRows, payslips: psRows, disciplinary: discRows });
+    res.json({ absences: toCamelArray(absRes.data || []), fines: toCamelArray(fineRes.data || []), timesheets: toCamelArray(tsRes.data || []), payslips: toCamelArray(psRes.data || []), disciplinary: toCamelArray(discRes.data || []) });
   });
 
   // ====================== HR: FALTAS/ATESTADOS ======================
 
   app.get("/api/employees/:id/absences", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const rows = await db.select().from(employeeAbsences).where(eq(employeeAbsences.employeeId, employeeId)).orderBy(desc(employeeAbsences.startDate));
-    res.json(rows);
+    const { data: rows } = await supabaseAdmin.from("employee_absences").select("*").eq("employee_id", employeeId).order("start_date", { ascending: false });
+    res.json(toCamelArray(rows || []));
   });
 
   app.post("/api/employees/:id/absences", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const data = { ...req.body, employeeId };
-    const [row] = await db.insert(employeeAbsences).values(data).returning();
-    res.status(201).json(row);
+    const data = toSnakeObj({ ...req.body, employeeId });
+    const { data: row } = await supabaseAdmin.from("employee_absences").insert(data).select().single();
+    res.status(201).json(toCamelObj(row));
   });
 
   app.delete("/api/absences/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await db.delete(employeeAbsences).where(eq(employeeAbsences.id, Number(req.params.id)));
+    await supabaseAdmin.from("employee_absences").delete().eq("id", Number(req.params.id));
     res.json({ ok: true });
   });
 
@@ -229,19 +197,19 @@ import type { Express } from "express";
 
   app.get("/api/employees/:id/fines", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const rows = await db.select().from(employeeFines).where(eq(employeeFines.employeeId, employeeId)).orderBy(desc(employeeFines.date));
-    res.json(rows);
+    const { data: rows } = await supabaseAdmin.from("employee_fines").select("*").eq("employee_id", employeeId).order("date", { ascending: false });
+    res.json(toCamelArray(rows || []));
   });
 
   app.post("/api/employees/:id/fines", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const data = { ...req.body, employeeId, vehicleId: req.body.vehicleId ? Number(req.body.vehicleId) : null };
-    const [row] = await db.insert(employeeFines).values(data).returning();
-    res.status(201).json(row);
+    const data = toSnakeObj({ ...req.body, employeeId, vehicleId: req.body.vehicleId ? Number(req.body.vehicleId) : null });
+    const { data: row } = await supabaseAdmin.from("employee_fines").insert(data).select().single();
+    res.status(201).json(toCamelObj(row));
   });
 
   app.delete("/api/fines/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await db.delete(employeeFines).where(eq(employeeFines.id, Number(req.params.id)));
+    await supabaseAdmin.from("employee_fines").delete().eq("id", Number(req.params.id));
     res.json({ ok: true });
   });
 
@@ -249,8 +217,8 @@ import type { Express } from "express";
 
   app.get("/api/employees/:id/disciplinary", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const rows = await db.select().from(employeeDisciplinary).where(eq(employeeDisciplinary.employeeId, employeeId)).orderBy(desc(employeeDisciplinary.date));
-    res.json(rows);
+    const { data: rows } = await supabaseAdmin.from("employee_disciplinary").select("*").eq("employee_id", employeeId).order("date", { ascending: false });
+    res.json(toCamelArray(rows || []));
   });
 
   app.post("/api/employees/:id/disciplinary", requireAuth, requireAdminRole, async (req, res) => {
@@ -270,13 +238,13 @@ import type { Express } from "express";
     }
     const finalStatus = status && allowedStatuses.includes(status) ? status : "ativa";
 
-    const data = { employeeId, type, date: new Date(date), reason: reason.trim(), description: description?.trim() || null, status: finalStatus };
-    const [row] = await db.insert(employeeDisciplinary).values(data).returning();
-    res.status(201).json(row);
+    const data = { employee_id: employeeId, type, date, reason: reason.trim(), description: description?.trim() || null, status: finalStatus };
+    const { data: row } = await supabaseAdmin.from("employee_disciplinary").insert(data).select().single();
+    res.status(201).json(toCamelObj(row));
   });
 
   app.delete("/api/disciplinary/:id", requireAuth, requireDiretoria, async (req, res) => {
-    await db.delete(employeeDisciplinary).where(eq(employeeDisciplinary.id, Number(req.params.id)));
+    await supabaseAdmin.from("employee_disciplinary").delete().eq("id", Number(req.params.id));
     res.json({ ok: true });
   });
 
@@ -284,15 +252,15 @@ import type { Express } from "express";
 
   app.get("/api/employees/:id/timesheets", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const rows = await db.select().from(employeeTimesheets).where(eq(employeeTimesheets.employeeId, employeeId)).orderBy(desc(employeeTimesheets.date));
-    res.json(rows);
+    const { data: rows } = await supabaseAdmin.from("employee_timesheets").select("*").eq("employee_id", employeeId).order("date", { ascending: false });
+    res.json(toCamelArray(rows || []));
   });
 
   app.post("/api/employees/:id/timesheets", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const data = { ...req.body, employeeId };
-    const [row] = await db.insert(employeeTimesheets).values(data).returning();
-    res.status(201).json(row);
+    const data = toSnakeObj({ ...req.body, employeeId });
+    const { data: row } = await supabaseAdmin.from("employee_timesheets").insert(data).select().single();
+    res.status(201).json(toCamelObj(row));
   });
 
   app.get("/api/employees/:id/folha-ponto-excel", requireAuth, requireAdminRole, async (req, res) => {
@@ -309,29 +277,24 @@ import type { Express } from "express";
       const endDate = new Date(year, month, 0);
       const daysInMonth = endDate.getDate();
 
-      const timesheetRows = await db.select().from(employeeTimesheets).where(
-        and(
-          eq(employeeTimesheets.employeeId, employeeId),
-          gte(employeeTimesheets.date, startDate),
-          lte(employeeTimesheets.date, endDate)
-        )
-      ).orderBy(employeeTimesheets.date);
+      const { data: timesheetRowsRaw } = await supabaseAdmin.from("employee_timesheets").select("*")
+        .eq("employee_id", employeeId)
+        .gte("date", startDate.toISOString())
+        .lte("date", endDate.toISOString())
+        .order("date", { ascending: true });
+      const timesheetRows = toCamelArray(timesheetRowsRaw || []);
 
-      const absenceRows = await db.select().from(employeeAbsences).where(
-        and(
-          eq(employeeAbsences.employeeId, employeeId),
-          gte(employeeAbsences.startDate, startDate),
-          lte(employeeAbsences.startDate, endDate)
-        )
-      );
+      const { data: absenceRowsRaw } = await supabaseAdmin.from("employee_absences").select("*")
+        .eq("employee_id", employeeId)
+        .gte("start_date", startDate.toISOString())
+        .lte("start_date", endDate.toISOString());
+      const absenceRows = toCamelArray(absenceRowsRaw || []);
 
-      const discRows = await db.select().from(employeeDisciplinary).where(
-        and(
-          eq(employeeDisciplinary.employeeId, employeeId),
-          gte(employeeDisciplinary.date, startDate),
-          lte(employeeDisciplinary.date, endDate)
-        )
-      );
+      const { data: discRowsRaw } = await supabaseAdmin.from("employee_disciplinary").select("*")
+        .eq("employee_id", employeeId)
+        .gte("date", startDate.toISOString())
+        .lte("date", endDate.toISOString());
+      const discRows = toCamelArray(discRowsRaw || []);
 
       const tsMap = new Map<string, any>();
       for (const ts of timesheetRows) {
@@ -459,7 +422,8 @@ import type { Express } from "express";
 
   app.get("/api/employees/:id/payslips", requireAuth, requireAdminRole, async (req, res) => {
     const employeeId = Number(req.params.id);
-    const rows = await db.select().from(employeePayslips).where(eq(employeePayslips.employeeId, employeeId)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month));
+    const { data: rowsRaw } = await supabaseAdmin.from("employee_payslips").select("*").eq("employee_id", employeeId).order("year", { ascending: false }).order("month", { ascending: false });
+    const rows = toCamelArray(rowsRaw || []);
     res.json(rows);
   });
 
@@ -467,12 +431,11 @@ import type { Express } from "express";
     try {
       const month = req.query.month ? Number(req.query.month) : undefined;
       const year = req.query.year ? Number(req.query.year) : undefined;
-      let conditions: any[] = [];
-      if (month) conditions.push(eq(employeePayslips.month, month));
-      if (year) conditions.push(eq(employeePayslips.year, year));
-      const rows = conditions.length > 0
-        ? await db.select().from(employeePayslips).where(and(...conditions)).orderBy(desc(employeePayslips.year), desc(employeePayslips.month), desc(employeePayslips.id))
-        : await db.select().from(employeePayslips).orderBy(desc(employeePayslips.year), desc(employeePayslips.month), desc(employeePayslips.id));
+      let query = supabaseAdmin.from("employee_payslips").select("*");
+      if (month) query = query.eq("month", month);
+      if (year) query = query.eq("year", year);
+      const { data: rowsRaw2 } = await query.order("year", { ascending: false }).order("month", { ascending: false }).order("id", { ascending: false });
+      const rows = toCamelArray(rowsRaw2 || []);
       const allEmps = await storage.getEmployees();
       const enriched = rows.map((r: any) => {
         const emp = allEmps.find((e: any) => e.id === r.employeeId);
@@ -525,9 +488,10 @@ import type { Express } from "express";
       }
       adicionalNoturno = +adicionalNoturno.toFixed(2);
 
-      const discounts = await db.select().from(employeeSalaryDiscounts)
-        .where(and(eq(employeeSalaryDiscounts.employeeId, employeeId), eq(employeeSalaryDiscounts.month, month), eq(employeeSalaryDiscounts.year, year)));
-      const totalDescontos = +discounts.reduce((s, d) => s + Number(d.amount), 0).toFixed(2);
+      const { data: discountsRaw } = await supabaseAdmin.from("employee_salary_discounts").select("*")
+        .eq("employee_id", employeeId).eq("month", month).eq("year", year);
+      const discounts = toCamelArray(discountsRaw || []);
+      const totalDescontos = +discounts.reduce((s: number, d: any) => s + Number(d.amount), 0).toFixed(2);
 
       const { data: missions } = await supabaseAdmin.from("service_orders")
         .select("id, scheduled_date, completed_date, employee1_id, employee2_id")
@@ -577,7 +541,7 @@ import type { Express } from "express";
         notes: body.notes || null,
       };
 
-      const [row] = await db.insert(employeePayslips).values(data).returning();
+      const { data: row } = await supabaseAdmin.from("employee_payslips").insert(toSnakeObj(data)).select().single();
 
       if (data.status === "pago") {
         const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
@@ -596,8 +560,8 @@ import type { Express } from "express";
           created_by: req.user!.name || req.user!.username || "SISTEMA",
         });
         if (tx) {
-          await db.update(employeePayslips).set({ financialTransactionId: tx.id }).where(eq(employeePayslips.id, row.id));
-          row.financialTransactionId = tx.id;
+          await supabaseAdmin.from("employee_payslips").update({ financial_transaction_id: tx.id }).eq("id", row.id);
+          row.financial_transaction_id = tx.id;
         }
       }
 
@@ -614,14 +578,15 @@ import type { Express } from "express";
   app.patch("/api/payslips/:id", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const [existing] = await db.select().from(employeePayslips).where(eq(employeePayslips.id, id));
-      if (!existing) return res.status(404).json({ message: "Holerite não encontrado" });
+      const { data: existingRows } = await supabaseAdmin.from("employee_payslips").select("*").eq("id", id).limit(1);
+      if (!existingRows?.length) return res.status(404).json({ message: "Holerite não encontrado" });
+      const existing = toCamelObj<any>(existingRows[0]);
 
       const body = req.body;
       const updates: any = {};
       if (body.status !== undefined) updates.status = body.status;
-      if (body.dataPagamento !== undefined) updates.dataPagamento = body.dataPagamento;
-      if (body.documentUrl !== undefined) updates.documentUrl = body.documentUrl;
+      if (body.dataPagamento !== undefined) updates.data_pagamento = body.dataPagamento;
+      if (body.documentUrl !== undefined) updates.document_url = body.documentUrl;
       if (body.notes !== undefined) updates.notes = body.notes;
 
       if (body.status === "pago" && existing.status !== "pago") {
@@ -645,16 +610,16 @@ import type { Express } from "express";
             entity_name: emp?.name || "",
             created_by: req.user!.name || req.user!.username || "SISTEMA",
           });
-          if (tx) updates.financialTransactionId = tx.id;
+          if (tx) updates.financial_transaction_id = tx.id;
         }
 
-        if (!updates.dataPagamento) {
+        if (!updates.data_pagamento) {
           const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-          updates.dataPagamento = brDate;
+          updates.data_pagamento = brDate;
         }
       }
 
-      const [row] = await db.update(employeePayslips).set(updates).where(eq(employeePayslips.id, id)).returning();
+      const { data: row } = await supabaseAdmin.from("employee_payslips").update(updates).eq("id", id).select().single();
 
       await logSystemAudit({
         userId: req.user!.id, userName: req.user!.name || req.user!.username,
@@ -662,17 +627,18 @@ import type { Express } from "express";
         details: `Holerite #${id} atualizado: ${JSON.stringify(updates)}`,
       });
 
-      res.json(row);
+      res.json(toCamelObj(row));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.delete("/api/payslips/:id", requireAuth, requireDiretoria, async (req, res) => {
     const id = Number(req.params.id);
-    const [existing] = await db.select().from(employeePayslips).where(eq(employeePayslips.id, id));
+    const { data: existingDel } = await supabaseAdmin.from("employee_payslips").select("*").eq("id", id).limit(1);
+    const existing = existingDel?.[0] ? toCamelObj<any>(existingDel[0]) : null;
     if (existing?.financialTransactionId) {
       await supabaseAdmin.from("financial_transactions").update({ status: "CANCELLED" }).eq("id", existing.financialTransactionId);
     }
-    await db.delete(employeePayslips).where(eq(employeePayslips.id, id));
+    await supabaseAdmin.from("employee_payslips").delete().eq("id", id);
     await logSystemAudit({
       userId: req.user!.id, userName: req.user!.name || req.user!.username,
       userRole: req.user!.role, action: "EXCLUIR_HOLERITE",
@@ -688,14 +654,15 @@ import type { Express } from "express";
       const emp = (await storage.getEmployees()).find((e: any) => e.id === employeeId);
       if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
 
-      const rows = await db.select().from(employeePayslips)
-        .where(and(eq(employeePayslips.employeeId, employeeId), eq(employeePayslips.year, year)))
-        .orderBy(employeePayslips.month);
+      const { data: rowsRaw3 } = await supabaseAdmin.from("employee_payslips").select("*")
+        .eq("employee_id", employeeId).eq("year", year)
+        .order("month", { ascending: true });
+      const rows = toCamelArray(rowsRaw3 || []);
 
-      const totalBruto = rows.reduce((s, r) => s + (Number(r.grossSalary) || 0), 0);
-      const totalLiquido = rows.reduce((s, r) => s + (Number(r.netSalary) || 0), 0);
-      const totalDescontos = rows.reduce((s, r) => s + (Number(r.descontos) || 0), 0);
-      const totalHorasExtras = rows.reduce((s, r) => s + (Number(r.horasExtras) || 0), 0);
+      const totalBruto = rows.reduce((s: number, r: any) => s + (Number(r.grossSalary) || 0), 0);
+      const totalLiquido = rows.reduce((s: number, r: any) => s + (Number(r.netSalary) || 0), 0);
+      const totalDescontos = rows.reduce((s: number, r: any) => s + (Number(r.descontos) || 0), 0);
+      const totalHorasExtras = rows.reduce((s: number, r: any) => s + (Number(r.horasExtras) || 0), 0);
 
       res.json({
         employee: { id: emp.id, name: emp.name, role: emp.role },

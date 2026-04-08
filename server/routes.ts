@@ -1,9 +1,7 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { randomBytes } from "crypto";
-import { storage } from "./storage";
-import { db } from "./db";
-import { eq, desc, asc, sql, and, gte, lte, like, or, ilike } from "drizzle-orm";
+import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -13,14 +11,7 @@ import {
   insertEmployeeDocumentSchema, insertWeaponSchema, insertWeaponAssignmentSchema,
   insertVehicleAssignmentSchema, insertGerenciadoraSchema,
   type InsertTelemetryEvent,
-  employees, serviceOrders,
-  employeeAbsences, employeeFines, employeeTimesheets, employeePayslips,
-  employeeDisciplinary, employeeOccurrences, vehicles, vehicleFueling,
-  auditLogs, users, loginSelfies, employeeSalaryDiscounts, systemAuditLogs,
-  companyDocuments, homologationLogs, missionUpdates, telemetryEvents,
-  referencePoints, insertReferencePointSchema,
-  missionPositions, missionPhotos,
-  agentLocationHistory, systemSettings,
+  insertReferencePointSchema,
 } from "@shared/schema";
 import * as apibrasil from "./apibrasil";
 import * as truckscontrol from "./truckscontrol";
@@ -79,20 +70,10 @@ async function ensureFinancialOriginColumns() {
     }
     ok = true;
     try { await supabaseAdmin.rpc("exec_sql", { query: "NOTIFY pgrst, 'reload schema'" }); } catch (_n) {}
-    try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
     console.log("[Financial] All columns ensured via Supabase RPC");
   } catch (rpcErr: any) {
-    console.log("[Financial] Supabase RPC failed, trying direct SQL:", rpcErr?.message);
-    try {
-      for (const q of migrations) {
-        await db.execute(sql.raw(q));
-      }
-      try { await db.execute(sql`NOTIFY pgrst, 'reload schema'`); } catch (_n) {}
-      ok = true;
-      console.log("[Financial] All columns ensured via direct SQL (fallback)");
-    } catch (dbErr: any) {
-      console.error("[Financial] CRITICAL: column migration failed:", dbErr?.message);
-    }
+    console.log("[Financial] Supabase RPC failed:", rpcErr?.message);
+    console.error("[Financial] CRITICAL: column migration failed");
   }
 
   if (!ok) {
@@ -294,17 +275,12 @@ const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 
 async function ensureSystemSettingsTable() {
   try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS system_settings (
-        id SERIAL PRIMARY KEY,
-        key TEXT NOT NULL UNIQUE,
-        value TEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, "report_template"));
-    if (existing.length === 0) {
-      await db.insert(systemSettings).values({ key: "report_template", value: DEFAULT_REPORT_TEMPLATE });
+    try {
+      await supabaseAdmin.rpc("exec_sql", { query: `CREATE TABLE IF NOT EXISTS system_settings (id SERIAL PRIMARY KEY, key TEXT NOT NULL UNIQUE, value TEXT NOT NULL, updated_at TIMESTAMP DEFAULT NOW())` });
+    } catch (_e) {}
+    const { data: existing } = await supabaseAdmin.from("system_settings").select("*").eq("key", "report_template");
+    if (!existing?.length) {
+      await supabaseAdmin.from("system_settings").insert({ key: "report_template", value: DEFAULT_REPORT_TEMPLATE });
     } else {
       let val = existing[0].value;
       let changed = false;
@@ -321,7 +297,7 @@ async function ensureSystemSettingsTable() {
         changed = true;
       }
       if (changed) {
-        await db.update(systemSettings).set({ value: val, updatedAt: new Date() }).where(eq(systemSettings.key, "report_template"));
+        await supabaseAdmin.from("system_settings").update({ value: val, updated_at: new Date().toISOString() }).eq("key", "report_template");
       }
     }
   } catch (e) {
@@ -442,8 +418,8 @@ async function ensureSystemSettingsTable() {
 
   app.get("/api/system-settings/:key", requireAuth, async (req, res) => {
     try {
-      const rows = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));
-      if (rows.length === 0) return res.status(404).json({ message: "Setting not found" });
+      const { data: rows } = await supabaseAdmin.from("system_settings").select("*").eq("key", req.params.key);
+      if (!rows?.length) return res.status(404).json({ message: "Setting not found" });
       res.json(rows[0]);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -454,16 +430,16 @@ async function ensureSystemSettingsTable() {
     try {
       const { value } = req.body;
       if (typeof value !== "string") return res.status(400).json({ message: "value must be a string" });
-      const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, req.params.key));
-      if (existing.length === 0) {
-        const result = await db.insert(systemSettings).values({ key: req.params.key, value }).returning();
-        return res.json(result[0]);
+      const { data: existing } = await supabaseAdmin.from("system_settings").select("*").eq("key", req.params.key);
+      if (!existing?.length) {
+        const { data: result } = await supabaseAdmin.from("system_settings").insert({ key: req.params.key, value }).select().single();
+        return res.json(result);
       }
-      const result = await db.update(systemSettings)
-        .set({ value, updatedAt: new Date() })
-        .where(eq(systemSettings.key, req.params.key))
-        .returning();
-      res.json(result[0]);
+      const { data: result } = await supabaseAdmin.from("system_settings")
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq("key", req.params.key)
+        .select().single();
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -544,21 +520,21 @@ async function ensureSystemSettingsTable() {
     const user = req.user!;
     const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
-    await db.update(users).set({
-      termsAcceptedAt: new Date(),
-      termsIpAddress: ipAddress,
-      termsUserAgent: userAgent,
-    }).where(eq(users.id, user.id));
+    await supabaseAdmin.from("users").update({
+      terms_accepted_at: new Date().toISOString(),
+      terms_ip_address: ipAddress,
+      terms_user_agent: userAgent,
+    }).eq("id", user.id);
 
-    await db.insert(auditLogs).values({
-      userId: user.id,
-      userName: user.name || "—",
-      userRole: user.role || "—",
+    await supabaseAdmin.from("audit_logs").insert({
+      user_id: user.id,
+      user_name: user.name || "—",
+      user_role: user.role || "—",
       action: "terms_accepted",
       page: "/auth",
       details: `Termo de uso aceito. IP: ${ipAddress}`,
-      ipAddress,
-      userAgent,
+      ip_address: ipAddress,
+      user_agent: userAgent,
     });
 
     res.json({ ok: true, termsAcceptedAt: new Date() });
@@ -580,26 +556,26 @@ async function ensureSystemSettingsTable() {
     const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
 
-    await db.insert(loginSelfies).values({
-      userId: user.id,
-      employeeId: user.employeeId,
-      userName: user.name || "—",
-      photoData,
+    await supabaseAdmin.from("login_selfies").insert({
+      user_id: user.id,
+      employee_id: user.employeeId,
+      user_name: user.name || "—",
+      photo_data: photoData,
       latitude: latitude || null,
       longitude: longitude || null,
-      ipAddress,
-      userAgent,
+      ip_address: ipAddress,
+      user_agent: userAgent,
     });
 
-    await db.insert(auditLogs).values({
-      userId: user.id,
-      userName: user.name || "—",
-      userRole: user.role || "—",
+    await supabaseAdmin.from("audit_logs").insert({
+      user_id: user.id,
+      user_name: user.name || "—",
+      user_role: user.role || "—",
       action: "login_selfie",
       page: "/login",
       details: `Selfie de login registrada. IP: ${ipAddress}`,
-      ipAddress,
-      userAgent,
+      ip_address: ipAddress,
+      user_agent: userAgent,
     });
 
     res.json({ ok: true });
@@ -610,17 +586,12 @@ async function ensureSystemSettingsTable() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const result = await db.select({ id: loginSelfies.id })
-      .from(loginSelfies)
-      .where(
-        and(
-          eq(loginSelfies.userId, user.id),
-          gte(loginSelfies.createdAt, today)
-        )
-      )
+    const { data: result } = await supabaseAdmin.from("login_selfies").select("id")
+      .eq("user_id", user.id)
+      .gte("created_at", today.toISOString())
       .limit(1);
 
-    res.json({ hasSelfieToday: result.length > 0 });
+    res.json({ hasSelfieToday: (result?.length || 0) > 0 });
   });
 
   app.get("/api/admin/login-selfies", requireAuth, async (req, res) => {
@@ -628,16 +599,10 @@ async function ensureSystemSettingsTable() {
     if (user.role !== "diretoria" && user.role !== "admin") {
       return res.status(403).json({ message: "Acesso restrito" });
     }
-    const selfies = await db.select({
-      id: loginSelfies.id,
-      userId: loginSelfies.userId,
-      employeeId: loginSelfies.employeeId,
-      userName: loginSelfies.userName,
-      latitude: loginSelfies.latitude,
-      longitude: loginSelfies.longitude,
-      createdAt: loginSelfies.createdAt,
-    }).from(loginSelfies).orderBy(sql`created_at DESC`).limit(100);
-    res.json(selfies);
+    const { data: selfies } = await supabaseAdmin.from("login_selfies")
+      .select("id, user_id, employee_id, user_name, latitude, longitude, created_at")
+      .order("created_at", { ascending: false }).limit(100);
+    res.json(toCamelArray(selfies || []));
   });
 
   app.get("/api/admin/login-selfie/:id", requireAuth, async (req, res) => {
@@ -646,9 +611,9 @@ async function ensureSystemSettingsTable() {
       return res.status(403).json({ message: "Acesso restrito" });
     }
     const id = parseInt(req.params.id);
-    const result = await db.select().from(loginSelfies).where(eq(loginSelfies.id, id)).limit(1);
-    if (!result.length) return res.status(404).json({ message: "Selfie não encontrada" });
-    res.json(result[0]);
+    const { data: result } = await supabaseAdmin.from("login_selfies").select("*").eq("id", id).limit(1);
+    if (!result?.length) return res.status(404).json({ message: "Selfie não encontrada" });
+    res.json(toCamelObj(result[0]));
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
@@ -1193,7 +1158,7 @@ Regras:
     };
     const loc = await storage.upsertAgentLocation(locData);
     try {
-      await db.insert(agentLocationHistory).values(locData);
+      await supabaseAdmin.from("agent_location_history").insert(toSnakeObj(locData));
     } catch (histErr: any) {
       console.error("[agent-location] Failed to log history:", histErr.message);
     }
@@ -1227,14 +1192,12 @@ Regras:
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: "Formato de data inválido (YYYY-MM-DD)" });
       const startOfDay = new Date(`${date}T00:00:00`);
       const endOfDay = new Date(`${date}T23:59:59`);
-      const history = await db.select().from(agentLocationHistory)
-        .where(and(
-          eq(agentLocationHistory.userId, userId),
-          gte(agentLocationHistory.createdAt, startOfDay),
-          lte(agentLocationHistory.createdAt, endOfDay),
-        ))
-        .orderBy(asc(agentLocationHistory.createdAt));
-      res.json(history);
+      const { data: history } = await supabaseAdmin.from("agent_location_history").select("*")
+        .eq("user_id", userId)
+        .gte("created_at", startOfDay.toISOString())
+        .lte("created_at", endOfDay.toISOString())
+        .order("created_at", { ascending: true });
+      res.json(toCamelArray(history || []));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -1242,15 +1205,10 @@ Regras:
 
   app.get("/api/company-documents", requireAuth, async (_req, res) => {
     try {
-      const docs = await db.select({
-        id: companyDocuments.id,
-        docType: companyDocuments.docType,
-        label: companyDocuments.label,
-        fileName: companyDocuments.fileName,
-        mimeType: companyDocuments.mimeType,
-        uploadedAt: companyDocuments.uploadedAt,
-      }).from(companyDocuments).orderBy(companyDocuments.docType);
-      res.json(docs);
+      const { data: docs } = await supabaseAdmin.from("company_documents")
+        .select("id, doc_type, label, file_name, mime_type, uploaded_at")
+        .order("doc_type", { ascending: true });
+      res.json(toCamelArray(docs || []));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -1258,11 +1216,11 @@ Regras:
     try {
       const { docType, label, fileName, fileData, mimeType } = req.body;
       if (!docType || !fileName || !fileData || !mimeType) return res.status(400).json({ message: "Campos obrigatórios ausentes" });
-      const existing = await db.select().from(companyDocuments).where(eq(companyDocuments.docType, docType));
-      if (existing.length > 0) {
-        await db.update(companyDocuments).set({ label, fileName, fileData, mimeType }).where(eq(companyDocuments.docType, docType));
+      const { data: existingDoc } = await supabaseAdmin.from("company_documents").select("id").eq("doc_type", docType);
+      if (existingDoc?.length) {
+        await supabaseAdmin.from("company_documents").update({ label, file_name: fileName, file_data: fileData, mime_type: mimeType }).eq("doc_type", docType);
       } else {
-        await db.insert(companyDocuments).values({ docType, label, fileName, fileData, mimeType });
+        await supabaseAdmin.from("company_documents").insert({ doc_type: docType, label, file_name: fileName, file_data: fileData, mime_type: mimeType });
       }
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -1270,17 +1228,17 @@ Regras:
 
   app.delete("/api/company-documents/:docType", requireAuth, requireDiretoria, async (req, res) => {
     try {
-      await db.delete(companyDocuments).where(eq(companyDocuments.docType, req.params.docType));
+      await supabaseAdmin.from("company_documents").delete().eq("doc_type", req.params.docType);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.get("/api/homologation-logs/:clientId", requireAuth, async (req, res) => {
     try {
-      const logs = await db.select().from(homologationLogs)
-        .where(eq(homologationLogs.clientId, Number(req.params.clientId)))
-        .orderBy(desc(homologationLogs.sentAt));
-      res.json(logs);
+      const { data: logs } = await supabaseAdmin.from("homologation_logs")
+        .select("*").eq("client_id", Number(req.params.clientId))
+        .order("sent_at", { ascending: false });
+      res.json(toCamelArray(logs || []));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -1340,21 +1298,19 @@ Regras:
       }
 
       const docs = documentTypes && documentTypes.length > 0
-        ? await db.select().from(companyDocuments).where(
-            sql`${companyDocuments.docType} IN (${sql.join(documentTypes.map((d: string) => sql`${d}`), sql`, `)})`
-          )
+        ? (await supabaseAdmin.from("company_documents").select("*").in("doc_type", documentTypes)).data || []
         : [];
 
       const attachments: { filename: string; content: Buffer; contentType: string }[] = [];
       const docLabels: string[] = [];
 
       for (const doc of docs) {
-        const base64Match = doc.fileData.match(/^data:[^;]+;base64,(.+)$/);
-        const base64Data = base64Match ? base64Match[1] : doc.fileData;
+        const base64Match = doc.file_data.match(/^data:[^;]+;base64,(.+)$/);
+        const base64Data = base64Match ? base64Match[1] : doc.file_data;
         attachments.push({
-          filename: doc.fileName,
+          filename: doc.file_name,
           content: Buffer.from(base64Data, "base64"),
-          contentType: doc.mimeType,
+          contentType: doc.mime_type,
         });
         docLabels.push(doc.label);
       }
@@ -1405,13 +1361,13 @@ Regras:
         attachments,
       });
 
-      await db.insert(homologationLogs).values({
-        clientId,
-        clientName: clientName || null,
-        recipientEmail,
-        recipientName: recipientName || null,
-        documentsSent: docLabels,
-        sentBy: sentBy || null,
+      await supabaseAdmin.from("homologation_logs").insert({
+        client_id: clientId,
+        client_name: clientName || null,
+        recipient_email: recipientEmail,
+        recipient_name: recipientName || null,
+        documents_sent: docLabels,
+        sent_by: sentBy || null,
         status: "enviado",
       });
 

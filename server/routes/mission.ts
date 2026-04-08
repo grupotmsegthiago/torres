@@ -1,10 +1,8 @@
 import type { Express } from "express";
-  import { storage } from "../storage";
-  import { db } from "../db";
+  import { storage, toCamelObj, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
-  import { insertGerenciadoraSchema, missionUpdates, telemetryEvents, missionPositions } from "@shared/schema";
-  import { eq, desc, sql } from "drizzle-orm";
+  import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
   import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString } from "./_helpers";
@@ -509,17 +507,17 @@ import type { Express } from "express";
     const emp = await storage.getEmployee(user.employeeId);
 
     try {
-      await db.insert(missionUpdates).values({
-        serviceOrderId,
-        osNumber: so.osNumber || null,
-        employeeId: user.employeeId,
-        employeeName: emp?.name || user.name || "—",
+      await supabaseAdmin.from("mission_updates").insert({
+        service_order_id: serviceOrderId,
+        os_number: so.osNumber || null,
+        employee_id: user.employeeId,
+        employee_name: emp?.name || user.name || "—",
         message: message.trim(),
-        missionStep: missionStep || so.missionStatus || null,
+        mission_step: missionStep || so.missionStatus || null,
         latitude: latitude || null,
         longitude: longitude || null,
-        photoUrl: validatedPhotoUrl,
-        readByAdmin: 0,
+        photo_url: validatedPhotoUrl,
+        read_by_admin: 0,
       });
       console.log(`[mission-update] Atualização salva: agente=${emp?.name || user.name} OS=${so.osNumber} msg="${message.trim().substring(0, 50)}"`);
       res.json({ success: true });
@@ -532,11 +530,11 @@ import type { Express } from "express";
   app.get("/api/service-orders/:id/updates", requireAuth, async (req, res) => {
     const osId = parseInt(req.params.id);
     if (isNaN(osId)) return res.status(400).json({ message: "ID inválido" });
-    const results = await db.select().from(missionUpdates)
-      .where(eq(missionUpdates.serviceOrderId, osId))
-      .orderBy(desc(missionUpdates.createdAt))
+    const { data: results } = await supabaseAdmin.from("mission_updates").select("*")
+      .eq("service_order_id", osId)
+      .order("created_at", { ascending: false })
       .limit(5);
-    res.json(results);
+    res.json(toCamelArray(results || []));
   });
 
   app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
@@ -547,9 +545,11 @@ import type { Express } from "express";
 
     let missionResults: any[];
     if (unreadOnly) {
-      missionResults = await db.select().from(missionUpdates).where(eq(missionUpdates.readByAdmin, 0)).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+      const { data } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
+      missionResults = toCamelArray(data || []);
     } else {
-      missionResults = await db.select().from(missionUpdates).orderBy(desc(missionUpdates.createdAt)).limit(limit);
+      const { data } = await supabaseAdmin.from("mission_updates").select("*").order("created_at", { ascending: false }).limit(limit);
+      missionResults = toCamelArray(data || []);
     }
 
     const stripBase64 = (m: any) => {
@@ -560,7 +560,8 @@ import type { Express } from "express";
     };
 
     if (!unreadOnly) {
-      const telEvents = await db.select().from(telemetryEvents).orderBy(desc(telemetryEvents.createdAt)).limit(limit);
+      const { data: telEventsRaw } = await supabaseAdmin.from("telemetry_events").select("*").order("created_at", { ascending: false }).limit(limit);
+      const telEvents = toCamelArray(telEventsRaw || []);
       const telAsMission = telEvents.map(t => ({
         id: `tel-${t.id}`,
         serviceOrderId: null,
@@ -593,19 +594,19 @@ import type { Express } from "express";
   app.get("/api/mission/updates/:id/photo", requireAuth, requireAdminRole, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
-    const [row] = await db.select({ photoUrl: missionUpdates.photoUrl }).from(missionUpdates).where(eq(missionUpdates.id, id)).limit(1);
-    if (!row) return res.status(404).json({ message: "Atualização não encontrada" });
-    res.json({ photoUrl: row.photoUrl });
+    const { data: rows } = await supabaseAdmin.from("mission_updates").select("photo_url").eq("id", id).limit(1);
+    if (!rows || rows.length === 0) return res.status(404).json({ message: "Atualização não encontrada" });
+    res.json({ photoUrl: rows[0].photo_url });
   });
 
   app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {
     const { ids } = req.body;
     if (ids && Array.isArray(ids)) {
       for (const id of ids) {
-        await db.update(missionUpdates).set({ readByAdmin: 1 }).where(eq(missionUpdates.id, id));
+        await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("id", id);
       }
     } else {
-      await db.update(missionUpdates).set({ readByAdmin: 1 }).where(eq(missionUpdates.readByAdmin, 0));
+      await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
     }
     res.json({ success: true });
   });
@@ -615,7 +616,7 @@ import type { Express } from "express";
       const updateId = Number(req.params.id);
       const userName = req.user?.name || req.user?.email || "Admin";
 
-      await db.update(missionUpdates).set({ copiadoPor: userName, copiadoEm: sql`NOW()` }).where(eq(missionUpdates.id, updateId));
+      await supabaseAdmin.from("mission_updates").update({ copiado_por: userName, copiado_em: nowBRTString() }).eq("id", updateId);
       res.json({ success: true });
     } catch (err: any) {
       console.error("copy-audit error:", err);
@@ -629,8 +630,9 @@ import type { Express } from "express";
       const { recipientEmail, customMessage } = req.body;
       if (!recipientEmail) return res.status(400).json({ message: "Email do destinatário é obrigatório" });
 
-      const [update] = await db.select().from(missionUpdates).where(eq(missionUpdates.id, updateId)).limit(1);
-      if (!update) return res.status(404).json({ message: "Atualização não encontrada" });
+      const { data: updateRows } = await supabaseAdmin.from("mission_updates").select("*").eq("id", updateId).limit(1);
+      if (!updateRows || updateRows.length === 0) return res.status(404).json({ message: "Atualização não encontrada" });
+      const update = toCamelObj<any>(updateRows[0]);
 
       const os = await storage.getServiceOrder(update.serviceOrderId);
       if (!os) return res.status(404).json({ message: "OS não encontrada" });
@@ -874,17 +876,17 @@ import type { Express } from "express";
       ? `📷 Foto: ${stepLabel} — KM ${Number(kmValue).toLocaleString("pt-BR")}`
       : `📷 Foto: ${stepLabel}`;
     try {
-      await db.insert(missionUpdates).values({
-        serviceOrderId,
-        osNumber: so.osNumber || null,
-        employeeId: user.employeeId,
-        employeeName: emp?.name || user.name || "—",
+      await supabaseAdmin.from("mission_updates").insert({
+        service_order_id: serviceOrderId,
+        os_number: so.osNumber || null,
+        employee_id: user.employeeId,
+        employee_name: emp?.name || user.name || "—",
         message: alertMsg,
-        missionStep: so.missionStatus || null,
+        mission_step: so.missionStatus || null,
         latitude: latitude || null,
         longitude: longitude || null,
-        photoUrl: photoData,
-        readByAdmin: 0,
+        photo_url: photoData,
+        read_by_admin: 0,
       });
       console.log(`[mission-photo] Alert created for OS #${so.osNumber} step=${step}`);
     } catch (alertErr: any) {
@@ -1046,7 +1048,7 @@ import type { Express } from "express";
       updates.stepLogs = [...existingLogs, cancelEntry];
 
       lastMissionPos.delete(serviceOrderId);
-      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
+      try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       try {
         await removeAutoTransaction("service_order", String(serviceOrderId));
@@ -1225,7 +1227,7 @@ import type { Express } from "express";
       updates.stepLogs = [...existingLogs, finishEntry];
 
       lastMissionPos.delete(serviceOrderId);
-      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
+      try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
 
       const updated = await storage.updateServiceOrder(serviceOrderId, updates);
 
@@ -1364,13 +1366,13 @@ import type { Express } from "express";
       updates.completedDate = nowBRTString();
       updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
-      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
+      try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
 
     if (nextStep === "encerrada") {
       if (updates.status !== "concluida") updates.status = "concluida";
       lastMissionPos.delete(serviceOrderId);
-      try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
+      try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
     }
 
     const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
@@ -1398,17 +1400,17 @@ import type { Express } from "express";
     };
     try {
       const stepToLabel = STEP_ALERT_LABELS[nextStep] || nextStep;
-      await db.insert(missionUpdates).values({
-        serviceOrderId,
-        osNumber: so.osNumber || null,
-        employeeId: user.employeeId,
-        employeeName: emp?.fullName || emp?.name || user.name || "—",
+      await supabaseAdmin.from("mission_updates").insert({
+        service_order_id: serviceOrderId,
+        os_number: so.osNumber || null,
+        employee_id: user.employeeId,
+        employee_name: emp?.fullName || emp?.name || user.name || "—",
         message: `🔄 ${stepToLabel}`,
-        missionStep: nextStep,
+        mission_step: nextStep,
         latitude: geo?.lat?.toString() || null,
         longitude: geo?.lng?.toString() || null,
-        photoUrl: null,
-        readByAdmin: 0,
+        photo_url: null,
+        read_by_admin: 0,
       });
       console.log(`[mission-advance] Alert created: ${currentStep} → ${nextStep} OS #${so.osNumber}`);
     } catch (alertErr: any) {
@@ -1740,7 +1742,7 @@ import type { Express } from "express";
         if (nextStep === "encerrada") {
           updates.status = "concluida";
           lastMissionPos.delete(serviceOrderId);
-          try { await db.delete(missionPositions).where(eq(missionPositions.serviceOrderId, serviceOrderId)); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
+          try { await supabaseAdmin.from("mission_positions").delete().eq("service_order_id", serviceOrderId); } catch (_e) { console.error("[cleanup] Failed to delete mission_positions for OS", serviceOrderId); }
         }
 
         const existingLogs = Array.isArray(so.stepLogs) ? so.stepLogs : [];
