@@ -50,6 +50,7 @@ import MobilePontoOperacionalPage from "@/pages/mobile/ponto-operacional";
 import PontoOperacionalPage from "@/pages/admin/ponto-operacional";
 import HoleritesPage from "@/pages/admin/holerites";
 import CalculadoraJornadaPage from "@/pages/admin/calculadora-jornada";
+import LaudoPage from "@/pages/admin/laudo";
 import JornadaDiretoriaPage from "@/pages/admin/jornada-diretoria";
 import ChatPage from "@/pages/admin/chat";
 import MobileChatPage from "@/pages/mobile/chat";
@@ -164,6 +165,7 @@ function Router() {
       <Route path="/admin/tracker">{() => <ProtectedRoute component={TrackerPage} />}</Route>
       <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
       <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
+      <Route path="/admin/laudo/:osId">{() => <ProtectedRoute component={LaudoPage} />}</Route>
       <Route path="/admin/telemetria">{() => <ProtectedRoute component={TelemetryPage} />}</Route>
       <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
       <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>

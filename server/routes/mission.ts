@@ -2191,6 +2191,165 @@ import type { Express } from "express";
     }
   });
 
+  app.get("/api/laudo/:osId", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      if (!osId) return res.status(400).json({ message: "ID inválido" });
+
+      const so = await storage.getServiceOrder(osId);
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      const client = so.clientId ? await storage.getClient(so.clientId) : null;
+
+      const emp1 = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
+      const emp2 = (so as any).assignedEmployee2Id ? await storage.getEmployee((so as any).assignedEmployee2Id) : null;
+
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+
+      const { data: photos } = await supabaseAdmin
+        .from("mission_photos")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+
+      const { data: updates } = await supabaseAdmin
+        .from("mission_updates")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+
+      const { data: positions } = await supabaseAdmin
+        .from("mission_positions")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("recorded_at", { ascending: true });
+
+      const { data: costs } = await supabaseAdmin
+        .from("mission_costs")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+
+      const { data: acceptance } = await supabaseAdmin
+        .from("mission_acceptances")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const { data: billing } = await supabaseAdmin
+        .from("escort_billings")
+        .select("*")
+        .eq("service_order_id", osId)
+        .limit(1);
+
+      const kmSaida = (photos || []).find((p: any) => p.step === "km_saida");
+      const kmChegada = [...(photos || [])].reverse().find((p: any) => p.step === "km_chegada");
+      const kmFinal = (photos || []).find((p: any) => p.step === "km_final");
+      const kmRodados = kmSaida?.km_value && kmFinal?.km_value
+        ? Number(kmFinal.km_value) - Number(kmSaida.km_value)
+        : null;
+
+      const totalCustos = (costs || []).reduce((sum: number, c: any) => sum + (Number(c.value) || 0), 0);
+
+      const cronologia = (updates || []).map((u: any) => ({
+        horario: u.created_at,
+        tipo: u.type,
+        descricao: u.description,
+        local: u.location || null,
+        fotoUrl: u.photo_url || null,
+      }));
+
+      const evidencias = (photos || []).map((p: any) => ({
+        id: p.id,
+        step: p.step,
+        fotoUrl: p.photo_data,
+        km: p.km_value,
+        notas: p.notes,
+        horario: p.created_at,
+      }));
+
+      const laudo = {
+        geradoEm: new Date().toISOString(),
+        os: {
+          id: so.id,
+          numero: so.osNumber,
+          tipo: so.type,
+          status: so.status,
+          prioridade: so.priority,
+          descricao: so.description,
+          rota: (so as any).route || null,
+          dataAgendada: so.scheduledDate,
+          dataConclusao: so.completedDate,
+          missionStartedAt: (so as any).missionStartedAt,
+          statusMissao: (so as any).missionStatus,
+          escortedDriverName: (so as any).escortedDriverName,
+          escortedVehiclePlate: (so as any).escortedVehiclePlate,
+          origin: (so as any).origin,
+          destination: (so as any).destination,
+          notas: so.notes,
+        },
+        cliente: client ? {
+          id: client.id,
+          nome: client.name,
+          cnpj: (client as any).cnpj || null,
+          contato: client.contactPerson,
+          telefone: client.phone,
+          email: client.email,
+        } : null,
+        equipe: {
+          agente1: emp1 ? { id: emp1.id, nome: emp1.name, matricula: (emp1 as any).matricula, cargo: emp1.role, telefone: emp1.phone } : null,
+          agente2: emp2 ? { id: emp2.id, nome: emp2.name, matricula: (emp2 as any).matricula, cargo: emp2.role, telefone: emp2.phone } : null,
+        },
+        viatura: vehicle ? {
+          id: vehicle.id,
+          placa: vehicle.plate,
+          modelo: vehicle.model,
+          marca: vehicle.brand,
+          cor: (vehicle as any).color,
+          km: vehicle.km,
+        } : null,
+        km: {
+          saida: kmSaida?.km_value || null,
+          chegada: kmChegada?.km_value || null,
+          final: kmFinal?.km_value || null,
+          rodados: kmRodados,
+        },
+        cronologia,
+        evidencias,
+        posicoes: (positions || []).map((p: any) => ({
+          lat: p.latitude,
+          lng: p.longitude,
+          horario: p.recorded_at,
+          step: p.step,
+        })),
+        custos: {
+          itens: (costs || []).map((c: any) => ({
+            tipo: c.cost_type,
+            descricao: c.description,
+            valor: Number(c.value),
+          })),
+          total: totalCustos,
+        },
+        faturamento: billing?.[0] ? {
+          status: billing[0].status,
+          valorTotal: Number(billing[0].total_value || 0),
+          valorEscolta: Number(billing[0].escort_value || 0),
+        } : null,
+        aceites: (acceptance || []).map((a: any) => ({
+          agenteId: a.employee_id,
+          status: a.status,
+          respondidoEm: a.responded_at,
+          motivo: a.rejection_reason,
+        })),
+      };
+
+      res.json(laudo);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 
   }
   

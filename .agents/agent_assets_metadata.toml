@@ -54,3 +54,9 @@ id = "saC_Cb_Zqk566CH0qRY_o"
 uri = "file://LOG_MIGRACAO_CONCLUIDA.md"
 type = "text"
 title = "Log de Migração Concluída - Torres"
+
+[[outputs]]
+id = "NUTMeavRw-xG1yCwWa7zU"
+uri = "file://LOG_LAUDO_VARIAVEIS.md"
+type = "text"
+title = "Log de Variáveis Mapeadas - Laudo"
