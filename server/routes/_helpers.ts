@@ -1,5 +1,39 @@
 import { supabaseAdmin } from "../supabase";
 import nodemailer from "nodemailer";
+import { localQuery, localQuerySingle } from "../pg-fallback";
+
+export async function resilientSupabaseSelect(
+  table: string,
+  buildQuery: (from: ReturnType<typeof supabaseAdmin.from>) => any,
+): Promise<any[]> {
+  try {
+    const { data, error } = await buildQuery(supabaseAdmin.from(table));
+    if (error) throw error;
+    return data || [];
+  } catch (err: any) {
+    console.warn(`[resilient-route] ${table} fallback: ${err.message || err}`);
+    return localQuery(table);
+  }
+}
+
+export async function resilientSupabaseSingle(
+  table: string,
+  column: string,
+  value: any,
+  buildQuery?: (from: ReturnType<typeof supabaseAdmin.from>) => any,
+): Promise<any | null> {
+  try {
+    const query = buildQuery
+      ? buildQuery(supabaseAdmin.from(table))
+      : supabaseAdmin.from(table).select("*").eq(column, value).single();
+    const { data, error } = await query;
+    if (error && error.code !== "PGRST116") throw error;
+    return data || null;
+  } catch (err: any) {
+    console.warn(`[resilient-route] ${table}.${column}=${value} fallback: ${err.message || err}`);
+    return localQuerySingle(table, column, value);
+  }
+}
 
 export function nowBRTString(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "");

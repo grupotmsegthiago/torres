@@ -20,6 +20,7 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
+import { isSupabaseHealthy, syncAllTables, testLocalDb } from "./pg-fallback";
 import OpenAI from "openai";
 import {
   parseEmailList, createSmtpTransporter, getSmtpFrom,
@@ -323,7 +324,19 @@ async function ensureSystemSettingsTable() {
   app: Express
 ): Promise<Server> {
 
-    app.get("/api/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
+    app.get("/api/health", async (_req, res) => {
+      const localDb = await testLocalDb();
+      res.json({
+        ok: true,
+        ts: Date.now(),
+        supabase: isSupabaseHealthy() ? "online" : "offline",
+        localDb: localDb ? "online" : "offline",
+        mode: isSupabaseHealthy() ? "primary" : "fallback",
+      });
+    });
+
+    syncAllTables(supabaseAdmin).catch(() => {});
+    setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 60_000);
 
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {

@@ -26,6 +26,45 @@ import {
   type MissionCost, type InsertMissionCost,
   type ClientForward, type InsertClientForward,
 } from "@shared/schema";
+import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables } from "./pg-fallback";
+
+async function resilientList<T>(
+  table: string,
+  supaFn: () => Promise<{ data: any[] | null; error: any }>,
+  orderCol?: string,
+  orderAsc?: boolean,
+  filters?: { column: string; op: string; value: any }[],
+): Promise<T[]> {
+  try {
+    const { data, error } = await supaFn();
+    if (error) throw error;
+    return toCamelArray<T>(data || []);
+  } catch (err: any) {
+    console.warn(`[resilient] ${table} list fallback: ${err.message || err}`);
+    const local = await localQuery(
+      table,
+      filters,
+      orderCol ? { column: orderCol, ascending: orderAsc } : undefined,
+    );
+    return local.map((r) => toCamelObj<T>(r));
+  }
+}
+
+async function resilientGet<T>(
+  table: string,
+  filters: { column: string; op: string; value: any }[],
+  supaFn: () => Promise<{ data: any | null; error: any }>,
+): Promise<T | undefined> {
+  try {
+    const { data, error } = await supaFn();
+    if (error && error.code !== "PGRST116") throw error;
+    return data ? toCamelObj<T>(data) : undefined;
+  } catch (err: any) {
+    console.warn(`[resilient] ${table} get fallback: ${err.message || err}`);
+    const rows = await localQuery(table, filters, undefined, 1);
+    return rows.length > 0 ? toCamelObj<T>(rows[0]) : undefined;
+  }
+}
 
 function camelToSnake(str: string): string {
   return str
@@ -191,23 +230,23 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
-    const { data } = await supabaseAdmin.from("users").select("*").eq("id", id).single();
-    return data ? toCamelObj<User>(data) : undefined;
+    return resilientGet<User>("users", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("users").select("*").eq("id", id).single());
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const { data } = await supabaseAdmin.from("users").select("*").ilike("email", email).single();
-    return data ? toCamelObj<User>(data) : undefined;
+    return resilientGet<User>("users", [{ column: "email", op: "ilike", value: email.toLowerCase() }], () =>
+      supabaseAdmin.from("users").select("*").ilike("email", email).single());
   }
 
   async getUserBySupabaseUid(uid: string): Promise<User | undefined> {
-    const { data } = await supabaseAdmin.from("users").select("*").eq("supabase_uid", uid).single();
-    return data ? toCamelObj<User>(data) : undefined;
+    return resilientGet<User>("users", [{ column: "supabase_uid", op: "eq", value: uid }], () =>
+      supabaseAdmin.from("users").select("*").eq("supabase_uid", uid).single());
   }
 
   async getUsers(): Promise<User[]> {
-    const { data } = await supabaseAdmin.from("users").select("*").order("id");
-    return toCamelArray<User>(data || []);
+    return resilientList<User>("users", () =>
+      supabaseAdmin.from("users").select("*").order("id"), "id", true);
   }
 
   async createUser(user: InsertUser): Promise<User> {
@@ -248,23 +287,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPerfilAcesso(role: string): Promise<PerfilAcesso | undefined> {
-    const { data } = await supabaseAdmin.from("perfis_acesso").select("*").eq("role", role).single();
-    return data ? toCamelObj<PerfilAcesso>(data) : undefined;
+    return resilientGet<PerfilAcesso>("perfis_acesso", [{ column: "role", op: "eq", value: role }], () =>
+      supabaseAdmin.from("perfis_acesso").select("*").eq("role", role).single());
   }
 
   async getAllPerfis(): Promise<PerfilAcesso[]> {
-    const { data } = await supabaseAdmin.from("perfis_acesso").select("*");
-    return toCamelArray<PerfilAcesso>(data || []);
+    return resilientList<PerfilAcesso>("perfis_acesso", () =>
+      supabaseAdmin.from("perfis_acesso").select("*"));
   }
 
   async getClients(): Promise<Client[]> {
-    const { data } = await supabaseAdmin.from("clients").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Client>(data || []);
+    return resilientList<Client>("clients", () =>
+      supabaseAdmin.from("clients").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getClient(id: number): Promise<Client | undefined> {
-    const { data } = await supabaseAdmin.from("clients").select("*").eq("id", id).single();
-    return data ? toCamelObj<Client>(data) : undefined;
+    return resilientGet<Client>("clients", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("clients").select("*").eq("id", id).single());
   }
 
   async createClient(client: InsertClient): Promise<Client> {
@@ -284,18 +323,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClientVehicles(clientId: number): Promise<ClientVehicle[]> {
-    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).order("created_at", { ascending: false });
-    return toCamelArray<ClientVehicle>(data || []);
+    return resilientList<ClientVehicle>("client_vehicles", () =>
+      supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "client_id", op: "eq", value: clientId }]);
   }
 
   async getClientVehicle(id: number): Promise<ClientVehicle | undefined> {
-    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("id", id).single();
-    return data ? toCamelObj<ClientVehicle>(data) : undefined;
+    return resilientGet<ClientVehicle>("client_vehicles", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("client_vehicles").select("*").eq("id", id).single());
   }
 
   async getClientVehicleByPlate(clientId: number, plate: string): Promise<ClientVehicle | undefined> {
-    const { data } = await supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).ilike("plate", plate).single();
-    return data ? toCamelObj<ClientVehicle>(data) : undefined;
+    return resilientGet<ClientVehicle>("client_vehicles", [{ column: "client_id", op: "eq", value: clientId }, { column: "plate", op: "ilike", value: plate }], () =>
+      supabaseAdmin.from("client_vehicles").select("*").eq("client_id", clientId).ilike("plate", plate).single());
   }
 
   async createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle> {
@@ -315,13 +355,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployees(): Promise<Employee[]> {
-    const { data } = await supabaseAdmin.from("employees").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Employee>(data || []);
+    return resilientList<Employee>("employees", () =>
+      supabaseAdmin.from("employees").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const { data } = await supabaseAdmin.from("employees").select("*").eq("id", id).single();
-    return data ? toCamelObj<Employee>(data) : undefined;
+    return resilientGet<Employee>("employees", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("employees").select("*").eq("id", id).single());
   }
 
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
@@ -341,13 +381,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVehicles(): Promise<Vehicle[]> {
-    const { data } = await supabaseAdmin.from("vehicles").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Vehicle>(data || []);
+    return resilientList<Vehicle>("vehicles", () =>
+      supabaseAdmin.from("vehicles").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getVehicle(id: number): Promise<Vehicle | undefined> {
-    const { data } = await supabaseAdmin.from("vehicles").select("*").eq("id", id).single();
-    return data ? toCamelObj<Vehicle>(data) : undefined;
+    return resilientGet<Vehicle>("vehicles", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("vehicles").select("*").eq("id", id).single());
   }
 
   async createVehicle(vehicle: InsertVehicle): Promise<Vehicle> {
@@ -367,13 +407,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getServiceOrders(): Promise<ServiceOrder[]> {
-    const { data } = await supabaseAdmin.from("service_orders").select("*").order("created_at", { ascending: false });
-    return toCamelArray<ServiceOrder>(data || []);
+    return resilientList<ServiceOrder>("service_orders", () =>
+      supabaseAdmin.from("service_orders").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getServiceOrder(id: number): Promise<ServiceOrder | undefined> {
-    const { data } = await supabaseAdmin.from("service_orders").select("*").eq("id", id).single();
-    return data ? toCamelObj<ServiceOrder>(data) : undefined;
+    return resilientGet<ServiceOrder>("service_orders", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("service_orders").select("*").eq("id", id).single());
   }
 
   async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
@@ -393,13 +433,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTrips(): Promise<Trip[]> {
-    const { data } = await supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Trip>(data || []);
+    return resilientList<Trip>("trips", () =>
+      supabaseAdmin.from("trips").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getTrip(id: number): Promise<Trip | undefined> {
-    const { data } = await supabaseAdmin.from("trips").select("*").eq("id", id).single();
-    return data ? toCamelObj<Trip>(data) : undefined;
+    return resilientGet<Trip>("trips", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("trips").select("*").eq("id", id).single());
   }
 
   async createTrip(trip: InsertTrip): Promise<Trip> {
@@ -419,13 +459,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVehicleMaintenances(): Promise<VehicleMaintenance[]> {
-    const { data } = await supabaseAdmin.from("vehicle_maintenance").select("*").order("created_at", { ascending: false });
-    return toCamelArray<VehicleMaintenance>(data || []);
+    return resilientList<VehicleMaintenance>("vehicle_maintenance", () =>
+      supabaseAdmin.from("vehicle_maintenance").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getVehicleMaintenance(id: number): Promise<VehicleMaintenance | undefined> {
-    const { data } = await supabaseAdmin.from("vehicle_maintenance").select("*").eq("id", id).single();
-    return data ? toCamelObj<VehicleMaintenance>(data) : undefined;
+    return resilientGet<VehicleMaintenance>("vehicle_maintenance", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("vehicle_maintenance").select("*").eq("id", id).single());
   }
 
   async createVehicleMaintenance(m: InsertVehicleMaintenance): Promise<VehicleMaintenance> {
@@ -445,13 +485,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVehicleFuelings(): Promise<VehicleFueling[]> {
-    const { data } = await supabaseAdmin.from("vehicle_fueling").select("*").order("created_at", { ascending: false });
-    return toCamelArray<VehicleFueling>(data || []);
+    return resilientList<VehicleFueling>("vehicle_fueling", () =>
+      supabaseAdmin.from("vehicle_fueling").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getVehicleFueling(id: number): Promise<VehicleFueling | undefined> {
-    const { data } = await supabaseAdmin.from("vehicle_fueling").select("*").eq("id", id).single();
-    return data ? toCamelObj<VehicleFueling>(data) : undefined;
+    return resilientGet<VehicleFueling>("vehicle_fueling", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("vehicle_fueling").select("*").eq("id", id).single());
   }
 
   async createVehicleFueling(f: InsertVehicleFueling): Promise<VehicleFueling> {
@@ -471,13 +511,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTimesheets(): Promise<Timesheet[]> {
-    const { data } = await supabaseAdmin.from("timesheets").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Timesheet>(data || []);
+    return resilientList<Timesheet>("timesheets", () =>
+      supabaseAdmin.from("timesheets").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getTimesheet(id: number): Promise<Timesheet | undefined> {
-    const { data } = await supabaseAdmin.from("timesheets").select("*").eq("id", id).single();
-    return data ? toCamelObj<Timesheet>(data) : undefined;
+    return resilientGet<Timesheet>("timesheets", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("timesheets").select("*").eq("id", id).single());
   }
 
   async createTimesheet(t: InsertTimesheet): Promise<Timesheet> {
@@ -497,13 +537,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]> {
-    const { data } = await supabaseAdmin.from("mission_photos").select("*").eq("service_order_id", serviceOrderId).order("created_at");
-    return toCamelArray<MissionPhoto>(data || []);
+    return resilientList<MissionPhoto>("mission_photos", () =>
+      supabaseAdmin.from("mission_photos").select("*").eq("service_order_id", serviceOrderId).order("created_at"), "created_at", true,
+      [{ column: "service_order_id", op: "eq", value: serviceOrderId }]);
   }
 
   async getMissionPhoto(id: number): Promise<MissionPhoto | undefined> {
-    const { data } = await supabaseAdmin.from("mission_photos").select("*").eq("id", id).single();
-    return data ? toCamelObj<MissionPhoto>(data) : undefined;
+    return resilientGet<MissionPhoto>("mission_photos", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("mission_photos").select("*").eq("id", id).single());
   }
 
   async createMissionPhoto(photo: InsertMissionPhoto): Promise<MissionPhoto> {
@@ -513,8 +554,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getServiceOrdersByEmployee(employeeId: number): Promise<ServiceOrder[]> {
-    const { data } = await supabaseAdmin.from("service_orders").select("*").or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`).order("created_at", { ascending: false });
-    return toCamelArray<ServiceOrder>(data || []);
+    try {
+      const { data, error } = await supabaseAdmin.from("service_orders").select("*").or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`).order("created_at", { ascending: false });
+      if (error) throw error;
+      return toCamelArray<ServiceOrder>(data || []);
+    } catch (err: any) {
+      console.warn(`[resilient] service_orders by employee fallback: ${err.message || err}`);
+      const all = await localQuery("service_orders", undefined, { column: "created_at", ascending: false });
+      return all
+        .filter((r: any) => Number(r.assigned_employee_id) === employeeId || Number(r.assigned_employee_2_id) === employeeId)
+        .map((r) => toCamelObj<ServiceOrder>(r));
+    }
   }
 
   async createApiLog(logEntry: InsertApiLog): Promise<ApiLog> {
@@ -524,13 +574,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRecentApiLogs(limit = 100): Promise<ApiLog[]> {
-    const { data } = await supabaseAdmin.from("api_logs").select("*").order("created_at", { ascending: false }).limit(limit);
-    return toCamelArray<ApiLog>(data || []);
+    return resilientList<ApiLog>("api_logs", () =>
+      supabaseAdmin.from("api_logs").select("*").order("created_at", { ascending: false }).limit(limit), "created_at", false);
   }
 
   async getEmployeeSalaries(employeeId: number): Promise<EmployeeSalary[]> {
-    const { data } = await supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", employeeId).order("effective_date", { ascending: false });
-    return toCamelArray<EmployeeSalary>(data || []);
+    return resilientList<EmployeeSalary>("employee_salaries", () =>
+      supabaseAdmin.from("employee_salaries").select("*").eq("employee_id", employeeId).order("effective_date", { ascending: false }), "effective_date", false,
+      [{ column: "employee_id", op: "eq", value: employeeId }]);
   }
 
   async createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary> {
@@ -550,8 +601,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployeeDocuments(employeeId: number): Promise<EmployeeDocument[]> {
-    const { data } = await supabaseAdmin.from("employee_documents").select("*").eq("employee_id", employeeId).order("created_at", { ascending: false });
-    return toCamelArray<EmployeeDocument>(data || []);
+    return resilientList<EmployeeDocument>("employee_documents", () =>
+      supabaseAdmin.from("employee_documents").select("*").eq("employee_id", employeeId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "employee_id", op: "eq", value: employeeId }]);
   }
 
   async createEmployeeDocument(doc: InsertEmployeeDocument): Promise<EmployeeDocument> {
@@ -571,13 +623,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWeapons(): Promise<Weapon[]> {
-    const { data } = await supabaseAdmin.from("weapons").select("*").order("created_at", { ascending: false });
-    return toCamelArray<Weapon>(data || []);
+    return resilientList<Weapon>("weapons", () =>
+      supabaseAdmin.from("weapons").select("*").order("created_at", { ascending: false }), "created_at", false);
   }
 
   async getWeapon(id: number): Promise<Weapon | undefined> {
-    const { data } = await supabaseAdmin.from("weapons").select("*").eq("id", id).single();
-    return data ? toCamelObj<Weapon>(data) : undefined;
+    return resilientGet<Weapon>("weapons", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("weapons").select("*").eq("id", id).single());
   }
 
   async createWeapon(weapon: InsertWeapon): Promise<Weapon> {
@@ -597,8 +649,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWeaponAssignments(weaponId: number): Promise<WeaponAssignment[]> {
-    const { data } = await supabaseAdmin.from("weapon_assignments").select("*").eq("weapon_id", weaponId).order("created_at", { ascending: false });
-    return toCamelArray<WeaponAssignment>(data || []);
+    return resilientList<WeaponAssignment>("weapon_assignments", () =>
+      supabaseAdmin.from("weapon_assignments").select("*").eq("weapon_id", weaponId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "weapon_id", op: "eq", value: weaponId }]);
   }
 
   async createWeaponAssignment(a: InsertWeaponAssignment): Promise<WeaponAssignment> {
@@ -608,8 +661,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]> {
-    const { data } = await supabaseAdmin.from("vehicle_assignments").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
-    return toCamelArray<VehicleAssignment>(data || []);
+    return resilientList<VehicleAssignment>("vehicle_assignments", () =>
+      supabaseAdmin.from("vehicle_assignments").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "vehicle_id", op: "eq", value: vehicleId }]);
   }
 
   async createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment> {
@@ -619,13 +673,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGerenciadoras(): Promise<Gerenciadora[]> {
-    const { data } = await supabaseAdmin.from("gerenciadoras").select("*").order("name");
-    return toCamelArray<Gerenciadora>(data || []);
+    return resilientList<Gerenciadora>("gerenciadoras", () =>
+      supabaseAdmin.from("gerenciadoras").select("*").order("name"), "name", true);
   }
 
   async getGerenciadora(id: number): Promise<Gerenciadora | undefined> {
-    const { data } = await supabaseAdmin.from("gerenciadoras").select("*").eq("id", id).single();
-    return data ? toCamelObj<Gerenciadora>(data) : undefined;
+    return resilientGet<Gerenciadora>("gerenciadoras", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("gerenciadoras").select("*").eq("id", id).single());
   }
 
   async createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora> {
@@ -645,13 +699,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWeaponKits(): Promise<WeaponKit[]> {
-    const { data } = await supabaseAdmin.from("weapon_kits").select("*").order("name");
-    return toCamelArray<WeaponKit>(data || []);
+    return resilientList<WeaponKit>("weapon_kits", () =>
+      supabaseAdmin.from("weapon_kits").select("*").order("name"), "name", true);
   }
 
   async getWeaponKit(id: number): Promise<WeaponKit | undefined> {
-    const { data } = await supabaseAdmin.from("weapon_kits").select("*").eq("id", id).single();
-    return data ? toCamelObj<WeaponKit>(data) : undefined;
+    return resilientGet<WeaponKit>("weapon_kits", [{ column: "id", op: "eq", value: id }], () =>
+      supabaseAdmin.from("weapon_kits").select("*").eq("id", id).single());
   }
 
   async createWeaponKit(kit: InsertWeaponKit): Promise<WeaponKit> {
@@ -672,8 +726,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWeaponKitItems(kitId: number): Promise<WeaponKitItem[]> {
-    const { data } = await supabaseAdmin.from("weapon_kit_items").select("*").eq("kit_id", kitId);
-    return toCamelArray<WeaponKitItem>(data || []);
+    return resilientList<WeaponKitItem>("weapon_kit_items", () =>
+      supabaseAdmin.from("weapon_kit_items").select("*").eq("kit_id", kitId), undefined, undefined,
+      [{ column: "kit_id", op: "eq", value: kitId }]);
   }
 
   async createWeaponKitItem(item: InsertWeaponKitItem): Promise<WeaponKitItem> {
@@ -697,15 +752,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {
-    let query = supabaseAdmin.from("telemetry_events").select("*");
-    if (filters?.eventType) query = query.eq("event_type", filters.eventType);
-    if (filters?.plate) query = query.eq("plate", filters.plate);
-    if (filters?.from) query = query.gte("created_at", filters.from.toISOString());
-    if (filters?.to) query = query.lte("created_at", filters.to.toISOString());
-    query = query.order("created_at", { ascending: false });
-    if (filters?.limit) query = query.limit(filters.limit);
-    const { data } = await query;
-    return toCamelArray<TelemetryEvent>(data || []);
+    try {
+      let query = supabaseAdmin.from("telemetry_events").select("*");
+      if (filters?.eventType) query = query.eq("event_type", filters.eventType);
+      if (filters?.plate) query = query.eq("plate", filters.plate);
+      if (filters?.from) query = query.gte("created_at", filters.from.toISOString());
+      if (filters?.to) query = query.lte("created_at", filters.to.toISOString());
+      query = query.order("created_at", { ascending: false });
+      if (filters?.limit) query = query.limit(filters.limit);
+      const { data, error } = await query;
+      if (error) throw error;
+      return toCamelArray<TelemetryEvent>(data || []);
+    } catch (err: any) {
+      console.warn(`[resilient] telemetry_events fallback: ${err.message || err}`);
+      const localFilters: Array<{ column: string; op: string; value: any }> = [];
+      if (filters?.eventType) localFilters.push({ column: "event_type", op: "eq", value: filters.eventType });
+      if (filters?.plate) localFilters.push({ column: "plate", op: "eq", value: filters.plate });
+      if (filters?.from) localFilters.push({ column: "created_at", op: "gte", value: filters.from.toISOString() });
+      if (filters?.to) localFilters.push({ column: "created_at", op: "lte", value: filters.to.toISOString() });
+      const local = await localQuery("telemetry_events", localFilters.length > 0 ? localFilters : undefined, { column: "created_at", ascending: false }, filters?.limit);
+      return local.map((r) => toCamelObj<TelemetryEvent>(r));
+    }
   }
 
   async getLastAlertByPlates(plates: string[]): Promise<Map<string, TelemetryEvent>> {
@@ -736,13 +803,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgentLocations(): Promise<AgentLocation[]> {
-    const { data } = await supabaseAdmin.from("agent_locations").select("*").order("updated_at", { ascending: false });
-    return toCamelArray<AgentLocation>(data || []);
+    return resilientList<AgentLocation>("agent_locations", () =>
+      supabaseAdmin.from("agent_locations").select("*").order("updated_at", { ascending: false }), "updated_at", false);
   }
 
   async getMissionCostsByOS(serviceOrderId: number): Promise<MissionCost[]> {
-    const { data } = await supabaseAdmin.from("mission_costs").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false });
-    return toCamelArray<MissionCost>(data || []);
+    return resilientList<MissionCost>("mission_costs", () =>
+      supabaseAdmin.from("mission_costs").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "service_order_id", op: "eq", value: serviceOrderId }]);
   }
 
   async createMissionCost(cost: InsertMissionCost): Promise<MissionCost> {
@@ -756,8 +824,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]> {
-    const { data } = await supabaseAdmin.from("client_forwards").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false });
-    return toCamelArray<ClientForward>(data || []);
+    return resilientList<ClientForward>("client_forwards", () =>
+      supabaseAdmin.from("client_forwards").select("*").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }), "created_at", false,
+      [{ column: "service_order_id", op: "eq", value: serviceOrderId }]);
   }
 
   async createClientForward(forward: InsertClientForward): Promise<ClientForward> {

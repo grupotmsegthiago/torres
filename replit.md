@@ -23,11 +23,17 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 ### Regras de Dados e Acesso
 
-- **⛔ PROIBIDO USAR PostgreSQL DIRETO (Drizzle/db.*).** É TERMINANTEMENTE PROIBIDO usar `db.*` (Drizzle ORM), `db.execute()`, `db.select()`, `db.insert()`, `db.update()`, `db.delete()` ou qualquer acesso direto ao PostgreSQL para operações CRUD. TODO acesso a dados DEVE usar exclusivamente a Supabase REST API (`supabaseAdmin.from(...)`). A ÚNICA exceção é `db-init.ts` para migrações DDL (ALTER TABLE, CREATE TABLE, CREATE INDEX) que a REST API não suporta.
+- **⛔ PROIBIDO USAR PostgreSQL DIRETO (Drizzle/db.*).** É TERMINANTEMENTE PROIBIDO usar `db.*` (Drizzle ORM), `db.execute()`, `db.select()`, `db.insert()`, `db.update()`, `db.delete()` ou qualquer acesso direto ao PostgreSQL para operações CRUD. TODO acesso a dados DEVE usar exclusivamente a Supabase REST API (`supabaseAdmin.from(...)`). A ÚNICA exceção é `db-init.ts` para migrações DDL (ALTER TABLE, CREATE TABLE, CREATE INDEX) que a REST API não suporta. A OUTRA exceção é `server/pg-fallback.ts` que usa PostgreSQL local (DATABASE_URL) como cache/fallback para leitura quando o Supabase REST API está indisponível.
 - **Data Access Paths (REGRA ATUAL):**
-    1. `storage.*` (em `server/storage.ts`) — usa Supabase REST API (`supabaseAdmin`) com conversão automática snake_case↔camelCase.
-    2. `supabaseAdmin.from(...)` — chamadas REST API diretas em CRON, routes e operações específicas. Retorna snake_case.
+    1. `storage.*` (em `server/storage.ts`) — usa Supabase REST API (`supabaseAdmin`) com conversão automática snake_case↔camelCase. **Inclui fallback resiliente para PostgreSQL local** quando Supabase falha.
+    2. `supabaseAdmin.from(...)` — chamadas REST API diretas em CRON, routes e operações específicas. Retorna snake_case. Helpers `resilientSupabaseSelect`/`resilientSupabaseSingle` em `_helpers.ts` fornecem fallback.
     3. ❌ `db.*` (Drizzle ORM) — **PROIBIDO para CRUD**. Só permitido em `db-init.ts` para DDL de schema.
+- **Resiliência de Banco (pg-fallback):** O sistema implementa fallback automático para um PostgreSQL local (DATABASE_URL) quando o Supabase REST API está indisponível. Componentes:
+    1. `server/supabase.ts` — Retry automático (3 tentativas, backoff exponencial 500ms→2s) + timeout 8s por tentativa + health tracking.
+    2. `server/pg-fallback.ts` — Pool de conexão ao PostgreSQL local, sincronização periódica de 38 tabelas (a cada 60s quando online), fallback de leitura.
+    3. `server/storage.ts` — Todos os métodos GET usam `resilientList`/`resilientGet` que tentam Supabase primeiro, salvam no cache local em caso de sucesso, e fazem fallback para o PostgreSQL local em caso de falha.
+    4. `GET /api/health` — Retorna `supabase: "online"/"offline"`, `localDb: "online"/"offline"`, `mode: "primary"/"fallback"`.
+    5. Escritas (INSERT/UPDATE/DELETE) continuam dependendo do Supabase — quando offline, escritas falham com erro HTTP 500.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.
