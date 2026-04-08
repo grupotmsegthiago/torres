@@ -778,6 +778,20 @@ export function registerAsaasRoutes(app: Express) {
 
   app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
     try {
+      const webhookToken = req.headers["asaas-access-token"] as string | undefined;
+      const asaasApiKey = process.env.ASAAS_API_KEY;
+
+      if (asaasApiKey && webhookToken !== asaasApiKey) {
+        console.warn(`[asaas] Webhook REJEITADO: token inválido de IP ${(req as any).ip}`);
+        await logSystemAudit({
+          userId: null, userName: "SISTEMA", userRole: "system",
+          action: "ASAAS_WEBHOOK_REJEITADO", targetId: "N/A", targetType: "security",
+          details: `Webhook rejeitado por token inválido. IP: ${(req as any).ip}. Headers recebidos: ${Object.keys(req.headers).join(", ")}`,
+          ipAddress: (req as any).ip,
+        });
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
       const { event, payment } = req.body;
       console.log(`[asaas] Webhook received: ${event}`);
 
