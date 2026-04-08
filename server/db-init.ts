@@ -714,12 +714,13 @@ export async function ensureDbSchema() {
 }
 
 const REALTIME_TABLES = [
-  "service_orders", "mission_costs", "mission_updates", "mission_acceptance",
+  "service_orders", "mission_costs", "mission_updates", "mission_acceptances",
   "clients", "employees", "vehicles", "vehicle_fueling",
   "financial_transactions", "escort_billings", "billing_alerts",
   "chat_conversations", "chat_messages", "chat_presence",
   "invoices", "users", "ponto_registros", "timesheets", "holerites",
   "audit_logs", "weapon_kits", "employee_documents", "system_settings",
+  "mission_positions", "agent_locations",
 ];
 
 async function ensureRealtimePublication() {

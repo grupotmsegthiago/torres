@@ -128,9 +128,12 @@ export const GLOBAL_QUERY_KEYS = {
   ponto: ["/api/ponto-operacional"],
   timesheets: ["/api/employees"],
   holerites: ["/api/holerites"],
+  missionActive: ["/api/mission/active"],
+  missionScheduled: ["/api/mission/scheduled"],
+  agentLocations: ["/api/agent/locations"],
 };
 
-type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update" | "client" | "invoice" | "hr" | "jornada-diretoria";
+type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update" | "client" | "invoice" | "hr" | "jornada-diretoria" | "position-tracking" | "mission-acceptance";
 
 const _channel: BroadcastChannel | null = typeof BroadcastChannel !== "undefined"
   ? new BroadcastChannel("torres-sync")
@@ -263,6 +266,18 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     queryClient.invalidateQueries({ queryKey: ["/api/jornada-calculos"] });
     inv(keys.holerites);
   }
+  if (scope === "position-tracking") {
+    inv(keys.vehicleTracking);
+    inv(keys.agentLocations);
+    inv(keys.operationalGrid);
+    inv(keys.missionActive);
+  }
+  if (scope === "mission-acceptance") {
+    inv(keys.missionActive);
+    inv(keys.missionScheduled);
+    inv(keys.operationalGrid);
+    inv(keys.serviceOrders);
+  }
 }
 
 export function invalidateRelatedQueries(scope: InvalidationScope) {
@@ -368,6 +383,21 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mission_positions" }, () => {
+        _invalidateLocal("position-tracking");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "agent_locations" }, () => {
+        _invalidateLocal("position-tracking");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "mission_acceptances" }, () => {
+        _invalidateLocal("mission-acceptance");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "weapon_kits" }, () => {
+        _invalidateLocal("service-order");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "system_settings" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/system-settings"] });
       });
   }
 
