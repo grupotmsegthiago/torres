@@ -1,4 +1,43 @@
 import pg from "pg";
+import nodemailer from "nodemailer";
+
+const ALERT_EMAIL = "thiago@grupotmseg.com.br";
+const COOLDOWN_MS = 10 * 60 * 1000;
+let lastDownAlertAt = 0;
+let lastUpAlertAt = 0;
+let downSince: Date | null = null;
+
+function getMailTransporter() {
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host, port, secure: port === 465,
+    requireTLS: port === 587,
+    auth: { user, pass },
+    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+  });
+}
+
+function sendHealthAlert(subject: string, html: string) {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.warn("[pg-fallback] SMTP não configurado — alerta de saúde não enviado");
+    return;
+  }
+  const from = `"Torres Vigilância - Sistema" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
+  transporter.sendMail({ from, to: ALERT_EMAIL, subject, html }).then(() => {
+    console.log(`[pg-fallback] Alerta enviado para ${ALERT_EMAIL}: ${subject}`);
+  }).catch((err: any) => {
+    console.error(`[pg-fallback] Falha ao enviar alerta: ${err.message}`);
+  });
+}
+
+function formatBRT(d: Date): string {
+  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
 
 const CORE_TABLES = [
   "users", "employees", "vehicles", "clients", "service_orders",
@@ -39,10 +78,53 @@ export function isSupabaseHealthy(): boolean {
 }
 
 export function setSupabaseHealth(healthy: boolean): void {
+  const now = Date.now();
   if (supabaseHealthy && !healthy) {
     console.warn("[pg-fallback] Supabase marked UNHEALTHY — fallback mode ON");
+    downSince = new Date();
+    if (now - lastDownAlertAt > COOLDOWN_MS) {
+      lastDownAlertAt = now;
+      sendHealthAlert(
+        "⚠️ ALERTA: Sistema em modo FALLBACK — Supabase OFFLINE",
+        `<div style="font-family:Arial,sans-serif;max-width:600px">
+          <h2 style="color:#dc2626">⚠️ Supabase Fora do Ar</h2>
+          <p>O banco de dados principal (Supabase) ficou <strong>inacessível</strong> às <strong>${formatBRT(downSince)}</strong>.</p>
+          <p>O sistema ativou automaticamente o <strong>modo fallback</strong> usando o banco local PostgreSQL. Os usuários continuam com acesso de leitura, mas gravações podem falhar enquanto o Supabase estiver fora.</p>
+          <table style="border-collapse:collapse;margin:16px 0">
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Status</td><td style="padding:4px 12px;border:1px solid #ddd;color:#dc2626">OFFLINE</td></tr>
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Modo</td><td style="padding:4px 12px;border:1px solid #ddd">Fallback (PostgreSQL local)</td></tr>
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Detectado em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px">Torres Vigilância Patrimonial — Monitoramento Automático</p>
+        </div>`
+      );
+    }
   } else if (!supabaseHealthy && healthy) {
     console.log("[pg-fallback] Supabase recovered — primary mode ON");
+    const downDuration = downSince ? Math.round((now - downSince.getTime()) / 1000) : 0;
+    const mins = Math.floor(downDuration / 60);
+    const secs = downDuration % 60;
+    const durationText = mins > 0 ? `${mins}min ${secs}s` : `${secs}s`;
+    if (now - lastUpAlertAt > COOLDOWN_MS) {
+      lastUpAlertAt = now;
+      sendHealthAlert(
+        "✅ RECUPERADO: Supabase voltou ao ar",
+        `<div style="font-family:Arial,sans-serif;max-width:600px">
+          <h2 style="color:#16a34a">✅ Supabase Recuperado</h2>
+          <p>O banco de dados principal voltou ao normal às <strong>${formatBRT(new Date())}</strong>.</p>
+          <p>O sistema retornou ao <strong>modo primário</strong> (Supabase).</p>
+          <table style="border-collapse:collapse;margin:16px 0">
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Status</td><td style="padding:4px 12px;border:1px solid #ddd;color:#16a34a">ONLINE</td></tr>
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Modo</td><td style="padding:4px 12px;border:1px solid #ddd">Primário (Supabase)</td></tr>
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Tempo fora</td><td style="padding:4px 12px;border:1px solid #ddd">${durationText}</td></tr>
+            ${downSince ? `<tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Caiu em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>` : ""}
+            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Voltou em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(new Date())}</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px">Torres Vigilância Patrimonial — Monitoramento Automático</p>
+        </div>`
+      );
+    }
+    downSince = null;
   }
   supabaseHealthy = healthy;
 }

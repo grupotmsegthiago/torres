@@ -33,6 +33,7 @@ I prefer clear and direct communication. When making changes, prioritize iterati
     2. `server/pg-fallback.ts` — Pool de conexão ao PostgreSQL local, sincronização periódica de 38 tabelas (a cada 60s quando online), fallback de leitura.
     3. `server/storage.ts` — Todos os métodos GET usam `resilientList`/`resilientGet` que tentam Supabase primeiro, salvam no cache local em caso de sucesso, e fazem fallback para o PostgreSQL local em caso de falha.
     4. `GET /api/health` — Retorna `supabase: "online"/"offline"`, `localDb: "online"/"offline"`, `mode: "primary"/"fallback"`.
+    5. **Alertas por E-mail:** `pg-fallback.ts` envia e-mail automático para `thiago@grupotmseg.com.br` quando Supabase cai (alerta vermelho) e quando volta (alerta verde com tempo de indisponibilidade). Cooldown de 10 minutos entre alertas do mesmo tipo para evitar spam.
     5. Escritas (INSERT/UPDATE/DELETE) continuam dependendo do Supabase — quando offline, escritas falham com erro HTTP 500.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
