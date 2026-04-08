@@ -664,7 +664,7 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await execSql(`
-      ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS margem_pct NUMERIC(10,2) DEFAULT 0
+      ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS margem_percentual NUMERIC(10,2) DEFAULT 0
     `).catch(() => {});
 
     await execSql(`

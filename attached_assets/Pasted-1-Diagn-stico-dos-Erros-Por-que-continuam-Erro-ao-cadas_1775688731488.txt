@@ -1,0 +1,35 @@
+1. Diagnóstico dos Erros (Por que continuam?)
+Erro ao cadastrar Usuário: Provavelmente há uma tentativa de inserir um supabase_uid nulo ou um campo obrigatório (como role ou perfil_acesso) que não está sendo enviado corretamente pelo frontend após a refatoração dos chunks.
+
+Erro ao editar OS: Com as novas travas de faturamento que colocamos, pode haver um conflito onde o sistema tenta atualizar uma OS antiga que não tem todos os campos novos (como os de custos alocados) ou uma falha de validação no Drizzle.
+
+2. Comando Cirúrgico para o Replit Agent (MODO MAX)
+Copie e cole este comando. Ele exige que o Agent seja um detetive antes de tentar consertar:
+
+"Agent, entre em MODO MAX. Temos dois erros críticos de persistência: Cadastro de Usuário e Edição de OS. Execute exatamente estes passos e descarte o que já estiver funcionando:
+
+Debug de Payload (Logs): Adicione um console.log exaustivo nas rotas POST /api/users e PATCH /api/service-orders/:id para imprimir o objeto exato que está chegando do frontend.
+
+Investigação de Constraint: Verifique no console do servidor se o erro retornado pelo Supabase é 23502 (not-null violation) ou 23503 (foreign key violation).
+
+Correção de Usuário: Verifique se o campo perfil_acesso ou status tem um valor padrão definido. Se o frontend não enviar, o banco pode estar rejeitando.
+
+Correção de OS: Na edição de OS, garanta que o objeto de atualização não contenha campos undefined. O Drizzle às vezes tenta atualizar colunas com undefined, o que o Postgres rejeita. Use um partial update limpo.
+
+Histórico: Apresente o erro exato que você encontrou nos logs e como ele foi neutralizado."
+
+3. Como você pode ajudar no teste
+Para me dar mais munição, tente fazer o seguinte:
+
+Abra o Console do Navegador (F12).
+
+Tente cadastrar o usuário.
+
+Veja se aparece uma mensagem em vermelho. Se aparecer algo como null value in column "role" violates not-null constraint, já sabemos o culpado.
+
+4. Resumo da Estratégia
+Simples: Ajustes de texto/UI.
+
+Médio: Regras de negócio.
+
+Complexo: Erros de banco/persistência (Onde estamos agora).

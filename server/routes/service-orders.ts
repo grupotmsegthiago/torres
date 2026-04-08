@@ -17,7 +17,7 @@ import type { Express } from "express";
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
-    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,scheduled_time,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escort_contract_id,fuel_allocated,created_by_user_id,route_distance_km";
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escort_contract_id,fuel_allocated,created_by_user_id,route_distance_km";
 
     let data: any[];
     try {
@@ -1185,7 +1185,14 @@ import type { Express } from "express";
       } catch (_e) {}
     }
 
-    const data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
+    let data;
+    try {
+      data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
+    } catch (updateErr: any) {
+      console.error(`[so-update] Erro ao salvar OS #${req.params.id}:`, updateErr.message);
+      console.error(`[so-update] Payload enviado:`, JSON.stringify(parsed.data, null, 2).substring(0, 2000));
+      return res.status(500).json({ message: "Erro ao salvar OS: " + updateErr.message });
+    }
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
 
     const newAssignedIds: number[] = [];

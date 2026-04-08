@@ -857,6 +857,7 @@ ${empNames}`
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
+    console.log(`[users] POST /api/users payload:`, JSON.stringify(req.body, null, 2));
     const { email, name, role, employeeId } = req.body;
     if (!email || !name) {
       return res.status(400).json({ message: "Campos obrigatórios: email, name" });

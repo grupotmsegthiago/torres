@@ -1215,7 +1215,7 @@ import type { Express } from "express";
               despesas_pedagio: pedagio, receitas_os: recOs,
               resultado_bruto: resultado.faturamento?.resultado_bruto || 0,
               resultado_liquido: resultado.faturamento?.resultado_liquido || 0,
-              margem_pct: resultado.faturamento?.margem_pct || 0,
+              margem_percentual: resultado.faturamento?.margem_pct || 0,
             });
             if (hInicio) updateData.horario_inicio = hInicio;
             if (hFim) updateData.horario_fim = hFim;
