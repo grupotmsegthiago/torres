@@ -62,8 +62,29 @@ const MobileChatPage = lazy(() => import("@/pages/mobile/chat"));
 
 function LazyFallback() {
   return (
-    <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
-      <div className="text-neutral-400">Carregando...</div>
+    <div className="min-h-screen bg-neutral-100 flex">
+      <div className="hidden lg:block w-64 bg-neutral-900 shrink-0" />
+      <div className="flex-1 p-6 lg:p-8 space-y-6 animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className="h-8 w-48 bg-neutral-200 rounded-lg" />
+          <div className="h-8 w-32 bg-neutral-200 rounded-lg ml-auto" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="h-24 bg-white rounded-xl border border-neutral-200" />
+          <div className="h-24 bg-white rounded-xl border border-neutral-200" />
+          <div className="h-24 bg-white rounded-xl border border-neutral-200" />
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 p-4 space-y-3">
+          {[1,2,3,4,5].map(i => (
+            <div key={i} className="flex items-center gap-4">
+              <div className="h-4 w-16 bg-neutral-100 rounded" />
+              <div className="h-4 flex-1 bg-neutral-100 rounded" />
+              <div className="h-4 w-24 bg-neutral-100 rounded" />
+              <div className="h-4 w-20 bg-neutral-100 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

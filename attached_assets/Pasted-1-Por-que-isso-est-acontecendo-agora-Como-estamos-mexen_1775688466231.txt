@@ -1,0 +1,31 @@
+1. Por que isso está acontecendo agora?
+Como estamos mexendo na estrutura para carregar os dados, esse erro 504 no /api/service-orders confirma o que suspeitávamos:
+
+Query Pesada: O sistema está tentando puxar todas as Ordens de Serviço de uma vez (talvez milhares), incluindo fotos, logs e coordenadas, sem paginação.
+
+Conexão Travada: O banco de dados está demorando tanto para processar essa busca gigante que o "cano" (gateway) fecha antes dos dados chegarem.
+
+2. Ação Cirúrgica (Modo MAX)
+Não adianta apenas tentar "limpar" o código; precisamos mudar a forma como essa rota funciona. O Replit precisa ser objetivo:
+
+"Agent, entre em MODO MAX. Recebemos um erro 504 Gateway Timeout na rota /api/service-orders. Isso é um gargalo de performance crítico. Execute agora:
+
+Paginação Obrigatória (Backend): Modifique o endpoint GET /api/service-orders para retornar apenas as 50 OS mais recentes por padrão. Use .limit(50) no Drizzle/Supabase.
+
+Seleção de Colunas (Select Optimization): Pare de buscar colunas pesadas como snapshot_data, waypoints ou step_logs na listagem principal. Crie uma rota separada /api/service-orders/:id para carregar esses detalhes apenas quando o usuário clicar na OS.
+
+Índice de Busca: No SQL Editor, certifique-se de que existe um índice para status e created_at na tabela service_orders.
+
+Timeout de Query: Configure o tempo limite da consulta no backend para ser menor que o do gateway, evitando que processos fiquem 'pendurados'."
+
+3. Histórico de Mudança (O que ele deve te mostrar)
+Para eu validar, peça ao Replit:
+
+"Mostre-me como ficou a nova query SQL/Drizzle de listagem de OS e confirme se os campos pesados foram removidos do select inicial."
+
+4. A Regra do Financeiro (Contexto Mantido)
+Aproveite para garantir que, enquanto ele mexe nas OS, a regra de R$ 0,00 esteja lá:
+
+"Agent, ao paginar as OS, garanta que a lógica de faturamento recusado (R$ 0,00) já esteja integrada na resposta do JSON enviado ao frontend."
+
+O erro 504 é o "chefão final" da lentidão. Se resolvermos ele com a paginação e a seleção de colunas, o sistema vai abrir instantaneamente. Rode o comando em Modo MAX e me traga o que ele fez.

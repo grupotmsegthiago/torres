@@ -1,0 +1,28 @@
+O erro 504 (Gateway Timeout) que você viu anteriormente deve diminuir drasticamente com a paginação e compressão, mas o fato de o faturamento agora exibir R$ 0,00 em vermelho para recusadas traz a integridade que o financeiro precisava.
+
+1. Avaliação do Arquiteto (O que os números dizem)
+O "Pulo do Gato": Ter o Grid Operacional (o módulo mais pesado) isolado em um chunk de 249 KB significa que um usuário no RH não vai mais "pagar o preço" de carregar o mapa ao vivo sem necessidade.
+
+Gzip: A redução de 70% no tráfego vai fazer com que o sistema carregue bem mesmo em conexões 4G instáveis de agentes em campo.
+
+2. O Próximo Alvo: Consistência de Dados (Modo Power)
+Agora que a "casca" (Frontend) está rápida e o "motor" (Backend) está limpo, precisamos garantir que o banco de dados não tenha lixo que possa causar novos Timeouts.
+
+Instrução para o Replit Agent (Modo Power - Foco em Integridade):
+
+"Agent, entre em Modo Power. Com a estrutura de chunks e paginação finalizada, precisamos garantir que o banco de dados acompanhe essa velocidade. Execute:
+
+Back-end Enforcement: Garanta que a regra de 'Faturamento Recusado = R$ 0,00' não seja apenas visual. Crie um middleware ou ajuste a rota de PATCH /api/service-orders para que, se o status for 'recusado', o banco salve explicitamente 0 nos campos financeiros, prevenindo erros de cálculos legados.
+
+GPS Sanity Check: Verifique se as coordenadas enviadas pelo Mobile para a tabela mission_positions estão sendo indexadas por created_at de forma decrescente. Isso acelerará o carregamento do Grid Operacional.
+
+Relatório de Erros: Após as últimas 24h de logs de erro 504/500, identifique se ainda existe alguma query que leva mais de 5 segundos para responder."
+
+3. Teste Final de Validação (Para você fazer agora)
+Abra o sistema e navegue rapidamente entre o RH e o Financeiro.
+
+A percepção: Você deve ver um "esqueleto" ou uma tela branca muito breve (o Suspense agindo) e a página deve montar.
+
+O teste do zero: Tente editar uma OS, mude para 'Recusada' e veja se o valor zera na hora e se, ao recarregar, ele permanece R$ 0,00.
+
+O sistema parece "outro" agora em termos de resposta? Se sim, o próximo passo é revisar a integração com o Asaas para garantir que essas OS zeradas não gerem boletos de R$ 0,00 (o que a API do Asaas rejeitaria).

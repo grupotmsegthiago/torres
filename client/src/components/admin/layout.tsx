@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, memo, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import {
   LayoutDashboard, Users, Car, FileText, Route, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
@@ -18,6 +19,7 @@ type MenuItem = {
   iconColor?: string;
   adminOnly?: boolean;
   children?: MenuItem[];
+  prefetchKey?: string;
 };
 
 type MenuSection = {
@@ -26,6 +28,18 @@ type MenuSection = {
   iconColor: string;
   items: MenuItem[];
   adminOnly?: boolean;
+};
+
+const PREFETCH_MAP: Record<string, string[]> = {
+  "/admin/dashboard": ["/api/service-orders?limit=10"],
+  "/admin/clients": ["/api/clients"],
+  "/admin/service-orders": ["/api/service-orders?limit=50"],
+  "/admin/employees": ["/api/employees?limit=50"],
+  "/admin/vehicles": ["/api/vehicles"],
+  "/admin/financeiro": ["/api/financial-transactions"],
+  "/admin/operational-grid": ["/api/service-orders?limit=50"],
+  "/admin/fueling": ["/api/fueling"],
+  "/admin/boletim-medicao": ["/api/boletim-medicao/os-concluidas"],
 };
 
 const menuSections: MenuSection[] = [
@@ -118,7 +132,15 @@ const rootItems: MenuItem[] = [
   { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];
 
-function SystemStatusBadge({ compact = false }: { compact?: boolean }) {
+function prefetchRoute(path: string) {
+  const keys = PREFETCH_MAP[path];
+  if (!keys) return;
+  for (const key of keys) {
+    queryClient.prefetchQuery({ queryKey: [key], staleTime: 30000 });
+  }
+}
+
+const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: { compact?: boolean }) {
   const { data: health } = useQuery<{ supabase: string; localDb: string; mode: string }>({
     queryKey: ["/api/health"],
     queryFn: async () => {
@@ -185,12 +207,133 @@ function SystemStatusBadge({ compact = false }: { compact?: boolean }) {
       </div>
     </div>
   );
-}
+});
+
+const SidebarNav = memo(function SidebarNav({ location, isAdmin, unreadCount }: { location: string; isAdmin: boolean; unreadCount: number }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true });
+
+  const toggleGroup = useCallback((label: string) => {
+    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  }, []);
+
+  const toggleSection = useCallback((title: string) => {
+    setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
+  }, []);
+
+  const filterItem = useCallback((item: MenuItem): boolean => {
+    if (item.adminOnly) return isAdmin;
+    return true;
+  }, [isAdmin]);
+
+  return (
+    <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
+      {rootItems.filter(filterItem).map((item) => (
+        <Link key={item.path} href={item.path!}>
+          <span
+            onMouseEnter={() => item.path && prefetchRoute(item.path)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm cursor-pointer transition-colors ${
+              location === item.path
+                ? "bg-white/10 text-white"
+                : "text-white/60 hover:text-white hover:bg-white/5"
+            }`}
+            data-testid={`link-${item.path!.split("/").pop()}`}
+          >
+            <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
+            {item.label}
+            {item.label === "Chat" && unreadCount > 0 && (
+              <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-1" data-testid="badge-chat-unread">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
+        </Link>
+      ))}
+
+      {menuSections.filter(s => !s.adminOnly || isAdmin).map((section) => {
+        const isSectionOpen = openSections[section.title] ?? true;
+        return (
+          <div key={section.title}>
+            <div className="h-px bg-white/10 my-3" />
+            <button
+              onClick={() => toggleSection(section.title)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 mb-1"
+              data-testid={`section-${section.title.toLowerCase().replace(/\s/g, '-')}`}
+            >
+              <section.icon className={`w-3.5 h-3.5 ${section.iconColor}`} />
+              <span className={`text-[10px] font-bold tracking-widest ${section.iconColor}`}>{section.title}</span>
+              {isSectionOpen ? <ChevronDown className="w-3 h-3 text-white/30 ml-auto" /> : <ChevronRight className="w-3 h-3 text-white/30 ml-auto" />}
+            </button>
+            {isSectionOpen && (
+              <div className="space-y-0.5">
+                {section.items.filter(filterItem).map((item, ii) => {
+                  if (item.children) {
+                    const isOpen = openGroups[item.label] ?? false;
+                    const isChildActive = item.children.some(c => location === c.path);
+                    return (
+                      <div key={ii}>
+                        <button
+                          onClick={() => toggleGroup(item.label)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                            isChildActive ? "text-white bg-white/5" : "text-white/60 hover:text-white hover:bg-white/5"
+                          }`}
+                          data-testid={`button-menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}
+                        >
+                          <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
+                          <span className="flex-1 text-left">{item.label}</span>
+                          {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </button>
+                        {isOpen && (
+                          <div className="ml-4 space-y-0.5 mt-0.5">
+                            {item.children.filter(filterItem).map((child) => (
+                              <Link key={child.path} href={child.path!}>
+                                <span
+                                  onMouseEnter={() => child.path && prefetchRoute(child.path)}
+                                  className={`flex items-center gap-3 px-3 py-1.5 rounded-md text-sm cursor-pointer transition-colors ${
+                                    location === child.path
+                                      ? "bg-white/10 text-white"
+                                      : "text-white/40 hover:text-white hover:bg-white/5"
+                                  }`}
+                                  data-testid={`link-${child.path!.split("/").pop()}`}
+                                >
+                                  <child.icon className={`w-3.5 h-3.5 ${child.iconColor || ""}`} />
+                                  {child.label}
+                                </span>
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <Link key={item.path} href={item.path!}>
+                      <span
+                        onMouseEnter={() => item.path && prefetchRoute(item.path)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm cursor-pointer transition-colors ${
+                          location === item.path
+                            ? "bg-white/10 text-white"
+                            : "text-white/60 hover:text-white hover:bg-white/5"
+                        }`}
+                        data-testid={`link-${item.path!.split("/").pop()}`}
+                      >
+                        <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
+                        {item.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+});
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true });
   const { user, logout } = useAuth();
   const [location] = useLocation();
 
@@ -201,19 +344,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const unreadCount = chatUnread?.total || 0;
   const isAdmin = user?.role === "admin" || user?.role === "diretoria";
   const isDiretoria = user?.role === "diretoria";
-
-  const toggleGroup = (label: string) => {
-    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
-  };
-
-  const toggleSection = (title: string) => {
-    setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
-  };
-
-  const filterItem = (item: MenuItem): boolean => {
-    if (item.adminOnly) return isAdmin;
-    return true;
-  };
 
   return (
     <div className="min-h-screen bg-neutral-100 flex" data-testid="admin-layout">
@@ -232,105 +362,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
-          {rootItems.filter(filterItem).map((item) => (
-            <Link key={item.path} href={item.path!}>
-              <span
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm cursor-pointer transition-colors ${
-                  location === item.path
-                    ? "bg-white/10 text-white"
-                    : "text-white/60 hover:text-white hover:bg-white/5"
-                }`}
-                data-testid={`link-${item.path!.split("/").pop()}`}
-              >
-                <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
-                {item.label}
-                {item.label === "Chat" && unreadCount > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-1" data-testid="badge-chat-unread">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
-              </span>
-            </Link>
-          ))}
-
-          {menuSections.filter(s => !s.adminOnly || isAdmin).map((section, si) => {
-            const isSectionOpen = openSections[section.title] ?? true;
-            return (
-              <div key={section.title}>
-                <div className="h-px bg-white/10 my-3" />
-                <button
-                  onClick={() => toggleSection(section.title)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 mb-1"
-                  data-testid={`section-${section.title.toLowerCase().replace(/\s/g, '-')}`}
-                >
-                  <section.icon className={`w-3.5 h-3.5 ${section.iconColor}`} />
-                  <span className={`text-[10px] font-bold tracking-widest ${section.iconColor}`}>{section.title}</span>
-                  {isSectionOpen ? <ChevronDown className="w-3 h-3 text-white/30 ml-auto" /> : <ChevronRight className="w-3 h-3 text-white/30 ml-auto" />}
-                </button>
-                {isSectionOpen && (
-                  <div className="space-y-0.5">
-                    {section.items.filter(filterItem).map((item, ii) => {
-                      if (item.children) {
-                        const isOpen = openGroups[item.label] ?? false;
-                        const isChildActive = item.children.some(c => location === c.path);
-                        return (
-                          <div key={ii}>
-                            <button
-                              onClick={() => toggleGroup(item.label)}
-                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                                isChildActive ? "text-white bg-white/5" : "text-white/60 hover:text-white hover:bg-white/5"
-                              }`}
-                              data-testid={`button-menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}
-                            >
-                              <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
-                              <span className="flex-1 text-left">{item.label}</span>
-                              {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            </button>
-                            {isOpen && (
-                              <div className="ml-4 space-y-0.5 mt-0.5">
-                                {item.children.filter(filterItem).map((child) => (
-                                  <Link key={child.path} href={child.path!}>
-                                    <span
-                                      className={`flex items-center gap-3 px-3 py-1.5 rounded-md text-sm cursor-pointer transition-colors ${
-                                        location === child.path
-                                          ? "bg-white/10 text-white"
-                                          : "text-white/40 hover:text-white hover:bg-white/5"
-                                      }`}
-                                      data-testid={`link-${child.path!.split("/").pop()}`}
-                                    >
-                                      <child.icon className={`w-3.5 h-3.5 ${child.iconColor || ""}`} />
-                                      {child.label}
-                                    </span>
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                      return (
-                        <Link key={item.path} href={item.path!}>
-                          <span
-                            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm cursor-pointer transition-colors ${
-                              location === item.path
-                                ? "bg-white/10 text-white"
-                                : "text-white/60 hover:text-white hover:bg-white/5"
-                            }`}
-                            data-testid={`link-${item.path!.split("/").pop()}`}
-                          >
-                            <item.icon className={`w-4 h-4 ${item.iconColor || ""}`} />
-                            {item.label}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
+        <SidebarNav location={location} isAdmin={isAdmin} unreadCount={unreadCount} />
 
         <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}

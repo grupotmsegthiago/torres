@@ -770,6 +770,12 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_fat ON service_orders (status, fat_calculado)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_so_created_at ON service_orders (created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_created ON service_orders (status, created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_so_client_id ON service_orders (client_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_emp_created_at ON employees (created_at DESC)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_ft_origin ON financial_transactions (origin_type, origin_id)`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_eb_so_id ON escort_billings (service_order_id)`).catch(() => {});
 
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
