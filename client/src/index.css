@@ -308,15 +308,59 @@
 
 @media print {
   body, html {
-    background: #000 !important;
-    visibility: hidden !important;
-  }
-  * {
-    display: none !important;
-    visibility: hidden !important;
+    background: #fff !important;
     color: #000 !important;
-    background: #000 !important;
-    opacity: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  nav, aside, header,
+  [data-sidebar],
+  .print\\:hidden,
+  [class*="print:hidden"],
+  button[data-testid="button-print"],
+  button[data-testid="button-back"] {
+    display: none !important;
+  }
+
+  [data-testid="laudo-container"] {
+    display: block !important;
+    visibility: visible !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100% !important;
+    padding: 10mm !important;
+    margin: 0 !important;
+  }
+
+  [data-testid="laudo-container"] * {
+    visibility: visible !important;
+    color: #000 !important;
+    background: #fff !important;
+    border-color: #333 !important;
+  }
+
+  [data-testid="laudo-container"] img {
+    max-height: 120px !important;
+    object-fit: cover !important;
+    break-inside: avoid;
+  }
+
+  table { break-inside: auto; }
+  tr { break-inside: avoid; break-after: auto; }
+  thead { display: table-header-group; }
+
+  .page-break-before { break-before: page; }
+
+  [data-testid="laudo-container"] [class*="shadow"] {
+    box-shadow: none !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
   }
 }
 
