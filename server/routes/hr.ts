@@ -1,4 +1,5 @@
 import type { Express } from "express";
+  import { randomBytes } from "crypto";
   import { storage, toCamelObj, toCamelArray, toSnakeObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
