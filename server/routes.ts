@@ -361,24 +361,27 @@ async function ensureSystemSettingsTable() {
     }
   });
 
-  await ensureSystemSettingsTable();
+  try { await Promise.race([ensureSystemSettingsTable(), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 15000))]); } catch (_e) { console.log("[init] ensureSystemSettingsTable skipped (timeout/error)"); }
 
   try {
-    const allOrders = await storage.getServiceOrders();
-    const stuckOrders = allOrders.filter(o =>
-      (o.missionStatus === "finalizada" || o.missionStatus === "encerrada") &&
-      o.status !== "concluida" && o.status !== "concluída" && o.status !== "cancelada"
-    );
-    for (const o of stuckOrders) {
-      await storage.updateServiceOrder(o.id, {
-        status: "concluida",
-        completedDate: o.completedDate || new Date(),
-      });
-      console.log(`[auto-fix] OS ${o.osNumber || o.id} mission=${o.missionStatus} → status concluida`);
-    }
-    if (stuckOrders.length > 0) console.log(`[auto-fix] ${stuckOrders.length} OS corrigida(s)`);
+    const autoFixFn = async () => {
+      const allOrders = await storage.getServiceOrders();
+      const stuckOrders = allOrders.filter(o =>
+        (o.missionStatus === "finalizada" || o.missionStatus === "encerrada") &&
+        o.status !== "concluida" && o.status !== "concluída" && o.status !== "cancelada"
+      );
+      for (const o of stuckOrders) {
+        await storage.updateServiceOrder(o.id, {
+          status: "concluida",
+          completedDate: o.completedDate || new Date(),
+        });
+        console.log(`[auto-fix] OS ${o.osNumber || o.id} mission=${o.missionStatus} → status concluida`);
+      }
+      if (stuckOrders.length > 0) console.log(`[auto-fix] ${stuckOrders.length} OS corrigida(s)`);
+    };
+    await Promise.race([autoFixFn(), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 15000))]);
   } catch (e: any) {
-    console.error("[auto-fix] Erro ao corrigir OS travadas:", e.message);
+    console.log("[auto-fix] skipped:", e.message);
   }
 
   app.get("/api/dashboard/alertas-mickael", requireAuth, async (req: any, res) => {

@@ -4,10 +4,18 @@ import { supabaseAdmin } from "./supabase";
 import { toCamelArray } from "./storage";
 
 async function execSql(query: string) {
-  await db.execute(sql.raw(query));
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("DDL timeout 15s")), 15000));
+  await Promise.race([db.execute(sql.raw(query)), timeout]);
 }
 
 export async function ensureDbSchema() {
+  try {
+    const connTest = new Promise((_, reject) => setTimeout(() => reject(new Error("DB conn test timeout")), 10000));
+    await Promise.race([db.execute(sql.raw("SELECT 1")), connTest]);
+  } catch (e: any) {
+    console.log("[db-init] Schema check skipped (DB unreachable):", e.message);
+    return;
+  }
   try {
     await execSql(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_uid TEXT UNIQUE
@@ -751,6 +759,13 @@ async function backfillOrderCoords() {
 }
 
 export async function ensureCalcMissionRPC() {
+  try {
+    const connTest = new Promise((_, reject) => setTimeout(() => reject(new Error("DB conn test timeout")), 10000));
+    await Promise.race([db.execute(sql.raw("SELECT 1")), connTest]);
+  } catch (e: any) {
+    console.log("[db-init] RPC check skipped (DB unreachable):", e.message);
+    return;
+  }
   try {
     await execSql(`
       CREATE OR REPLACE FUNCTION calc_mission_elapsed_hours(p_os_id integer)

@@ -27,10 +27,13 @@ import type { Express } from "express";
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const activeOrders = orders.filter(
       (o) => {
-        if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") return true;
+        const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") {
+          if (o.status === "agendada" && sdBRT && sdBRT > todayBRT) return false;
+          return true;
+        }
         const isConcluida = o.status === "concluida" || o.status === "concluída";
         if (isConcluida || o.missionStatus === "encerrada" || o.status === "cancelada" || o.status === "recusada") {
-          const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const udBRT = o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           if (sdBRT === todayBRT || cdBRT === todayBRT || udBRT === todayBRT) return true;
