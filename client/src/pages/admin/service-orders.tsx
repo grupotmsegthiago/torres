@@ -30,15 +30,9 @@ function utcToLocalInput(iso: string | null | undefined): string {
 function localInputToUtc(localValue: string): string | null {
   if (!localValue) return null;
   const parts = localValue.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!parts) return new Date(localValue).toISOString();
-  const [, y, mo, da, h, mi] = parts;
-  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", timeZoneName: "shortOffset" });
-  const refDate = new Date(`${y}-${mo}-${da}T12:00:00Z`);
-  const offsetMatch = formatter.format(refDate).match(/GMT([+-]\d+)/);
-  const offsetHours = offsetMatch ? parseInt(offsetMatch[1]) : -3;
-  const sign = offsetHours >= 0 ? "+" : "-";
-  const absH = String(Math.abs(offsetHours)).padStart(2, "0");
-  return new Date(`${y}-${mo}-${da}T${h}:${mi}:00${sign}${absH}:00`).toISOString();
+  if (parts) return `${localValue}:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(localValue)) return localValue;
+  return localValue;
 }
 
 function getStepTime(stepLogs: StepLogEntry[] | null | undefined, stepNames: string[]): string | null {
@@ -54,7 +48,7 @@ function ensureUTC(ts: string | null | undefined): string | null {
   if (!ts) return null;
   const s = String(ts);
   if (/[Zz]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
-  return s + "Z";
+  return s + "-03:00";
 }
 
 function formatTime(iso: string | null): string {

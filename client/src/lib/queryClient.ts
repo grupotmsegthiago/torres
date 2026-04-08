@@ -1,6 +1,19 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
+const CACHE_VERSION = "20260408-tz-fix-v2";
+if (typeof window !== "undefined") {
+  const stored = localStorage.getItem("torres_cache_version");
+  if (stored && stored !== CACHE_VERSION) {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("torres_cache_version", CACHE_VERSION);
+    window.location.reload();
+  } else if (!stored) {
+    localStorage.setItem("torres_cache_version", CACHE_VERSION);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
