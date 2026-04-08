@@ -1,0 +1,115 @@
+Aqui vai a configuração saudável para o Supabase do TMSEGo:
+
+Configuração Saudável do Supabase para o TMSEGo
+
+1. Chaves de Acesso (Secrets necessários)
+
+SecretOnde usaPara que serveVITE_SUPABASE_URLFrontend + BackendURL do projeto SupabaseVITE_SUPABASE_ANON_KEYFrontendChave pública (anon) — usada no navegadorSUPABASE_SERVICE_ROLE_KEYBackend (server)Chave com permissão total — nunca expor no frontend
+
+Onde encontrar: Supabase Dashboard → Settings → API
+
+2. Real-Time (Publicações)
+
+O sistema já habilita automaticamente no startup, mas caso precise verificar manualmente no SQL Editor do Supabase:
+
+-- Verificar quais tabelas estão habilitadas para real-time
+
+SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
+
+
+
+As 23 tabelas que devem estar na publicação:
+
+missions, clients, providers, vehicles, agents, profiles, client_price_tables, client_routes, client_vehicles, provider_cost_tables, financial_transactions, financial_accounts, financial_categories, financial_invoices, quotes, commercial_proposals, support_agents, time_clock, vehicle_technologies, system_users, whatsapp_messages, system_logs, mission_logs
+
+Se alguma estiver faltando:
+
+ALTER PUBLICATION supabase_realtime ADD TABLE nome_da_tabela;
+
+
+
+3. RLS (Row Level Security)
+
+Para o TMSEGo funcionar corretamente com a anon key, as tabelas precisam ter políticas permissivas ou RLS desabilitado:
+
+-- Verificar status do RLS em todas as tabelas
+
+SELECT tablename, rowsecurity
+
+FROM pg_tables
+
+WHERE schemaname = 'public';
+
+
+
+Se alguma tabela estiver bloqueando, crie políticas ou desabilite:
+
+-- Opção simples (se não precisa de RLS na tabela)
+
+ALTER TABLE nome_da_tabela DISABLE ROW LEVEL SECURITY;
+
+
+
+-- Ou crie uma política permissiva
+
+CREATE POLICY "allow_all" ON nome_da_tabela FOR ALL USING (true);
+
+
+
+4. Storage (Bucket de Evidências)
+
+O sistema usa o bucket mission-evidence para fotos de missão e equipamentos:
+
+-- No SQL Editor, verificar se o bucket existe
+
+SELECT * FROM storage.buckets WHERE id = 'mission-evidence';
+
+
+
+Se não existir, criar pelo Dashboard: Storage → New Bucket → "mission-evidence" → Public
+
+5. Limites e Performance
+
+ConfiguraçãoRecomendadoOnde ajustarMax connections60+ (plano Pro)Database SettingsRealtime max channels100+Realtime SettingsAPI rate limit1000 req/sAPI SettingsDatabase sizeMonitorar < 80%DashboardTimeout de queries30s (padrão)Database Settings
+
+6. Funções RPC Necessárias
+
+O sistema usa a função exec_sql para habilitar real-time no startup:
+
+-- Criar a função se não existir
+
+CREATE OR REPLACE FUNCTION exec_sql(sql text)
+
+RETURNS void AS $$
+
+BEGIN
+
+EXECUTE sql;
+
+END;
+
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+
+7. Checklist Rápido de Saúde
+
+ VITE_SUPABASE_URL configurado
+
+ VITE_SUPABASE_ANON_KEY configurado
+
+ SUPABASE_SERVICE_ROLE_KEY configurado (backend)
+
+ 23 tabelas na publicação supabase_realtime
+
+ Bucket mission-evidence criado e público
+
+ Função exec_sql criada
+
+ RLS permissivo ou desabilitado nas tabelas operacionais
+
+ Monitorar conexões ativas no Dashboard
+
+
+
+Rode essa configuração no supabase

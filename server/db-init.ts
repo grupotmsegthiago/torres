@@ -664,11 +664,50 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await ensureRealtimePublication();
+
     console.log("[db-init] Schema verified OK");
 
     backfillOrderCoords().catch(e => console.error("[db-init] backfill coords error:", e.message));
   } catch (err: any) {
     console.error("[db-init] Schema check error:", err.message);
+  }
+}
+
+const REALTIME_TABLES = [
+  "service_orders", "mission_costs", "mission_updates", "mission_acceptance",
+  "clients", "employees", "vehicles", "vehicle_fueling",
+  "financial_transactions", "escort_billings", "billing_alerts",
+  "chat_conversations", "chat_messages", "chat_presence",
+  "invoices", "users", "ponto_registros", "timesheets", "holerites",
+  "audit_logs", "weapon_kits", "employee_documents", "system_settings",
+];
+
+async function ensureRealtimePublication() {
+  try {
+    const { data: existing } = await supabaseAdmin.rpc("exec_sql", {
+      query: `SELECT tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime'`
+    });
+
+    const existingTables = new Set<string>();
+    if (Array.isArray(existing)) {
+      existing.forEach((r: any) => existingTables.add(r.tablename));
+    }
+
+    const missing = REALTIME_TABLES.filter(t => !existingTables.has(t));
+    if (missing.length === 0) {
+      console.log(`[db-init] Realtime publication OK (${REALTIME_TABLES.length} tables)`);
+      return;
+    }
+
+    for (const table of missing) {
+      try {
+        await execSql(`ALTER PUBLICATION supabase_realtime ADD TABLE ${table}`);
+      } catch {}
+    }
+    console.log(`[db-init] Realtime publication: added ${missing.length} table(s): ${missing.join(", ")}`);
+  } catch (e: any) {
+    console.warn("[db-init] Realtime publication check skipped:", e.message);
   }
 }
 
