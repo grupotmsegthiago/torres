@@ -1,0 +1,17 @@
+1. A Estratégia Técnica: "Cache-First"Atualmente, o seu sistema provavelmente faz:Pedido -> Banco de Dados -> Espera (Lentidão) -> Mostra a Tela.Com essa mudança, ele passará a fazer:Imediato: O sistema olha o localStorage do navegador e mostra a última versão salva daquela tela.Segundo Plano: O sistema faz a chamada para o Supabase sem bloquear o usuário.Atualização: Quando os dados chegam (ex: 2 segundos depois), ele atualiza apenas os campos que mudaram, sem o usuário perceber.2. Como implementar (Instrução para o Replit Agent)Peça ao Agent para utilizar uma biblioteca chamada TanStack Query (React Query) ou implementar um sistema de cache manual. Diga exatamente isto:"Agent, para resolver a lentidão de carregamento e eliminar os loadings nas telas, vamos implementar uma estratégia de Caching com Stale-While-Revalidate:Use o TanStack Query (React Query) com a opção placeholderData ou initialData.Configure para que, ao abrir qualquer tela (Grid, Funcionários, Financeiro), o sistema busque primeiro os dados no Cache Persistente.Implemente o refetchOnWindowFocus: false para evitar chamadas excessivas ao Supabase.Garanta que, enquanto os dados novos carregam em background, a UI permaneça interativa com os dados antigos."3. Exemplo Prático de Código (Educativo)Veja como uma rota de "Funcionários" ficaria no seu React:TypeScript// Exemplo simplificado usando React Query
+const { data: employees } = useQuery({
+  queryKey: ['employees'],
+  queryFn: fetchEmployees,
+  // Aqui está o segredo: ele guarda o dado por 24h no cache do navegador
+  staleTime: 1000 * 60 * 60 * 24, 
+  // Enquanto carrega o novo, ele mantém o antigo na tela
+  keepPreviousData: true 
+});
+
+return (
+  <div>
+    {/* A lista aparece na hora com os dados antigos! */}
+    {employees.map(emp => <EmployeeCard key={emp.id} data={emp} />)}
+  </div>
+);
+4. Onde aplicar no Sistema TORRES?TelaComo funcionaráGrid OperacionalO mapa abre instantaneamente com as últimas posições dos veículos de ontem/hoje cedo. Conforme o GPS chega, os ícones se movem sozinhos.FinanceiroMostra o saldo e faturamento da última vez que foi aberto. O sistema atualiza os valores novos sem "piscar" a tela.RH/FuncionáriosA lista aparece na hora. Se houve uma contratação nova, ela "brota" na lista após 1 ou 2 segundos.5. Cuidados ImportantesIdentificação de Dados Antigos: É bom ter um pequeno indicador (como um ícone de "check" verde ou uma frase discreta "Atualizado há 5 min") para o operador saber que está olhando algo que pode estar sendo atualizado.Conflitos de Versão: No Financeiro, isso é sensível. Se o operador editar um valor baseado num dado antigo que acabou de mudar no banco, pode haver erro. O Agent deve implementar uma lógica de "Optimistic Update" (atualizar o banco e o cache ao mesmo tempo).

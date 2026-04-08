@@ -5,7 +5,7 @@ import type { Express } from "express";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
-  import { getHorasElapsedFromDB, calcularFaturamentoLive, extractKmFromText } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS } from "../billing-calc";
   import { haversineDist } from "./_helpers";
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
@@ -139,12 +139,20 @@ import type { Express } from "express";
 
     const osIds = activeOrders.map(o => o.id);
 
+    const safeFrom = async (table: string, osIds: number[]) => {
+      try {
+        if (osIds.length === 0) return { data: [] as any[] };
+        return await supabaseAdmin.from(table).select("*").in("service_order_id", osIds).order("created_at", { ascending: false });
+      } catch (e: any) {
+        console.error(`[grid] ${table} query failed (42P01?): ${e.message}`);
+        return { data: [] as any[] };
+      }
+    };
+
     const [allClients, allEmployees, updatesRes, tcPositions, photosRes, contractsRes, missionCostsRes] = await Promise.all([
       storage.getClients(),
       storage.getEmployees(),
-      osIds.length > 0
-        ? supabaseAdmin.from("mission_updates").select("*").in("service_order_id", osIds).order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as any[] }),
+      safeFrom("mission_updates", osIds),
       truckscontrol.getCachedPositions(),
       osIds.length > 0
         ? supabaseAdmin.from("mission_photos").select("*").in("service_order_id", osIds)
@@ -416,6 +424,7 @@ import type { Express } from "express";
 
             if ((o.status === "concluida" || o.status === "concluída" || o.missionStatus === "encerrada") && !(o as any).custos_congelados_em) {
               try {
+                const gpsData = await calcDistanciaGPS(o.id);
                 await supabaseAdmin.from("service_orders").update({
                   fat_calculado: frozenFat,
                   custo_combustivel_alocado: frozenComb,
@@ -427,9 +436,12 @@ import type { Express } from "express";
                   margem_calculada: frozenMargem,
                   horas_missao_calculadas: frozenHoras,
                   km_total_calculado: frozenKm,
+                  km_gps_calculado: gpsData.km,
+                  pontos_gps: gpsData.pontos,
                   custos_congelados_em: new Date().toISOString(),
                   custos_congelados_por: "system",
                 }).eq("id", o.id);
+                if (gpsData.pontos > 0) console.log(`[freeze] OS #${o.osNumber} distância GPS: ${gpsData.km}km (${gpsData.pontos} pontos)`);
               } catch (_fe) {}
             }
 
@@ -779,14 +791,18 @@ import type { Express } from "express";
                 const kit = linkedOrder.kitId ? await storage.getWeaponKit(linkedOrder.kitId) : null;
                 const agentLoc1 = linkedOrder.assignedEmployeeId ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployeeId) : null;
                 const agentLoc2 = linkedOrder.assignedEmployee2Id ? agentLocs.find(a => a.employeeId === linkedOrder.assignedEmployee2Id) : null;
-                const { data: lastUpd } = await supabaseAdmin.from("mission_updates").select("*")
-                  .eq("service_order_id", linkedOrder.id).eq("read_by_admin", 0)
-                  .order("created_at", { ascending: false })
-                  .limit(1);
-                const { data: recentUpds } = await supabaseAdmin.from("mission_updates").select("*")
-                  .eq("service_order_id", linkedOrder.id)
-                  .order("created_at", { ascending: false })
-                  .limit(5);
+                let lastUpd: any[] = [];
+                let recentUpds: any[] = [];
+                try {
+                  const r1 = await supabaseAdmin.from("mission_updates").select("*")
+                    .eq("service_order_id", linkedOrder.id).eq("read_by_admin", 0)
+                    .order("created_at", { ascending: false }).limit(1);
+                  lastUpd = r1.data || [];
+                  const r2 = await supabaseAdmin.from("mission_updates").select("*")
+                    .eq("service_order_id", linkedOrder.id)
+                    .order("created_at", { ascending: false }).limit(5);
+                  recentUpds = r2.data || [];
+                } catch (_muErr) {}
                 return {
                   id: linkedOrder.id,
                   osNumber: linkedOrder.osNumber,

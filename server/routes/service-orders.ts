@@ -498,19 +498,21 @@ import type { Express } from "express";
 
       if (auditEntries.length > 0) {
         const auditMessage = `AJUSTE MANUAL por ${adminName}:\n${auditEntries.join("\n")}`;
-        await supabaseAdmin.from("mission_updates").insert({
-          service_order_id: osId,
-          os_number: os.osNumber,
-          employee_id: null,
-          employee_name: adminName,
-          message: auditMessage,
-          mission_step: "ajuste_manual",
-          latitude: null,
-          longitude: null,
-          photo_url: null,
-          read_by_admin: 1,
-        });
-        console.log(`[Audit] Step adjustment on OS #${os.osNumber} by ${adminName}: ${auditEntries.length} changes`);
+        try {
+          await supabaseAdmin.from("mission_updates").insert({
+            service_order_id: osId,
+            os_number: os.osNumber,
+            employee_id: null,
+            employee_name: adminName,
+            message: auditMessage,
+            mission_step: "ajuste_manual",
+            latitude: null,
+            longitude: null,
+            photo_url: null,
+            read_by_admin: 1,
+          });
+          console.log(`[Audit] Step adjustment on OS #${os.osNumber} by ${adminName}: ${auditEntries.length} changes`);
+        } catch (_muErr) {}
       }
 
       const { data: existingBilling } = await supabaseAdmin.from("escort_billings")
@@ -2536,7 +2538,11 @@ import type { Express } from "express";
       const emp2 = os.assignedEmployee2Id ? await storage.getEmployee(os.assignedEmployee2Id) : null;
       const vehicle = os.vehicleId ? await storage.getVehicle(os.vehicleId) : null;
       const photos = await storage.getMissionPhotosByOS(os.id);
-      const { data: updates } = await supabaseAdmin.from("mission_updates").select("*").eq("service_order_id", os.id).order("created_at", { ascending: true });
+      let updates: any[] = [];
+      try {
+        const { data, error } = await supabaseAdmin.from("mission_updates").select("*").eq("service_order_id", os.id).order("created_at", { ascending: true });
+        if (!error) updates = data || [];
+      } catch (_muErr) {}
       const stepLogs: any[] = Array.isArray(os.stepLogs) ? os.stepLogs : [];
 
       let kitItems: any[] = [];

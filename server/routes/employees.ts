@@ -117,7 +117,7 @@ import type { Express } from "express";
       await supabaseAdmin.from("payslips").delete().eq("employee_id", empId);
       await supabaseAdmin.from("weapon_movements").delete().eq("employee_id", empId);
       await supabaseAdmin.from("vehicle_assignments").delete().eq("employee_id", empId);
-      await supabaseAdmin.from("mission_updates").delete().eq("employee_id", empId);
+      try { await supabaseAdmin.from("mission_updates").delete().eq("employee_id", empId); } catch (_muErr) {}
       await storage.deleteEmployee(empId);
       res.json({ message: "Funcionário removido" });
     } catch (err: any) {

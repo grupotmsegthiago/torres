@@ -530,11 +530,17 @@ import type { Express } from "express";
   app.get("/api/service-orders/:id/updates", requireAuth, async (req, res) => {
     const osId = parseInt(req.params.id);
     if (isNaN(osId)) return res.status(400).json({ message: "ID inválido" });
-    const { data: results } = await supabaseAdmin.from("mission_updates").select("*")
-      .eq("service_order_id", osId)
-      .order("created_at", { ascending: false })
-      .limit(5);
-    res.json(toCamelArray(results || []));
+    try {
+      const { data: results, error } = await supabaseAdmin.from("mission_updates").select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      res.json(toCamelArray(results || []));
+    } catch (err: any) {
+      console.error(`[mission-updates] GET /updates/${osId} error:`, err.message);
+      res.json([]);
+    }
   });
 
   app.get("/api/mission/updates", requireAuth, requireAdminRole, async (req, res) => {
@@ -552,11 +558,14 @@ import type { Express } from "express";
 
     let missionResults: any[];
     if (unreadOnly) {
-      const { data } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
-      missionResults = toCamelArray(data || []);
+      try {
+        const { data, error } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
+        if (error) throw error;
+        missionResults = toCamelArray(data || []);
+      } catch (_e) { missionResults = []; }
     } else {
       const [missionRes, telRes] = await Promise.all([
-        supabaseAdmin.from("mission_updates").select("*").order("created_at", { ascending: false }).limit(limit),
+        supabaseAdmin.from("mission_updates").select("*").order("created_at", { ascending: false }).limit(limit).then(r => r).catch(() => ({ data: [] as any[] })),
         supabaseAdmin.from("telemetry_events").select("*").order("created_at", { ascending: false }).limit(limit),
       ]);
       missionResults = toCamelArray(missionRes.data || []);
@@ -593,21 +602,32 @@ import type { Express } from "express";
   app.get("/api/mission/updates/:id/photo", requireAuth, requireAdminRole, async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "ID inválido" });
-    const { data: rows } = await supabaseAdmin.from("mission_updates").select("photo_url").eq("id", id).limit(1);
-    if (!rows || rows.length === 0) return res.status(404).json({ message: "Atualização não encontrada" });
-    res.json({ photoUrl: rows[0].photo_url });
+    try {
+      const { data: rows, error } = await supabaseAdmin.from("mission_updates").select("photo_url").eq("id", id).limit(1);
+      if (error) throw error;
+      if (!rows || rows.length === 0) return res.status(404).json({ message: "Atualização não encontrada" });
+      res.json({ photoUrl: rows[0].photo_url });
+    } catch (err: any) {
+      console.error(`[mission-updates] photo/${id} error:`, err.message);
+      res.status(500).json({ message: "Erro ao buscar foto" });
+    }
   });
 
   app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {
-    const { ids } = req.body;
-    if (ids && Array.isArray(ids)) {
-      for (const id of ids) {
-        await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("id", id);
+    try {
+      const { ids } = req.body;
+      if (ids && Array.isArray(ids)) {
+        for (const id of ids) {
+          await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("id", id);
+        }
+      } else {
+        await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
       }
-    } else {
-      await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[mission-updates] mark-read error:", err.message);
+      res.json({ success: true });
     }
-    res.json({ success: true });
   });
 
   app.post("/api/mission/updates/:id/copy-audit", requireAuth, requireAdminRole, async (req: any, res) => {
@@ -2233,11 +2253,11 @@ import type { Express } from "express";
         .eq("service_order_id", osId)
         .order("created_at", { ascending: true });
 
-      const { data: updates } = await supabaseAdmin
-        .from("mission_updates")
-        .select("*")
-        .eq("service_order_id", osId)
-        .order("created_at", { ascending: true });
+      let updates: any[] = [];
+      try {
+        const { data, error } = await supabaseAdmin.from("mission_updates").select("*").eq("service_order_id", osId).order("created_at", { ascending: true });
+        if (!error) updates = data || [];
+      } catch (_muErr) {}
 
       const { data: positions } = await supabaseAdmin
         .from("mission_positions")

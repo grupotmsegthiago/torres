@@ -1,5 +1,39 @@
 import { supabaseAdmin } from "./supabase";
 
+export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export async function calcDistanciaGPS(serviceOrderId: number): Promise<{ km: number; pontos: number }> {
+  try {
+    const { data: positions, error } = await supabaseAdmin
+      .from("mission_positions")
+      .select("latitude, longitude")
+      .eq("service_order_id", serviceOrderId)
+      .order("created_at", { ascending: true });
+    if (error || !positions || positions.length < 2) return { km: 0, pontos: positions?.length || 0 };
+
+    let totalKm = 0;
+    for (let i = 1; i < positions.length; i++) {
+      const p1 = positions[i - 1];
+      const p2 = positions[i];
+      if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
+        totalKm += haversineDistanceKm(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+      }
+    }
+    return { km: Math.round(totalKm * 100) / 100, pontos: positions.length };
+  } catch (e: any) {
+    console.error(`[calc] calcDistanciaGPS error OS #${serviceOrderId}:`, e.message);
+    return { km: 0, pontos: 0 };
+  }
+}
+
 export async function getHorasElapsedFromDB(osId: number): Promise<number> {
   try {
     const { data, error } = await supabaseAdmin.rpc("calc_mission_elapsed_hours", { p_os_id: osId });

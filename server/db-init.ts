@@ -568,6 +568,7 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    console.log("[db-init] mission_updates table ensured");
 
     await execSql(`
       ALTER TABLE mission_updates ADD COLUMN IF NOT EXISTS photo_url TEXT
@@ -750,6 +751,10 @@ export async function ensureDbSchema() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
+    await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_fat ON service_orders (status, fat_calculado)`).catch(() => {});
 
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
