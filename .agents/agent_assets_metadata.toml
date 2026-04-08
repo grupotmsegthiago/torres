@@ -60,3 +60,9 @@ id = "NUTMeavRw-xG1yCwWa7zU"
 uri = "file://LOG_LAUDO_VARIAVEIS.md"
 type = "text"
 title = "Log de Variáveis Mapeadas - Laudo"
+
+[[outputs]]
+id = "50K8dnFhdrGqE70v5aWlV"
+uri = "file://RELATORIO_SAUDE_FINANCEIRA.md"
+type = "text"
+title = "Relatório de Saúde Financeira - Torres"
