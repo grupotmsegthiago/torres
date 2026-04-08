@@ -23,8 +23,11 @@ I prefer clear and direct communication. When making changes, prioritize iterati
 
 ### Regras de Dados e Acesso
 
-- **O banco local do Replit (DATABASE_URL) NÃO é usado.** TODO acesso a dados usa Supabase — via REST API (`supabaseAdmin`) ou via conexão PostgreSQL direta (`SUPABASE_DATABASE_URL` com Drizzle ORM).
-- **Data Access Paths:** `storage.*` methods use Supabase REST API (supabaseAdmin) with automatic snake_case↔camelCase conversion. Direct `db.*` calls in routes.ts use Drizzle ORM connected to `SUPABASE_DATABASE_URL`. Both hit the SAME Supabase PostgreSQL database.
+- **⛔ PROIBIDO USAR PostgreSQL DIRETO (Drizzle/db.*).** É TERMINANTEMENTE PROIBIDO usar `db.*` (Drizzle ORM), `db.execute()`, `db.select()`, `db.insert()`, `db.update()`, `db.delete()` ou qualquer acesso direto ao PostgreSQL para operações CRUD. TODO acesso a dados DEVE usar exclusivamente a Supabase REST API (`supabaseAdmin.from(...)`). A ÚNICA exceção é `db-init.ts` para migrações DDL (ALTER TABLE, CREATE TABLE, CREATE INDEX) que a REST API não suporta.
+- **Data Access Paths (REGRA ATUAL):**
+    1. `storage.*` (em `server/storage.ts`) — usa Supabase REST API (`supabaseAdmin`) com conversão automática snake_case↔camelCase.
+    2. `supabaseAdmin.from(...)` — chamadas REST API diretas em CRON, routes e operações específicas. Retorna snake_case.
+    3. ❌ `db.*` (Drizzle ORM) — **PROIBIDO para CRUD**. Só permitido em `db-init.ts` para DDL de schema.
 - **NEVER add a `password` column** back to `shared/schema.ts` — authentication is handled entirely by Supabase Auth.
 - **Always use `apiRequest()` or `authFetch()`** for API calls — never raw `fetch()`.
 - **OS status values are stored with accents** (e.g., `"concluída"`) — always normalize before comparing.

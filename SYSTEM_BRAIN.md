@@ -40,7 +40,8 @@
 | Regra | Detalhes |
 |-------|---------|
 | **Banco de Dados** | Supabase PostgreSQL é o ÚNICO banco. O `DATABASE_URL` local do Replit NÃO é usado. |
-| **Caminhos de Acesso** | `storage.*` = Supabase REST API (camelCase). `db.*` = Drizzle ORM via `SUPABASE_DATABASE_URL`. `supabaseAdmin.from(...)` = REST API direto (snake_case). Todos acessam o MESMO banco. |
+| **⛔ PROIBIDO PostgreSQL direto** | É TERMINANTEMENTE PROIBIDO usar `db.*` (Drizzle ORM), `db.execute()`, `db.select()`, `db.insert()`, `db.update()`, `db.delete()` para operações CRUD. TODO acesso a dados DEVE usar exclusivamente `supabaseAdmin.from(...)` (REST API). ÚNICA exceção: `db-init.ts` para DDL (ALTER TABLE/CREATE TABLE/INDEX). |
+| **Caminhos de Acesso** | `storage.*` = Supabase REST API (camelCase). `supabaseAdmin.from(...)` = REST API direto (snake_case). ❌ `db.*` = PROIBIDO para CRUD (só DDL em db-init.ts). |
 | **Autenticação** | Supabase Auth via JWT. RBAC via tabela `perfis_acesso`. **Nunca** adicionar coluna `password` no schema. |
 | **API Calls** | Sempre usar `apiRequest()` ou `authFetch()` — nunca `fetch()` diretamente. |
 | **OS Status** | Armazenados **com acento** (ex: `"concluída"`). Sempre normalizar antes de comparar. |
