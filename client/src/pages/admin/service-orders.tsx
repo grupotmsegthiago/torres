@@ -1169,7 +1169,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               )}
               <div>
                 <FieldLabel>Valor Estimado (R$)</FieldLabel>
-                <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: maskBRL(e.target.value) })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+                {form.status === "recusada" || form.status === "cancelada" ? (
+                  <Input type="text" readOnly value="0,00" className="text-sm font-mono bg-red-50 text-red-500 cursor-not-allowed" data-testid="input-os-valor-estimado" />
+                ) : (
+                  <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: maskBRL(e.target.value) })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+                )}
               </div>
               <div>
                 <FieldLabel>Pedágio (R$) {(pedagioAutoSum > 0 || (tollInfo && !tollInfo.loading && tollInfo.count > 0)) ? "✓ Auto" : ""}</FieldLabel>

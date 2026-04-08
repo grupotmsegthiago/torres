@@ -1,0 +1,29 @@
+1. Panorama da Solução (Foco: Navegação Instantânea)
+O sistema trava na troca de telas porque o arquivo principal (bundle.js) está sobrecarregado. O navegador precisa "ler o livro inteiro" para te mostrar apenas uma página. A solução é o Code-Splitting.
+
+2. Comando Cirúrgico para o Replit Agent (MODO MAX)
+Copie e cole este comando. Ele é direto, usa o contexto atual e exige o histórico técnico:
+
+"Agent, entre em MODO MAX. O sistema TORRES apresenta latência crítica na navegação entre rotas (transição de página). Baseado no contexto de otimização de memória que já realizamos, execute agora a reestruturação do Frontend:
+
+Dynamic Imports: Aplique React.lazy no App.tsx para todas as rotas operacionais, financeiras e de RH. Cada grande módulo deve ser um arquivo separado.
+
+Suspense & Shimmer: Implemente esqueletos de carregamento (Skeleton screens) leves para que a transição visual seja imediata enquanto o código do módulo é baixado.
+
+Memoização de Rotas: Utilize React.memo e useMemo nos componentes de layout (Sidebar e Header) para evitar que eles sejam renderizados novamente do zero a cada troca de página.
+
+Data Prefetching: Configure o TanStack Query para pré-carregar os dados da próxima página quando o usuário passar o mouse sobre o menu.
+
+Histórico: Após concluir, apresente um relatório comparativo do tamanho do bundle principal antes e depois da refatoração."
+
+3. A Regra Financeira (Contextualizada)
+Para o ajuste de valor zero em faturamentos recusados, este é o comando (Modo Básico):
+
+"Agent, no módulo financeiro, aplique a regra de negócio: Se status_faturamento === 'recusado', force o revenue_value para 0.00 e desabilite o campo de edição na UI. Garanta que essa alteração reflita no banco de dados via supabaseAdmin."
+
+4. Avaliação de Continuidade
+O que já foi feito: Limpeza de memória no backend (Maps e Cache).
+
+O que estamos fazendo agora: Tornando a navegação do usuário leve e rápida.
+
+O que faremos a seguir: Ajustar a precisão do GPS (agora que as tabelas existem) e consolidar os cálculos do faturamento.

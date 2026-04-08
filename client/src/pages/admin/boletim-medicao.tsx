@@ -514,7 +514,8 @@ export default function BoletimMedicaoPage() {
                               const b = os.billing;
                               const kmTotal = computeKm(os);
                               const isEditing = editingBillingId === b?.id;
-                              const canEdit = b && !["FATURADO", "PAGO"].includes(b.status);
+                              const isOsRecusadaOuCancelada = os.status === "recusada" || os.status === "cancelada";
+                              const canEdit = b && !["FATURADO", "PAGO"].includes(b.status) && !isOsRecusadaOuCancelada;
                               return (
                                 <Fragment key={os.id}>
                                 <tr className={`border-b hover:bg-neutral-50/50 transition-colors ${os.status === "cancelada" ? "bg-red-50/30" : ""} ${os.status === "recusada" ? "bg-orange-50/30" : ""} ${isEditing ? "bg-blue-50/40" : ""}`} data-testid={`row-os-${os.id}`}>
@@ -567,7 +568,11 @@ export default function BoletimMedicaoPage() {
                                     <span className="font-mono font-bold text-neutral-700">{b ? fmtHoras(Number(b.horas_trabalhadas || b.horas_missao || 0)) : "—"}</span>
                                   </td>
                                   <td className="px-4 py-3.5 text-right">
-                                    <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0)) : "—"}</span>
+                                    {isOsRecusadaOuCancelada ? (
+                                      <span className="font-mono font-black text-red-500">R$ 0,00</span>
+                                    ) : (
+                                      <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0)) : "—"}</span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
                                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold ${status.color}`}>
