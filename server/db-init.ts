@@ -676,6 +676,17 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await execSql(`
+      UPDATE service_orders
+      SET fat_calculado = 0,
+          lucro_calculado = (0 - COALESCE(custo_total_alocado, 0)),
+          margem_calculada = 0,
+          valor_estimado = 0,
+          pedagio_estimado = 0
+      WHERE status IN ('recusada', 'cancelada')
+        AND (COALESCE(fat_calculado, 0) > 0 OR COALESCE(valor_estimado, 0) > 0)
+    `).catch(() => {});
+
+    await execSql(`
       ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS early_start_approved BOOLEAN DEFAULT false
     `).catch(() => {});
 

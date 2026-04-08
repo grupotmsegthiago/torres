@@ -1097,11 +1097,14 @@ import type { Express } from "express";
       try { await removeAutoTransaction("service_order", String(req.params.id)); } catch (_e) {}
     }
 
-    const isRecusada = parsed.data.status === "recusada" && existing && existing.status !== "recusada";
-    if (isRecusada) {
-      const recusadaTimeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const isRecusadaOuCancelada = (parsed.data.status === "recusada" || parsed.data.status === "cancelada")
+      && existing && existing.status !== parsed.data.status;
+    if (isRecusadaOuCancelada) {
+      const actionLabel = parsed.data.status === "recusada" ? "recusada" : "cancelada";
+      const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const adminName = req.user?.name || req.user?.email || "Sistema";
 
+      (parsed.data as any).revenueValue = 0;
       (parsed.data as any).fat_calculado = 0;
       (parsed.data as any).custo_total_alocado = 0;
       (parsed.data as any).lucro_calculado = 0;
@@ -1109,13 +1112,37 @@ import type { Express } from "express";
       (parsed.data as any).valorEstimado = 0;
       (parsed.data as any).pedagioEstimado = 0;
       (parsed.data as any).custos_congelados_em = new Date().toISOString();
-      (parsed.data as any).custos_congelados_por = `recusada_por_${adminName}`;
+      (parsed.data as any).custos_congelados_por = `${actionLabel}_por_${adminName}`;
 
       try {
         await supabaseAdmin.from("escort_billings")
           .update({ status: "CANCELADA" })
           .eq("service_order_id", Number(req.params.id))
           .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+      } catch (_e) {}
+
+      try {
+        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
+          .select("id, asaas_payment_id")
+          .eq("origin_type", "service_order")
+          .eq("origin_id", String(req.params.id))
+          .not("asaas_payment_id", "is", null);
+        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
+          const apiKey = process.env.ASAAS_API_KEY;
+          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
+          for (const tx of pendingTxs) {
+            if (!tx.asaas_payment_id) continue;
+            try {
+              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
+                method: "DELETE",
+                headers: { "access_token": apiKey },
+              });
+              console.log(`[OS-${actionLabel}] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${existing.osNumber}`);
+            } catch (asaasErr: any) {
+              console.error(`[OS-${actionLabel}] Asaas cancel failed: ${asaasErr.message}`);
+            }
+          }
+        }
       } catch (_e) {}
 
       try {
@@ -1136,20 +1163,22 @@ import type { Express } from "express";
 
       try {
         await supabaseAdmin.from("system_audit_logs").insert({
-          action: "OS_RECUSADA",
+          action: actionLabel === "recusada" ? "OS_RECUSADA" : "OS_CANCELADA",
           entity_type: "service_order",
           entity_id: String(req.params.id),
           details: JSON.stringify({
             osNumber: existing.osNumber,
             previousStatus: existing.status,
-            recusadaEm: recusadaTimeBRT,
-            recusadaPor: adminName,
+            [`${actionLabel}Em`]: timeBRT,
+            [`${actionLabel}Por`]: adminName,
             clientId: existing.clientId,
             vehicleId: existing.vehicleId,
             faturamentoZerado: true,
+            revenueValueZerado: true,
             custosLimpos: true,
             pedagioEstornado: true,
             transacoesRemovidas: true,
+            asaasCobrancasCanceladas: true,
           }),
           performed_by: req.user?.email || adminName,
         });
@@ -1424,10 +1453,6 @@ import type { Express } from "express";
       }
     }
 
-    const wasCanceled = existing && !["cancelada"].includes(existing.status || "") && data.status === "cancelada";
-    if (wasCanceled) {
-      try { await removeAutoTransaction("service_order", String(data.id)); } catch (_e) {}
-    }
 
     const wasNotFinished = existing && !["concluída", "concluida"].includes(existing.status || "");
     const isNowFinished = ["concluída", "concluida"].includes(data.status || "");
