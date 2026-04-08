@@ -2164,16 +2164,15 @@ export default function ServiceOrdersPage() {
                       )}
                     </td>
                     <td className="p-2">
-                      {o.missionStatus ? (() => {
-                        const displayStatus = o.missionStatus;
+                      {(() => {
+                        const displayStatus = o.missionStatus || (o.status === "agendada" || o.status === "aberta" ? "aguardando" : null);
+                        if (!displayStatus) return <span className="text-xs text-neutral-400">-</span>;
                         return (
                           <Badge variant="secondary" className={`text-xs ${getMissionStatusColor(displayStatus)}`} data-testid={`badge-mission-${o.id}`}>
                             {MISSION_STATUS_LABELS[displayStatus] || displayStatus}
                           </Badge>
                         );
-                      })() : (
-                        <span className="text-xs text-neutral-400">-</span>
-                      )}
+                      })()}
                     </td>
                     <td className="p-2 text-center text-xs font-semibold whitespace-nowrap bg-blue-50/50" data-testid={`time-agendado-${o.id}`}>
                       {o.scheduledDate ? (() => {
