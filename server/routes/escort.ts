@@ -6,7 +6,7 @@ import type { Express } from "express";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas } from "../billing-calc";
-  import { logFinancialAudit } from "./_helpers";
+  import { logFinancialAudit, haversineDist } from "./_helpers";
 
   export function registerEscortRoutes(app: Express) {
     // ==================== FINANCIAL MODULE ====================

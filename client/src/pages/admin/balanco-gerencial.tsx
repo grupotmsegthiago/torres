@@ -69,8 +69,9 @@ function getDateRange(period: Period, refDate: Date): { start: Date; end: Date; 
     case "DAY":
       return { start: new Date(y, m, d), end: new Date(y, m, d, 23, 59, 59), label: refDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }) };
     case "WEEK": {
-      const start = new Date(y, m, d - 6);
-      const end = new Date(y, m, d, 23, 59, 59);
+      const dow = refDate.getDay();
+      const start = new Date(y, m, d - dow);
+      const end = new Date(y, m, d - dow + 6, 23, 59, 59);
       return { start, end, label: `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}` };
     }
     case "MONTH":
@@ -98,7 +99,14 @@ function navigatePeriod(period: Period, refDate: Date, direction: number): Date 
   const d = new Date(refDate);
   switch (period) {
     case "DAY": d.setDate(d.getDate() + direction); break;
-    case "WEEK": d.setDate(d.getDate() + 7 * direction); break;
+    case "WEEK": {
+      const dow = d.getDay();
+      const sunday = new Date(d);
+      sunday.setDate(d.getDate() - dow);
+      sunday.setDate(sunday.getDate() + 7 * direction);
+      d.setTime(sunday.getTime());
+      break;
+    }
     case "MONTH": d.setMonth(d.getMonth() + direction); break;
     case "QUARTER": d.setMonth(d.getMonth() + 3 * direction); break;
     case "SEMESTER": d.setMonth(d.getMonth() + 6 * direction); break;
