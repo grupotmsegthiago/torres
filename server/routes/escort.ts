@@ -1525,9 +1525,10 @@ import type { Express } from "express";
 
       const todayEscoltaOs = allOrders.filter((so: any) => {
         if (so.type !== "escolta" || so.missionStatus === "aguardando") return false;
+        if (so.status === "recusada") return false;
         const startBRT = missionStartBRT(so);
         if (so.status === "em_andamento") return true;
-        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" || so.status === "recusada" ||
+        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
           so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
         if (isConcluded) {
           const sdBRT = extractDatePart(so.scheduledDate);
@@ -1542,7 +1543,8 @@ import type { Express } from "express";
       });
       const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
-      const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id));
+      const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada").map((so: any) => so.id));
+      const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id) && !recusadaOsIds.has(b.service_order_id));
 
       for (const so of todayEscoltaOs) {
         try {

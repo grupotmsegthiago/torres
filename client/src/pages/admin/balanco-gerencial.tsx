@@ -212,6 +212,7 @@ export default function BalancoGerencialPage() {
 
     const missions = data.byMission.filter(m => {
       if (!m.data) return false;
+      if (m.status === "RECUSADA" || (m.status || "").toLowerCase() === "recusada") return false;
       const raw = String(m.data);
       const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : raw.includes("T") ? raw.split("T")[0] : (() => {
         const dt = new Date(raw + "T12:00:00");
