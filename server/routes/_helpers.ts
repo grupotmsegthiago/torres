@@ -2,7 +2,7 @@ import { supabaseAdmin } from "../supabase";
 import nodemailer from "nodemailer";
 
 export function nowBRTString(): string {
-  return new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "");
 }
 
 export function parseEmailList(raw: string | null | undefined): string[] {

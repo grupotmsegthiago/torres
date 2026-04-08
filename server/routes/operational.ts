@@ -222,7 +222,7 @@ import type { Express } from "express";
             const kmInicial = kmChegadaPhoto?.kmValue || 0;
             const kmAtual = kmFinalPhoto?.kmValue || kmInicial;
 
-            const parseBRT = (v: any) => { const s = String(v); return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "-03:00"); };
+            const parseBRT = (v: any) => { const s = String(v); return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z"); };
             const missionStartDate = o.missionStartedAt ? parseBRT(o.missionStartedAt) : null;
             const missionEndDate = o.completedDate ? parseBRT(o.completedDate) : null;
             const nowDate = new Date();
@@ -248,7 +248,7 @@ import type { Express } from "express";
             const missionNotStartedYet = !o.missionStatus || o.missionStatus === "aguardando";
             const scheduledInFuture = (() => {
               if (!o.scheduledDate) return false;
-              const sched = new Date(String(o.scheduledDate).includes("-03:00") ? String(o.scheduledDate) : String(o.scheduledDate) + "-03:00");
+              const sched = new Date(String(o.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(o.scheduledDate)) ? String(o.scheduledDate) : String(o.scheduledDate) + "Z");
               const nowBRT = new Date();
               return sched.getTime() > nowBRT.getTime();
             })();

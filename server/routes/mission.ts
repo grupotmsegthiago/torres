@@ -1296,7 +1296,7 @@ import type { Express } from "express";
 
 
     if (currentStep === "aguardando" && so.scheduledDate) {
-      const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "-03:00");
+      const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
       const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
       if (diffMin > 30 && !so.earlyStartApproved) {
         return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde. Aguarde autorização da central.", code: "EARLY_START" });
@@ -1346,19 +1346,19 @@ import type { Express } from "express";
     const updates: any = { missionStatus: nextStep };
 
     if (!so.missionStartedAt && ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep)) {
-      const nowBRT = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const nowUTC = new Date().toISOString().replace(/\.\d{3}Z$/, "");
       if (so.scheduledDate) {
-        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toISOString().replace(/\.\d{3}Z$/, "");
         const nowMs = new Date().getTime();
-        const schedMs = new Date(scheduledStr + "-03:00").getTime();
+        const schedMs = new Date(scheduledStr + "Z").getTime();
         const diffMin = (schedMs - nowMs) / 60000;
         if (diffMin > 0 && diffMin <= 30) {
           updates.missionStartedAt = scheduledStr;
         } else {
-          updates.missionStartedAt = nowBRT;
+          updates.missionStartedAt = nowUTC;
         }
       } else {
-        updates.missionStartedAt = nowBRT;
+        updates.missionStartedAt = nowUTC;
       }
     }
 
@@ -1646,7 +1646,7 @@ import type { Express } from "express";
       }
 
       if (currentStep === "aguardando" && so.scheduledDate) {
-        const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "-03:00");
+        const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
         const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
         if (diffMin > 30 && !so.earlyStartApproved) {
           return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde.", code: "EARLY_START" });

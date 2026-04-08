@@ -69,7 +69,7 @@ export function parseUTCDate(ts: string | Date | null | undefined): Date {
   if (normalized.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(normalized)) {
     return new Date(normalized);
   }
-  return new Date(normalized + "-03:00");
+  return new Date(normalized + "Z");
 }
 
 export function formatTimeBRT(date: string | Date | null | undefined): string {

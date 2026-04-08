@@ -204,7 +204,7 @@ export function initCronJobs() {
           const missionNotStartedYet = !so.mission_status || so.mission_status === "aguardando";
           const scheduledInFutureCron = (() => {
             if (!so.scheduled_date) return false;
-            const sched = new Date(String(so.scheduled_date).includes("-03:00") ? String(so.scheduled_date) : String(so.scheduled_date) + "-03:00");
+            const sched = new Date(String(so.scheduled_date).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduled_date)) ? String(so.scheduled_date) : String(so.scheduled_date) + "Z");
             return sched.getTime() > Date.now();
           })();
           const skipBillingHoursCron = missionNotStartedYet || (so.status === "agendada" && scheduledInFutureCron);
