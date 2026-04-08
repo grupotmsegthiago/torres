@@ -349,8 +349,27 @@ if (typeof window !== "undefined") {
   let _activeChannel: ReturnType<typeof supabase.channel> | null = null;
   let _realtimeConnected = false;
   let _lastRealtimeEvent = Date.now();
+  let _retryDelay = 3000;
+  const _RETRY_MIN = 3000;
+  const _RETRY_MAX = 60000;
+  let _retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let _reconnecting = false;
+
+  function _scheduleRetry() {
+    if (_retryTimer) clearTimeout(_retryTimer);
+    const delay = Math.min(_retryDelay, _RETRY_MAX);
+    console.warn(`[Realtime] retrying in ${Math.round(delay / 1000)}s`);
+    _retryTimer = setTimeout(() => {
+      _retryTimer = null;
+      _subscribeRealtime();
+    }, delay);
+    _retryDelay = Math.min(_retryDelay * 2, _RETRY_MAX);
+  }
 
   function _subscribeRealtime() {
+    if (_reconnecting) return;
+    _reconnecting = true;
+
     if (_activeChannel) {
       try { supabase.removeChannel(_activeChannel); } catch {}
       _activeChannel = null;
@@ -360,16 +379,20 @@ if (typeof window !== "undefined") {
     const gen = _realtimeGeneration;
 
     try {
-      const ch = _buildRealtimeChannel(`realtime-sync-${gen}-${Date.now()}`)
+      const ch = _buildRealtimeChannel(`realtime-sync-${gen}`)
         .subscribe((status, err) => {
-          if (gen !== _realtimeGeneration) return;
+          if (gen !== _realtimeGeneration) {
+            try { supabase.removeChannel(ch); } catch {}
+            return;
+          }
 
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("[Realtime] channel error, retrying in 3s:", err?.message ?? status);
+            console.warn("[Realtime] channel error:", err?.message ?? status);
             _realtimeConnected = false;
+            _reconnecting = false;
             try { supabase.removeChannel(ch); } catch {}
             if (gen === _realtimeGeneration) {
-              setTimeout(_subscribeRealtime, 3000);
+              _scheduleRetry();
             }
           }
           if (status === "SUBSCRIBED") {
@@ -378,17 +401,21 @@ if (typeof window !== "undefined") {
             _realtimeConnected = true;
             _lastRealtimeEvent = Date.now();
             _activeChannel = ch;
+            _reconnecting = false;
+            _retryDelay = _RETRY_MIN;
             if (wasDisconnected) {
               queryClient.invalidateQueries();
             }
           }
         });
     } catch {
-      setTimeout(_subscribeRealtime, 5000);
+      _reconnecting = false;
+      _scheduleRetry();
     }
   }
 
   function _ensureRealtimeAlive() {
+    if (_reconnecting || _retryTimer) return;
     const staleMs = Date.now() - _lastRealtimeEvent;
     if (!_realtimeConnected || staleMs > 300_000) {
       console.log("[Realtime] heartbeat: reconnecting (connected:", _realtimeConnected, "stale:", Math.round(staleMs / 1000), "s)");
@@ -404,11 +431,16 @@ if (typeof window !== "undefined") {
     console.log("[Network] Online detected, refreshing all queries");
     queryClient.invalidateQueries();
     startAutoRefresh();
+    _retryDelay = _RETRY_MIN;
+    if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+    _reconnecting = false;
     setTimeout(_subscribeRealtime, 1000);
   });
 
   window.addEventListener("offline", () => {
     console.log("[Network] Offline detected");
+    if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+    _reconnecting = false;
   });
 }
 
