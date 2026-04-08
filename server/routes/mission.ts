@@ -543,15 +543,6 @@ import type { Express } from "express";
     const unreadOnly = req.query.unread === "true";
     const limit = parseInt(req.query.limit as string) || 50;
 
-    let missionResults: any[];
-    if (unreadOnly) {
-      const { data } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
-      missionResults = toCamelArray(data || []);
-    } else {
-      const { data } = await supabaseAdmin.from("mission_updates").select("*").order("created_at", { ascending: false }).limit(limit);
-      missionResults = toCamelArray(data || []);
-    }
-
     const stripBase64 = (m: any) => {
       if (m.photoUrl && typeof m.photoUrl === "string" && m.photoUrl.startsWith("data:")) {
         return { ...m, photoUrl: "[has_photo]", hasPhoto: true };
@@ -559,9 +550,17 @@ import type { Express } from "express";
       return { ...m, hasPhoto: !!m.photoUrl };
     };
 
-    if (!unreadOnly) {
-      const { data: telEventsRaw } = await supabaseAdmin.from("telemetry_events").select("*").order("created_at", { ascending: false }).limit(limit);
-      const telEvents = toCamelArray(telEventsRaw || []);
+    let missionResults: any[];
+    if (unreadOnly) {
+      const { data } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
+      missionResults = toCamelArray(data || []);
+    } else {
+      const [missionRes, telRes] = await Promise.all([
+        supabaseAdmin.from("mission_updates").select("*").order("created_at", { ascending: false }).limit(limit),
+        supabaseAdmin.from("telemetry_events").select("*").order("created_at", { ascending: false }).limit(limit),
+      ]);
+      missionResults = toCamelArray(missionRes.data || []);
+      const telEvents = toCamelArray(telRes.data || []);
       const telAsMission = telEvents.map(t => ({
         id: `tel-${t.id}`,
         serviceOrderId: null,

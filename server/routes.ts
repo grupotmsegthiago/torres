@@ -404,10 +404,13 @@ async function ensureSystemSettingsTable() {
       const isAllowed = u.role === "diretoria" || (u.name || "").toLowerCase().includes("mickael");
       if (!isAllowed) return res.json({ osPendentes: 0, docsPendentes: 0, boletinsPendentes: 0, employeesComDocPendente: [] });
 
-      const { data: osPend } = await supabaseAdmin.from("service_orders").select("id", { count: "exact" }).eq("status", "pendente");
-      const osPendentes = osPend?.length || 0;
-
-      const { data: emps } = await supabaseAdmin.from("employees").select("id, name, cnh_expiry, cnv_expiry, cnv_number, status").eq("status", "ativo");
+      const [osRes, empsRes, billingsRes] = await Promise.all([
+        supabaseAdmin.from("service_orders").select("id", { count: "exact" }).eq("status", "pendente"),
+        supabaseAdmin.from("employees").select("id, name, cnh_expiry, cnv_expiry, cnv_number, status").eq("status", "ativo"),
+        supabaseAdmin.from("escort_billings").select("id", { count: "exact" }).eq("status", "APROVADA"),
+      ]);
+      const osPendentes = osRes.data?.length || 0;
+      const emps = empsRes.data;
       const today = new Date().toISOString().split("T")[0];
       const twoYearsAgo = new Date();
       twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
@@ -422,7 +425,7 @@ async function ensureSystemSettingsTable() {
         if (issues.length > 0) employeesComDocPendente.push(e.name);
       });
 
-      const { data: billingsPend } = await supabaseAdmin.from("escort_billings").select("id", { count: "exact" }).eq("status", "APROVADA");
+      const billingsPend = billingsRes.data;
       const boletinsPendentes = billingsPend?.length || 0;
 
       res.json({ osPendentes, docsPendentes: employeesComDocPendente.length, boletinsPendentes, employeesComDocPendente });

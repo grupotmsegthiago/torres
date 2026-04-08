@@ -446,7 +446,7 @@ import type { Express } from "express";
             copiadoPor: lastUpdate[0].copiadoPor || null,
             copiadoEm: lastUpdate[0].copiadoEm || null,
           } : null,
-          recentUpdates: recentUpdates.map(u => ({
+          recentUpdates: (recentUpdates || []).map(u => ({
             id: u.id,
             message: u.message,
             missionStep: u.missionStep,
@@ -488,8 +488,10 @@ import type { Express } from "express";
   app.get("/api/vehicle-tracking", requireAuth, requireAdminRole, async (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
-    const allVehicles = await storage.getVehicles();
-    const orders = await storage.getServiceOrders();
+    const [allVehicles, orders] = await Promise.all([
+      storage.getVehicles(),
+      storage.getServiceOrders(),
+    ]);
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const FINISHED_MISSION = ["finalizada", "retorno_base", "chegada_base", "encerrada"];
     const activeOrders = orders.filter(
@@ -757,7 +759,7 @@ import type { Express } from "express";
                     copiadoPor: lastUpd[0].copiadoPor || null,
                     copiadoEm: lastUpd[0].copiadoEm || null,
                   } : null,
-                  recentUpdates: recentUpds.map(u => ({
+                  recentUpdates: (recentUpds || []).map(u => ({
                     id: u.id,
                     message: u.message,
                     missionStep: u.missionStep,

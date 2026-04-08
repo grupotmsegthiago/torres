@@ -313,8 +313,11 @@ export function registerChatRoutes(app: Express) {
         .from("chat_participants").select("conversation_id, last_read_at")
         .eq("user_id", userId);
 
-      let total = 0;
-      for (const p of (myParts || [])) {
+      if (!myParts || myParts.length === 0) {
+        return res.json({ total: 0, unreadCount: 0 });
+      }
+
+      const counts = await Promise.all((myParts).map(async (p) => {
         let q = supabaseAdmin
           .from("chat_messages").select("id", { count: "exact", head: true })
           .eq("conversation_id", p.conversation_id)
@@ -323,8 +326,9 @@ export function registerChatRoutes(app: Express) {
           q = q.gt("created_at", p.last_read_at);
         }
         const { count } = await q;
-        total += count || 0;
-      }
+        return count || 0;
+      }));
+      let total = counts.reduce((a, b) => a + b, 0);
 
       res.json({ unreadCount: total });
     } catch (err: any) {

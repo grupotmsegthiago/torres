@@ -179,10 +179,29 @@ export async function cacheRows(table: string, rows: any[]): Promise<void> {
   const p = getPool();
   const client = await p.connect();
   try {
-    await client.query("BEGIN");
-    await client.query(`DELETE FROM "${table}"`);
     const cols = Object.keys(rows[0]);
     const colList = cols.map((c) => `"${c}"`).join(", ");
+
+    const { rows: existCheck } = await client.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`, [table]
+    );
+    if (existCheck.length === 0) {
+      const colDefs = cols.map((c) => `"${c}" text`).join(", ");
+      await client.query(`CREATE TABLE IF NOT EXISTS "${table}" (${colDefs})`);
+    } else {
+      const { rows: existCols } = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1`, [table]
+      );
+      const existingSet = new Set(existCols.map((r: any) => r.column_name));
+      for (const c of cols) {
+        if (!existingSet.has(c)) {
+          await client.query(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${c}" text`).catch(() => {});
+        }
+      }
+    }
+
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM "${table}"`);
     for (const row of rows) {
       const vals = cols.map((c) => row[c]);
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");

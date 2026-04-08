@@ -9,12 +9,14 @@ if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
 }
 
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 500;
-const FETCH_TIMEOUT_MS = 8000;
+const MAX_RETRIES = 2;
+const BASE_DELAY_MS = 300;
+const FETCH_TIMEOUT_MS = 5000;
 
 let consecutiveFailures = 0;
 let consecutiveSuccesses = 0;
+let lastHealthChange = 0;
+const HEALTH_CHANGE_COOLDOWN = 30_000;
 
 function resilientFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return attemptFetch(url, init, 0);
@@ -32,8 +34,12 @@ async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefine
     clearTimeout(timeout);
     consecutiveFailures = 0;
     consecutiveSuccesses++;
-    if (consecutiveSuccesses >= 2) {
-      setSupabaseHealth(true);
+    if (consecutiveSuccesses >= 3) {
+      const now = Date.now();
+      if (now - lastHealthChange > HEALTH_CHANGE_COOLDOWN) {
+        lastHealthChange = now;
+        setSupabaseHealth(true);
+      }
     }
     return response;
   } catch (err: any) {
@@ -42,7 +48,11 @@ async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefine
     consecutiveFailures++;
 
     if (consecutiveFailures >= 3) {
-      setSupabaseHealth(false);
+      const now = Date.now();
+      if (now - lastHealthChange > HEALTH_CHANGE_COOLDOWN) {
+        lastHealthChange = now;
+        setSupabaseHealth(false);
+      }
     }
 
     if (attempt < MAX_RETRIES - 1) {
