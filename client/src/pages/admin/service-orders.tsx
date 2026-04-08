@@ -842,7 +842,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     kitId: data.kitId ? Number(data.kitId) : null,
     escortContractId: data.escortContractId || null,
     scheduledDate: localInputToUtc(data.scheduledDate),
-    ...(data.missionStartedAt ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
+    ...(data.missionStartedAt && !(order && order.missionStatus && order.missionStatus !== "aguardando" && order.missionStartedAt) ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
     pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),  // Always IDA value only
