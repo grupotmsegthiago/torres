@@ -6,7 +6,8 @@
 
 ## 1. REGRAS PRIMORDIAIS (NUNCA ALTERAR)
 
-### 1.1 Fuso Horário — America/Sao_Paulo (UTC-3)
+### 1.1 Fuso Horário — 100% PADRÃO BRASIL / HORÁRIO DE BRASÍLIA (BRT, UTC-3)
+> **REGRA ABSOLUTA:** Todo o sistema opera 100% no padrão Brasil, Horário de Brasília (America/Sao_Paulo). Toda data, hora, cálculo, exibição, gravação e comparação DEVE usar BRT. Não existe nenhum componente que opere em UTC puro.
 
 | Regra | Detalhes |
 |-------|---------|
