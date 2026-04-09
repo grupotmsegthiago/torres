@@ -83,13 +83,34 @@ export function setSupabaseHealth(healthy: boolean): void {
         `<div style="font-family:Arial,sans-serif;max-width:600px">
           <h2 style="color:#dc2626">⚠️ Supabase Fora do Ar</h2>
           <p>O banco de dados principal (Supabase) ficou <strong>inacessível</strong> às <strong>${formatBRT(downSince)}</strong>.</p>
-          <p>O sistema ativou automaticamente o <strong>modo fallback</strong> usando o banco local PostgreSQL. Os usuários continuam com acesso de leitura, mas gravações podem falhar enquanto o Supabase estiver fora.</p>
+
+          <h3 style="color:#333;margin-top:20px">Causa</h3>
+          <p>O servidor do Supabase (serviço externo) parou de responder. As requisições HTTP estouraram o tempo limite (<em>timeout</em>). Isso <strong>não é um problema do nosso sistema</strong> — é uma instabilidade do próprio Supabase/Cloudflare (erro 521).</p>
+
+          <h3 style="color:#333;margin-top:20px">O que o sistema fez automaticamente</h3>
+          <ul style="margin:8px 0;padding-left:20px">
+            <li>Detectou a falha e ativou o <strong>modo fallback</strong> (PostgreSQL local)</li>
+            <li>Leituras de dados continuam funcionando normalmente via banco local</li>
+            <li>Enviou este alerta por e-mail</li>
+            <li>Quando o Supabase voltar, o sistema reativa o modo primário automaticamente</li>
+          </ul>
+
+          <h3 style="color:#333;margin-top:20px">Impacto</h3>
+          <ul style="margin:8px 0;padding-left:20px">
+            <li><strong>Leituras</strong>: funcionando (via fallback local)</li>
+            <li><strong>Gravações</strong>: podem falhar enquanto o Supabase estiver fora</li>
+            <li><strong>Autenticação</strong>: pode falhar temporariamente (login/sessão via Supabase Auth)</li>
+            <li><strong>Usuários logados</strong>: continuam navegando normalmente</li>
+          </ul>
+
           <table style="border-collapse:collapse;margin:16px 0">
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Status</td><td style="padding:4px 12px;border:1px solid #ddd;color:#dc2626">OFFLINE</td></tr>
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Modo</td><td style="padding:4px 12px;border:1px solid #ddd">Fallback (PostgreSQL local)</td></tr>
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Detectado em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f9f9f9">Status</td><td style="padding:6px 14px;border:1px solid #ddd;color:#dc2626;font-weight:bold">OFFLINE</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f9f9f9">Modo</td><td style="padding:6px 14px;border:1px solid #ddd">Fallback (PostgreSQL local)</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f9f9f9">Detectado em</td><td style="padding:6px 14px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>
           </table>
-          <p style="color:#666;font-size:12px">Torres Vigilância Patrimonial — Monitoramento Automático</p>
+
+          <p style="color:#888;font-size:12px;margin-top:20px">Nenhuma acao necessaria. O sistema se recupera automaticamente quando o Supabase voltar.</p>
+          <p style="color:#666;font-size:12px">Torres Vigilancia Patrimonial — Monitoramento Automatico</p>
         </div>`
       );
     }
@@ -106,15 +127,40 @@ export function setSupabaseHealth(healthy: boolean): void {
         `<div style="font-family:Arial,sans-serif;max-width:600px">
           <h2 style="color:#16a34a">✅ Supabase Recuperado</h2>
           <p>O banco de dados principal voltou ao normal às <strong>${formatBRT(new Date())}</strong>.</p>
-          <p>O sistema retornou ao <strong>modo primário</strong> (Supabase).</p>
+
+          <h3 style="color:#333;margin-top:20px">Resumo do incidente</h3>
+          <p>O Supabase (servico externo) ficou inacessivel por <strong>${durationText}</strong>. Durante esse periodo, o sistema operou automaticamente em <strong>modo fallback</strong> (PostgreSQL local), garantindo que leituras de dados continuassem funcionando.</p>
+
+          <h3 style="color:#333;margin-top:20px">Causa</h3>
+          <p>Instabilidade temporaria do servidor Supabase/Cloudflare (erro 521 — "Web server is down"). <strong>Nao houve falha no nosso sistema.</strong></p>
+
+          <h3 style="color:#333;margin-top:20px">Acoes automaticas executadas</h3>
+          <ol style="margin:8px 0;padding-left:20px">
+            <li>Falha detectada em ~6 segundos</li>
+            <li>Modo fallback ativado (leituras via PostgreSQL local)</li>
+            <li>Alerta por e-mail enviado</li>
+            <li>Supabase voltou a responder — modo primario reativado</li>
+            <li>Este e-mail de recuperacao enviado</li>
+          </ol>
+
+          <h3 style="color:#333;margin-top:20px">Impacto real</h3>
+          <ul style="margin:8px 0;padding-left:20px">
+            <li><strong>Leituras</strong>: funcionaram normalmente (via fallback)</li>
+            <li><strong>Gravacoes</strong>: podem ter falhado durante os ${durationText} de indisponibilidade</li>
+            <li><strong>Autenticacao</strong>: usuarios nao logados podem ter sido impedidos temporariamente</li>
+            <li><strong>Usuarios ja logados</strong>: continuaram navegando sem interrupcao</li>
+          </ul>
+
           <table style="border-collapse:collapse;margin:16px 0">
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Status</td><td style="padding:4px 12px;border:1px solid #ddd;color:#16a34a">ONLINE</td></tr>
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Modo</td><td style="padding:4px 12px;border:1px solid #ddd">Primário (Supabase)</td></tr>
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Tempo fora</td><td style="padding:4px 12px;border:1px solid #ddd">${durationText}</td></tr>
-            ${downSince ? `<tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Caiu em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>` : ""}
-            <tr><td style="padding:4px 12px;border:1px solid #ddd;font-weight:bold">Voltou em</td><td style="padding:4px 12px;border:1px solid #ddd">${formatBRT(new Date())}</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f0fdf4">Status</td><td style="padding:6px 14px;border:1px solid #ddd;color:#16a34a;font-weight:bold">ONLINE</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f0fdf4">Modo</td><td style="padding:6px 14px;border:1px solid #ddd">Primario (Supabase)</td></tr>
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f0fdf4">Tempo fora</td><td style="padding:6px 14px;border:1px solid #ddd">${durationText}</td></tr>
+            ${downSince ? `<tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f0fdf4">Caiu em</td><td style="padding:6px 14px;border:1px solid #ddd">${formatBRT(downSince)}</td></tr>` : ""}
+            <tr><td style="padding:6px 14px;border:1px solid #ddd;font-weight:bold;background:#f0fdf4">Voltou em</td><td style="padding:6px 14px;border:1px solid #ddd">${formatBRT(new Date())}</td></tr>
           </table>
-          <p style="color:#666;font-size:12px">Torres Vigilância Patrimonial — Monitoramento Automático</p>
+
+          <p style="color:#888;font-size:12px;margin-top:20px">Incidente resolvido automaticamente. Nenhuma acao adicional necessaria.</p>
+          <p style="color:#666;font-size:12px">Torres Vigilancia Patrimonial — Monitoramento Automatico</p>
         </div>`
       );
     }
