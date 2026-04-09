@@ -1231,12 +1231,12 @@ import type { Express } from "express";
             });
 
             const { data: empUser } = await supabaseAdmin
-              .from("users").select("id").eq("employee_id", empId).single();
+              .from("users").select("id").eq("employee_id", empId).maybeSingle();
             if (!empUser) continue;
 
             let conv: any = null;
             const { data: adminUser } = await supabaseAdmin
-              .from("users").select("id").eq("id", req.user!.id).single();
+              .from("users").select("id").eq("id", req.user!.id).maybeSingle();
 
             if (adminUser) {
               const { data: empConvs } = await supabaseAdmin

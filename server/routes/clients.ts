@@ -3,6 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertClientSchema, vehicles } from "@shared/schema";
+  import * as apibrasil from "../apibrasil";
 
   import { generateContractPDF } from "../contract-pdf";
 

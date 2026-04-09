@@ -3,6 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
+  import * as apibrasil from "../apibrasil";
 
 
   export function registerVehicleRoutes(app: Express) {

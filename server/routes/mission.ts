@@ -351,7 +351,7 @@ import type { Express } from "express";
           .eq("employee_id", active.assignedEmployeeId)
           .order("updated_at", { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
         if (loc) agentLocation = { lat: String(loc.latitude), lng: String(loc.longitude) };
       }
 
@@ -1932,14 +1932,14 @@ import type { Express } from "express";
         .eq("service_order_id", osId)
         .eq("employee_id", emp.id)
         .eq("status", "pendente")
-        .single();
+        .maybeSingle();
 
       if (!acceptance) {
         const { data: existing } = await supabaseAdmin
           .from("mission_acceptances").select("status")
           .eq("service_order_id", osId)
           .eq("employee_id", emp.id)
-          .single();
+          .maybeSingle();
         if (existing?.status === "aceito") return res.status(400).json({ message: "Missão já aceita" });
 
         const { data: created } = await supabaseAdmin.from("mission_acceptances").insert({
@@ -2061,7 +2061,7 @@ import type { Express } from "express";
         .eq("service_order_id", osId)
         .eq("employee_id", emp.id)
         .eq("status", "pendente")
-        .single();
+        .maybeSingle();
 
       if (!acceptance) {
         const { data: created } = await supabaseAdmin.from("mission_acceptances").insert({
@@ -2159,7 +2159,7 @@ import type { Express } from "express";
         .eq("service_order_id", osId)
         .eq("employee_id", employeeId)
         .eq("status", "aceito")
-        .single();
+        .maybeSingle();
 
       if (!acceptance) return res.status(404).json({ message: "Aceite não encontrado" });
 
