@@ -51,6 +51,11 @@ let supabaseHealthy = true;
 let lastSyncTime = 0;
 const SYNC_INTERVAL_MS = 5 * 60_000;
 let syncInProgress = false;
+let _supabaseRef: any = null;
+
+export function setSupabaseRef(ref: any) {
+  _supabaseRef = ref;
+}
 
 function getPool(): pg.Pool {
   if (!pool) {
@@ -98,7 +103,7 @@ export function setSupabaseHealth(healthy: boolean): void {
           <h3 style="color:#333;margin-top:20px">Impacto</h3>
           <ul style="margin:8px 0;padding-left:20px">
             <li><strong>Leituras</strong>: funcionando (via fallback local)</li>
-            <li><strong>Gravações</strong>: podem falhar enquanto o Supabase estiver fora</li>
+            <li><strong>Gravações</strong>: enfileiradas automaticamente na fila local (serão reenviadas ao Supabase quando voltar)</li>
             <li><strong>Autenticação</strong>: pode falhar temporariamente (login/sessão via Supabase Auth)</li>
             <li><strong>Usuários logados</strong>: continuam navegando normalmente</li>
           </ul>
@@ -146,7 +151,7 @@ export function setSupabaseHealth(healthy: boolean): void {
           <h3 style="color:#333;margin-top:20px">Impacto real</h3>
           <ul style="margin:8px 0;padding-left:20px">
             <li><strong>Leituras</strong>: funcionaram normalmente (via fallback)</li>
-            <li><strong>Gravacoes</strong>: podem ter falhado durante os ${durationText} de indisponibilidade</li>
+            <li><strong>Gravacoes</strong>: enfileiradas na fila local durante os ${durationText} — reprocessamento automatico iniciado</li>
             <li><strong>Autenticacao</strong>: usuarios nao logados podem ter sido impedidos temporariamente</li>
             <li><strong>Usuarios ja logados</strong>: continuaram navegando sem interrupcao</li>
           </ul>
@@ -165,6 +170,12 @@ export function setSupabaseHealth(healthy: boolean): void {
       );
     }
     downSince = null;
+    if (_supabaseRef) {
+      setTimeout(() => {
+        console.log("[write-queue] Supabase recovered — triggering immediate flush");
+        flushWriteQueue(_supabaseRef).catch(() => {});
+      }, 3000);
+    }
   }
   supabaseHealthy = healthy;
 }
@@ -274,6 +285,8 @@ const LARGE_TABLES = new Set([
 ]);
 const SYNC_ROW_LIMIT = 5000;
 
+const SYNC_STAGGER_MS = 800;
+
 export async function syncAllTables(supabaseAdmin: any): Promise<void> {
   const now = Date.now();
   if (syncInProgress || now - lastSyncTime < SYNC_INTERVAL_MS) return;
@@ -283,6 +296,10 @@ export async function syncAllTables(supabaseAdmin: any): Promise<void> {
   try {
     for (const table of CORE_TABLES) {
       try {
+        if (!supabaseHealthy) {
+          console.log(`[pg-fallback] Sync aborted — Supabase offline`);
+          break;
+        }
         let query = supabaseAdmin.from(table).select("*");
         if (LARGE_TABLES.has(table)) {
           query = query.order("id", { ascending: false }).limit(SYNC_ROW_LIMIT);
@@ -290,12 +307,22 @@ export async function syncAllTables(supabaseAdmin: any): Promise<void> {
         const { data, error } = await query;
         if (error || !data) {
           failed++;
+          if (failed >= 3) {
+            console.warn(`[pg-fallback] Sync stopping early — ${failed} consecutive failures`);
+            break;
+          }
           continue;
         }
         await cacheRows(table, data);
         synced++;
+        failed = 0;
+        await new Promise((r) => setTimeout(r, SYNC_STAGGER_MS));
       } catch {
         failed++;
+        if (failed >= 3) {
+          console.warn(`[pg-fallback] Sync stopping early — ${failed} consecutive failures`);
+          break;
+        }
       }
     }
     lastSyncTime = Date.now();

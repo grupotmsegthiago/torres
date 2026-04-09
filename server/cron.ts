@@ -171,18 +171,34 @@ export function initCronJobs() {
       if (!liveOrders.length) return;
       log(`CRON Billing: ${activeOrders.length} ativas + ${unbilledConcluded.length} concluídas sem billing + ${unverifConcluded.length} A_VERIFICAR para processar`, "cron");
 
+      const { data: allContracts } = await supabaseAdmin.from("escort_contracts").select("*");
+      const contractMap = new Map<number, any>();
+      const clientContractMap = new Map<number, any>();
+      for (const c of (allContracts || [])) {
+        contractMap.set(c.id, c);
+        if (c.status === "Ativo" && c.client_id) {
+          clientContractMap.set(c.client_id, c);
+        }
+      }
+
+      const liveOrderIds = liveOrders.map((so: any) => so.id);
+      const { data: allPhotos } = await supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", liveOrderIds);
+      const photosMap = new Map<number, any[]>();
+      for (const p of (allPhotos || [])) {
+        if (!photosMap.has(p.service_order_id)) photosMap.set(p.service_order_id, []);
+        photosMap.get(p.service_order_id)!.push(p);
+      }
+
       for (const so of liveOrders) {
         try {
           let contrato: any = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 2.40, franquia_minima_km: 50, franquia_km: 50, franquia_horas: 3, valor_hora_estadia: 50, valor_hora_extra: 110, valor_acionamento: 0, valor_diaria: 200, vrp_base: 150, adicional_noturno_vrp_pct: 20, adicional_noturno_km_pct: 15, adicional_periculosidade_pct: 30 };
-          if (so.escort_contract_id) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", so.escort_contract_id).limit(1);
-            if (cc?.length) contrato = cc[0];
-          } else if (so.client_id) {
-            const { data: cc } = await supabaseAdmin.from("escort_contracts").select("*").eq("client_id", so.client_id).eq("status", "Ativo").limit(1);
-            if (cc?.length) contrato = cc[0];
+          if (so.escort_contract_id && contractMap.has(so.escort_contract_id)) {
+            contrato = contractMap.get(so.escort_contract_id);
+          } else if (so.client_id && clientContractMap.has(so.client_id)) {
+            contrato = clientContractMap.get(so.client_id);
           }
 
-          const { data: photos } = await supabaseAdmin.from("mission_photos").select("step, km_value").eq("service_order_id", so.id);
+          const photos = photosMap.get(so.id) || [];
           const kmChegadaPhoto = (photos || []).find((p: any) => p.step === "km_chegada");
           const kmSaidaPhoto = (photos || []).find((p: any) => p.step === "km_saida");
           const kmFinalPhoto = (photos || []).find((p: any) => p.step === "km_final");

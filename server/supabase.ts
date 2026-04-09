@@ -9,14 +9,16 @@ if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
 }
 
-const MAX_RETRIES = 2;
-const BASE_DELAY_MS = 300;
-const FETCH_TIMEOUT_MS = 5000;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 500;
+const FETCH_TIMEOUT_MS = 12_000;
 
 let consecutiveFailures = 0;
 let consecutiveSuccesses = 0;
 let lastHealthChange = 0;
-const HEALTH_CHANGE_COOLDOWN = 30_000;
+const HEALTH_CHANGE_COOLDOWN = 60_000;
+const FAILURE_THRESHOLD = 5;
+const RECOVERY_THRESHOLD = 2;
 
 function resilientFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return attemptFetch(url, init, 0);
@@ -30,11 +32,34 @@ async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefine
       ...init,
       signal: controller.signal,
       keepalive: true,
+      headers: {
+        ...(init?.headers || {}),
+        "Connection": "keep-alive",
+      },
     });
     clearTimeout(timeout);
+
+    if (response.status === 521 || response.status === 502 || response.status === 503) {
+      consecutiveSuccesses = 0;
+      consecutiveFailures++;
+      if (consecutiveFailures >= FAILURE_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastHealthChange > HEALTH_CHANGE_COOLDOWN) {
+          lastHealthChange = now;
+          setSupabaseHealth(false);
+        }
+      }
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 200;
+        await new Promise((r) => setTimeout(r, delay));
+        return attemptFetch(url, init, attempt + 1);
+      }
+      throw new Error(`Supabase HTTP ${response.status}`);
+    }
+
     consecutiveFailures = 0;
     consecutiveSuccesses++;
-    if (consecutiveSuccesses >= 3) {
+    if (consecutiveSuccesses >= RECOVERY_THRESHOLD) {
       const now = Date.now();
       if (now - lastHealthChange > HEALTH_CHANGE_COOLDOWN) {
         lastHealthChange = now;
@@ -47,7 +72,7 @@ async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefine
     consecutiveSuccesses = 0;
     consecutiveFailures++;
 
-    if (consecutiveFailures >= 3) {
+    if (consecutiveFailures >= FAILURE_THRESHOLD) {
       const now = Date.now();
       if (now - lastHealthChange > HEALTH_CHANGE_COOLDOWN) {
         lastHealthChange = now;
@@ -56,7 +81,7 @@ async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefine
     }
 
     if (attempt < MAX_RETRIES - 1) {
-      const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 200;
       await new Promise((r) => setTimeout(r, delay));
       return attemptFetch(url, init, attempt + 1);
     }

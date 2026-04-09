@@ -20,7 +20,7 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
-import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats } from "./pg-fallback";
+import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats, setSupabaseRef } from "./pg-fallback";
 import OpenAI from "openai";
 import {
   parseEmailList, createSmtpTransporter, getSmtpFrom,
@@ -360,6 +360,7 @@ async function ensureSystemSettingsTable() {
       });
     });
 
+    setSupabaseRef(supabaseAdmin);
     syncAllTables(supabaseAdmin).catch(() => {});
     setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 5 * 60_000);
 
