@@ -1293,7 +1293,8 @@ import type { Express } from "express";
 
   app.post("/api/mission/advance", requireAuth, async (req, res) => {
     const user = req.user!;
-    if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
+    const userIsAdminOrDir = user.role === "admin" || user.role === "diretoria";
+    if (!user.employeeId && !userIsAdminOrDir) return res.status(403).json({ message: "Usuário não é funcionário" });
 
     const { serviceOrderId, latitude, longitude } = req.body;
     const so = await storage.getServiceOrder(serviceOrderId);
@@ -1305,7 +1306,8 @@ import type { Express } from "express";
 
     const isAssigned =
       so.assignedEmployeeId === user.employeeId ||
-      so.assignedEmployee2Id === user.employeeId;
+      so.assignedEmployee2Id === user.employeeId ||
+      userIsAdminOrDir;
     if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
 
     const currentIdx = MISSION_STEPS.indexOf(so.missionStatus as any);
@@ -1316,7 +1318,8 @@ import type { Express } from "express";
     const currentStep = MISSION_STEPS[currentIdx];
 
 
-    if (currentStep === "aguardando" && so.scheduledDate) {
+    const isAdminOrDiretoria = user.role === "admin" || user.role === "diretoria";
+    if (currentStep === "aguardando" && so.scheduledDate && !isAdminOrDiretoria) {
       const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
       const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
       if (diffMin > 30 && !so.earlyStartApproved) {
@@ -1680,7 +1683,9 @@ import type { Express } from "express";
         return res.status(400).json({ message: "Missao ja finalizada ou status invalido" });
       }
 
-      if (currentStep === "aguardando" && so.scheduledDate) {
+      const simUser = req.user!;
+      const simIsAdminOrDir = simUser.role === "admin" || simUser.role === "diretoria";
+      if (currentStep === "aguardando" && so.scheduledDate && !simIsAdminOrDir) {
         const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
         const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
         if (diffMin > 30 && !so.earlyStartApproved) {
