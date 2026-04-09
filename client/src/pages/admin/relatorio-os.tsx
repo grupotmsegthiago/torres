@@ -91,27 +91,20 @@ export default function RelatorioOSPage() {
   const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
   const [dateTo, setDateTo] = useState<string>(getTodayBRT());
 
+  const gridUrl = `/api/operational-grid?from=${dateFrom}&to=${dateTo}`;
+
   const { data: gridData = [], isLoading, refetch, isFetching } = useQuery<ReportOS[]>({
-    queryKey: ["/api/operational-grid"],
+    queryKey: ["/api/operational-grid", dateFrom, dateTo],
+    queryFn: async () => {
+      const res = await fetch(gridUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Erro ao buscar dados");
+      return res.json();
+    },
     staleTime: 30000,
   });
 
   const filtered = useMemo(() => {
     let items = [...gridData];
-
-    if (dateFrom || dateTo) {
-      items = items.filter(o => {
-        const raw = o.scheduledDate || o.missionStartedAt;
-        if (!raw) return false;
-        let d: string;
-        try {
-          d = new Date(raw).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-        } catch { return false; }
-        if (dateFrom && d < dateFrom) return false;
-        if (dateTo && d > dateTo) return false;
-        return true;
-      });
-    }
 
     if (statusFilter !== "all") {
       items = items.filter(o => {
@@ -145,7 +138,7 @@ export default function RelatorioOSPage() {
       return 0;
     });
     return items;
-  }, [gridData, statusFilter, search, sortField, sortDir, dateFrom, dateTo]);
+  }, [gridData, statusFilter, search, sortField, sortDir]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { concluida: 0, em_andamento: 0, agendada: 0, cancelada: 0, pendente: 0 };

@@ -28,16 +28,29 @@ import type { Express } from "express";
     const orders = await storage.getServiceOrders();
     const gridVehicles = await storage.getVehicles();
     const todayBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+    const qFrom = typeof _req.query.from === "string" ? _req.query.from : null;
+    const qTo = typeof _req.query.to === "string" ? _req.query.to : null;
+    const isDateRange = qFrom && qTo;
+
     const activeOrders = orders.filter(
       (o) => {
         const sdBRT = o.scheduledDate ? new Date(o.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        const msBRT = o.missionStartedAt ? new Date(o.missionStartedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+
+        if (isDateRange) {
+          const matchDate = sdBRT || msBRT || cdBRT;
+          if (!matchDate) return false;
+          return matchDate >= qFrom && matchDate <= qTo;
+        }
+
         if (sdBRT && sdBRT > todayBRT) return false;
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") {
           return true;
         }
         const isConcluida = o.status === "concluida" || o.status === "concluída";
         if (isConcluida || o.missionStatus === "encerrada" || o.status === "cancelada" || o.status === "recusada") {
-          const cdBRT = o.completedDate ? new Date(o.completedDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           const udBRT = o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
           if (sdBRT === todayBRT || cdBRT === todayBRT || udBRT === todayBRT) return true;
         }
@@ -67,14 +80,15 @@ import type { Express } from "express";
       }
     }
 
-    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const rangeFrom = qFrom || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const rangeTo = qTo || rangeFrom;
     const vehicleFuelCache = new Map<string, number>();
     try {
       const { data: allFuelRecords } = await supabaseAdmin.from("financial_transactions")
         .select("amount, description, created_at")
         .eq("origin_type", "fueling")
-        .gte("created_at", todayStr + "T00:00:00")
-        .lte("created_at", todayStr + "T23:59:59")
+        .gte("created_at", rangeFrom + "T00:00:00")
+        .lte("created_at", rangeTo + "T23:59:59")
         .order("created_at", { ascending: false })
         .limit(200);
       if (allFuelRecords) {
@@ -122,8 +136,8 @@ import type { Express } from "express";
         .select("vehicle_id, amount")
         .is("service_order_id", null)
         .not("vehicle_id", "is", null)
-        .gte("created_at", todayStr + "T00:00:00")
-        .lte("created_at", todayStr + "T23:59:59");
+        .gte("created_at", rangeFrom + "T00:00:00")
+        .lte("created_at", rangeTo + "T23:59:59");
       if (vazioCosts) {
         for (const vc of vazioCosts) {
           if (vc.vehicle_id) {
