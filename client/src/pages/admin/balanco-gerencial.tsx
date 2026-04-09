@@ -185,7 +185,7 @@ export default function BalancoGerencialPage() {
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ["/api/financial/dashboard"],
-    refetchInterval: 60_000,
+    refetchInterval: 600_000,
   });
 
   const { data: allVehicles } = useQuery<any[]>({
