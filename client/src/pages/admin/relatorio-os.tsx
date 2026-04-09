@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronUp, ArrowUpDown, CalendarDays,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
+import { authFetch } from "@/lib/queryClient";
 
 interface ReportOS {
   id: number;
@@ -96,7 +97,7 @@ export default function RelatorioOSPage() {
   const { data: gridData = [], isLoading, refetch, isFetching } = useQuery<ReportOS[]>({
     queryKey: ["/api/operational-grid", dateFrom, dateTo],
     queryFn: async () => {
-      const res = await fetch(gridUrl, { credentials: "include" });
+      const res = await authFetch(gridUrl);
       if (!res.ok) throw new Error("Erro ao buscar dados");
       return res.json();
     },
