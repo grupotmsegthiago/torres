@@ -34,7 +34,7 @@ I prefer clear and direct communication. When making changes, prioritize iterati
     3. `server/storage.ts` — Todos os métodos GET usam `resilientList`/`resilientGet` com fallback automático.
     4. `GET /api/health` — Retorna `supabase: "online"/"offline"`, `localDb: "online"/"offline"`, `mode: "primary"/"fallback"`.
     5. **Alertas por E-mail:** `pg-fallback.ts` envia alerta automático para `thiago@grupotmseg.com.br` (Supabase down/up). Cooldown 10min.
-    6. Escritas (INSERT/UPDATE/DELETE) continuam dependendo do Supabase — quando offline, escritas falham com erro HTTP 500.
+    6. **Write Queue (fallback_write_queue):** Quando Supabase falha em INSERT/UPDATE/DELETE, a escrita é salva na tabela local `fallback_write_queue` (PostgreSQL local). Um worker a cada 30s (`flushWriteQueue`) tenta reprocessar os itens pendentes. Máximo 10 tentativas por item. Endpoints: `GET /api/write-queue/stats`, `POST /api/write-queue/flush`. Health endpoint (`/api/health`) inclui `writeQueue: { pending, failed, processed }`. Helpers: `resilientInsert`, `resilientUpdate`, `resilientDelete` em `storage.ts`.
 - **Conexões de Banco:**
     - `DATABASE_URL` (runtime-managed pelo Replit) — PostgreSQL local para fallback/cache.
     - `SUPABASE_DATABASE_URL` (env var compartilhada) — Conexão direta ao Supabase via pgbouncer na porta 6543 (`?pgbouncer=true`). Usado pelo `db-init.ts` (DDL) e `drizzle.config.ts` (migrações).

@@ -20,7 +20,7 @@ import { processTelemetry } from "./telemetry-engine";
 import { nominatimGeocode, nominatimReverseGeocode } from "./db-init";
 import { logSystemAudit } from "./audit";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
-import { isSupabaseHealthy, syncAllTables, testLocalDb } from "./pg-fallback";
+import { isSupabaseHealthy, syncAllTables, testLocalDb, flushWriteQueue, getQueueStats } from "./pg-fallback";
 import OpenAI from "openai";
 import {
   parseEmailList, createSmtpTransporter, getSmtpFrom,
@@ -338,12 +338,14 @@ async function ensureSystemSettingsTable() {
 
     app.get("/api/health", async (_req, res) => {
       const localDb = await testLocalDb();
+      const queueStats = await getQueueStats();
       res.json({
         ok: true,
         ts: Date.now(),
         supabase: isSupabaseHealthy() ? "online" : "offline",
         localDb: localDb ? "online" : "offline",
         mode: isSupabaseHealthy() ? "primary" : "fallback",
+        writeQueue: queueStats,
       });
     });
 
@@ -360,6 +362,18 @@ async function ensureSystemSettingsTable() {
 
     syncAllTables(supabaseAdmin).catch(() => {});
     setInterval(() => syncAllTables(supabaseAdmin).catch(() => {}), 5 * 60_000);
+
+    setInterval(() => flushWriteQueue(supabaseAdmin).catch(() => {}), 30_000);
+
+    app.get("/api/write-queue/stats", requireAuth, async (_req, res) => {
+      const stats = await getQueueStats();
+      res.json(stats);
+    });
+
+    app.post("/api/write-queue/flush", requireAuth, async (_req, res) => {
+      const result = await flushWriteQueue(supabaseAdmin);
+      res.json(result);
+    });
 
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {

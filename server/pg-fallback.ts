@@ -319,3 +319,148 @@ export async function testLocalDb(): Promise<boolean> {
     return false;
   }
 }
+
+async function ensureWriteQueueTable(): Promise<void> {
+  const p = getPool();
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS fallback_write_queue (
+      id SERIAL PRIMARY KEY,
+      table_name TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      filters JSONB,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ
+    )
+  `).catch(() => {});
+}
+
+let writeQueueReady = false;
+
+export async function enqueueWrite(
+  tableName: string,
+  operation: "insert" | "update" | "delete",
+  payload: Record<string, any>,
+  filters?: Record<string, any>,
+): Promise<{ queued: true; queueId: number }> {
+  if (!writeQueueReady) {
+    await ensureWriteQueueTable();
+    writeQueueReady = true;
+  }
+  const p = getPool();
+  const { rows } = await p.query(
+    `INSERT INTO fallback_write_queue (table_name, operation, payload, filters) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [tableName, operation, JSON.stringify(payload), filters ? JSON.stringify(filters) : null],
+  );
+  const queueId = rows[0]?.id;
+  console.log(`[write-queue] Enqueued ${operation} on ${tableName} (queue #${queueId})`);
+  return { queued: true, queueId };
+}
+
+export async function getQueueStats(): Promise<{ pending: number; failed: number; processed: number }> {
+  if (!writeQueueReady) return { pending: 0, failed: 0, processed: 0 };
+  try {
+    const p = getPool();
+    const { rows } = await p.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+        COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+        COUNT(*) FILTER (WHERE status = 'processed') AS processed
+      FROM fallback_write_queue
+    `);
+    return {
+      pending: Number(rows[0]?.pending || 0),
+      failed: Number(rows[0]?.failed || 0),
+      processed: Number(rows[0]?.processed || 0),
+    };
+  } catch {
+    return { pending: 0, failed: 0, processed: 0 };
+  }
+}
+
+const MAX_QUEUE_ATTEMPTS = 10;
+let flushInProgress = false;
+
+export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: number; failed: number }> {
+  if (flushInProgress || !supabaseHealthy) return { processed: 0, failed: 0 };
+  flushInProgress = true;
+  let processed = 0;
+  let failed = 0;
+
+  try {
+    if (!writeQueueReady) {
+      await ensureWriteQueueTable();
+      writeQueueReady = true;
+    }
+    const p = getPool();
+    const { rows: pending } = await p.query(
+      `SELECT * FROM fallback_write_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 50`
+    );
+
+    if (pending.length === 0) { flushInProgress = false; return { processed: 0, failed: 0 }; }
+    console.log(`[write-queue] Flushing ${pending.length} pending write(s) to Supabase...`);
+
+    for (const item of pending) {
+      try {
+        const payload = typeof item.payload === "string" ? JSON.parse(item.payload) : item.payload;
+        const filters = item.filters ? (typeof item.filters === "string" ? JSON.parse(item.filters) : item.filters) : null;
+
+        let result: { error: any } = { error: null };
+
+        if (item.operation === "insert") {
+          result = await supabaseAdmin.from(item.table_name).insert(payload);
+        } else if (item.operation === "update" && filters) {
+          let query = supabaseAdmin.from(item.table_name).update(payload);
+          for (const [col, val] of Object.entries(filters)) {
+            query = query.eq(col, val);
+          }
+          result = await query;
+        } else if (item.operation === "delete" && filters) {
+          let query = supabaseAdmin.from(item.table_name).delete();
+          for (const [col, val] of Object.entries(filters)) {
+            query = query.eq(col, val);
+          }
+          result = await query;
+        }
+
+        if (result.error) throw new Error(result.error.message);
+
+        await p.query(
+          `UPDATE fallback_write_queue SET status = 'processed', processed_at = NOW() WHERE id = $1`,
+          [item.id],
+        );
+        processed++;
+        console.log(`[write-queue] ✓ Processed queue #${item.id} (${item.operation} on ${item.table_name})`);
+      } catch (err: any) {
+        const attempts = (item.attempts || 0) + 1;
+        const newStatus = attempts >= MAX_QUEUE_ATTEMPTS ? "failed" : "pending";
+        await p.query(
+          `UPDATE fallback_write_queue SET attempts = $1, last_error = $2, status = $3 WHERE id = $4`,
+          [attempts, err.message?.slice(0, 500), newStatus, item.id],
+        );
+        if (newStatus === "failed") {
+          failed++;
+          console.error(`[write-queue] ✗ Queue #${item.id} FAILED permanently after ${attempts} attempts: ${err.message}`);
+        } else {
+          console.warn(`[write-queue] Queue #${item.id} retry ${attempts}/${MAX_QUEUE_ATTEMPTS}: ${err.message}`);
+        }
+      }
+    }
+
+    if (processed > 0) {
+      console.log(`[write-queue] Flush complete: ${processed} processed, ${failed} failed`);
+    }
+  } catch (err: any) {
+    console.error("[write-queue] flushWriteQueue error:", err.message);
+  } finally {
+    flushInProgress = false;
+  }
+  return { processed, failed };
+}
+
+export function isWriteQueueReady(): boolean {
+  return writeQueueReady;
+}

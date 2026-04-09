@@ -26,7 +26,7 @@ import {
   type MissionCost, type InsertMissionCost,
   type ClientForward, type InsertClientForward,
 } from "@shared/schema";
-import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables } from "./pg-fallback";
+import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables, enqueueWrite } from "./pg-fallback";
 
 async function resilientList<T>(
   table: string,
@@ -63,6 +63,58 @@ async function resilientGet<T>(
     console.warn(`[resilient] ${table} get fallback: ${err.message || err}`);
     const rows = await localQuery(table, filters, undefined, 1);
     return rows.length > 0 ? toCamelObj<T>(rows[0]) : undefined;
+  }
+}
+
+async function resilientInsert<T>(
+  table: string,
+  snakePayload: Record<string, any>,
+): Promise<T> {
+  try {
+    const { data, error } = await supabaseAdmin.from(table).insert(snakePayload).select().single();
+    if (error) throw new Error(error.message);
+    return toCamelObj<T>(data);
+  } catch (err: any) {
+    console.warn(`[resilient] ${table} insert fallback to queue: ${err.message}`);
+    const { queueId } = await enqueueWrite(table, "insert", snakePayload);
+    return { ...toCamelObj<T>(snakePayload as any), _queued: true, _queueId: queueId } as any;
+  }
+}
+
+async function resilientUpdate<T>(
+  table: string,
+  snakePayload: Record<string, any>,
+  filters: Record<string, any>,
+): Promise<T | undefined> {
+  try {
+    let query = supabaseAdmin.from(table).update(snakePayload);
+    for (const [col, val] of Object.entries(filters)) {
+      query = query.eq(col, val);
+    }
+    const { data, error } = await query.select().single();
+    if (error) throw new Error(error.message);
+    return data ? toCamelObj<T>(data) : undefined;
+  } catch (err: any) {
+    console.warn(`[resilient] ${table} update fallback to queue: ${err.message}`);
+    await enqueueWrite(table, "update", snakePayload, filters);
+    return toCamelObj<T>({ ...snakePayload, ...filters } as any);
+  }
+}
+
+async function resilientDelete(
+  table: string,
+  filters: Record<string, any>,
+): Promise<void> {
+  try {
+    let query = supabaseAdmin.from(table).delete();
+    for (const [col, val] of Object.entries(filters)) {
+      query = query.eq(col, val);
+    }
+    const { error } = await query;
+    if (error) throw new Error(error.message);
+  } catch (err: any) {
+    console.warn(`[resilient] ${table} delete fallback to queue: ${err.message}`);
+    await enqueueWrite(table, "delete", {}, filters);
   }
 }
 
@@ -250,19 +302,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const { data, error } = await supabaseAdmin.from("users").insert(toSnakeObj(user as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<User>(data);
+    return resilientInsert<User>("users", toSnakeObj(user as any));
   }
 
   async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
-    const { data, error } = await supabaseAdmin.from("users").update(toSnakeObj(userData as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<User>(data) : undefined;
+    return resilientUpdate<User>("users", toSnakeObj(userData as any), { id });
   }
 
   async deleteUser(id: number): Promise<void> {
-    await supabaseAdmin.from("users").delete().eq("id", id);
+    return resilientDelete("users", { id });
   }
 
   async hasAnyUsers(): Promise<boolean> {
@@ -307,19 +355,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClient(client: InsertClient): Promise<Client> {
-    const { data, error } = await supabaseAdmin.from("clients").insert(toSnakeObj(client as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Client>(data);
+    return resilientInsert<Client>("clients", toSnakeObj(client as any));
   }
 
   async updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined> {
-    const { data, error } = await supabaseAdmin.from("clients").update(toSnakeObj(client as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Client>(data) : undefined;
+    return resilientUpdate<Client>("clients", toSnakeObj(client as any), { id });
   }
 
   async deleteClient(id: number): Promise<void> {
-    await supabaseAdmin.from("clients").delete().eq("id", id);
+    return resilientDelete("clients", { id });
   }
 
   async getClientVehicles(clientId: number): Promise<ClientVehicle[]> {
@@ -339,19 +383,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClientVehicle(v: InsertClientVehicle): Promise<ClientVehicle> {
-    const { data, error } = await supabaseAdmin.from("client_vehicles").insert(toSnakeObj(v as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<ClientVehicle>(data);
+    return resilientInsert<ClientVehicle>("client_vehicles", toSnakeObj(v as any));
   }
 
   async updateClientVehicle(id: number, v: Partial<InsertClientVehicle>): Promise<ClientVehicle | undefined> {
-    const { data, error } = await supabaseAdmin.from("client_vehicles").update(toSnakeObj(v as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<ClientVehicle>(data) : undefined;
+    return resilientUpdate<ClientVehicle>("client_vehicles", toSnakeObj(v as any), { id });
   }
 
   async deleteClientVehicle(id: number): Promise<void> {
-    await supabaseAdmin.from("client_vehicles").delete().eq("id", id);
+    return resilientDelete("client_vehicles", { id });
   }
 
   async getEmployees(): Promise<Employee[]> {
@@ -365,19 +405,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
-    const { data, error } = await supabaseAdmin.from("employees").insert(toSnakeObj(employee as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Employee>(data);
+    return resilientInsert<Employee>("employees", toSnakeObj(employee as any));
   }
 
   async updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
-    const { data, error } = await supabaseAdmin.from("employees").update(toSnakeObj(employee as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Employee>(data) : undefined;
+    return resilientUpdate<Employee>("employees", toSnakeObj(employee as any), { id });
   }
 
   async deleteEmployee(id: number): Promise<void> {
-    await supabaseAdmin.from("employees").delete().eq("id", id);
+    return resilientDelete("employees", { id });
   }
 
   async getVehicles(): Promise<Vehicle[]> {
@@ -391,19 +427,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVehicle(vehicle: InsertVehicle): Promise<Vehicle> {
-    const { data, error } = await supabaseAdmin.from("vehicles").insert(toSnakeObj(vehicle as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Vehicle>(data);
+    return resilientInsert<Vehicle>("vehicles", toSnakeObj(vehicle as any));
   }
 
   async updateVehicle(id: number, vehicle: Partial<InsertVehicle>): Promise<Vehicle | undefined> {
-    const { data, error } = await supabaseAdmin.from("vehicles").update(toSnakeObj(vehicle as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Vehicle>(data) : undefined;
+    return resilientUpdate<Vehicle>("vehicles", toSnakeObj(vehicle as any), { id });
   }
 
   async deleteVehicle(id: number): Promise<void> {
-    await supabaseAdmin.from("vehicles").delete().eq("id", id);
+    return resilientDelete("vehicles", { id });
   }
 
   async getServiceOrders(): Promise<ServiceOrder[]> {
@@ -417,19 +449,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
-    const { data, error } = await supabaseAdmin.from("service_orders").insert(toSnakeObj(order as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<ServiceOrder>(data);
+    return resilientInsert<ServiceOrder>("service_orders", toSnakeObj(order as any));
   }
 
   async updateServiceOrder(id: number, order: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined> {
-    const { data, error } = await supabaseAdmin.from("service_orders").update(toSnakeObj(order as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<ServiceOrder>(data) : undefined;
+    return resilientUpdate<ServiceOrder>("service_orders", toSnakeObj(order as any), { id });
   }
 
   async deleteServiceOrder(id: number): Promise<void> {
-    await supabaseAdmin.from("service_orders").delete().eq("id", id);
+    return resilientDelete("service_orders", { id });
   }
 
   async getTrips(): Promise<Trip[]> {
@@ -443,19 +471,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTrip(trip: InsertTrip): Promise<Trip> {
-    const { data, error } = await supabaseAdmin.from("trips").insert(toSnakeObj(trip as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Trip>(data);
+    return resilientInsert<Trip>("trips", toSnakeObj(trip as any));
   }
 
   async updateTrip(id: number, trip: Partial<InsertTrip>): Promise<Trip | undefined> {
-    const { data, error } = await supabaseAdmin.from("trips").update(toSnakeObj(trip as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Trip>(data) : undefined;
+    return resilientUpdate<Trip>("trips", toSnakeObj(trip as any), { id });
   }
 
   async deleteTrip(id: number): Promise<void> {
-    await supabaseAdmin.from("trips").delete().eq("id", id);
+    return resilientDelete("trips", { id });
   }
 
   async getVehicleMaintenances(): Promise<VehicleMaintenance[]> {
@@ -469,19 +493,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVehicleMaintenance(m: InsertVehicleMaintenance): Promise<VehicleMaintenance> {
-    const { data, error } = await supabaseAdmin.from("vehicle_maintenance").insert(toSnakeObj(m as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<VehicleMaintenance>(data);
+    return resilientInsert<VehicleMaintenance>("vehicle_maintenance", toSnakeObj(m as any));
   }
 
   async updateVehicleMaintenance(id: number, m: Partial<InsertVehicleMaintenance>): Promise<VehicleMaintenance | undefined> {
-    const { data, error } = await supabaseAdmin.from("vehicle_maintenance").update(toSnakeObj(m as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<VehicleMaintenance>(data) : undefined;
+    return resilientUpdate<VehicleMaintenance>("vehicle_maintenance", toSnakeObj(m as any), { id });
   }
 
   async deleteVehicleMaintenance(id: number): Promise<void> {
-    await supabaseAdmin.from("vehicle_maintenance").delete().eq("id", id);
+    return resilientDelete("vehicle_maintenance", { id });
   }
 
   async getVehicleFuelings(): Promise<VehicleFueling[]> {
@@ -495,19 +515,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVehicleFueling(f: InsertVehicleFueling): Promise<VehicleFueling> {
-    const { data, error } = await supabaseAdmin.from("vehicle_fueling").insert(toSnakeObj(f as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<VehicleFueling>(data);
+    return resilientInsert<VehicleFueling>("vehicle_fueling", toSnakeObj(f as any));
   }
 
   async updateVehicleFueling(id: number, f: Partial<InsertVehicleFueling>): Promise<VehicleFueling | undefined> {
-    const { data, error } = await supabaseAdmin.from("vehicle_fueling").update(toSnakeObj(f as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<VehicleFueling>(data) : undefined;
+    return resilientUpdate<VehicleFueling>("vehicle_fueling", toSnakeObj(f as any), { id });
   }
 
   async deleteVehicleFueling(id: number): Promise<void> {
-    await supabaseAdmin.from("vehicle_fueling").delete().eq("id", id);
+    return resilientDelete("vehicle_fueling", { id });
   }
 
   async getTimesheets(): Promise<Timesheet[]> {
@@ -521,19 +537,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTimesheet(t: InsertTimesheet): Promise<Timesheet> {
-    const { data, error } = await supabaseAdmin.from("timesheets").insert(toSnakeObj(t as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Timesheet>(data);
+    return resilientInsert<Timesheet>("timesheets", toSnakeObj(t as any));
   }
 
   async updateTimesheet(id: number, t: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
-    const { data, error } = await supabaseAdmin.from("timesheets").update(toSnakeObj(t as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Timesheet>(data) : undefined;
+    return resilientUpdate<Timesheet>("timesheets", toSnakeObj(t as any), { id });
   }
 
   async deleteTimesheet(id: number): Promise<void> {
-    await supabaseAdmin.from("employee_timesheets").delete().eq("id", id);
+    return resilientDelete("employee_timesheets", { id });
   }
 
   async getMissionPhotosByOS(serviceOrderId: number): Promise<MissionPhoto[]> {
@@ -590,13 +602,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEmployeeSalary(salary: InsertEmployeeSalary): Promise<EmployeeSalary> {
-    const { data, error } = await supabaseAdmin.from("employee_salaries").insert(toSnakeObj(salary as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<EmployeeSalary>(data);
+    return resilientInsert<EmployeeSalary>("employee_salaries", toSnakeObj(salary as any));
   }
 
   async deleteEmployeeSalary(id: number): Promise<void> {
-    await supabaseAdmin.from("employee_salaries").delete().eq("id", id);
+    return resilientDelete("employee_salaries", { id });
   }
 
   async getNextMatricula(): Promise<string> {
@@ -612,19 +622,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEmployeeDocument(doc: InsertEmployeeDocument): Promise<EmployeeDocument> {
-    const { data, error } = await supabaseAdmin.from("employee_documents").insert(toSnakeObj(doc as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<EmployeeDocument>(data);
+    return resilientInsert<EmployeeDocument>("employee_documents", toSnakeObj(doc as any));
   }
 
   async updateEmployeeDocument(id: number, doc: Partial<InsertEmployeeDocument>): Promise<EmployeeDocument | undefined> {
-    const { data, error } = await supabaseAdmin.from("employee_documents").update(toSnakeObj(doc as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<EmployeeDocument>(data) : undefined;
+    return resilientUpdate<EmployeeDocument>("employee_documents", toSnakeObj(doc as any), { id });
   }
 
   async deleteEmployeeDocument(id: number): Promise<void> {
-    await supabaseAdmin.from("employee_documents").delete().eq("id", id);
+    return resilientDelete("employee_documents", { id });
   }
 
   async getWeapons(): Promise<Weapon[]> {
@@ -638,19 +644,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWeapon(weapon: InsertWeapon): Promise<Weapon> {
-    const { data, error } = await supabaseAdmin.from("weapons").insert(toSnakeObj(weapon as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Weapon>(data);
+    return resilientInsert<Weapon>("weapons", toSnakeObj(weapon as any));
   }
 
   async updateWeapon(id: number, weapon: Partial<InsertWeapon>): Promise<Weapon | undefined> {
-    const { data, error } = await supabaseAdmin.from("weapons").update(toSnakeObj(weapon as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Weapon>(data) : undefined;
+    return resilientUpdate<Weapon>("weapons", toSnakeObj(weapon as any), { id });
   }
 
   async deleteWeapon(id: number): Promise<void> {
-    await supabaseAdmin.from("weapons").delete().eq("id", id);
+    return resilientDelete("weapons", { id });
   }
 
   async getWeaponAssignments(weaponId: number): Promise<WeaponAssignment[]> {
@@ -660,9 +662,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWeaponAssignment(a: InsertWeaponAssignment): Promise<WeaponAssignment> {
-    const { data, error } = await supabaseAdmin.from("weapon_assignments").insert(toSnakeObj(a as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<WeaponAssignment>(data);
+    return resilientInsert<WeaponAssignment>("weapon_assignments", toSnakeObj(a as any));
   }
 
   async getVehicleAssignments(vehicleId: number): Promise<VehicleAssignment[]> {
@@ -672,9 +672,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVehicleAssignment(a: InsertVehicleAssignment): Promise<VehicleAssignment> {
-    const { data, error } = await supabaseAdmin.from("vehicle_assignments").insert(toSnakeObj(a as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<VehicleAssignment>(data);
+    return resilientInsert<VehicleAssignment>("vehicle_assignments", toSnakeObj(a as any));
   }
 
   async getGerenciadoras(): Promise<Gerenciadora[]> {
@@ -688,19 +686,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createGerenciadora(g: InsertGerenciadora): Promise<Gerenciadora> {
-    const { data, error } = await supabaseAdmin.from("gerenciadoras").insert(toSnakeObj(g as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<Gerenciadora>(data);
+    return resilientInsert<Gerenciadora>("gerenciadoras", toSnakeObj(g as any));
   }
 
   async updateGerenciadora(id: number, g: Partial<InsertGerenciadora>): Promise<Gerenciadora | undefined> {
-    const { data, error } = await supabaseAdmin.from("gerenciadoras").update(toSnakeObj(g as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<Gerenciadora>(data) : undefined;
+    return resilientUpdate<Gerenciadora>("gerenciadoras", toSnakeObj(g as any), { id });
   }
 
   async deleteGerenciadora(id: number): Promise<void> {
-    await supabaseAdmin.from("gerenciadoras").delete().eq("id", id);
+    return resilientDelete("gerenciadoras", { id });
   }
 
   async getWeaponKits(): Promise<WeaponKit[]> {
@@ -714,20 +708,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWeaponKit(kit: InsertWeaponKit): Promise<WeaponKit> {
-    const { data, error } = await supabaseAdmin.from("weapon_kits").insert(toSnakeObj(kit as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<WeaponKit>(data);
+    return resilientInsert<WeaponKit>("weapon_kits", toSnakeObj(kit as any));
   }
 
   async updateWeaponKit(id: number, kit: Partial<InsertWeaponKit>): Promise<WeaponKit | undefined> {
-    const { data, error } = await supabaseAdmin.from("weapon_kits").update(toSnakeObj(kit as any)).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return data ? toCamelObj<WeaponKit>(data) : undefined;
+    return resilientUpdate<WeaponKit>("weapon_kits", toSnakeObj(kit as any), { id });
   }
 
   async deleteWeaponKit(id: number): Promise<void> {
-    await supabaseAdmin.from("weapon_kit_items").delete().eq("kit_id", id);
-    await supabaseAdmin.from("weapon_kits").delete().eq("id", id);
+    await resilientDelete("weapon_kit_items", { kit_id: id });
+    await resilientDelete("weapon_kits", { id });
   }
 
   async getWeaponKitItems(kitId: number): Promise<WeaponKitItem[]> {
@@ -737,23 +727,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWeaponKitItem(item: InsertWeaponKitItem): Promise<WeaponKitItem> {
-    const { data, error } = await supabaseAdmin.from("weapon_kit_items").insert(toSnakeObj(item as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<WeaponKitItem>(data);
+    return resilientInsert<WeaponKitItem>("weapon_kit_items", toSnakeObj(item as any));
   }
 
   async deleteWeaponKitItem(id: number): Promise<void> {
-    await supabaseAdmin.from("weapon_kit_items").delete().eq("id", id);
+    return resilientDelete("weapon_kit_items", { id });
   }
 
   async deleteWeaponKitItemsByKit(kitId: number): Promise<void> {
-    await supabaseAdmin.from("weapon_kit_items").delete().eq("kit_id", kitId);
+    return resilientDelete("weapon_kit_items", { kit_id: kitId });
   }
 
   async createTelemetryEvent(e: InsertTelemetryEvent): Promise<TelemetryEvent> {
-    const { data, error } = await supabaseAdmin.from("telemetry_events").insert(toSnakeObj(e as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<TelemetryEvent>(data);
+    return resilientInsert<TelemetryEvent>("telemetry_events", toSnakeObj(e as any));
   }
 
   async getTelemetryEvents(filters?: { eventType?: string; plate?: string; from?: Date; to?: Date; limit?: number }): Promise<TelemetryEvent[]> {
@@ -819,13 +805,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMissionCost(cost: InsertMissionCost): Promise<MissionCost> {
-    const { data, error } = await supabaseAdmin.from("mission_costs").insert(toSnakeObj(cost as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<MissionCost>(data);
+    return resilientInsert<MissionCost>("mission_costs", toSnakeObj(cost as any));
   }
 
   async deleteMissionCost(id: number): Promise<void> {
-    await supabaseAdmin.from("mission_costs").delete().eq("id", id);
+    return resilientDelete("mission_costs", { id });
   }
 
   async getClientForwardsByOS(serviceOrderId: number): Promise<ClientForward[]> {
@@ -835,9 +819,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClientForward(forward: InsertClientForward): Promise<ClientForward> {
-    const { data, error } = await supabaseAdmin.from("client_forwards").insert(toSnakeObj(forward as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<ClientForward>(data);
+    return resilientInsert<ClientForward>("client_forwards", toSnakeObj(forward as any));
   }
 }
 
