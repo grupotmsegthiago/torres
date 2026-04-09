@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import nodemailer from "nodemailer";
 import { storage } from "./storage";
 import * as apibrasil from "./apibrasil";
 import { log } from "./index";
@@ -759,5 +760,247 @@ export function initCronJobs() {
     }
   });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00)", "cron");
+  cron.schedule("59 2 * * *", () => {
+    log("CRON ResumoDiario: Gerando resumo financeiro do dia (23:59 BRT)", "cron");
+    sendDailySummaryEmail().catch(err => log(`CRON ResumoDiario: Erro: ${err.message}`, "cron"));
+  });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoDiario (diário 23:59 BRT)", "cron");
+}
+
+function getCronMailTransporter() {
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host, port, secure: port === 465,
+    requireTLS: port === 587,
+    auth: { user, pass },
+    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+  });
+}
+
+const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br";
+
+export async function sendDailySummaryEmail(targetDate?: string): Promise<{ success: boolean; message: string }> {
+  const transporter = getCronMailTransporter();
+  if (!transporter) {
+    return { success: false, message: "SMTP não configurado" };
+  }
+
+  const todayBRT = targetDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const todayLabel = new Date(todayBRT + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
+  const diaSemana = new Date(todayBRT + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" });
+
+  try {
+    const { data: billings } = await supabaseAdmin.from("escort_billings").select("*");
+    const { data: transactions } = await supabaseAdmin.from("financial_transactions").select("*");
+    const allOrders = await storage.getServiceOrders();
+    const employees = await storage.getEmployees();
+
+    const extractDate = (v: any): string | null => {
+      if (!v) return null;
+      const s = String(v);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      if (s.includes("T")) return s.split("T")[0];
+      try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+      catch { return null; }
+    };
+
+    const todayOrders = allOrders.filter((so: any) => {
+      const sd = extractDate(so.scheduledDate);
+      const cd = extractDate(so.completedDate);
+      const ms = so.missionStartedAt ? extractDate(so.missionStartedAt) : null;
+      return sd === todayBRT || cd === todayBRT || ms === todayBRT;
+    });
+
+    const escoltaOrders = todayOrders.filter((so: any) => so.type === "escolta");
+    const concluidas = todayOrders.filter((so: any) => so.status === "concluida" || so.status === "concluída" || so.missionStatus === "encerrada");
+    const emAndamento = todayOrders.filter((so: any) => so.status === "em_andamento");
+    const canceladas = todayOrders.filter((so: any) => so.status === "cancelada" || so.status === "recusada");
+
+    const todayBillings = (billings || []).filter((b: any) => {
+      const dm = extractDate(b.data_missao);
+      return dm === todayBRT;
+    });
+
+    let fatTotal = 0;
+    let custoTotal = 0;
+    let kmTotal = 0;
+
+    for (const b of todayBillings) {
+      fatTotal += Number(b.fat_total) || 0;
+      custoTotal += Number(b.custo_total_apurado) || Number(b.vrp_base) || 0;
+      kmTotal += Number(b.km_total) || 0;
+    }
+
+    for (const so of todayOrders) {
+      if (todayBillings.some((b: any) => b.service_order_id === so.id)) continue;
+      fatTotal += Number((so as any).fat_calculado) || 0;
+      custoTotal += Number((so as any).custo_total_alocado) || 0;
+      kmTotal += Number((so as any).km_total_calculado) || 0;
+    }
+
+    const resultado = fatTotal - custoTotal;
+    const margem = fatTotal > 0 ? (resultado / fatTotal) * 100 : 0;
+
+    const todayTx = (transactions || []).filter((t: any) => extractDate(t.created_at) === todayBRT);
+    let despesas = 0;
+    let receitas = 0;
+    for (const t of todayTx) {
+      const amt = Math.abs(Number(t.amount) || 0);
+      if (t.type === "despesa" || Number(t.amount) < 0) despesas += amt;
+      else receitas += amt;
+    }
+
+    const activeEmps = employees.filter(e => e.status === "ativo");
+
+    const fmt = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const osDetails = todayOrders.slice(0, 20).map((so: any) => {
+      const statusMap: Record<string, string> = {
+        em_andamento: "🟢 Em Andamento",
+        concluida: "✅ Concluída",
+        "concluída": "✅ Concluída",
+        agendada: "📅 Agendada",
+        aberta: "📋 Aberta",
+        cancelada: "❌ Cancelada",
+        recusada: "🚫 Recusada",
+      };
+      const statusLabel = statusMap[so.status] || so.status;
+      const fat = Number((so as any).fat_calculado) || 0;
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${so.osNumber || "-"}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${so.clientName || "-"}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${statusLabel}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;text-align:right;">R$ ${fmt(fat)}</td>
+      </tr>`;
+    }).join("");
+
+    const margemColor = margem >= 30 ? "#16a34a" : margem >= 15 ? "#ca8a04" : "#dc2626";
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f3f4f6;margin:0;padding:20px;">
+  <div style="max-width:650px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    
+    <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:24px 30px;color:#fff;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;">Torres Vigilância Patrimonial</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Diário — Balanço Geral</div>
+      <div style="font-size:14px;opacity:0.8;margin-top:4px;">${diaSemana}, ${todayLabel}</div>
+    </div>
+
+    <div style="padding:24px 30px;">
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">
+        <div style="flex:1;min-width:140px;background:#f0fdf4;border-radius:8px;padding:16px;border-left:4px solid #16a34a;">
+          <div style="font-size:11px;color:#666;text-transform:uppercase;">Faturamento</div>
+          <div style="font-size:22px;font-weight:700;color:#16a34a;">R$ ${fmt(fatTotal)}</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#fef2f2;border-radius:8px;padding:16px;border-left:4px solid #dc2626;">
+          <div style="font-size:11px;color:#666;text-transform:uppercase;">Custos</div>
+          <div style="font-size:22px;font-weight:700;color:#dc2626;">R$ ${fmt(custoTotal)}</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#eff6ff;border-radius:8px;padding:16px;border-left:4px solid #2563eb;">
+          <div style="font-size:11px;color:#666;text-transform:uppercase;">Resultado</div>
+          <div style="font-size:22px;font-weight:700;color:${resultado >= 0 ? "#2563eb" : "#dc2626"};">R$ ${fmt(resultado)}</div>
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Margem de Lucro</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:${margemColor};">${fmt(margem)}%</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">KM Total Rodados</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;">${fmt(kmTotal)} km</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Receitas Avulsas</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#16a34a;">R$ ${fmt(receitas)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Despesas Avulsas</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despesas)}</td>
+        </tr>
+      </table>
+
+      <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#334155;">Operações do Dia</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Total de OS</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${todayOrders.length}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Escoltas</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${escoltaOrders.length}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Concluídas</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#16a34a;">${concluidas.length}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Em Andamento</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#2563eb;">${emAndamento.length}</td>
+          </tr>
+          ${canceladas.length > 0 ? `<tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Canceladas/Recusadas</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#dc2626;">${canceladas.length}</td>
+          </tr>` : ""}
+          <tr>
+            <td style="padding:6px 0;font-size:13px;color:#666;">Efetivo Ativo</td>
+            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${activeEmps.length} agentes</td>
+          </tr>
+        </table>
+      </div>
+
+      ${todayOrders.length > 0 ? `
+      <div style="margin-bottom:24px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#334155;">Detalhamento por OS</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">OS</th>
+              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Cliente</th>
+              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Status</th>
+              <th style="padding:8px 10px;text-align:right;font-size:12px;color:#666;font-weight:600;">Faturamento</th>
+            </tr>
+          </thead>
+          <tbody>${osDetails}</tbody>
+        </table>
+      </div>
+      ` : ""}
+
+    </div>
+
+    <div style="background:#f8fafc;padding:16px 30px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+      Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89<br>
+      Relatório gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+    </div>
+
+  </div>
+</body>
+</html>`;
+
+    const from = `"Torres Vigilância - Sistema" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
+
+    await transporter.sendMail({
+      from,
+      to: DIRETORIA_EMAIL,
+      subject: `📊 Resumo Diário — ${todayLabel} | Fat. R$ ${fmt(fatTotal)} | Resultado R$ ${fmt(resultado)}`,
+      html,
+    });
+
+    log(`CRON ResumoDiario: E-mail enviado para ${DIRETORIA_EMAIL} — Fat. R$ ${fmt(fatTotal)} | Resultado R$ ${fmt(resultado)}`, "cron");
+    return { success: true, message: `E-mail enviado para ${DIRETORIA_EMAIL}` };
+  } catch (err: any) {
+    log(`CRON ResumoDiario: Erro: ${err.message}`, "cron");
+    return { success: false, message: err.message };
+  }
 }

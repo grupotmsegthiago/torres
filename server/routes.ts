@@ -356,6 +356,16 @@ async function ensureSystemSettingsTable() {
       });
     });
 
+    app.post("/api/admin/send-daily-summary", requireAuth, requireAdminRole, async (_req, res) => {
+      try {
+        const { sendDailySummaryEmail } = await import("./cron");
+        const result = await sendDailySummaryEmail();
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
     app.get("/api/health/slow-routes", requireAuth, requireAdminRole, (_req, res) => {
       const routes = getSlowRoutes();
       const summary: Record<string, { count: number; avgMs: number; maxMs: number }> = {};
