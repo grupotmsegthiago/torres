@@ -8,6 +8,9 @@ import {
   FileText, Search, Download, RefreshCw,
   CheckCircle2, Clock, AlertTriangle, XCircle, Loader2,
   ChevronDown, ChevronUp, ArrowUpDown, CalendarDays, Pencil,
+  X, MapPin, Truck, User, DollarSign, TrendingUp, TrendingDown,
+  Fuel, CircleDollarSign, Receipt, Shield, Phone, Navigation,
+  Gauge, Timer, Package, Eye,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
@@ -21,14 +24,25 @@ interface ReportOS {
   clientName: string;
   escortedVehiclePlate: string | null;
   escortedDriverName: string | null;
+  escortedDriverPhone: string | null;
   origin: string | null;
   destination: string | null;
+  waypoints: string[];
   scheduledDate: string | null;
   missionStartedAt: string | null;
   completedDate: string | null;
-  vehicle: { plate: string; model: string } | null;
-  employee1: { name: string } | null;
-  employee2: { name: string } | null;
+  createdAt: string | null;
+  type: string | null;
+  pedagioEstimado: number | null;
+  pedagioIdaVolta: boolean;
+  tollValue: number | null;
+  estimatedValue: number | null;
+  description: string | null;
+  observations: string | null;
+  priority: string;
+  vehicle: { plate: string; model: string; brand?: string } | null;
+  employee1: { name: string; fullName?: string; phone?: string } | null;
+  employee2: { name: string; fullName?: string; phone?: string } | null;
   liveCost: {
     faturamento: number;
     pagamento: number;
@@ -39,11 +53,24 @@ interface ReportOS {
     resultado: number;
     margem_pct: number;
     km_total: number;
+    km_inicial: number;
+    km_atual: number;
     horas_missao: number;
+    horas_excedentes: number;
     fat_acionamento: number;
     fat_hora_extra: number;
     fat_km_extra: number;
+    frozen: boolean;
     contrato_nome: string | null;
+    contrato_valores: {
+      valor_acionamento: number;
+      franquia_horas: number;
+      franquia_km: number;
+      valor_hora_extra: number;
+      valor_km_extra: number;
+      valor_km_carregado: number;
+      vrp_base: number;
+    } | null;
   } | null;
 }
 
@@ -85,10 +112,240 @@ function getTodayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
+function OSSummaryModal({ os, onClose, onNavigateFinanceiro }: { os: ReportOS; onClose: () => void; onNavigateFinanceiro: (id: number) => void }) {
+  const lc = os.liveCost;
+  const cv = lc?.contrato_valores;
+  const sNorm = os.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+  const cfg = statusConfig[sNorm] || statusConfig.pendente;
+  const StatusIcon = cfg.icon;
+
+  const InfoRow = ({ label, value, icon: Icon, mono }: { label: string; value: string | number | null | undefined; icon?: any; mono?: boolean }) => (
+    <div className="flex items-center justify-between py-1.5 border-b border-neutral-100 last:border-0">
+      <span className="text-neutral-500 text-xs flex items-center gap-1.5">
+        {Icon && <Icon className="w-3.5 h-3.5" />}
+        {label}
+      </span>
+      <span className={`text-xs font-semibold text-neutral-800 ${mono ? "font-mono" : ""}`}>{value || "—"}</span>
+    </div>
+  );
+
+  const MoneyRow = ({ label, value, color = "text-neutral-800", bold }: { label: string; value: number; color?: string; bold?: boolean }) => (
+    <div className="flex items-center justify-between py-1.5 border-b border-neutral-100 last:border-0">
+      <span className="text-neutral-500 text-xs">{label}</span>
+      <span className={`text-xs ${bold ? "font-black" : "font-semibold"} ${color}`}>
+        {value !== 0 ? fmtBRL(value) : "—"}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 pb-8 overflow-y-auto" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4" onClick={e => e.stopPropagation()} data-testid="modal-os-summary">
+        <div className="rounded-t-2xl px-6 py-4" style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #1e3a5f 100%)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white tracking-wide" data-testid="text-summary-os">{os.osNumber}</h2>
+                <p className="text-xs text-neutral-400">Resumo Completo da Operação</p>
+              </div>
+              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${cfg.color} ${cfg.bg}`}>
+                <StatusIcon className="w-3.5 h-3.5" />
+                {cfg.label}
+              </span>
+              {lc?.frozen && <span className="text-[10px] text-blue-300 border border-blue-300/30 rounded px-2 py-0.5">Congelado</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => onNavigateFinanceiro(os.id)}
+                className="bg-amber-500 hover:bg-amber-600 text-black gap-1.5 font-bold text-xs"
+                data-testid="button-financeiro-os"
+              >
+                <DollarSign className="w-4 h-4" />
+                Financeiro
+              </Button>
+              <button onClick={onClose} className="text-neutral-400 hover:text-white transition-colors" data-testid="button-close-summary">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="p-4 border-neutral-200">
+              <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" /> Dados da OS
+              </h4>
+              <InfoRow label="Nº da OS" value={os.osNumber} mono />
+              <InfoRow label="Tipo" value={os.type === "escolta" ? "Escolta Armada" : os.type || "—"} />
+              <InfoRow label="Status" value={cfg.label} />
+              <InfoRow label="Missão" value={os.missionStatus || "—"} />
+              <InfoRow label="Prioridade" value={os.priority || "—"} />
+              <InfoRow label="Criada em" value={fmtDateShort(os.createdAt)} icon={CalendarDays} />
+            </Card>
+
+            <Card className="p-4 border-neutral-200">
+              <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" /> Cliente & Escoltado
+              </h4>
+              <InfoRow label="Cliente" value={os.clientName} />
+              <InfoRow label="Contrato" value={lc?.contrato_nome} />
+              <InfoRow label="Motorista" value={os.escortedDriverName} icon={User} />
+              <InfoRow label="Tel. Motorista" value={os.escortedDriverPhone} icon={Phone} />
+              <InfoRow label="Placa Escoltado" value={os.escortedVehiclePlate} icon={Truck} mono />
+              <InfoRow label="Valor Estimado" value={os.estimatedValue ? fmtBRL(os.estimatedValue) : "—"} />
+            </Card>
+
+            <Card className="p-4 border-neutral-200">
+              <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5" /> Equipe & Viatura
+              </h4>
+              <InfoRow label="Viatura" value={os.vehicle ? `${os.vehicle.plate} - ${os.vehicle.model}` : "—"} icon={Truck} mono />
+              <InfoRow label="Agente 1" value={os.employee1?.fullName || os.employee1?.name} icon={User} />
+              <InfoRow label="Tel. Agente 1" value={os.employee1?.phone} icon={Phone} />
+              <InfoRow label="Agente 2" value={os.employee2?.fullName || os.employee2?.name} icon={User} />
+              <InfoRow label="Tel. Agente 2" value={os.employee2?.phone} icon={Phone} />
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="p-4 border-neutral-200">
+              <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Rota & Horários
+              </h4>
+              <InfoRow label="Origem" value={os.origin} icon={Navigation} />
+              <InfoRow label="Destino" value={os.destination} icon={MapPin} />
+              {os.waypoints && os.waypoints.length > 0 && (
+                <div className="py-1.5 border-b border-neutral-100">
+                  <span className="text-neutral-500 text-xs">Paradas</span>
+                  <div className="mt-1 space-y-0.5">
+                    {os.waypoints.map((wp: any, i: number) => (
+                      <p key={i} className="text-xs text-neutral-700 pl-5">{typeof wp === "string" ? wp : wp.address || wp.name || JSON.stringify(wp)}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <InfoRow label="Agendamento" value={`${fmtDateShort(os.scheduledDate)} ${fmtTime(os.scheduledDate)}`} icon={CalendarDays} />
+              <InfoRow label="Início Missão" value={`${fmtDateShort(os.missionStartedAt)} ${fmtTime(os.missionStartedAt)}`} icon={Timer} />
+              <InfoRow label="Fim Missão" value={`${fmtDateShort(os.completedDate)} ${fmtTime(os.completedDate)}`} icon={Timer} />
+              <InfoRow label="Duração" value={lc ? `${lc.horas_missao.toFixed(1)}h` : "—"} icon={Clock} />
+              <InfoRow label="Horas Excedentes" value={lc?.horas_excedentes ? `${lc.horas_excedentes.toFixed(1)}h` : "—"} icon={Clock} />
+            </Card>
+
+            <Card className="p-4 border-neutral-200">
+              <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5" /> Quilometragem
+              </h4>
+              <InfoRow label="KM Início (Chegada Origem)" value={lc?.km_inicial ? `${lc.km_inicial.toLocaleString("pt-BR")} km` : "—"} icon={Gauge} mono />
+              <InfoRow label="KM Fim (Fim de Missão)" value={lc?.km_atual ? `${lc.km_atual.toLocaleString("pt-BR")} km` : "—"} icon={Gauge} mono />
+              <InfoRow label="KM Total Rodado" value={lc?.km_total ? `${lc.km_total.toLocaleString("pt-BR")} km` : "—"} icon={Navigation} mono />
+              <InfoRow label="Pedágio Estimado" value={os.pedagioEstimado ? fmtBRL(os.pedagioEstimado) : "—"} />
+              <InfoRow label="Pedágio Ida e Volta" value={os.pedagioIdaVolta ? "Sim" : "Não"} />
+              {os.description && <InfoRow label="Descrição" value={os.description} />}
+              {os.observations && <InfoRow label="Observações" value={os.observations} />}
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="p-4 border-l-4 border-l-emerald-500 border-neutral-200">
+              <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" /> Receita (Faturamento)
+              </h4>
+              <MoneyRow label="Acionamento" value={lc?.fat_acionamento || 0} color="text-emerald-700" />
+              <MoneyRow label="KM Extra" value={lc?.fat_km_extra || 0} color="text-emerald-700" />
+              <MoneyRow label="Hora Extra" value={lc?.fat_hora_extra || 0} color="text-emerald-700" />
+              <div className="my-2 border-t-2 border-emerald-200" />
+              <MoneyRow label="TOTAL FATURAMENTO" value={lc?.faturamento || 0} color="text-emerald-700" bold />
+
+              {cv && (
+                <>
+                  <div className="mt-4 mb-2">
+                    <h5 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Valores do Contrato</h5>
+                  </div>
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Acionamento</span>
+                      <span className="font-mono">{fmtBRL(cv.valor_acionamento)}</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Franquia Horas</span>
+                      <span className="font-mono">{cv.franquia_horas}h</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Franquia KM</span>
+                      <span className="font-mono">{cv.franquia_km} km</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Valor Hora Extra</span>
+                      <span className="font-mono">{fmtBRL(cv.valor_hora_extra)}/h</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Valor KM Extra</span>
+                      <span className="font-mono">{fmtBRL(cv.valor_km_extra)}/km</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>Valor KM Carregado</span>
+                      <span className="font-mono">{fmtBRL(cv.valor_km_carregado)}/km</span>
+                    </div>
+                    <div className="flex justify-between text-neutral-500">
+                      <span>VRP Base</span>
+                      <span className="font-mono">{fmtBRL(cv.vrp_base)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </Card>
+
+            <Card className="p-4 border-l-4 border-l-red-500 border-neutral-200">
+              <h4 className="text-xs font-bold text-red-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <TrendingDown className="w-3.5 h-3.5" /> Despesas (Custos)
+              </h4>
+              <MoneyRow label="Pagamento Agentes (VRP)" value={lc?.pagamento || 0} color="text-red-700" />
+              <MoneyRow label="Combustível" value={lc?.custo_combustivel || 0} color="text-red-700" />
+              <MoneyRow label="Pedágio" value={lc?.custo_pedagio || 0} color="text-red-700" />
+              <MoneyRow label="Outros Custos" value={lc?.custo_outros || 0} color="text-red-700" />
+              <div className="my-2 border-t-2 border-red-200" />
+              <MoneyRow label="TOTAL DESPESAS" value={lc?.custo_total || 0} color="text-red-700" bold />
+            </Card>
+          </div>
+
+          <Card className="p-4 border-neutral-200" style={{ background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)" }}>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Receita</p>
+                <p className="text-xl font-black text-emerald-600" data-testid="text-summary-receita">{fmtBRL(lc?.faturamento || 0)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Despesas</p>
+                <p className="text-xl font-black text-red-600" data-testid="text-summary-despesas">{fmtBRL(lc?.custo_total || 0)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Resultado</p>
+                <p className={`text-xl font-black ${(lc?.resultado || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-summary-resultado">
+                  {fmtBRL(lc?.resultado || 0)}
+                </p>
+                <p className={`text-xs font-bold mt-0.5 ${(lc?.margem_pct || 0) >= 40 ? "text-emerald-500" : (lc?.margem_pct || 0) >= 20 ? "text-amber-500" : "text-red-500"}`}>
+                  Margem: {(lc?.margem_pct || 0).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RelatorioOSPage() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedOs, setSelectedOs] = useState<ReportOS | null>(null);
   const [sortField, setSortField] = useState<SortField>("scheduledDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
@@ -411,16 +668,28 @@ export default function RelatorioOSPage() {
                           ) : "—"}
                         </td>
                         <td className="px-2 py-2 text-center">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 hover:bg-blue-50"
-                            onClick={() => navigate(`/admin/service-orders?os=${o.id}`)}
-                            title={`Editar ${o.osNumber}`}
-                            data-testid={`button-edit-os-${o.id}`}
-                          >
-                            <Pencil className="w-3.5 h-3.5 text-blue-600" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-0.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 hover:bg-emerald-50"
+                              onClick={() => setSelectedOs(o)}
+                              title={`Resumo ${o.osNumber}`}
+                              data-testid={`button-summary-os-${o.id}`}
+                            >
+                              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 hover:bg-blue-50"
+                              onClick={() => navigate(`/admin/service-orders?os=${o.id}`)}
+                              title={`Editar ${o.osNumber}`}
+                              data-testid={`button-edit-os-${o.id}`}
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -443,6 +712,13 @@ export default function RelatorioOSPage() {
           </Card>
         )}
       </div>
+      {selectedOs && (
+        <OSSummaryModal
+          os={selectedOs}
+          onClose={() => setSelectedOs(null)}
+          onNavigateFinanceiro={(id) => { setSelectedOs(null); navigate(`/admin/service-orders?os=${id}`); }}
+        />
+      )}
     </AdminLayout>
   );
 }
