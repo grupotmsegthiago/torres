@@ -682,6 +682,16 @@ export default function RelatorioOSPage() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-7 w-7 p-0 hover:bg-amber-50"
+                              onClick={() => navigate(`/admin/financeiro?search=${o.osNumber}`)}
+                              title={`Financeiro ${o.osNumber}`}
+                              data-testid={`button-financeiro-os-${o.id}`}
+                            >
+                              <DollarSign className="w-3.5 h-3.5 text-amber-600" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               className="h-7 w-7 p-0 hover:bg-blue-50"
                               onClick={() => navigate(`/admin/service-orders?os=${o.id}`)}
                               title={`Editar ${o.osNumber}`}
@@ -716,7 +726,7 @@ export default function RelatorioOSPage() {
         <OSSummaryModal
           os={selectedOs}
           onClose={() => setSelectedOs(null)}
-          onNavigateFinanceiro={(id) => { setSelectedOs(null); navigate(`/admin/service-orders?os=${id}`); }}
+          onNavigateFinanceiro={() => { setSelectedOs(null); navigate(`/admin/financeiro?search=${selectedOs!.osNumber}`); }}
         />
       )}
     </AdminLayout>

@@ -422,7 +422,10 @@ export default function FinanceiroPage() {
   const [, navigate] = useLocation();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [activeStep, setActiveStep] = useState<Step>("PAGAR");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("search") || "";
+  });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [viewPeriod, setViewPeriod] = useState<ViewPeriod>("MONTH");
   const [customStartDate, setCustomStartDate] = useState(new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
