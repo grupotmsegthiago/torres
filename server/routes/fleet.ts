@@ -3,6 +3,7 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireDiretoria } from "../auth";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
+  import * as ticketlog from "../ticketlog";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction } from "./_helpers";
 
@@ -293,6 +294,114 @@ import type { Express } from "express";
   app.delete("/api/timesheets/:id", requireAuth, requireDiretoria, async (req, res) => {
     await storage.deleteTimesheet(Number(req.params.id));
     res.json({ message: "Ponto removido" });
+  });
+
+  app.get("/api/ticketlog/status", requireAuth, async (_req, res) => {
+    res.json({ configured: ticketlog.isTicketLogConfigured(), env: process.env.TICKETLOG_ENV || "producao" });
+  });
+
+  app.post("/api/ticketlog/buscar-autorizacao", requireAuth, async (req, res) => {
+    try {
+      if (!ticketlog.isTicketLogConfigured()) {
+        return res.status(400).json({ message: "TicketLog não configurado. Adicione TICKETLOG_USER e TICKETLOG_PASS nas variáveis de ambiente." });
+      }
+      const { fuelingId, codigoEstabelecimento } = req.body;
+      if (!fuelingId || !codigoEstabelecimento) {
+        return res.status(400).json({ message: "fuelingId e codigoEstabelecimento são obrigatórios" });
+      }
+      const fueling = await storage.getVehicleFueling(Number(fuelingId));
+      if (!fueling) return res.status(404).json({ message: "Abastecimento não encontrado" });
+
+      const dateStr = fueling.date + "T12:00:00-03:00";
+      const result = await ticketlog.buscarAutorizacao({
+        codigoEstabelecimento: Number(codigoEstabelecimento),
+        valorCupom: Number(fueling.totalCost) || 0,
+        dataHoraCupom: dateStr,
+        volumeAbastecido: Number(fueling.liters) || 0,
+      });
+
+      if (result.codigoAutorizacao) {
+        await ticketlog.updateFuelingTicketLog(Number(fuelingId), {
+          ticketlog_autorizacao: String(result.codigoAutorizacao),
+          ticketlog_status: "autorizado",
+          ticketlog_codigo_estab: String(codigoEstabelecimento),
+        });
+        console.log(`[TicketLog] Fueling #${fuelingId} autorizado: código ${result.codigoAutorizacao}`);
+        res.json({ codigoAutorizacao: result.codigoAutorizacao, status: "autorizado" });
+      } else {
+        await ticketlog.updateFuelingTicketLog(Number(fuelingId), {
+          ticketlog_status: "erro",
+          ticketlog_codigo_estab: String(codigoEstabelecimento),
+        });
+        res.status(400).json({ message: "Autorização não encontrada", erros: result.erros });
+      }
+    } catch (err: any) {
+      console.error("[TicketLog] buscar-autorizacao error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/ticketlog/consultar-nfe", requireAuth, async (req, res) => {
+    try {
+      if (!ticketlog.isTicketLogConfigured()) {
+        return res.status(400).json({ message: "TicketLog não configurado." });
+      }
+      const { fuelingId } = req.body;
+      if (!fuelingId) return res.status(400).json({ message: "fuelingId é obrigatório" });
+
+      const { data: fueling } = await supabaseAdmin.from("vehicle_fueling").select("*").eq("id", fuelingId).maybeSingle();
+      if (!fueling) return res.status(404).json({ message: "Abastecimento não encontrado" });
+      if (!fueling.ticketlog_autorizacao) return res.status(400).json({ message: "Abastecimento sem código de autorização TicketLog. Busque a autorização primeiro." });
+
+      const result = await ticketlog.consultarDadosNfe({
+        codigoEstabelecimento: Number(fueling.ticketlog_codigo_estab),
+        codigoAutorizacao: Number(fueling.ticketlog_autorizacao),
+        dataAutorizacao: fueling.date || undefined,
+      });
+
+      if (result.data) {
+        await ticketlog.updateFuelingTicketLog(Number(fuelingId), {
+          ticketlog_nfe_data: result.data,
+          ticketlog_status: "nfe_consultada",
+        });
+        res.json({ nfeData: result.data });
+      } else {
+        res.status(400).json({ message: "Erro ao consultar dados NF-e", erros: result.erros });
+      }
+    } catch (err: any) {
+      console.error("[TicketLog] consultar-nfe error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/ticketlog/upload-nfe", requireAuth, async (req, res) => {
+    try {
+      if (!ticketlog.isTicketLogConfigured()) {
+        return res.status(400).json({ message: "TicketLog não configurado." });
+      }
+      const { fuelingId, xml } = req.body;
+      if (!fuelingId || !xml) return res.status(400).json({ message: "fuelingId e xml são obrigatórios" });
+
+      const { data: fueling } = await supabaseAdmin.from("vehicle_fueling").select("*").eq("id", fuelingId).maybeSingle();
+      if (!fueling) return res.status(404).json({ message: "Abastecimento não encontrado" });
+      if (!fueling.ticketlog_autorizacao) return res.status(400).json({ message: "Sem código de autorização TicketLog." });
+
+      const result = await ticketlog.uploadNotaFiscal({
+        codigoEstabelecimento: Number(fueling.ticketlog_codigo_estab),
+        codigoAutorizacao: Number(fueling.ticketlog_autorizacao),
+        xml,
+      });
+
+      if (result.success) {
+        await ticketlog.updateFuelingTicketLog(Number(fuelingId), { ticketlog_status: "nfe_enviada" });
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ message: "Erro ao enviar NF-e", erros: result.erros });
+      }
+    } catch (err: any) {
+      console.error("[TicketLog] upload-nfe error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
   });
 
 

@@ -321,6 +321,10 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   fuelRecommendation: text("fuel_recommendation"),
   recommendationFollowed: boolean("recommendation_followed"),
   createdByUserId: integer("created_by_user_id"),
+  ticketlogAutorizacao: text("ticketlog_autorizacao"),
+  ticketlogStatus: text("ticketlog_status"),
+  ticketlogNfeData: jsonb("ticketlog_nfe_data"),
+  ticketlogCodigoEstab: text("ticketlog_codigo_estab"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

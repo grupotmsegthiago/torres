@@ -782,6 +782,10 @@ export async function ensureDbSchema() {
 
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicle_fueling ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_autorizacao TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_status TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_nfe_data JSONB`).catch(() => {});
+    await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_codigo_estab TEXT`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicles ALTER COLUMN last_latitude TYPE real USING last_latitude::real`).catch(() => {});

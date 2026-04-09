@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   Plus, X, Pencil, Trash2, Fuel, TrendingDown, TrendingUp,
   DollarSign, Gauge, BarChart3, AlertTriangle, Filter, ChevronDown, ChevronUp,
-  MapPin, Camera, Eye, ArrowLeft, ExternalLink
+  MapPin, Camera, Eye, ArrowLeft, ExternalLink, Ticket, FileText, Upload, CheckCircle2, Loader2, ShieldCheck, XCircle
 } from "lucide-react";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
 
@@ -415,6 +415,146 @@ function FuelingForm({ fueling, vehicles, employees, onClose }: {
   );
 }
 
+function TicketLogPanel({ fueling }: { fueling: VehicleFueling }) {
+  const { toast } = useToast();
+  const [codigoEstab, setCodigoEstab] = useState((fueling as any).ticketlogCodigoEstab || "");
+  const [loading, setLoading] = useState<string | null>(null);
+  const [tlStatus, setTlStatus] = useState<string | null>((fueling as any).ticketlogStatus || null);
+  const [tlAuth, setTlAuth] = useState<string | null>((fueling as any).ticketlogAutorizacao || null);
+  const [nfeData, setNfeData] = useState<any>((fueling as any).ticketlogNfeData || null);
+
+  const { data: tlConfig } = useQuery<{ configured: boolean; env: string }>({ queryKey: ["/api/ticketlog/status"], queryFn: getQueryFn({ on401: "throw" }) });
+
+  const buscarAutorizacao = async () => {
+    if (!codigoEstab) { toast({ title: "Informe o código do estabelecimento TicketLog", variant: "destructive" }); return; }
+    setLoading("autorizacao");
+    try {
+      const res = await apiRequest("POST", "/api/ticketlog/buscar-autorizacao", { fuelingId: fueling.id, codigoEstabelecimento: Number(codigoEstab) });
+      const body = await res.json();
+      setTlAuth(String(body.codigoAutorizacao));
+      setTlStatus("autorizado");
+      invalidateRelatedQueries("fueling");
+      toast({ title: "Autorização TicketLog obtida", description: `Código: ${body.codigoAutorizacao}` });
+    } catch (err: any) {
+      const msg = err.message || "Erro ao buscar autorização";
+      toast({ title: "Erro TicketLog", description: msg, variant: "destructive" });
+    } finally { setLoading(null); }
+  };
+
+  const consultarNfe = async () => {
+    setLoading("nfe");
+    try {
+      const res = await apiRequest("POST", "/api/ticketlog/consultar-nfe", { fuelingId: fueling.id });
+      const body = await res.json();
+      setNfeData(body.nfeData);
+      setTlStatus("nfe_consultada");
+      invalidateRelatedQueries("fueling");
+      toast({ title: "Dados NF-e obtidos com sucesso" });
+    } catch (err: any) {
+      toast({ title: "Erro ao consultar NF-e", description: err.message, variant: "destructive" });
+    } finally { setLoading(null); }
+  };
+
+  if (!tlConfig?.configured) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Ticket className="w-4 h-4 text-amber-600" />
+          <p className="text-sm font-bold text-amber-800">Integração TicketLog</p>
+        </div>
+        <p className="text-xs text-amber-700">Não configurada. Adicione <code className="bg-amber-100 px-1 rounded">TICKETLOG_USER</code> e <code className="bg-amber-100 px-1 rounded">TICKETLOG_PASS</code> nas variáveis de ambiente.</p>
+      </div>
+    );
+  }
+
+  const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
+    autorizado: { label: "Autorizado", color: "text-blue-700 bg-blue-50 border-blue-200", icon: ShieldCheck },
+    nfe_consultada: { label: "NF-e Consultada", color: "text-green-700 bg-green-50 border-green-200", icon: FileText },
+    nfe_enviada: { label: "NF-e Enviada", color: "text-emerald-700 bg-emerald-50 border-emerald-200", icon: CheckCircle2 },
+    erro: { label: "Erro", color: "text-red-700 bg-red-50 border-red-200", icon: XCircle },
+  };
+  const statusInfo = tlStatus ? STATUS_MAP[tlStatus] : null;
+
+  return (
+    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Ticket className="w-4 h-4 text-purple-600" />
+          <p className="text-sm font-bold text-purple-800">Integração TicketLog</p>
+        </div>
+        {statusInfo && (
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full border flex items-center gap-1 ${statusInfo.color}`} data-testid="badge-ticketlog-status">
+            <statusInfo.icon className="w-3 h-3" /> {statusInfo.label}
+          </span>
+        )}
+      </div>
+
+      {tlAuth && (
+        <div className="bg-white rounded-lg p-2.5 border border-purple-100">
+          <p className="text-xs text-purple-500">Código de Autorização</p>
+          <p className="font-bold text-purple-900 text-lg" data-testid="text-ticketlog-auth">{tlAuth}</p>
+        </div>
+      )}
+
+      {!tlAuth && (
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-purple-700 mb-1 block">Código Estabelecimento TicketLog</label>
+            <Input
+              type="number"
+              value={codigoEstab}
+              onChange={(e) => setCodigoEstab(e.target.value)}
+              placeholder="Ex: 12345"
+              className="h-9 text-sm"
+              data-testid="input-ticketlog-estab"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={buscarAutorizacao}
+            disabled={loading === "autorizacao"}
+            className="bg-purple-600 hover:bg-purple-700 text-white h-9"
+            data-testid="button-ticketlog-autorizar"
+          >
+            {loading === "autorizacao" ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ShieldCheck className="w-4 h-4 mr-1" />}
+            Buscar Autorização
+          </Button>
+        </div>
+      )}
+
+      {tlAuth && !nfeData && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={consultarNfe}
+          disabled={loading === "nfe"}
+          className="border-purple-300 text-purple-700 hover:bg-purple-100"
+          data-testid="button-ticketlog-nfe"
+        >
+          {loading === "nfe" ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />}
+          Consultar Dados NF-e
+        </Button>
+      )}
+
+      {nfeData && (
+        <div className="bg-white rounded-lg p-3 border border-purple-100 space-y-2">
+          <p className="text-xs font-bold text-purple-700 flex items-center gap-1"><FileText className="w-3 h-3" /> Dados para Emissão NF-e</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {Object.entries(nfeData).map(([key, val]) => (
+              <div key={key}>
+                <span className="text-purple-500 font-medium">{key}:</span>{" "}
+                <span className="text-purple-900">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[10px] text-purple-400">Ambiente: {tlConfig.env === "homologacao" ? "Homologação" : "Produção"}</p>
+    </div>
+  );
+}
+
 function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: VehicleFueling; vehicle?: Vehicle; driverName?: string | null; onClose: () => void }) {
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
 
@@ -556,6 +696,8 @@ function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: Veh
                 Nenhuma foto ou localização registrada para este abastecimento.
               </div>
             )}
+
+            <TicketLogPanel fueling={fueling} />
 
             <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
               Registrado em {fueling.createdAt ? new Date((/[Zz]$/.test(fueling.createdAt) || /[+-]\d{2}:\d{2}$/.test(fueling.createdAt)) ? fueling.createdAt : fueling.createdAt + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-"} · ID #{fueling.id}
@@ -833,14 +975,15 @@ export default function FuelingPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Posto</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Autorizado por</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-purple-600 uppercase tracking-wider bg-purple-50/50">TLog</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={13} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
+                  <tr><td colSpan={14} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
                 ) : filteredFuelings.length === 0 ? (
-                  <tr><td colSpan={13} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
+                  <tr><td colSpan={14} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
                   [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
                     const v = getVehicle(f.vehicleId);
@@ -885,6 +1028,15 @@ export default function FuelingPage() {
                         <td className="px-4 py-3 text-xs" data-testid={`text-autorizado-fuel-${f.id}`}>{(() => {
                           const au = (f as any).createdByUserId ? allUsers.find((u: any) => u.id === (f as any).createdByUserId) : null;
                           return au ? <span className={(au.role === "admin" || au.role === "diretoria") ? "font-semibold text-neutral-800" : "text-neutral-500"}>{au.name}</span> : <span className="text-neutral-400 italic">—</span>;
+                        })()}</td>
+                        <td className="px-4 py-3 text-center bg-purple-50/30" data-testid={`tlog-status-${f.id}`}>{(() => {
+                          const tls = (f as any).ticketlogStatus;
+                          if (!tls) return <span className="text-neutral-300">—</span>;
+                          if (tls === "autorizado") return <ShieldCheck className="w-4 h-4 text-blue-500 mx-auto" />;
+                          if (tls === "nfe_consultada") return <FileText className="w-4 h-4 text-green-500 mx-auto" />;
+                          if (tls === "nfe_enviada") return <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />;
+                          if (tls === "erro") return <XCircle className="w-4 h-4 text-red-500 mx-auto" />;
+                          return <span className="text-neutral-300">—</span>;
                         })()}</td>
                         <td className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" onClick={() => setDetailItem(f)} data-testid={`button-detail-${f.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>
