@@ -200,7 +200,7 @@ async function postXml(xmlBody: string): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "text/xml; charset=utf-8" },
     body: fullXml,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(5000),
   });
 
   if (!resp.ok) {
@@ -840,11 +840,33 @@ export async function debugLogin(): Promise<{
 
 let positionCache: { data: TrucksControlPosition[]; timestamp: number } | null = null;
 const CACHE_TTL = 5 * 60 * 1000;
+let swrInProgress = false;
 
 export async function getCachedPositions(): Promise<TrucksControlPosition[]> {
   const hasData = positionCache && positionCache.data.some(p => p.latitude !== 0);
   const ttl = hasData ? CACHE_TTL : 30000;
-  if (positionCache && Date.now() - positionCache.timestamp < ttl) {
+  const age = positionCache ? Date.now() - positionCache.timestamp : Infinity;
+
+  if (positionCache && age < ttl) {
+    return positionCache.data;
+  }
+
+  if (positionCache && hasData && !swrInProgress) {
+    swrInProgress = true;
+    fetchAllPositions()
+      .then((data) => {
+        positionCache = { data, timestamp: Date.now() };
+      })
+      .catch((err) => {
+        console.warn(`[truckscontrol] SWR background refresh failed: ${err.message}`);
+      })
+      .finally(() => {
+        swrInProgress = false;
+      });
+    return positionCache.data;
+  }
+
+  if (swrInProgress && positionCache) {
     return positionCache.data;
   }
 
