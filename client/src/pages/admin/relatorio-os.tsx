@@ -7,10 +7,11 @@ import { Card } from "@/components/ui/card";
 import {
   FileText, Search, Download, RefreshCw,
   CheckCircle2, Clock, AlertTriangle, XCircle, Loader2,
-  ChevronDown, ChevronUp, ArrowUpDown, CalendarDays,
+  ChevronDown, ChevronUp, ArrowUpDown, CalendarDays, Pencil,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 
 interface ReportOS {
   id: number;
@@ -85,6 +86,7 @@ function getTodayBRT(): string {
 }
 
 export default function RelatorioOSPage() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("scheduledDate");
@@ -360,11 +362,12 @@ export default function RelatorioOSPage() {
                       <span className="flex items-center gap-1 justify-end">Resultado <SortIcon field="resultado" /></span>
                     </th>
                     <th className="px-2 py-2.5 text-center">% Acerto</th>
+                    <th className="px-2 py-2.5 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={16} className="py-12 text-center text-neutral-400">Nenhuma OS encontrada</td></tr>
+                    <tr><td colSpan={17} className="py-12 text-center text-neutral-400">Nenhuma OS encontrada</td></tr>
                   ) : filtered.map((o, idx) => {
                     const sNorm = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
                     const cfg = statusConfig[sNorm] || statusConfig.pendente;
@@ -407,6 +410,18 @@ export default function RelatorioOSPage() {
                             </span>
                           ) : "—"}
                         </td>
+                        <td className="px-2 py-2 text-center">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 hover:bg-blue-50"
+                            onClick={() => navigate(`/admin/service-orders?os=${o.id}`)}
+                            title={`Editar ${o.osNumber}`}
+                            data-testid={`button-edit-os-${o.id}`}
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                          </Button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -414,11 +429,12 @@ export default function RelatorioOSPage() {
                 {filtered.length > 0 && (
                   <tfoot>
                     <tr className="bg-neutral-900 text-white font-black text-xs">
-                      <td colSpan={12} className="px-2 py-2.5 text-right uppercase tracking-wider">TOTAIS →</td>
+                      <td colSpan={13} className="px-2 py-2.5 text-right uppercase tracking-wider">TOTAIS →</td>
                       <td className="px-2 py-2.5 text-right text-emerald-400">{fmtBRL(totals.receita)}</td>
                       <td className="px-2 py-2.5 text-right text-red-400">{fmtBRL(totals.custo)}</td>
                       <td className={`px-2 py-2.5 text-right ${totals.resultado >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtBRL(totals.resultado)}</td>
                       <td className="px-2 py-2.5 text-center text-blue-400">{totals.receita > 0 ? ((totals.resultado / totals.receita) * 100).toFixed(1) + "%" : "—"}</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 )}
