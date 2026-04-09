@@ -208,7 +208,12 @@ export async function localQuery(
     sql += ` LIMIT ${limit}`;
   }
   try {
+    const qStart = Date.now();
     const result = await p.query(sql, params);
+    const qDuration = Date.now() - qStart;
+    if (qDuration > 200) {
+      console.warn(`[SLOW-SQL] localQuery(${table}) took ${qDuration}ms | rows=${result.rows.length}`);
+    }
     return result.rows;
   } catch (err: any) {
     console.error(`[pg-fallback] localQuery(${table}) error:`, err.message);

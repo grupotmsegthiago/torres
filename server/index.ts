@@ -46,6 +46,14 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+const SLOW_THRESHOLD_MS = 500;
+const MAX_SLOW_ENTRIES = 50;
+const slowRoutes: Array<{ method: string; path: string; status: number; duration: number; ts: string }> = [];
+
+export function getSlowRoutes() {
+  return slowRoutes.slice();
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -71,6 +79,18 @@ app.use((req, res, next) => {
         logLine += ` :: ${preview}`;
       }
       log(logLine);
+
+      if (duration > SLOW_THRESHOLD_MS) {
+        console.warn(`[SLOW] ${req.method} ${path} ${res.statusCode} took ${duration}ms`);
+        slowRoutes.push({
+          method: req.method,
+          path,
+          status: res.statusCode,
+          duration,
+          ts: new Date().toISOString(),
+        });
+        if (slowRoutes.length > MAX_SLOW_ENTRIES) slowRoutes.shift();
+      }
     }
     capturedJsonResponse = undefined;
   });

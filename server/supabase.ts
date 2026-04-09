@@ -79,8 +79,17 @@ function recordResult(success: boolean): void {
 
 async function resilientFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   await acquireSlot();
+  const fetchStart = Date.now();
   try {
-    return await attemptFetch(url, init, 0);
+    const response = await attemptFetch(url, init, 0);
+    const fetchDuration = Date.now() - fetchStart;
+    if (fetchDuration > 500) {
+      const method = init?.method || "GET";
+      const urlStr = typeof url === "string" ? url : url.toString();
+      const path = urlStr.replace(/https?:\/\/[^/]+/, "").split("?")[0];
+      console.warn(`[SLOW-SUPA] ${method} ${path} took ${fetchDuration}ms`);
+    }
+    return response;
   } finally {
     releaseSlot();
   }

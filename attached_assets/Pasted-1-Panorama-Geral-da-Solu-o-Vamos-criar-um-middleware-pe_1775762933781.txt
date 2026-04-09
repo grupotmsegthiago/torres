@@ -1,0 +1,68 @@
+1. Panorama Geral da Solução
+Vamos criar um middleware personalizado que intercepta a requisição. Ele funcionará da seguinte forma:
+
+Marcação de Início: Regista o timestamp exato quando a requisição chega.
+
+Interceptação do Fim: "Captura" o momento em que a resposta é enviada ao cliente.
+
+Filtro de Performance: Só regista logs detalhados se o tempo exceder o teu limite (500ms).
+
+Identificação de Gargalo: Mostra a rota exata e o método (GET, POST), facilitando a varredura.
+
+2. Implementação do Middleware de Timing
+Como estás a usar PostgreSQL e Express (pela menção ao pg-fallback.ts), aqui está o código em Node.js/TypeScript para implementares globalmente:
+
+TypeScript
+import { Request, Response, NextFunction } from 'express';
+
+/**
+ * Middleware para monitorizar rotas lentas (Profiling)
+ */
+export const slowRequestLogger = (req: Request, res: Response, next: NextFunction) => {
+  const inicio = Date.now();
+
+  // Função disparada quando a resposta termina de ser enviada
+  res.on('finish', () => {
+    const duracao = Date.now() - inicio;
+
+    if (duracao > 500) {
+      console.warn(`⚠️ [ALERTA LENTIDÃO]`);
+      console.warn(`Rota: ${req.method} ${req.originalUrl}`);
+      console.warn(`Tempo: ${duracao}ms`);
+      console.warn(`Status: ${res.statusCode}`);
+      console.warn(`---------------------------`);
+    }
+  });
+
+  next();
+};
+Como implementar no seu sistema:
+Registo Global: No seu arquivo principal (ex: index.ts ou app.ts), importe este middleware e use-o antes de definir as suas rotas:
+
+TypeScript
+app.use(slowRequestLogger);
+Análise de Logs: No console do Replit, foca-te apenas nos logs que começam com ⚠️ [ALERTA LENTIDÃO].
+
+3. Próximo Passo: Profiling da Query SQL
+Se uma rota como /api/utilizadores acusar 800ms, o problema pode estar numa query específica dentro dela. Se o seu pg-fallback.ts permitir, podes adicionar o timing diretamente na execução da query:
+
+TypeScript
+// Exemplo de como envolver a execução da query no seu pool
+async function queryMonitorada(text: string, params: any[]) {
+  const start = Date.now();
+  try {
+    const res = await pool.query(text, params);
+    const duration = Date.now() - start;
+    
+    if (duration > 200) { // Queries SQL isoladas acima de 200ms já são suspeitas
+      console.log(`🐢 Query Lenta: ${text} | Tempo: ${duration}ms`);
+    }
+    return res;
+  } catch (err) {
+    throw err;
+  }
+}
+Documentação dos Pontos de Atenção
+O Semáforo (6 requisições): Se tiveres 6 rotas "lentas" (acima de 500ms) a correr ao mesmo tempo, a 7ª requisição ficará bloqueada na fila, causando a sensação de "queda" para o utilizador. O log vai mostrar-te quais são essas 6 rotas vilãs.
+
+Supabase vs Local: Como tens o fallback, observa se as lentidões ocorrem apenas quando o Supabase está ativo. Pode ser um problema de latência de rede entre o Replit e o servidor do Supabase.

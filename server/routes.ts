@@ -4,6 +4,7 @@ import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { supabaseAdmin, getSupabaseStats } from "./supabase";
+import { getSlowRoutes } from "./index";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
@@ -353,6 +354,25 @@ async function ensureSystemSettingsTable() {
         writeQueue: queueStats,
         supabaseStats: supa,
       });
+    });
+
+    app.get("/api/health/slow-routes", requireAuth, requireAdminRole, (_req, res) => {
+      const routes = getSlowRoutes();
+      const summary: Record<string, { count: number; avgMs: number; maxMs: number }> = {};
+      for (const r of routes) {
+        const key = `${r.method} ${r.path}`;
+        if (!summary[key]) summary[key] = { count: 0, avgMs: 0, maxMs: 0 };
+        summary[key].count++;
+        summary[key].avgMs += r.duration;
+        if (r.duration > summary[key].maxMs) summary[key].maxMs = r.duration;
+      }
+      for (const k of Object.keys(summary)) {
+        summary[k].avgMs = Math.round(summary[k].avgMs / summary[k].count);
+      }
+      const sorted = Object.entries(summary)
+        .sort((a, b) => b[1].maxMs - a[1].maxMs)
+        .map(([route, stats]) => ({ route, ...stats }));
+      res.json({ threshold: 500, totalSlow: routes.length, routes: sorted, recent: routes.slice(-10) });
     });
 
     app.get("/api/health/memory", requireAuth, (_req, res) => {
