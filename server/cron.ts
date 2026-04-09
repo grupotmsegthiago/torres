@@ -795,24 +795,35 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
   const diaSemana = new Date(todayBRT + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" });
 
   try {
-    const { data: billings } = await supabaseAdmin.from("escort_billings").select("*");
-    const { data: transactions } = await supabaseAdmin.from("financial_transactions").select("*");
+    const todayStart = todayBRT + "T00:00:00";
+    const todayEnd = todayBRT + "T23:59:59";
+
+    const [billingsRes, transactionsRes, clientsRes] = await Promise.all([
+      supabaseAdmin.from("escort_billings").select("*").gte("data_missao", todayStart).lte("data_missao", todayEnd),
+      supabaseAdmin.from("financial_transactions").select("*"),
+      supabaseAdmin.from("clients").select("id, name, company_name"),
+    ]);
+
     const allOrders = await storage.getServiceOrders();
     const employees = await storage.getEmployees();
 
-    const extractDate = (v: any): string | null => {
+    const clientMap = new Map<number, string>();
+    for (const c of (clientsRes.data || [])) {
+      clientMap.set(c.id, c.company_name || c.name || `Cliente #${c.id}`);
+    }
+
+    const extractDateBRT = (v: any): string | null => {
       if (!v) return null;
       const s = String(v);
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-      if (s.includes("T")) return s.split("T")[0];
       try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
       catch { return null; }
     };
 
     const todayOrders = allOrders.filter((so: any) => {
-      const sd = extractDate(so.scheduledDate);
-      const cd = extractDate(so.completedDate);
-      const ms = so.missionStartedAt ? extractDate(so.missionStartedAt) : null;
+      const sd = extractDateBRT(so.scheduledDate);
+      const cd = extractDateBRT(so.completedDate);
+      const ms = so.missionStartedAt ? extractDateBRT(so.missionStartedAt) : null;
       return sd === todayBRT || cd === todayBRT || ms === todayBRT;
     });
 
@@ -821,61 +832,97 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     const emAndamento = todayOrders.filter((so: any) => so.status === "em_andamento");
     const canceladas = todayOrders.filter((so: any) => so.status === "cancelada" || so.status === "recusada");
 
-    const todayBillings = (billings || []).filter((b: any) => {
-      const dm = extractDate(b.data_missao);
-      return dm === todayBRT;
-    });
+    const todayBillings = billingsRes.data || [];
+    const billingBySO = new Map<number, any>();
+    for (const b of todayBillings) {
+      const soId = Number(b.service_order_id);
+      if (!soId) continue;
+      const existing = billingBySO.get(soId);
+      if (!existing || new Date(b.created_at || 0) > new Date(existing.created_at || 0)) {
+        billingBySO.set(soId, b);
+      }
+    }
+    const dedupedBillings = Array.from(billingBySO.values());
 
     let fatTotal = 0;
-    let custoTotal = 0;
+    let custoEscolta = 0;
     let kmTotal = 0;
+    let despPedagio = 0;
+    let despCombustivel = 0;
 
-    for (const b of todayBillings) {
+    for (const b of dedupedBillings) {
       fatTotal += Number(b.fat_total) || 0;
-      custoTotal += Number(b.custo_total_apurado) || Number(b.vrp_base) || 0;
+      const pagTotal = Number(b.pag_total) || (Number(b.pag_vrp) || 0) + (Number(b.pag_periculosidade) || 0) + (Number(b.pag_adicional_noturno) || 0) + (Number(b.pag_reembolsos) || 0);
+      const despTotal = Number(b.desp_total) || (Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0) + (Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0) + (Number(b.desp_outras) || Number(b.despesas_outras) || 0);
+      custoEscolta += pagTotal + despTotal;
       kmTotal += Number(b.km_total) || 0;
+      despPedagio += Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0;
+      despCombustivel += Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0;
     }
 
     for (const so of todayOrders) {
-      if (todayBillings.some((b: any) => b.service_order_id === so.id)) continue;
-      fatTotal += Number((so as any).fat_calculado) || 0;
-      custoTotal += Number((so as any).custo_total_alocado) || 0;
+      if (billingBySO.has(so.id)) continue;
+      const soFat = Number((so as any).fat_calculado) || 0;
+      const soCusto = Number((so as any).custo_total_alocado) || 0;
+      if (soFat > 0 && !dedupedBillings.some((b: any) => b.service_order_id === so.id)) {
+        fatTotal += soFat;
+      }
+      custoEscolta += soCusto;
       kmTotal += Number((so as any).km_total_calculado) || 0;
     }
 
-    const resultado = fatTotal - custoTotal;
-    const margem = fatTotal > 0 ? (resultado / fatTotal) * 100 : 0;
-
-    const todayTx = (transactions || []).filter((t: any) => extractDate(t.created_at) === todayBRT);
+    const allTx = transactionsRes.data || [];
+    const todayTx = allTx.filter((t: any) => {
+      const dueDate = t.due_date ? String(t.due_date) : null;
+      const payDate = t.payment_date ? String(t.payment_date) : null;
+      const createdDate = extractDateBRT(t.created_at);
+      return dueDate === todayBRT || payDate === todayBRT || createdDate === todayBRT;
+    });
     let despesas = 0;
     let receitas = 0;
     for (const t of todayTx) {
       const amt = Math.abs(Number(t.amount) || 0);
-      if (t.type === "despesa" || Number(t.amount) < 0) despesas += amt;
-      else receitas += amt;
+      if (t.type === "EXPENSE" || t.type === "despesa") despesas += amt;
+      else if (t.type === "INCOME" || t.type === "receita") receitas += amt;
     }
+
+    const custoTotal = custoEscolta + despesas;
+    const resultado = fatTotal + receitas - custoTotal;
+    const margem = fatTotal > 0 ? (resultado / (fatTotal + receitas)) * 100 : 0;
 
     const activeEmps = employees.filter(e => e.status === "ativo");
 
     const fmt = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    const osDetails = todayOrders.slice(0, 20).map((so: any) => {
+    const osDetails = todayOrders.slice(0, 30).map((so: any) => {
       const statusMap: Record<string, string> = {
-        em_andamento: "🟢 Em Andamento",
-        concluida: "✅ Concluída",
-        "concluída": "✅ Concluída",
-        agendada: "📅 Agendada",
-        aberta: "📋 Aberta",
-        cancelada: "❌ Cancelada",
-        recusada: "🚫 Recusada",
+        em_andamento: "&#128994; Em Andamento",
+        concluida: "&#9989; Concluída",
+        "concluída": "&#9989; Concluída",
+        agendada: "&#128197; Agendada",
+        aberta: "&#128203; Aberta",
+        cancelada: "&#10060; Cancelada",
+        recusada: "&#128683; Recusada",
       };
       const statusLabel = statusMap[so.status] || so.status;
-      const fat = Number((so as any).fat_calculado) || 0;
+
+      const billing = billingBySO.get(so.id);
+      const fat = billing ? (Number(billing.fat_total) || 0) : (Number((so as any).fat_calculado) || 0);
+      let custo = Number((so as any).custo_total_alocado) || 0;
+      if (billing) {
+        const bPag = Number(billing.pag_total) || (Number(billing.pag_vrp) || 0) + (Number(billing.pag_periculosidade) || 0) + (Number(billing.pag_adicional_noturno) || 0) + (Number(billing.pag_reembolsos) || 0);
+        const bDesp = Number(billing.desp_total) || (Number(billing.desp_pedagio) || Number(billing.despesas_pedagio) || 0) + (Number(billing.desp_combustivel) || Number(billing.despesas_combustivel) || 0) + (Number(billing.desp_outras) || Number(billing.despesas_outras) || 0);
+        if (bPag + bDesp > 0) custo = bPag + bDesp;
+      }
+
+      const clientName = billing?.client_name || clientMap.get(so.clientId) || "-";
+
       return `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${so.osNumber || "-"}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${so.clientName || "-"}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${clientName}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${statusLabel}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;text-align:right;">R$ ${fmt(fat)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;text-align:right;color:#dc2626;">R$ ${fmt(custo)}</td>
       </tr>`;
     }).join("");
 
@@ -920,14 +967,22 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
           <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">KM Total Rodados</td>
           <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;">${fmt(kmTotal)} km</td>
         </tr>
-        <tr>
+        ${despPedagio > 0 ? `<tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Pedágio (Escoltas)</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despPedagio)}</td>
+        </tr>` : ""}
+        ${despCombustivel > 0 ? `<tr>
+          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Combustível (Escoltas)</td>
+          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despCombustivel)}</td>
+        </tr>` : ""}
+        ${receitas > 0 ? `<tr>
           <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Receitas Avulsas</td>
           <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#16a34a;">R$ ${fmt(receitas)}</td>
-        </tr>
-        <tr>
+        </tr>` : ""}
+        ${despesas > 0 ? `<tr>
           <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Despesas Avulsas</td>
           <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despesas)}</td>
-        </tr>
+        </tr>` : ""}
       </table>
 
       <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px;">
@@ -970,6 +1025,7 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
               <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Cliente</th>
               <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Status</th>
               <th style="padding:8px 10px;text-align:right;font-size:12px;color:#666;font-weight:600;">Faturamento</th>
+              <th style="padding:8px 10px;text-align:right;font-size:12px;color:#666;font-weight:600;">Custo</th>
             </tr>
           </thead>
           <tbody>${osDetails}</tbody>
