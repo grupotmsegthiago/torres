@@ -366,6 +366,55 @@ async function ensureSystemSettingsTable() {
       }
     });
 
+    app.post("/api/admin/test-daily-summary-debug", requireAuth, requireAdminRole, async (_req, res) => {
+      try {
+        const nodemailer = await import("nodemailer");
+        const host = process.env.SMTP_HOST || "smtp.office365.com";
+        const port = parseInt(process.env.SMTP_PORT || "587");
+        const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+        const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+        if (!user || !pass) return res.json({ success: false, message: "SMTP credentials missing" });
+
+        const transporter = nodemailer.default.createTransport({
+          host, port, secure: port === 465,
+          requireTLS: port === 587,
+          auth: { user, pass },
+          tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+          logger: true,
+          debug: true,
+        });
+
+        const verified = await transporter.verify().catch((e: any) => e.message);
+        if (typeof verified === "string") {
+          return res.json({ success: false, message: `SMTP verify failed: ${verified}`, config: { host, port, user } });
+        }
+
+        const info = await transporter.sendMail({
+          from: `"Torres Vigilância - Sistema" <${user}>`,
+          to: "diretoria@torresseguranca.com.br",
+          subject: `[TESTE] Resumo Diário — ${new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
+          html: `<div style="font-family:Arial;padding:20px;">
+            <h2>Teste de E-mail — Resumo Diário</h2>
+            <p>Se você está lendo este e-mail, o envio do resumo diário está funcionando corretamente.</p>
+            <p>Enviado em: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+            <p style="color:#888;font-size:12px;">Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89</p>
+          </div>`,
+        });
+
+        res.json({
+          success: true,
+          message: `E-mail enviado!`,
+          smtp: { host, port, user },
+          messageId: info.messageId,
+          response: info.response,
+          accepted: info.accepted,
+          rejected: info.rejected,
+        });
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message, stack: err.stack?.split("\n").slice(0, 3) });
+      }
+    });
+
     app.get("/api/health/slow-routes", requireAuth, requireAdminRole, (_req, res) => {
       const routes = getSlowRoutes();
       const summary: Record<string, { count: number; avgMs: number; maxMs: number }> = {};
