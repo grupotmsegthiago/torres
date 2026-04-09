@@ -7763,14 +7763,14 @@ export default function OperationalGridPage() {
   const { data: vehicles = [], isLoading: loadingVehicles, refetch: refetchVehicles, isFetching: fetchingVehicles, dataUpdatedAt: vehiclesUpdatedAt } = useQuery<TrackedVehicle[]>({
     queryKey: ["/api/vehicle-tracking"],
     refetchInterval: REFRESH_INTERVAL_MS,
-    staleTime: 0,
+    staleTime: 15_000,
     refetchOnWindowFocus: true,
   });
 
   const { data: gridData = [], isLoading: loadingGrid, refetch: refetchGrid, isFetching: fetchingGrid, dataUpdatedAt: gridUpdatedAt } = useQuery<GridItem[]>({
     queryKey: ["/api/operational-grid"],
     refetchInterval: REFRESH_INTERVAL_MS,
-    staleTime: 0,
+    staleTime: 15_000,
     refetchOnWindowFocus: true,
   });
 

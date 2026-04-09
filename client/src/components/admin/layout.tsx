@@ -31,15 +31,20 @@ type MenuSection = {
 };
 
 const PREFETCH_MAP: Record<string, string[]> = {
-  "/admin/dashboard": ["/api/service-orders?limit=10"],
+  "/admin/dashboard": ["/api/service-orders", "/api/clients", "/api/employees", "/api/vehicles"],
   "/admin/clients": ["/api/clients"],
-  "/admin/service-orders": ["/api/service-orders?limit=50"],
-  "/admin/employees": ["/api/employees?limit=50"],
+  "/admin/service-orders": ["/api/service-orders", "/api/clients", "/api/employees", "/api/vehicles"],
+  "/admin/employees": ["/api/employees"],
   "/admin/vehicles": ["/api/vehicles"],
-  "/admin/financeiro": ["/api/financial-transactions"],
-  "/admin/operational-grid": ["/api/service-orders?limit=50"],
-  "/admin/fueling": ["/api/fueling"],
+  "/admin/financeiro": ["/api/financial/transactions", "/api/financial/categories", "/api/financial/accounts"],
+  "/admin/operational-grid": ["/api/operational-grid", "/api/vehicle-tracking"],
+  "/admin/fueling": ["/api/fueling", "/api/vehicles"],
   "/admin/boletim-medicao": ["/api/boletim-medicao/os-concluidas"],
+  "/admin/balanco-gerencial": ["/api/financial/dashboard"],
+  "/admin/timesheets": ["/api/timesheets", "/api/employees"],
+  "/admin/maintenance": ["/api/maintenance", "/api/vehicles"],
+  "/admin/trips": ["/api/trips", "/api/vehicles", "/api/employees"],
+  "/admin/faturas": ["/api/escort-billings"],
 };
 
 const menuSections: MenuSection[] = [
