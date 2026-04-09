@@ -95,18 +95,26 @@ async function resilientFetch(url: RequestInfo | URL, init?: RequestInit): Promi
   }
 }
 
+function flattenHeaders(h: HeadersInit | undefined): Record<string, string> {
+  if (!h) return {};
+  if (h instanceof Headers) return Object.fromEntries(h.entries());
+  if (Array.isArray(h)) return Object.fromEntries(h);
+  return h as Record<string, string>;
+}
+
 async function attemptFetch(url: RequestInfo | URL, init: RequestInit | undefined, attempt: number): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
+    const mergedHeaders = {
+      ...flattenHeaders(init?.headers),
+      "Connection": "keep-alive",
+    };
     const response = await fetch(url, {
       ...init,
       signal: controller.signal,
       keepalive: true,
-      headers: {
-        ...(init?.headers || {}),
-        "Connection": "keep-alive",
-      },
+      headers: mergedHeaders,
     });
     clearTimeout(timeout);
 
