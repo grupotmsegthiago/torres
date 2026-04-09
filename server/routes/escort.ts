@@ -1622,6 +1622,27 @@ import type { Express } from "express";
           const emp = so.assignedEmployeeId ? await storage.getEmployee(so.assignedEmployeeId) : null;
           const emp2 = so.assignedEmployee2Id ? await storage.getEmployee(so.assignedEmployee2Id) : null;
           const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const dataMissaoCalc = (() => {
+              const a = so.missionStartedAt ? new Date(so.missionStartedAt).getTime() : Infinity;
+              const b = so.scheduledDate ? new Date(so.scheduledDate).getTime() : Infinity;
+              if (a === Infinity && b === Infinity) return so.createdAt || new Date().toISOString();
+              return a <= b ? so.missionStartedAt : so.scheduledDate;
+            })();
+
+          const isConcluded = so.status === "concluida" || so.status === "concluída" ||
+            so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
+          const lucroLiqCalc = r(fat_total - nb(contrato.vrp_base));
+
+          const bancoHoras = (() => {
+            if (!so.missionStartedAt || !so.completedDate) return null;
+            const inicio = new Date(so.missionStartedAt).getTime();
+            const fim = new Date(so.completedDate).getTime();
+            if (isNaN(inicio) || isNaN(fim) || fim <= inicio) return null;
+            const horasTrab = (fim - inicio) / (1000 * 60 * 60);
+            const limiteDia = 8;
+            return { horas_trabalhadas: r(horasTrab), limite: limiteDia, saldo: r(horasTrab - limiteDia) };
+          })();
+
           items.push({
             id: `calc-${so.id}`, service_order_id: so.id,
             client_id: so.clientId, client_name: client?.name || "--",
@@ -1635,17 +1656,17 @@ import type { Express } from "express";
             receitas_os: r(receitasOs),
             pag_vrp: r(nb(contrato.vrp_base)), pag_total: r(nb(contrato.vrp_base)),
             resultado_bruto: r(fat_total - nb(contrato.vrp_base)),
-            resultado_liquido: r(fat_total - nb(contrato.vrp_base)),
+            resultado_liquido: lucroLiqCalc,
             vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
             vigilante2_id: so.assignedEmployee2Id || null, vigilante2_name: emp2?.name || null,
             origem: so.origin || null, destino: so.destination || null,
             placa_viatura: vehicle?.plate || null,
-            data_missao: (() => {
-              const a = so.missionStartedAt ? new Date(so.missionStartedAt).getTime() : Infinity;
-              const b = so.scheduledDate ? new Date(so.scheduledDate).getTime() : Infinity;
-              if (a === Infinity && b === Infinity) return so.createdAt || new Date().toISOString();
-              return a <= b ? so.missionStartedAt : so.scheduledDate;
-            })(),
+            data_missao: dataMissaoCalc,
+            created_at_date: extractDatePart(so.createdAt),
+            scheduled_date_brt: extractDatePart(so.scheduledDate),
+            completed_date_brt: so.completedDate ? extractDatePart(so.completedDate) : null,
+            is_concluded: isConcluded,
+            banco_horas: bancoHoras,
             status: "A_VERIFICAR",
             despesas_pedagio: r(despesas_pedagio), despesas_combustivel: r(despesas_combustivel), despesas_outras: r(despesas_outras),
           });
@@ -1803,10 +1824,40 @@ import type { Express } from "express";
         const pag = Number(b.pag_total || 0);
         const lucro = fat - pag - desp;
         const so = osLookup.get(b.service_order_id);
+
+        const soCreatedAt = so?.createdAt || b.created_at;
+        const soScheduledDate = so?.scheduledDate || b.scheduled_date;
+        const soCompletedDate = so?.completedDate || b.completed_date;
+        const soMissionStartedAt = so?.missionStartedAt || b.mission_started_at;
+
+        const createdDateBRT = toBRTDate(soCreatedAt || new Date().toISOString());
+        const scheduledDateBRT = toBRTDate(soScheduledDate || soCreatedAt || new Date().toISOString());
+        const completedDateBRT = soCompletedDate ? toBRTDate(soCompletedDate) : null;
+
+        const isConcludedFinal = b.is_concluded || (so && (
+          so.status === "concluida" || so.status === "concluída" ||
+          so.missionStatus === "encerrada" || so.missionStatus === "finalizada"
+        ));
+
+        let bancoHorasFinal = b.banco_horas || null;
+        if (!bancoHorasFinal && soMissionStartedAt && soCompletedDate) {
+          const inicio = new Date(soMissionStartedAt).getTime();
+          const fim = new Date(soCompletedDate).getTime();
+          if (!isNaN(inicio) && !isNaN(fim) && fim > inicio) {
+            const ht = (fim - inicio) / (1000 * 60 * 60);
+            bancoHorasFinal = { horas_trabalhadas: Math.round(ht * 100) / 100, limite: 8, saldo: Math.round((ht - 8) * 100) / 100 };
+          }
+        }
+
         return {
         id: b.id,
         os_number: so?.osNumber || b.os_number || null,
         data: toBRTDate(b.data_missao || b.created_at || new Date().toISOString()),
+        created_at_date: b.created_at_date || createdDateBRT,
+        scheduled_date_brt: b.scheduled_date_brt || scheduledDateBRT,
+        completed_date_brt: b.completed_date_brt || completedDateBRT,
+        is_concluded: isConcludedFinal,
+        banco_horas: bancoHorasFinal,
         origem: b.origem,
         destino: b.destino,
         placa_viatura: b.placa_viatura,
@@ -1885,6 +1936,38 @@ import type { Express } from "express";
         kmByVehicle[plate] = (kmByVehicle[plate] || 0) + Number(b.km_total || 0);
       });
 
+      const volumeVendasByDay: Record<string, { count: number; fat_total: number }> = {};
+      const custoOperacionalByDay: Record<string, { count: number; pag_total: number }> = {};
+      const lucroRealizadoByDay: Record<string, { count: number; lucro: number }> = {};
+      const bancoHorasByAgent: Record<number, { name: string; saldo_total: number; missoes: number }> = {};
+
+      byMission.forEach((m: any) => {
+        if (m.created_at_date) {
+          if (!volumeVendasByDay[m.created_at_date]) volumeVendasByDay[m.created_at_date] = { count: 0, fat_total: 0 };
+          volumeVendasByDay[m.created_at_date].count += 1;
+          volumeVendasByDay[m.created_at_date].fat_total += m.fat_total;
+        }
+
+        const schedKey = m.scheduled_date_brt || m.data;
+        if (schedKey) {
+          if (!custoOperacionalByDay[schedKey]) custoOperacionalByDay[schedKey] = { count: 0, pag_total: 0 };
+          custoOperacionalByDay[schedKey].count += 1;
+          custoOperacionalByDay[schedKey].pag_total += m.pag_total;
+        }
+
+        if (m.is_concluded && m.completed_date_brt) {
+          if (!lucroRealizadoByDay[m.completed_date_brt]) lucroRealizadoByDay[m.completed_date_brt] = { count: 0, lucro: 0 };
+          lucroRealizadoByDay[m.completed_date_brt].count += 1;
+          lucroRealizadoByDay[m.completed_date_brt].lucro += m.lucro;
+        }
+
+        if (m.banco_horas && m.vigilante_id) {
+          if (!bancoHorasByAgent[m.vigilante_id]) bancoHorasByAgent[m.vigilante_id] = { name: m.vigilante || "--", saldo_total: 0, missoes: 0 };
+          bancoHorasByAgent[m.vigilante_id].saldo_total += m.banco_horas.saldo;
+          bancoHorasByAgent[m.vigilante_id].missoes += 1;
+        }
+      });
+
       res.json({
         billings: items,
         missionsByDay,
@@ -1900,6 +1983,14 @@ import type { Express } from "express";
         byMission,
         vehicles: vehicles || [],
         employees: employees || [],
+        tripartite: {
+          volumeVendasByDay,
+          custoOperacionalByDay,
+          lucroRealizadoByDay,
+        },
+        bancoHoras: Object.entries(bancoHorasByAgent).map(([id, v]) => ({
+          agentId: Number(id), name: v.name, saldo_total: Math.round(v.saldo_total * 100) / 100, missoes: v.missoes,
+        })),
         totals: {
           faturamento: incomeTotal,
           faturamento_realizado: incomePaid,

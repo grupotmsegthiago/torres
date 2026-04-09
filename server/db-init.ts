@@ -942,6 +942,37 @@ export async function ensureCalcMissionRPC() {
     console.log("[db-init] calc_mission_elapsed_hours RPC created OK");
   } catch (e: any) {
     console.error("[db-init] calc_mission_elapsed_hours error:", e.message);
+  }
+
+  try {
+    await execSql(`
+      CREATE OR REPLACE FUNCTION fn_ajustar_data_missao()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        IF (NEW.mission_started_at IS NOT NULL AND NEW.scheduled_date IS NOT NULL
+            AND NEW.mission_started_at < NEW.scheduled_date) THEN
+          NEW.scheduled_date := NEW.mission_started_at;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await execSql(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ajustar_data_missao'
+        ) THEN
+          CREATE TRIGGER trg_ajustar_data_missao
+          BEFORE UPDATE ON service_orders
+          FOR EACH ROW
+          WHEN (OLD.mission_started_at IS NULL AND NEW.mission_started_at IS NOT NULL)
+          EXECUTE FUNCTION fn_ajustar_data_missao();
+        END IF;
+      END $$;
+    `);
+    console.log("[db-init] fn_ajustar_data_missao trigger created OK");
+  } catch (e: any) {
+    console.error("[db-init] fn_ajustar_data_missao error:", e.message);
   } finally {
     await closeDbInitClient();
   }
