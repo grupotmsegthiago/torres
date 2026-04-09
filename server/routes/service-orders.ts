@@ -738,6 +738,7 @@ import type { Express } from "express";
   app.post("/api/service-orders", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (!parsed.data.scheduledDate) return res.status(400).json({ message: "Data do Agendamento é obrigatória" });
 
     const employeeIds = [parsed.data.assignedEmployeeId, parsed.data.assignedEmployee2Id].filter((id): id is number => id != null && id > 0);
     const missingDocs: string[] = [];

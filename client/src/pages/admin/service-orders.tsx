@@ -1247,13 +1247,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   </select>
                 </div>
               )}
+              {order && (
+                <div>
+                  <FieldLabel>Data da Criação</FieldLabel>
+                  <Input type="datetime-local" value={utcToLocalInput(order.createdAt)} readOnly className="text-sm bg-neutral-50 cursor-not-allowed" data-testid="input-os-created" />
+                </div>
+              )}
               <div>
-                <FieldLabel>Data da Criação</FieldLabel>
+                <FieldLabel>Data do Agendamento <span className="text-red-500">*</span></FieldLabel>
                 <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
               </div>
               {order && (
                 <div>
-                  <FieldLabel>Data do Agendamento</FieldLabel>
+                  <FieldLabel>Início da Missão</FieldLabel>
                   <Input type="datetime-local" value={form.missionStartedAt} onChange={(e) => setForm({ ...form, missionStartedAt: e.target.value })} className="text-sm" data-testid="input-os-mission-started" />
                 </div>
               )}
@@ -1592,13 +1598,17 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     toast({ title: "Selecione o cliente", variant: "destructive" });
                     return;
                   }
+                  if (step === 1 && !form.scheduledDate) {
+                    toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento para continuar.", variant: "destructive" });
+                    return;
+                  }
                   if (step === 1 && form.scheduledDate) {
                     const selected = new Date(form.scheduledDate);
                     const now = new Date();
                     now.setSeconds(0, 0);
                     const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
                     if (selected < fiveMinAgo) {
-                      toast({ title: "Data da Criação inválida", description: "Não é permitido criar OS com data anterior ao horário atual.", variant: "destructive" });
+                      toast({ title: "Data do Agendamento inválida", description: "Não é permitido criar OS com data anterior ao horário atual.", variant: "destructive" });
                       return;
                     }
                   }
@@ -1631,7 +1641,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => mutation.mutate(form)} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>
