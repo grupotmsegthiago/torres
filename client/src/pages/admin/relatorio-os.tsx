@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import {
   FileText, Search, Download, RefreshCw,
   CheckCircle2, Clock, AlertTriangle, XCircle, Loader2,
-  ChevronDown, ChevronUp, ArrowUpDown,
+  ChevronDown, ChevronUp, ArrowUpDown, CalendarDays,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
 
@@ -79,11 +79,17 @@ function truncRoute(str: string | null | undefined, max = 25): string {
   return str.length > max ? str.slice(0, max) + "…" : str;
 }
 
+function getTodayBRT(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
 export default function RelatorioOSPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("scheduledDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
+  const [dateTo, setDateTo] = useState<string>(getTodayBRT());
 
   const { data: gridData = [], isLoading, refetch, isFetching } = useQuery<ReportOS[]>({
     queryKey: ["/api/operational-grid"],
@@ -92,6 +98,21 @@ export default function RelatorioOSPage() {
 
   const filtered = useMemo(() => {
     let items = [...gridData];
+
+    if (dateFrom || dateTo) {
+      items = items.filter(o => {
+        const raw = o.scheduledDate || o.missionStartedAt;
+        if (!raw) return false;
+        let d: string;
+        try {
+          d = new Date(raw).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        } catch { return false; }
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo && d > dateTo) return false;
+        return true;
+      });
+    }
+
     if (statusFilter !== "all") {
       items = items.filter(o => {
         const s = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -124,7 +145,7 @@ export default function RelatorioOSPage() {
       return 0;
     });
     return items;
-  }, [gridData, statusFilter, search, sortField, sortDir]);
+  }, [gridData, statusFilter, search, sortField, sortDir, dateFrom, dateTo]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { concluida: 0, em_andamento: 0, agendada: 0, cancelada: 0, pendente: 0 };
@@ -210,7 +231,9 @@ export default function RelatorioOSPage() {
                     RELATÓRIO DE OS — {filtered.length} missões
                   </h1>
                   <p className="text-xs text-neutral-400 mt-0.5">
-                    Ordens de Serviço do dia
+                    {dateFrom === dateTo
+                      ? `Ordens de Serviço — ${new Date(dateFrom + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" })}`
+                      : `Ordens de Serviço — ${new Date(dateFrom + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} a ${new Date(dateTo + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" })}`}
                   </p>
                 </div>
               </div>
@@ -243,6 +266,35 @@ export default function RelatorioOSPage() {
                   className="pl-10 bg-white/10 border-white/10 text-white placeholder:text-neutral-500 h-9 text-sm"
                   data-testid="input-search-report"
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-neutral-400 shrink-0" />
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="bg-white/10 border-white/10 text-white h-9 text-sm w-[140px] [color-scheme:dark]"
+                  data-testid="input-date-from"
+                />
+                <span className="text-neutral-500 text-xs">até</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="bg-white/10 border-white/10 text-white h-9 text-sm w-[140px] [color-scheme:dark]"
+                  data-testid="input-date-to"
+                />
+                {(dateFrom !== getTodayBRT() || dateTo !== getTodayBRT()) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setDateFrom(getTodayBRT()); setDateTo(getTodayBRT()); }}
+                    className="text-neutral-400 hover:text-white hover:bg-white/10 h-9 px-2 text-xs"
+                    data-testid="button-reset-dates"
+                  >
+                    Hoje
+                  </Button>
+                )}
               </div>
               <Button size="sm" onClick={() => refetch()} disabled={isFetching} className="bg-white/10 hover:bg-white/20 text-white border border-white/10 gap-2" data-testid="button-refresh-report">
                 <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
