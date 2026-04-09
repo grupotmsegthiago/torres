@@ -3,7 +3,7 @@ import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
 import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
-import { supabaseAdmin } from "./supabase";
+import { supabaseAdmin, getSupabaseStats } from "./supabase";
 import {
   insertClientSchema, insertEmployeeSchema, insertVehicleSchema,
   insertServiceOrderSchema, insertTripSchema, insertVehicleMaintenanceSchema,
@@ -260,9 +260,13 @@ async function syncFuelingMissionCosts() {
 }
 
 setTimeout(() => {
+  if (!isSupabaseHealthy()) {
+    console.log("[Sync] Skipping auto-tx sync — Supabase offline at startup");
+    return;
+  }
   syncMissingAutoTransactions().catch(e => console.error("[Sync] auto-tx error:", e.message));
   setTimeout(() => syncFuelingMissionCosts().catch(e => console.error("[Sync] fueling-cost error:", e.message)), 15000);
-}, 10000);
+}, 30000);
 
 const DEFAULT_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 *OS {{osNumber}}* | *STATUS:* {{transitStatus}}
@@ -339,6 +343,7 @@ async function ensureSystemSettingsTable() {
     app.get("/api/health", async (_req, res) => {
       const localDb = await testLocalDb();
       const queueStats = await getQueueStats();
+      const supa = getSupabaseStats();
       res.json({
         ok: true,
         ts: Date.now(),
@@ -346,6 +351,7 @@ async function ensureSystemSettingsTable() {
         localDb: localDb ? "online" : "offline",
         mode: isSupabaseHealthy() ? "primary" : "fallback",
         writeQueue: queueStats,
+        supabaseStats: supa,
       });
     });
 
@@ -1225,11 +1231,9 @@ Regras:
       heading: heading ?? null,
     };
     const loc = await storage.upsertAgentLocation(locData);
-    try {
-      await supabaseAdmin.from("agent_location_history").insert(toSnakeObj(locData));
-    } catch (histErr: any) {
-      console.error("[agent-location] Failed to log history:", histErr.message);
-    }
+    supabaseAdmin.from("agent_location_history").insert(toSnakeObj(locData)).then(({ error }: any) => {
+      if (error) console.error("[agent-location] Failed to log history:", error.message);
+    }).catch(() => {});
     res.json(loc);
   });
 

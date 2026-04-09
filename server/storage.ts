@@ -28,6 +28,18 @@ import {
 } from "@shared/schema";
 import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables, enqueueWrite } from "./pg-fallback";
 
+const LOCAL_CACHE_TTL_MS = 45_000;
+const localCacheAge = new Map<string, number>();
+
+function isLocalFresh(table: string): boolean {
+  const lastSync = localCacheAge.get(table) || 0;
+  return Date.now() - lastSync < LOCAL_CACHE_TTL_MS;
+}
+
+function markLocalFresh(table: string): void {
+  localCacheAge.set(table, Date.now());
+}
+
 async function resilientList<T>(
   table: string,
   supaFn: () => Promise<{ data: any[] | null; error: any }>,
@@ -35,9 +47,19 @@ async function resilientList<T>(
   orderAsc?: boolean,
   filters?: { column: string; op: string; value: any }[],
 ): Promise<T[]> {
+  if (!isSupabaseHealthy() && isLocalFresh(table)) {
+    const local = await localQuery(
+      table,
+      filters,
+      orderCol ? { column: orderCol, ascending: orderAsc } : undefined,
+    );
+    if (local.length > 0) return local.map((r) => toCamelObj<T>(r));
+  }
+
   try {
     const { data, error } = await supaFn();
     if (error) throw error;
+    markLocalFresh(table);
     return toCamelArray<T>(data || []);
   } catch (err: any) {
     console.warn(`[resilient] ${table} list fallback: ${err.message || err}`);
@@ -55,9 +77,15 @@ async function resilientGet<T>(
   filters: { column: string; op: string; value: any }[],
   supaFn: () => Promise<{ data: any | null; error: any }>,
 ): Promise<T | undefined> {
+  if (!isSupabaseHealthy() && isLocalFresh(table)) {
+    const rows = await localQuery(table, filters, undefined, 1);
+    if (rows.length > 0) return toCamelObj<T>(rows[0]);
+  }
+
   try {
     const { data, error } = await supaFn();
     if (error && error.code !== "PGRST116") throw error;
+    markLocalFresh(table);
     return data ? toCamelObj<T>(data) : undefined;
   } catch (err: any) {
     console.warn(`[resilient] ${table} get fallback: ${err.message || err}`);
@@ -780,17 +808,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertAgentLocation(data: InsertAgentLocation): Promise<AgentLocation> {
-    const { data: existing } = await supabaseAdmin.from("agent_locations").select("id").eq("user_id", (data as any).userId).limit(1);
-    if (existing && existing.length > 0) {
-      const payload = toSnakeObj(data as any);
-      payload.updated_at = new Date().toISOString();
-      const { data: updated, error } = await supabaseAdmin.from("agent_locations").update(payload).eq("user_id", (data as any).userId).select().single();
+    const payload = toSnakeObj(data as any);
+    payload.updated_at = new Date().toISOString();
+    try {
+      const { data: result, error } = await supabaseAdmin
+        .from("agent_locations")
+        .upsert(payload, { onConflict: "user_id" })
+        .select()
+        .single();
       if (error) throw new Error(error.message);
-      return toCamelObj<AgentLocation>(updated);
+      return toCamelObj<AgentLocation>(result);
+    } catch (err: any) {
+      console.warn(`[resilient] agent_locations upsert fallback: ${err.message}`);
+      await enqueueWrite("agent_locations", "insert", payload);
+      return toCamelObj<AgentLocation>(payload as any);
     }
-    const { data: created, error } = await supabaseAdmin.from("agent_locations").insert(toSnakeObj(data as any)).select().single();
-    if (error) throw new Error(error.message);
-    return toCamelObj<AgentLocation>(created);
   }
 
   async getAgentLocations(): Promise<AgentLocation[]> {
