@@ -1,0 +1,58 @@
+1. Compreensão do Cenário
+Antes de mergulharmos no código, preciso entender melhor a estrutura do seu sistema. Poderia responder a estas perguntas?
+
+Linguagem e Framework: Qual linguagem estás a usar (Python, Node.js, PHP?) e qual framework (Flask, Express, Fastify?)
+
+Banco de Dados: Estás a usar um banco integrado (como o Replit DB), um banco externo (PostgreSQL no Supabase, MongoDB Atlas?) ou um arquivo local (SQLite)?
+
+Onde ocorre a lentidão: É em todas as páginas ou em rotas específicas que processam muitos dados?
+
+Mensagens de Erro: Recebes algum erro específico no console (ex: Too many connections, Timeout, 504 Gateway Timeout)?
+
+2. Panorama Geral da Solução
+Para resolver problemas de performance e excesso de requisições, o plano de ação geralmente segue estes pilares:
+
+Identificação (Logging): Adicionar tempos de execução nas funções para descobrir qual consulta ao banco está a demorar mais.
+
+Otimização de Consultas: Verificar se estamos a pedir mais dados do que o necessário (o famoso SELECT * sem filtros).
+
+Criação de Índices: Garantir que o banco de dados saiba encontrar a informação rapidamente.
+
+Connection Pooling: Reutilizar conexões com o banco em vez de abrir e fechar uma nova a cada clique do utilizador.
+
+Caching: Guardar resultados de consultas frequentes na memória para não precisar de ir ao banco de dados toda hora.
+
+3. Exemplo Prático: Ferramenta de Varredura
+Enquanto aguardo os teus detalhes, aqui está um exemplo de como podes implementar um "medidor de tempo" simples em Python (Flask) para identificar onde o código está a travar:
+
+O Código de Monitorização
+Python
+import time
+import sqlite3 # Exemplo usando SQLite
+
+def buscar_utilizadores():
+    # 1. Registamos o momento em que a função começa
+    inicio = time.time()
+    
+    # Simulação de conexão e consulta
+    conn = sqlite3.connect('meu_banco.db')
+    cursor = conn.cursor()
+    
+    # O PROBLEMA: Uma consulta lenta ou mal estruturada
+    cursor.execute("SELECT * FROM utilizadores") 
+    resultado = cursor.fetchall()
+    
+    conn.close()
+    
+    # 2. Calculamos o tempo final
+    fim = time.time()
+    tempo_total = fim - inicio
+    
+    print(f"--- Varredura: A consulta demorou {tempo_total:.4f} segundos ---")
+    return resultado
+Como implementar e ler os resultados:
+Insere o time.time() antes e depois das tuas funções que chamam o banco de dados.
+
+Verifica o Console do Replit: Se uma consulta demorar mais de 0.5s, ela é uma candidata forte a estar a causar a lentidão.
+
+Verifica o Fecho de Conexões: Se o erro for de "queda", garante que tens o comando para fechar a conexão (conn.close()) dentro de um bloco finally, para que, mesmo que ocorra um erro, a conexão não fique "pendurada" gastando memória.
