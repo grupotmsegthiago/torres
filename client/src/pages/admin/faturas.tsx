@@ -742,7 +742,7 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
     queryKey: ["/api/invoices", invoiceId, "notifications"],
     queryFn: () => authFetch(`/api/invoices/${invoiceId}/notifications`).then(r => r.ok ? r.json() : null),
     enabled: !!asaasPaymentId,
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   if (!asaasPaymentId) return null;

@@ -45,6 +45,21 @@ export async function getHorasElapsedFromDB(osId: number): Promise<number> {
   }
 }
 
+export function calcHorasElapsedLocal(
+  missionStartedAt: string | null | undefined,
+  completedDate: string | null | undefined,
+): number {
+  if (!missionStartedAt) return 0;
+  const parseDate = (v: string) => {
+    const s = String(v);
+    return new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+  };
+  const start = parseDate(missionStartedAt);
+  const end = completedDate ? parseDate(completedDate) : new Date();
+  const diffMs = end.getTime() - start.getTime();
+  return Math.max(0, diffMs / (1000 * 60 * 60));
+}
+
 export function extractKmFromText(text: string | null | undefined): number | null {
   if (!text) return null;
   const match = text.match(/(\d+)\s*km/i);

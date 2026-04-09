@@ -48,14 +48,14 @@ export default function DashboardPage() {
     queryKey: ["/api/api-logs/stats"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: user?.role === "admin",
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const { data: apiLogs = [] } = useQuery<any[]>({
     queryKey: ["/api/api-logs"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: user?.role === "admin",
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const openOrders = (orders || []).filter((o) => o.status === "aberta" || o.status === "em_andamento").length;

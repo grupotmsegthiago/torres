@@ -40,6 +40,27 @@ function markLocalFresh(table: string): void {
   localCacheAge.set(table, Date.now());
 }
 
+const MEM_CACHE_TTL_MS = 120_000;
+const memCache = new Map<string, { data: any; ts: number }>();
+
+export function memGet<T>(key: string): T[] | null {
+  const entry = memCache.get(key);
+  if (entry && Date.now() - entry.ts < MEM_CACHE_TTL_MS) return entry.data;
+  return null;
+}
+
+export function memSet<T>(key: string, data: T[]): void {
+  memCache.set(key, { data, ts: Date.now() });
+}
+
+export function memInvalidate(key: string): void {
+  memCache.delete(key);
+}
+
+export function memInvalidateAll(): void {
+  memCache.clear();
+}
+
 async function resilientList<T>(
   table: string,
   supaFn: () => Promise<{ data: any[] | null; error: any }>,
@@ -373,8 +394,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClients(): Promise<Client[]> {
-    return resilientList<Client>("clients", () =>
+    const cached = memGet<Client>("clients");
+    if (cached) return cached;
+    const result = await resilientList<Client>("clients", () =>
       supabaseAdmin.from("clients").select("*").order("created_at", { ascending: false }), "created_at", false);
+    memSet("clients", result);
+    return result;
   }
 
   async getClient(id: number): Promise<Client | undefined> {
@@ -383,14 +408,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClient(client: InsertClient): Promise<Client> {
+    memInvalidate("clients");
     return resilientInsert<Client>("clients", toSnakeObj(client as any));
   }
 
   async updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined> {
+    memInvalidate("clients");
     return resilientUpdate<Client>("clients", toSnakeObj(client as any), { id });
   }
 
   async deleteClient(id: number): Promise<void> {
+    memInvalidate("clients");
     return resilientDelete("clients", { id });
   }
 
@@ -423,8 +451,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployees(): Promise<Employee[]> {
-    return resilientList<Employee>("employees", () =>
+    const cached = memGet<Employee>("employees");
+    if (cached) return cached;
+    const result = await resilientList<Employee>("employees", () =>
       supabaseAdmin.from("employees").select("*").order("created_at", { ascending: false }), "created_at", false);
+    memSet("employees", result);
+    return result;
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
@@ -433,20 +465,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEmployee(employee: InsertEmployee): Promise<Employee> {
+    memInvalidate("employees");
     return resilientInsert<Employee>("employees", toSnakeObj(employee as any));
   }
 
   async updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
+    memInvalidate("employees");
     return resilientUpdate<Employee>("employees", toSnakeObj(employee as any), { id });
   }
 
   async deleteEmployee(id: number): Promise<void> {
+    memInvalidate("employees");
     return resilientDelete("employees", { id });
   }
 
   async getVehicles(): Promise<Vehicle[]> {
-    return resilientList<Vehicle>("vehicles", () =>
+    const cached = memGet<Vehicle>("vehicles");
+    if (cached) return cached;
+    const result = await resilientList<Vehicle>("vehicles", () =>
       supabaseAdmin.from("vehicles").select("*").order("created_at", { ascending: false }), "created_at", false);
+    memSet("vehicles", result);
+    return result;
   }
 
   async getVehicle(id: number): Promise<Vehicle | undefined> {
@@ -455,14 +494,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVehicle(vehicle: InsertVehicle): Promise<Vehicle> {
+    memInvalidate("vehicles");
     return resilientInsert<Vehicle>("vehicles", toSnakeObj(vehicle as any));
   }
 
   async updateVehicle(id: number, vehicle: Partial<InsertVehicle>): Promise<Vehicle | undefined> {
+    memInvalidate("vehicles");
     return resilientUpdate<Vehicle>("vehicles", toSnakeObj(vehicle as any), { id });
   }
 
   async deleteVehicle(id: number): Promise<void> {
+    memInvalidate("vehicles");
     return resilientDelete("vehicles", { id });
   }
 

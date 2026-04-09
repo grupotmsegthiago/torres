@@ -1,11 +1,11 @@
 import type { Express } from "express";
-  import { storage, toCamelArray } from "../storage";
+  import { storage, toCamelArray, memGet, memSet } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole } from "../auth";
   import * as truckscontrol from "../truckscontrol";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
-  import { getHorasElapsedFromDB, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS } from "../billing-calc";
+  import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, extractKmFromText, calcDistanciaGPS } from "../billing-calc";
   import { haversineDist } from "./_helpers";
 
   export const lastMissionPos: Map<number, { lat: number; lng: number }> = new Map();
@@ -156,29 +156,38 @@ import type { Express } from "express";
 
     const osIds = activeOrders.map(o => o.id);
 
-    const safeFrom = async (table: string, osIds: number[]) => {
+    const safeFrom = async (table: string, osIds: number[], selectCols = "*") => {
       try {
         if (osIds.length === 0) return { data: [] as any[] };
-        return await supabaseAdmin.from(table).select("*").in("service_order_id", osIds).order("created_at", { ascending: false });
+        return await supabaseAdmin.from(table).select(selectCols).in("service_order_id", osIds).order("created_at", { ascending: false }).limit(500);
       } catch (e: any) {
         console.error(`[grid] ${table} query failed (42P01?): ${e.message}`);
         return { data: [] as any[] };
       }
     };
 
+    const cachedContracts = memGet<any>("escort_contracts");
+    const contractsPromise = cachedContracts
+      ? Promise.resolve({ data: cachedContracts })
+      : supabaseAdmin.from("escort_contracts").select("*");
+
     const [allClients, allEmployees, updatesRes, tcPositions, photosRes, contractsRes, missionCostsRes] = await Promise.all([
       storage.getClients(),
       storage.getEmployees(),
-      safeFrom("mission_updates", osIds),
+      safeFrom("mission_updates", osIds, "id, service_order_id, mission_step, message, created_at, read_by_admin, latitude, longitude"),
       truckscontrol.getCachedPositions(),
       osIds.length > 0
-        ? supabaseAdmin.from("mission_photos").select("*").in("service_order_id", osIds)
+        ? supabaseAdmin.from("mission_photos").select("service_order_id, step, km_value").in("service_order_id", osIds)
         : Promise.resolve({ data: [] as any[] }),
-      supabaseAdmin.from("escort_contracts").select("*"),
+      contractsPromise,
       osIds.length > 0
-        ? supabaseAdmin.from("mission_costs").select("*").in("service_order_id", osIds)
+        ? supabaseAdmin.from("mission_costs").select("service_order_id, amount, category, cost_type, vehicle_id").in("service_order_id", osIds)
         : Promise.resolve({ data: [] as any[] }),
     ]);
+
+    if (!cachedContracts && contractsRes.data) {
+      memSet("escort_contracts", contractsRes.data);
+    }
 
     const clientMap = new Map(allClients.map(c => [c.id, c]));
     const vehicleMap = new Map(gridVehicles.map(v => [v.id, v]));
@@ -325,7 +334,7 @@ import type { Express } from "express";
             })();
             const skipBillingHours = missionNotStartedYet || (o.status === "agendada" && scheduledInFuture);
 
-            const horasCalcRaw = skipBillingHours ? 0 : await getHorasElapsedFromDB(o.id);
+            const horasCalcRaw = skipBillingHours ? 0 : calcHorasElapsedLocal(o.missionStartedAt, o.completedDate);
 
             const kmTexto = extractKmFromText(o.destination) || extractKmFromText(o.route);
             let kmRota: number | undefined;

@@ -502,13 +502,13 @@ function LogsTab() {
   const { data: logs = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/api-logs"],
     queryFn: getQueryFn({ on401: "throw" }),
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   const { data: stats } = useQuery<any>({
     queryKey: ["/api/api-logs/stats"],
     queryFn: getQueryFn({ on401: "throw" }),
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   return (
