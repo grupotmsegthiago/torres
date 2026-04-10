@@ -457,7 +457,7 @@ export default function FaturasPage() {
                               ) : (
                                 <span className="text-[10px] text-neutral-400">Local</span>
                               )}
-                              {inv.nfse_status === "AUTHORIZED" && (
+                              {(inv.nfse_status === "AUTHORIZED" || inv.nfse_status === "SYNCHRONIZED") && (
                                 <Badge className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200">
                                   NFS-e ✓
                                 </Badge>
@@ -868,6 +868,7 @@ function NotificationTracker({ invoiceId, asaasPaymentId }: { invoiceId: number;
 const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = {
   SCHEDULED:          { label: "Agendada",      color: "bg-amber-50 text-amber-700 border-amber-200",     icon: Clock },
   AUTHORIZED:         { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
+  SYNCHRONIZED:       { label: "Autorizada",    color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
   CANCELLED:          { label: "Cancelada",     color: "bg-neutral-100 text-neutral-500 border-neutral-200", icon: XCircle },
   ERROR:              { label: "Erro",          color: "bg-red-50 text-red-700 border-red-200",           icon: AlertTriangle },
   PROCESSING:         { label: "Processando",   color: "bg-blue-50 text-blue-700 border-blue-200",       icon: Loader2 },
@@ -880,7 +881,7 @@ function NfseControlSection({ invoice }: { invoice: Invoice }) {
 
   const nfStatus = invoice.nfse_status ? (NFSE_STATUS_MAP[invoice.nfse_status] || { label: invoice.nfse_status, color: "bg-neutral-100 text-neutral-600 border-neutral-200", icon: FileText }) : null;
   const hasNfse = !!invoice.nfse_status;
-  const isAuthorized = invoice.nfse_status === "AUTHORIZED";
+  const isAuthorized = invoice.nfse_status === "AUTHORIZED" || invoice.nfse_status === "SYNCHRONIZED";
   const isError = invoice.nfse_status === "ERROR";
   const canEmit = invoice.asaas_payment_id && !isAuthorized && invoice.status !== "CANCELLED";
 
@@ -918,17 +919,19 @@ function NfseControlSection({ invoice }: { invoice: Invoice }) {
             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <div>
               <span className="text-emerald-700 font-bold">NFS-e emitida com sucesso</span>
-              {invoice.nfse_number && (
+              {invoice.nfse_number && !invoice.nfse_number.startsWith("inv_") && (
                 <span className="text-emerald-600 ml-2 font-mono text-[10px]">N° {invoice.nfse_number}</span>
               )}
             </div>
           </div>
-          {invoice.nfse_url && (
+          {invoice.nfse_url ? (
             <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-authorized">
                 <ExternalLink className="w-3 h-3 mr-1" /> Visualizar NFS-e
               </Button>
             </a>
+          ) : (
+            <p className="text-[10px] text-emerald-600">Aguardando processamento pela prefeitura. Clique em "Sincronizar" para atualizar.</p>
           )}
         </div>
       )}
@@ -1083,7 +1086,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
               <span className="text-xs text-neutral-500">Valor Total</span>
               <span className="text-2xl font-black text-neutral-900">{fmt(invoice.value)}</span>
             </div>
-            {invoice.net_value && invoice.net_value !== invoice.value && (
+            {invoice.net_value && Math.abs(parseFloat(String(invoice.net_value)) - parseFloat(String(invoice.value))) > 0.01 && (
               <div className="flex justify-between">
                 <span className="text-xs text-neutral-500">Valor Líquido</span>
                 <span className="text-sm font-bold text-emerald-700">{fmt(invoice.net_value)}</span>
