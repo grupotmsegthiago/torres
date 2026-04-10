@@ -82,6 +82,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; i
   em_andamento: { label: "Andamento", color: "text-sky-700", bg: "bg-sky-100", icon: Clock },
   agendada: { label: "Agendada", color: "text-amber-700", bg: "bg-amber-100", icon: AlertTriangle },
   cancelada: { label: "Cancelada", color: "text-red-700", bg: "bg-red-100", icon: XCircle },
+  recusada: { label: "Recusada", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   pendente: { label: "Pendente", color: "text-orange-700", bg: "bg-orange-100", icon: Clock },
 };
 
@@ -401,13 +402,14 @@ export default function RelatorioOSPage() {
   }, [gridData, statusFilter, search, sortField, sortDir]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { concluida: 0, em_andamento: 0, agendada: 0, cancelada: 0, pendente: 0 };
+    const counts: Record<string, number> = { concluida: 0, em_andamento: 0, agendada: 0, cancelada: 0, recusada: 0, pendente: 0 };
     gridData.forEach(o => {
       const s = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       if (s === "concluida" || s === "concluída") counts.concluida++;
       else if (s === "em_andamento") counts.em_andamento++;
       else if (s === "agendada") counts.agendada++;
       else if (s === "cancelada") counts.cancelada++;
+      else if (s === "recusada") counts.recusada++;
       else counts.pendente++;
     });
     return counts;
@@ -491,7 +493,7 @@ export default function RelatorioOSPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {(["concluida", "em_andamento", "agendada", "cancelada"] as const).map(s => {
+                {(["concluida", "em_andamento", "agendada", "cancelada", "recusada"] as const).map(s => {
                   const cfg = statusConfig[s];
                   const count = statusCounts[s] || 0;
                   const active = statusFilter === s;
