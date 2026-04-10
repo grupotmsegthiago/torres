@@ -70,9 +70,9 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
+          { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
         ],
       },
-      { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
       {
         label: "Frota",
         icon: Car,
