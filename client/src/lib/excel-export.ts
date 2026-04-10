@@ -89,11 +89,12 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
   const accentFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
 
-  const emptyArr = Array(colCount).fill("");
+  const emptyArr = Array(colCount).fill(null);
 
+  const titleStartCol = logo ? 2 : 1;
   const row1 = ws.addRow(emptyArr);
-  ws.mergeCells(1, 1, 1, colCount);
-  const c1 = row1.getCell(1);
+  ws.mergeCells(1, titleStartCol, 1, colCount);
+  const c1 = row1.getCell(titleStartCol);
   c1.value = config.title;
   c1.font = { bold: true, size: 14, color: { argb: WHITE } };
   c1.alignment = { horizontal: "center", vertical: "middle" };
@@ -206,6 +207,24 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       }
     }
     clearBeyondColumns(ws, totalRow.number, colCount);
+  }
+
+  for (let c = 1; c <= colCount; c++) {
+    let maxLen = config.headers[c - 1] ? String(config.headers[c - 1]).length : 0;
+    config.rows.forEach(rowData => {
+      const val = rowData[c - 1];
+      if (val != null) {
+        const len = String(val).length;
+        if (len > maxLen) maxLen = len;
+      }
+    });
+    if (config.totalsRow && config.totalsRow[c - 1] != null) {
+      const len = String(config.totalsRow[c - 1]).length;
+      if (len > maxLen) maxLen = len;
+    }
+    const autoWidth = Math.max(maxLen + 3, 6);
+    const staticWidth = config.colWidths[c - 1] || 10;
+    ws.getColumn(c).width = Math.max(autoWidth, staticWidth);
   }
 
   const lastUsedRow = ws.rowCount;
