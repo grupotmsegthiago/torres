@@ -19,14 +19,12 @@ const ClientsPage = lazy(() => import("@/pages/admin/clients"));
 const EmployeesPage = lazy(() => import("@/pages/admin/employees"));
 const VehiclesPage = lazy(() => import("@/pages/admin/vehicles"));
 const ServiceOrdersPage = lazy(() => import("@/pages/admin/service-orders"));
-const TripsPage = lazy(() => import("@/pages/admin/trips"));
 const FuelingPage = lazy(() => import("@/pages/admin/fueling"));
 const MaintenancePage = lazy(() => import("@/pages/admin/maintenance"));
 const TimesheetsPage = lazy(() => import("@/pages/admin/timesheets"));
 const TrackerPage = lazy(() => import("@/pages/admin/tracker"));
 const MissionPage = lazy(() => import("@/pages/admin/mission"));
 const OperationalGridPage = lazy(() => import("@/pages/admin/operational-grid"));
-const TelemetryPage = lazy(() => import("@/pages/admin/telemetry"));
 const GuiaMissaoPage = lazy(() => import("@/pages/admin/guia-missao"));
 const WeaponsPage = lazy(() => import("@/pages/admin/weapons"));
 const UsersPage = lazy(() => import("@/pages/admin/users"));
@@ -41,7 +39,6 @@ const RelatorioOSPage = lazy(() => import("@/pages/admin/relatorio-os"));
 const CotacaoGastoPage = lazy(() => import("@/pages/admin/cotacao-gasto"));
 const FaturasPage = lazy(() => import("@/pages/admin/faturas"));
 const HoleritesPage = lazy(() => import("@/pages/admin/holerites"));
-const CalculadoraJornadaPage = lazy(() => import("@/pages/admin/calculadora-jornada"));
 const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
 const JornadaDiretoriaPage = lazy(() => import("@/pages/admin/jornada-diretoria"));
 const ChatPage = lazy(() => import("@/pages/admin/chat"));
@@ -182,7 +179,6 @@ function Router() {
         <Route path="/admin/service-orders">{() => <ProtectedRoute component={ServiceOrdersPage} />}</Route>
         <Route path="/admin/boletim-medicao">{() => <ProtectedRoute component={BoletimMedicaoPage} />}</Route>
         <Route path="/admin/relatorio-faturamento">{() => <ProtectedRoute component={RelatorioFaturamentoPage} />}</Route>
-        <Route path="/admin/trips">{() => <ProtectedRoute component={TripsPage} />}</Route>
         <Route path="/admin/fueling">{() => <ProtectedRoute component={FuelingPage} />}</Route>
         <Route path="/admin/maintenance">{() => <ProtectedRoute component={MaintenancePage} />}</Route>
         <Route path="/admin/timesheets">{() => <ProtectedRoute component={TimesheetsPage} />}</Route>
@@ -190,7 +186,6 @@ function Router() {
         <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
         <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
         <Route path="/admin/laudo/:osId">{() => <ProtectedRoute component={LaudoPage} />}</Route>
-        <Route path="/admin/telemetria">{() => <ProtectedRoute component={TelemetryPage} />}</Route>
         <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
         <Route path="/admin/relatorio-os">{() => <ProtectedRoute component={RelatorioOSPage} />}</Route>
@@ -202,7 +197,6 @@ function Router() {
         <Route path="/admin/balanco-gerencial">{() => <ProtectedRoute component={BalancoGerencialPage} />}</Route>
         <Route path="/admin/faturas">{() => <ProtectedRoute component={FaturasPage} />}</Route>
         <Route path="/admin/holerites">{() => <ProtectedRoute component={HoleritesPage} />}</Route>
-        <Route path="/admin/calculadora-jornada">{() => <ProtectedRoute component={CalculadoraJornadaPage} />}</Route>
         <Route path="/admin/jornada-diretoria">{() => <ProtectedRoute component={JornadaDiretoriaPage} />}</Route>
         <Route path="/admin/chat">{() => <ProtectedRoute component={ChatPage} />}</Route>
         <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>

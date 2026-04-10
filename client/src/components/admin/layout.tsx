@@ -4,9 +4,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
-  LayoutDashboard, Users, Car, FileText, Route, Wrench,
+  LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Gauge, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle,
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle,
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,6 @@ const PREFETCH_MAP: Record<string, string[]> = {
   "/admin/balanco-gerencial": ["/api/financial/dashboard"],
   "/admin/timesheets": ["/api/timesheets", "/api/employees"],
   "/admin/maintenance": ["/api/maintenance", "/api/vehicles"],
-  "/admin/trips": ["/api/trips", "/api/vehicles", "/api/employees"],
   "/admin/faturas": ["/api/escort-billings"],
 };
 
@@ -80,11 +79,9 @@ const menuSections: MenuSection[] = [
         icon: Car,
         children: [
           { path: "/admin/vehicles", label: "Veículos", icon: Car },
-          { path: "/admin/trips", label: "Viagens", icon: Route },
           { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
           { path: "/admin/maintenance", label: "Manutenção", icon: Wrench },
           { path: "/admin/tracker", label: "Rastreador", icon: MapPin },
-          { path: "/admin/telemetria", label: "Telemetria", icon: Gauge },
         ],
       },
     ],
@@ -123,7 +120,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
-          { path: "/admin/calculadora-jornada", label: "Calculadora Jornada", icon: Clock },
         ],
       },
     ],
