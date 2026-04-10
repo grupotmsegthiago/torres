@@ -10,6 +10,215 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
+  const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition"; expectedItem?: string }> = {
+    viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
+    viatura_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda da viatura" },
+    viatura_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita da viatura" },
+    viatura_traseira: { type: "vehicle_condition", expectedItem: "Traseira da viatura" },
+    escoltado_frente: { type: "plate", expectedItem: "Frente do veículo escoltado com placa visível" },
+    escoltado_traseira: { type: "plate", expectedItem: "Traseira do veículo escoltado" },
+    viatura_retorno_frente: { type: "plate", expectedItem: "Dianteira da viatura no retorno com placa" },
+    viatura_retorno_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda viatura retorno" },
+    viatura_retorno_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita viatura retorno" },
+    viatura_retorno_traseira: { type: "vehicle_condition", expectedItem: "Traseira viatura retorno" },
+  };
+
+  const CHECKLIST_EQUIPMENT_MAP: Record<string, string> = {
+    estepe: "pneu estepe reserva",
+    chave_roda: "chave de roda",
+    macaco: "macaco hidráulico ou mecânico",
+    triangulo: "triângulo de sinalização",
+  };
+
+  async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[]) {
+    const inspectionConfig = INSPECTION_STEPS[step];
+    const isChecklistEquipment = checklistItems && checklistItems.length > 0;
+    if (!inspectionConfig && !isChecklistEquipment) return;
+
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+    const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+    if (!apiKey) { console.log("[ai-inspection] No AI key, skipping"); return; }
+
+    try {
+      await supabaseAdmin.from("mission_photos").update({ ai_inspection_status: "analisando" }).eq("id", photoId);
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey, baseURL });
+
+      let expectedPlate = "";
+      let promptText = "";
+
+      if (inspectionConfig?.type === "plate") {
+        if (step.startsWith("escoltado_")) {
+          expectedPlate = escortedPlate || "";
+        } else {
+          expectedPlate = vehiclePlate || "";
+        }
+        promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
+Analise esta foto e valide:
+1. PLACA: Tente ler a placa do veículo na imagem. A placa esperada é "${expectedPlate}". Compare se a placa visível corresponde.
+2. VEÍCULO: Verifique se a foto é do ângulo correto (${inspectionConfig.expectedItem}).
+3. CONDIÇÃO: Note qualquer dano visível ou irregularidade no veículo.
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": "placa lida ou null se ilegível",
+  "placa_confere": true/false/null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "condicao": "bom/dano_visivel/irregular",
+  "divergencias": ["lista de problemas"] ou [],
+  "observacao": "breve análise"
+}`;
+      } else if (inspectionConfig?.type === "vehicle_condition") {
+        promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
+Analise esta foto e valide:
+1. A foto mostra o ângulo correto: ${inspectionConfig.expectedItem}
+2. Condição aparente do veículo (danos, arranhões, amassados)
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "condicao": "bom/dano_visivel/irregular",
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      } else if (isChecklistEquipment) {
+        const itemsList = checklistItems.map(i => CHECKLIST_EQUIPMENT_MAP[i] || i).join(", ");
+        promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
+A viatura de placa "${vehiclePlate}" deve conter os seguintes itens de segurança: ${itemsList}.
+Analise esta foto e identifique se os equipamentos obrigatórios estão visíveis e em bom estado.
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true,
+  "item_esperado": "${itemsList}",
+  "item_encontrado": true/false,
+  "condicao": "bom/ausente/danificado",
+  "equipamentos": {${checklistItems.map(i => `"${i}": {"presente": true/false, "estado": "bom/danificado/ausente"}`).join(", ")}},
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      }
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: promptText },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Analise esta foto de inspeção veicular:" },
+              { type: "image_url", image_url: { url: photoData } },
+            ],
+          },
+        ],
+        max_tokens: 600,
+      });
+
+      const raw = response.choices[0]?.message?.content || "";
+      let result: any;
+      try {
+        const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        result = JSON.parse(cleaned);
+      } catch {
+        result = { divergencias: ["Não foi possível analisar automaticamente"], observacao: raw, angulo_correto: true, item_encontrado: true, condicao: "inconclusivo" };
+      }
+
+      const hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
+        result.placa_confere === false ||
+        result.angulo_correto === false ||
+        result.item_encontrado === false ||
+        result.condicao === "dano_visivel" || result.condicao === "irregular" || result.condicao === "ausente" || result.condicao === "danificado";
+
+      const status = hasDivergence ? "divergente" : "aprovado";
+
+      await supabaseAdmin.from("mission_photos").update({
+        ai_inspection_status: status,
+        ai_inspection_result: { status, ...result },
+      }).eq("id", photoId);
+
+      await supabaseAdmin.from("inspection_logs").insert({
+        mission_photo_id: photoId,
+        service_order_id: serviceOrderId,
+        employee_id: employeeId,
+        step,
+        expected_plate: expectedPlate || null,
+        detected_plate: result.placa_detectada || null,
+        plate_match: result.placa_confere ?? null,
+        expected_item: inspectionConfig?.expectedItem || (isChecklistEquipment ? checklistItems.join(", ") : null),
+        item_detected: result.item_encontrado ?? null,
+        item_condition: result.condicao || null,
+        divergences: result.divergencias || [],
+        ai_raw_response: raw,
+        status,
+        alerted: hasDivergence,
+      });
+
+      console.log(`[ai-inspection] Photo #${photoId} step=${step} → ${status}`);
+
+      if (hasDivergence) {
+        try {
+          const so = await storage.getServiceOrder(serviceOrderId);
+          const emp = await storage.getEmployee(employeeId);
+          const vehicle = so?.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+          const osNumber = so?.osNumber || `#${serviceOrderId}`;
+          const agentName = emp?.name || "N/A";
+          const plate = vehicle?.plate || vehiclePlate || "N/A";
+          const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+          const divergencias = (result.divergencias || []).map((d: string) => `<li style="color:#c0392b">${d}</li>`).join("");
+
+          const html = `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+              <div style="background:#c0392b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
+                <h2 style="margin:0;font-size:18px">🔍 Alerta: Divergência na Inspeção Veicular (IA)</h2>
+              </div>
+              <div style="background:#fff;border:1px solid #e0e0e0;padding:24px;border-radius:0 0 8px 8px">
+                <p style="margin:0 0 16px;color:#333">A IA detectou uma divergência durante a inspeção do checklist da missão.</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold;width:40%">Missão</td><td style="padding:6px 12px">${osNumber}</td></tr>
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Viatura</td><td style="padding:6px 12px">${plate}</td></tr>
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Agente</td><td style="padding:6px 12px">${agentName}</td></tr>
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Etapa</td><td style="padding:6px 12px">${step}</td></tr>
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Data/Hora</td><td style="padding:6px 12px">${timeBRT}</td></tr>
+                  ${result.placa_detectada ? `<tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Placa Detectada</td><td style="padding:6px 12px;color:${result.placa_confere === false ? '#c0392b' : '#27ae60'};font-weight:bold">${result.placa_detectada}</td></tr>` : ""}
+                  ${expectedPlate ? `<tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Placa Esperada</td><td style="padding:6px 12px">${expectedPlate}</td></tr>` : ""}
+                  <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Condição</td><td style="padding:6px 12px;font-weight:bold;color:${result.condicao === 'bom' ? '#27ae60' : '#c0392b'}">${result.condicao || "N/A"}</td></tr>
+                </table>
+                ${divergencias ? `<div style="background:#fdf2f2;border:1px solid #f5c6cb;border-radius:6px;padding:12px;margin-bottom:16px"><p style="margin:0 0 8px;font-weight:bold;color:#c0392b">Divergências:</p><ul style="margin:0;padding-left:20px">${divergencias}</ul></div>` : ""}
+                ${result.observacao ? `<p style="margin:0 0 16px;color:#555"><strong>Observação IA:</strong> ${result.observacao}</p>` : ""}
+                ${photoData.startsWith("http") ? `<p style="margin:0 0 16px"><a href="${photoData}" style="color:#2980b9">Ver foto</a></p>` : ""}
+                <p style="margin:0;font-size:12px;color:#999">Alerta automático — Torres Vigilância Patrimonial</p>
+              </div>
+            </div>`;
+
+          const transporter = createSmtpTransporter();
+          if (transporter) {
+            await transporter.sendMail({
+              from: getSmtpFrom(),
+              to: "thiago@grupotmseg.com.br, escolta@torresseguranca.com.br",
+              subject: `🔍 Divergência Inspeção ${osNumber} - ${step} - ${plate}`,
+              html,
+            });
+            console.log(`[ai-inspection] Alert email sent for photo #${photoId}`);
+          }
+        } catch (emailErr: any) {
+          console.error(`[ai-inspection] Email failed: ${emailErr.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[ai-inspection] Error analyzing photo #${photoId}: ${err.message}`);
+      await supabaseAdmin.from("mission_photos").update({ ai_inspection_status: "erro", ai_inspection_result: { error: err.message } }).eq("id", photoId);
+    }
+  }
+
   export function registerMissionRoutes(app: Express) {
     app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
     const result = await truckscontrol.testConnection();
@@ -914,8 +1123,46 @@ import type { Express } from "express";
       console.error(`[mission-photo] Alert insert error (non-fatal): ${alertErr.message}`);
     }
 
+    const shouldInspect = !!INSPECTION_STEPS[step];
+    if (shouldInspect) {
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+      const escortedPlate = (so as any).escortedVehiclePlate || "";
+      runPhotoInspection(photo.id, serviceOrderId, user.employeeId!, step, photoData, vehicle?.plate || "", escortedPlate).catch(e =>
+        console.error(`[ai-inspection] background error: ${e.message}`)
+      );
+    }
+
     const { photoData: _, ...safePhoto } = photo;
     res.status(201).json(safePhoto);
+  });
+
+  app.get("/api/mission/:osId/inspection-logs", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const { data, error } = await supabaseAdmin.from("inspection_logs")
+        .select("*")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: false });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/mission/:osId/photo-inspections", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const { data, error } = await supabaseAdmin.from("mission_photos")
+        .select("id, step, ai_inspection_status, ai_inspection_result, created_at")
+        .eq("service_order_id", osId)
+        .not("ai_inspection_status", "is", null)
+        .order("created_at", { ascending: false });
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.post("/api/mission/escort-data", requireAuth, async (req, res) => {

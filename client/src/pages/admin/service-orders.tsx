@@ -652,6 +652,67 @@ function AcceptanceStatusSection({ orderId }: { orderId: number }) {
   );
 }
 
+function InspectionLogsSection({ orderId }: { orderId: number }) {
+  const { data: logs = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/mission", orderId, "inspection-logs"],
+  });
+
+  if (isLoading) return <div className="py-2"><Loader2 className="w-4 h-4 animate-spin mx-auto" /></div>;
+  if (logs.length === 0) return null;
+
+  const statusCfg: Record<string, { bg: string; text: string; label: string }> = {
+    aprovado: { bg: "bg-emerald-100", text: "text-emerald-800", label: "Aprovado" },
+    divergente: { bg: "bg-red-100", text: "text-red-800", label: "Divergente" },
+    analisando: { bg: "bg-amber-100", text: "text-amber-800", label: "Analisando" },
+    pendente: { bg: "bg-neutral-100", text: "text-neutral-600", label: "Pendente" },
+  };
+
+  return (
+    <div className="mt-3 border border-neutral-200 rounded-xl p-3 bg-neutral-50/50" data-testid="section-inspection-logs">
+      <div className="flex items-center gap-2 mb-2">
+        <Eye className="w-3.5 h-3.5 text-blue-600" />
+        <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-600">Inspeção IA — Checklist Veicular</span>
+        <span className="ml-auto text-[10px] text-neutral-400">{logs.length} análise(s)</span>
+      </div>
+      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+        {logs.map((log: any) => {
+          const cfg = statusCfg[log.status] || statusCfg.pendente;
+          const divergences = log.divergences || [];
+          return (
+            <div key={log.id} className="bg-white rounded-lg px-3 py-2 border border-neutral-100" data-testid={`inspection-log-${log.id}`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold text-neutral-700 uppercase">{log.step}</span>
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
+              </div>
+              {log.expected_plate && (
+                <p className="text-[10px] text-neutral-500">
+                  Placa esperada: <strong>{log.expected_plate}</strong>
+                  {log.detected_plate && <> | Detectada: <strong className={log.plate_match ? "text-emerald-600" : "text-red-600"}>{log.detected_plate}</strong></>}
+                </p>
+              )}
+              {log.item_condition && (
+                <p className="text-[10px] text-neutral-500">Condição: <strong>{log.item_condition}</strong></p>
+              )}
+              {divergences.length > 0 && (
+                <div className="mt-1">
+                  {divergences.map((d: string, i: number) => (
+                    <p key={i} className="text-[10px] text-red-600">• {d}</p>
+                  ))}
+                </div>
+              )}
+              {log.created_at && (
+                <p className="text-[9px] text-neutral-300 mt-1">
+                  {new Date(log.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings }: {
   order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean; billings?: any[];
 }) {
@@ -1459,6 +1520,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             {emp1 && <div className="mb-3"><AgentSection emp={emp1} label="1" /></div>}
             {emp2 && <div className="mb-3"><AgentSection emp={emp2} label="2" /></div>}
             {order && <AcceptanceStatusSection orderId={order.id} />}
+            {order && <InspectionLogsSection orderId={order.id} />}
           </div>
         )}
 

@@ -788,6 +788,30 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_codigo_estab TEXT`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_photos ALTER COLUMN longitude TYPE real USING longitude::real`).catch(() => {});
+    await execSql(`ALTER TABLE mission_photos ADD COLUMN IF NOT EXISTS ai_inspection_status TEXT DEFAULT NULL`).catch(() => {});
+    await execSql(`ALTER TABLE mission_photos ADD COLUMN IF NOT EXISTS ai_inspection_result JSONB DEFAULT NULL`).catch(() => {});
+
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS inspection_logs (
+        id SERIAL PRIMARY KEY,
+        mission_photo_id INTEGER REFERENCES mission_photos(id),
+        service_order_id INTEGER NOT NULL,
+        employee_id INTEGER NOT NULL,
+        step TEXT NOT NULL,
+        expected_plate TEXT,
+        detected_plate TEXT,
+        plate_match BOOLEAN,
+        expected_item TEXT,
+        item_detected BOOLEAN,
+        item_condition TEXT,
+        divergences JSONB DEFAULT '[]',
+        ai_raw_response TEXT,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        alerted BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_inspection_logs_so ON inspection_logs (service_order_id)`).catch(() => {});
     await execSql(`ALTER TABLE vehicles ALTER COLUMN last_latitude TYPE real USING last_latitude::real`).catch(() => {});
     await execSql(`ALTER TABLE vehicles ALTER COLUMN last_longitude TYPE real USING last_longitude::real`).catch(() => {});
     await execSql(`ALTER TABLE mission_costs ALTER COLUMN latitude TYPE real USING latitude::real`).catch(() => {});

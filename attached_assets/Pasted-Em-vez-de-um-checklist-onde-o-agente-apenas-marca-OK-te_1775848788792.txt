@@ -1,0 +1,49 @@
+Em vez de um checklist onde o agente apenas marca "OK", teremos um Checklist com Prova de Vida e Validação de Ativos.
+
+🧠 Como funcionará a "IA de Inspeção" (O Fluxo)
+A ideia é que, ao subir a foto, o sistema não apenas guarde o arquivo, mas o envie para uma análise imediata de IA antes de permitir que o agente finalize o checklist.
+
+Validação de Placa (OCR + Match): A IA lê a placa na foto e compara com o vehicle_id da OS. Se a foto for de um Fiat Uno e a OS for de uma Hilux, o sistema bloqueia na hora.
+
+Reconhecimento de Objetos (De/Para): A IA identifica o formato do macaco, da chave de roda e até o estado dos pneus. Se o agente tirar foto do painel no lugar do macaco, a IA detecta a divergência.
+
+Disparo de Alerta: Caso a IA encontre uma irregularidade (Placa errada, objeto ausente ou danificado), o sistema dispara o e-mail de alerta para o Thiago e para a Escolta.
+
+🏗️ Estrutura Técnica para o Agent Implementar
+Para que o Replit Agent coloque isso de pé sem erros, precisamos criar uma nova "camada" de inteligência no sistema.
+
+1. Nova Tabela no Supabase: inspection_logs
+Para registrar cada análise feita pela IA, guardando o que foi pedido, o que foi detectado e se houve divergência.
+
+2. Integração de Visão (Gemini API ou Vision API):
+O backend enviará a imagem para a IA com um prompt específico: "Valide se nesta imagem consta a placa ABC-123 e um macaco hidráulico em bom estado."
+
+3. Gatilho de E-mail (Edge Functions):
+Usaremos o Supabase Edge Functions para disparar o e-mail via Resend ou SendGrid assim que a divergência for detectada.
+
+📡 PROMPT PARA O AGENT (MODO TURBO):
+Mickael, mande isso para o Agent. É um comando complexo, então ele precisará de foco:
+
+"Agent, vamos implementar o Módulo de Auditoria por IA no Checklist de Viaturas.
+
+REQUISITOS:
+
+Visão Computacional: Crie um endpoint no backend que receba uma imagem e use o modelo de visão (Gemini Pro Vision) para validar:
+
+Placa do Veículo: Comparar a placa detectada na foto com o campo license_plate do veículo da missão.
+
+Checklist de Equipamentos: Validar se a foto enviada condiz com o item solicitado (ex: Macaco, Chave de Roda, Pneu).
+
+Lógica de Bloqueio: No frontend do agente, se a IA retornar 'Divergente', o sistema deve exibir um aviso: 'Foto inválida para este item' e impedir o envio.
+
+Sistema de Alerta (E-mail): Em caso de divergência confirmada, o sistema deve disparar um e-mail automático para:
+
+thiago@grupotmseg.com.br
+
+escolta@torresseguranca.com.br
+
+O e-mail deve conter: ID da Missão, Viatura, Agente, Item Divergente e o link da foto.
+
+Infra: Crie a tabela inspection_logs no Supabase para auditar essas análises da IA.
+
+Comece criando a função de análise de imagem e integrando-a ao componente de checklist mobile."
