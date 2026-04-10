@@ -59,6 +59,89 @@ async function sendRodizioAlerts() {
   log(`CRON Rodízio: ${sent} mensagem(ns) enviada(s)`, "cron");
 }
 
+const META_DIARIA_VIATURA = 1800;
+const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
+
+async function checkMetaAndNotify() {
+  try {
+    const now = new Date();
+    const brDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
+    const [brYear, brMonth] = brDate.split("-");
+    const monthKey = `meta_atingida_${brYear}-${brMonth}`;
+
+    const { data: already } = await supabaseAdmin.from("system_settings").select("id").eq("key", monthKey);
+    if (already?.length) return;
+
+    const { data: vehicles } = await supabaseAdmin.from("vehicles").select("*");
+    const activeCount = (vehicles || []).filter(isActiveVehicle).length;
+    if (activeCount === 0) return;
+
+    const daysInMonth = new Date(Number(brYear), Number(brMonth), 0).getDate();
+    const metaMensal = META_DIARIA_VIATURA * activeCount * daysInMonth;
+
+    const monthStart = `${brYear}-${brMonth}-01T00:00:00`;
+    const monthEnd = `${brYear}-${brMonth}-${String(daysInMonth).padStart(2, "0")}T23:59:59`;
+    const { data: billings } = await supabaseAdmin.from("escort_billings")
+      .select("total_value, created_at")
+      .gte("created_at", monthStart)
+      .lte("created_at", monthEnd);
+
+    const totalFat = (billings || []).reduce((sum: number, b: any) => sum + (Number(b.total_value) || 0), 0);
+    if (totalFat < metaMensal) return;
+
+    const pct = ((totalFat / metaMensal) * 100).toFixed(1);
+    const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+    const transporter = getCronMailTransporter();
+    if (!transporter) {
+      log(`CRON Meta: Meta atingida (${pct}%) mas SMTP não configurado`, "cron");
+      return;
+    }
+
+    const monthLabel = new Date(Number(brYear), Number(brMonth) - 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+    await transporter.sendMail({
+      from: process.env.SMTP_USER || process.env.EMAIL_USER,
+      to: "thiago@grupotmseg.com.br",
+      subject: `🎯 Meta Atingida — ${monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+          <div style="background:#059669;color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center;">
+            <h1 style="margin:0;font-size:24px;">🎯 META ATINGIDA!</h1>
+            <p style="margin:5px 0 0;font-size:14px;opacity:0.9;">${monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}</p>
+          </div>
+          <div style="background:#f9fafb;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 12px 12px;">
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <tr>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;color:#6b7280;">Faturamento Acumulado</td>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;font-weight:bold;text-align:right;color:#059669;font-size:18px;">${fmt(totalFat)}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;color:#6b7280;">Meta do Mês</td>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;font-weight:bold;text-align:right;">${fmt(metaMensal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;color:#6b7280;">Atingimento</td>
+                <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;font-weight:bold;text-align:right;color:#059669;">${pct}%</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0;color:#6b7280;">Viaturas Ativas</td>
+                <td style="padding:10px 0;font-weight:bold;text-align:right;">${activeCount}</td>
+              </tr>
+            </table>
+            <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;text-align:center;">Torres Vigilância Patrimonial — Sistema de Gestão</p>
+          </div>
+        </div>
+      `,
+    });
+
+    await supabaseAdmin.from("system_settings").insert({ key: monthKey, value: `${totalFat}` });
+    log(`CRON Meta: ✅ Meta atingida! ${fmt(totalFat)} / ${fmt(metaMensal)} (${pct}%) — e-mail enviado`, "cron");
+  } catch (err: any) {
+    log(`CRON Meta: Erro ao verificar meta: ${err.message}`, "cron");
+  }
+}
+
 export function initCronJobs() {
   cron.schedule("0 2 * * *", async () => {
     log("CRON: Iniciando monitoramento de frota (multas PRF)", "cron");
@@ -319,6 +402,8 @@ export function initCronJobs() {
           log(`CRON Billing: Erro OS ${so.os_number}: ${err.message}`, "cron");
         }
       }
+
+      await checkMetaAndNotify();
     } catch (err: any) {
       log(`CRON Billing: Erro geral: ${err.message}`, "cron");
     }
