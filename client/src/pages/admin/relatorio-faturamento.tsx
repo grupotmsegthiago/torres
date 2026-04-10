@@ -79,8 +79,16 @@ export default function RelatorioFaturamentoPage() {
   const approvedBillings = useMemo(() => billings.filter(b => b.status === "APROVADA"), [billings]);
   const faturadoBillings = useMemo(() => billings.filter(b => b.status === "FATURADO" || b.status === "FATURADA"), [billings]);
   const approvedTotal = useMemo(() => approvedBillings.reduce((acc, b) => {
-    return acc + Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
-  }, 0), [approvedBillings]);
+    const ct = contracts.find((c: any) => c.id === b.contract_id) || null;
+    const n = (v: any) => Number(v) || 0;
+    const fatAcio = n(b.fat_acionamento) || n(ct?.valor_acionamento);
+    const fatKm = n(b.fat_km);
+    const fatHE = n(b.fat_hora_extra);
+    const fatPed = n(b.despesas_pedagio);
+    const fatRec = n(b.receitas_os);
+    const total = n(b.fat_total) || (fatAcio + fatKm + fatHE + fatPed + fatRec);
+    return acc + total;
+  }, 0), [approvedBillings, contracts]);
 
   const gerarFaturaMutation = useMutation({
     mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string; startDate: string; endDate: string; expectedTotal: number }) => {
@@ -298,9 +306,10 @@ export default function RelatorioFaturamentoPage() {
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
       const fatHoraExtra = n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100;
-      const fatKmExtra = Math.round(kmExcedente * valorKmExtra * 100) / 100;
+      const fatKmExtra = n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100;
       const fatPedagio = n(b.despesas_pedagio);
-      const fatTotal = n(b.fat_total);
+      const receitasOs = n(b.receitas_os);
+      const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs);
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";
