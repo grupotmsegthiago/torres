@@ -10,6 +10,7 @@ const BORDER_COLOR = "D4D4D4";
 
 const thinBorder: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORDER_COLOR } };
 const allBorders: Partial<ExcelJS.Borders> = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
+const noBorder: Partial<ExcelJS.Borders> = { top: {}, left: {}, bottom: {}, right: {} };
 
 async function fetchLogoAsBuffer(): Promise<{ buffer: ArrayBuffer; ext: "jpeg" | "png" } | null> {
   try {
@@ -17,6 +18,23 @@ async function fetchLogoAsBuffer(): Promise<{ buffer: ArrayBuffer; ext: "jpeg" |
     if (!resp.ok) return null;
     return { buffer: await resp.arrayBuffer(), ext: "jpeg" };
   } catch { return null; }
+}
+
+function applyFullRowFill(ws: ExcelJS.Worksheet, row: ExcelJS.Row, colCount: number, fill: ExcelJS.Fill) {
+  for (let i = 1; i <= colCount; i++) {
+    row.getCell(i).fill = fill;
+  }
+}
+
+function clearBeyondColumns(ws: ExcelJS.Worksheet, rowNum: number, colCount: number, extraCols: number = 30) {
+  const row = ws.getRow(rowNum);
+  for (let c = colCount + 1; c <= colCount + extraCols; c++) {
+    const cell = row.getCell(c);
+    cell.value = null;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { theme: 0 } };
+    cell.border = noBorder;
+    cell.font = {};
+  }
 }
 
 export interface ExcelExportConfig {
@@ -32,6 +50,8 @@ export interface ExcelExportConfig {
   currencyColumns?: number[];
   groupHeaders?: { label: string; span: number }[];
 }
+
+const BRL_FMT = '"R$ "#,##0.00';
 
 export async function exportFormattedExcel(config: ExcelExportConfig) {
   const wb = new ExcelJS.Workbook();
@@ -66,34 +86,45 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
     ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 60, height: 55 } });
   }
 
-  const row1 = ws.addRow(Array(colCount).fill(config.title));
+  const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
+  const accentFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
+
+  const emptyArr = Array(colCount).fill("");
+
+  const row1 = ws.addRow(emptyArr);
   ws.mergeCells(1, 1, 1, colCount);
   const c1 = row1.getCell(1);
+  c1.value = config.title;
   c1.font = { bold: true, size: 14, color: { argb: WHITE } };
-  c1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
   c1.alignment = { horizontal: "center", vertical: "middle" };
+  applyFullRowFill(ws, row1, colCount, darkFill);
   row1.height = 32.1;
+  clearBeyondColumns(ws, row1.number, colCount);
 
   if (config.period) {
-    const row2 = ws.addRow(Array(colCount).fill(config.period));
+    const row2 = ws.addRow(emptyArr);
     const r2n = row2.number;
     ws.mergeCells(r2n, 1, r2n, colCount);
     const c2 = row2.getCell(1);
+    c2.value = config.period;
     c2.font = { bold: true, size: 10, color: { argb: WHITE } };
-    c2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
     c2.alignment = { horizontal: "center", vertical: "middle" };
+    applyFullRowFill(ws, row2, colCount, darkFill);
     row2.height = 20;
+    clearBeyondColumns(ws, r2n, colCount);
   }
 
   if (config.subtitle) {
-    const row3 = ws.addRow(Array(colCount).fill(config.subtitle));
+    const row3 = ws.addRow(emptyArr);
     const r3n = row3.number;
     ws.mergeCells(r3n, 1, r3n, colCount);
     const c3 = row3.getCell(1);
+    c3.value = config.subtitle;
     c3.font = { bold: true, italic: true, size: 9, color: { argb: RED } };
-    c3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
     c3.alignment = { horizontal: "center", vertical: "middle" };
+    applyFullRowFill(ws, row3, colCount, accentFill);
     row3.height = 18;
+    clearBeyondColumns(ws, r3n, colCount);
   }
 
   if (config.groupHeaders) {
@@ -102,13 +133,14 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       ghValues.push(g.label);
       for (let j = 1; j < g.span; j++) ghValues.push("");
     }
-    const ghRow = ws.addRow(ghValues);
+    while (ghValues.length < colCount) ghValues.push("");
+    const ghRow = ws.addRow(ghValues.slice(0, colCount));
     let colIdx = 1;
     for (const g of config.groupHeaders) {
       if (g.span > 1) {
-        ws.mergeCells(ghRow.number, colIdx, ghRow.number, colIdx + g.span - 1);
+        ws.mergeCells(ghRow.number, colIdx, ghRow.number, Math.min(colIdx + g.span - 1, colCount));
       }
-      for (let j = 0; j < g.span; j++) {
+      for (let j = 0; j < g.span && colIdx + j <= colCount; j++) {
         const cell = ghRow.getCell(colIdx + j);
         cell.font = { bold: true, size: 9, color: { argb: WHITE } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GROUP_BG } };
@@ -118,6 +150,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       colIdx += g.span;
     }
     ghRow.height = 22;
+    clearBeyondColumns(ws, ghRow.number, colCount);
   }
 
   const headerRow = ws.addRow(config.headers);
@@ -130,6 +163,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = allBorders;
   }
+  clearBeyondColumns(ws, headerRowNum, colCount);
 
   ws.pageSetup.printTitlesRow = `1:${headerRowNum}`;
 
@@ -148,14 +182,16 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F9F9F9" } };
       }
       if (currCols.has(i - 1) && typeof rowData[i - 1] === "number") {
-        cell.numFmt = '#,##0.00';
+        cell.numFmt = BRL_FMT;
       }
     }
+    clearBeyondColumns(ws, row.number, colCount);
   });
 
   if (config.totalsRow) {
     const blankRow = ws.addRow([]);
     blankRow.height = 4;
+    clearBeyondColumns(ws, blankRow.number, colCount);
 
     const totalRow = ws.addRow(config.totalsRow);
     totalRow.height = 26.1;
@@ -166,18 +202,20 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       cell.alignment = { horizontal: "center", vertical: "middle" };
       cell.border = allBorders;
       if (currCols.has(i - 1) && typeof config.totalsRow[i - 1] === "number") {
-        cell.numFmt = '#,##0.00';
+        cell.numFmt = BRL_FMT;
       }
     }
+    clearBeyondColumns(ws, totalRow.number, colCount);
   }
 
   const lastUsedRow = ws.rowCount;
   for (let r = lastUsedRow + 1; r <= lastUsedRow + 90; r++) {
     const row = ws.getRow(r);
-    for (let c = 1; c <= colCount; c++) {
+    for (let c = 1; c <= colCount + 30; c++) {
       const cell = row.getCell(c);
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { theme: 0 } };
-      cell.border = {};
+      cell.border = noBorder;
+      cell.value = null;
     }
     row.commit();
   }
