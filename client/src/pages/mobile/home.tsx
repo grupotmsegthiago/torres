@@ -108,9 +108,6 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Jornada viagem</p>
             </div>
           </Link>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
           <Link href="/mobile/abastecimento">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-abastecimento">
               <Fuel className="w-6 h-6 text-blue-600 mx-auto mb-2" />
@@ -125,9 +122,6 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Registrar custo</p>
             </div>
           </Link>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
           <Link href="/mobile/ocorrencia">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-ocorrencia">
               <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" />
@@ -142,9 +136,6 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Holerite e faltas</p>
             </div>
           </Link>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
           <Link href="/mobile/checklist">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-checklist">
               <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
