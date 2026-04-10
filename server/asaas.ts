@@ -230,7 +230,37 @@ export function registerAsaasRoutes(app: Express) {
 
       const { data, error } = await query.limit(200);
       if (error) throw error;
-      res.json(data || []);
+      const invoices = data || [];
+
+      if (process.env.ASAAS_API_KEY && invoices.length > 0) {
+        const toSync = invoices.filter(inv =>
+          inv.asaas_payment_id &&
+          ["PENDING", "CONFIRMED", "OVERDUE"].includes(inv.status) &&
+          (!inv.updated_at || Date.now() - new Date(inv.updated_at).getTime() > 5 * 60 * 1000)
+        );
+        if (toSync.length > 0) {
+          (async () => {
+            for (const inv of toSync) {
+              try {
+                const payment = await asaasRequest("GET", `/payments/${inv.asaas_payment_id}`);
+                const upd: Record<string, any> = { updated_at: new Date().toISOString() };
+                if (payment.status && payment.status !== inv.status) upd.status = payment.status;
+                if (payment.netValue) upd.net_value = payment.netValue;
+                if (payment.invoiceUrl) upd.invoice_url = payment.invoiceUrl;
+                if (payment.paymentDate) upd.payment_date = payment.paymentDate;
+                if (Object.keys(upd).length > 1) {
+                  await supabaseAdmin.from("invoices").update(upd).eq("id", inv.id);
+                  console.log(`[asaas] Auto-sync invoice #${inv.id}: ${inv.status} → ${upd.status || inv.status}`);
+                }
+              } catch (e: any) {
+                console.log(`[asaas] Auto-sync error invoice #${inv.id}: ${e.message}`);
+              }
+            }
+          })();
+        }
+      }
+
+      res.json(invoices);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -322,6 +352,16 @@ export function registerAsaasRoutes(app: Express) {
               pixQrCode = pixData.encodedImage;
               pixCopiaECola = pixData.payload;
             } catch {}
+          }
+
+          if (asaasPaymentId) {
+            try {
+              const fiscalPayload = buildFiscalPayload(parsedValue, clientCpfCnpj || "");
+              await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
+              console.log(`[asaas] NFS-e scheduled for individual invoice, payment ${asaasPaymentId}`);
+            } catch (nfErr: any) {
+              console.log(`[asaas] NFS-e auto-emission (individual) non-blocking: ${nfErr.message}`);
+            }
           }
 
           await logSystemAudit({
@@ -1012,32 +1052,41 @@ export function registerAsaasRoutes(app: Express) {
             } catch {}
           }
 
-          if (emiteNfConsolidado && asaasPaymentId) {
+          if (asaasPaymentId) {
             try {
-              const nfsePayload = {
-                payment: asaasPaymentId,
-                serviceDescription: descricaoFiscal.substring(0, 500),
-                observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
-                value: totalValue,
-                deductions: 0,
-                effectiveDatePeriod: "MONTHLY",
-                municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
-                municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
-                municipalServiceName: DESCRICAO_SERVICO_FIXA,
-                taxes: {
-                  retainIss: false,
-                  iss: ISS_ALIQUOTA,
-                  cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
-                },
-              };
-              const nfResult = await asaasRequest("POST", "/invoices", nfsePayload);
+              const fiscalPayload = buildFiscalPayload(totalValue, cpfCnpj);
+              let nfResult: any;
+              let nfMethod = "fiscalInfo";
+              try {
+                nfResult = await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
+              } catch (fiscalErr: any) {
+                console.log(`[asaas] fiscalInfo failed for consolidated (${fiscalErr.message}), trying /invoices...`);
+                const nfsePayload = {
+                  payment: asaasPaymentId,
+                  serviceDescription: descricaoFiscal.substring(0, 500),
+                  observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
+                  value: totalValue,
+                  deductions: 0,
+                  effectiveDatePeriod: "MONTHLY",
+                  municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
+                  municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+                  municipalServiceName: DESCRICAO_SERVICO_FIXA,
+                  taxes: {
+                    retainIss: false,
+                    iss: ISS_ALIQUOTA,
+                    cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
+                  },
+                };
+                nfResult = await asaasRequest("POST", "/invoices", nfsePayload);
+                nfMethod = "invoices";
+              }
               nfseStatus = nfResult.status || "SCHEDULED";
-              if (nfResult.id) nfseNumber = String(nfResult.id);
+              if (nfResult.id && nfMethod === "invoices") nfseNumber = String(nfResult.id);
               if (nfResult.number) nfseNumber = String(nfResult.number);
-              console.log(`[asaas] NFS-e emitida via /invoices para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
+              console.log(`[asaas] NFS-e emitida via ${nfMethod} para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
             } catch (nfErr: any) {
               nfseStatus = "ERROR";
-              console.log(`[asaas] NFS-e emission error (non-blocking): ${nfErr.message}`);
+              console.log(`[asaas] NFS-e auto-emission error (non-blocking): ${nfErr.message}`);
             }
           }
 
