@@ -186,7 +186,7 @@ export default function BoletimMedicaoPage() {
 
   const salvarBillingMutation = useMutation({
     mutationFn: async ({ billingId, observacoes, pedagio }: { billingId: string; observacoes: string; pedagio: number }) => {
-      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio });
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, recalcular: true });
     },
     onSuccess: () => {
       invalidateAllRelated();
@@ -917,7 +917,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   const acionamento = Number(b?.fat_acionamento || 0);
   const horaExtra = Number(b?.fat_hora_extra || 0);
   const kmExtraVal = Number(b?.fat_km || 0);
-  const pedagio = Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0);
+  const pedagio = pedagioValue !== undefined && pedagioValue !== "" ? Number(pedagioValue) || 0 : (Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
   const receitasOs = Number(b?.receitas_os || 0);
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOs;
 
