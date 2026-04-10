@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle,
-  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
@@ -70,7 +70,6 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
-          { path: "/admin/simulador-missao", label: "Simulador Missão", icon: Play },
         ],
       },
       { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
@@ -103,7 +102,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/jornada-diretoria", label: "Jornada", icon: Clock, adminOnly: true },
         ],
       },
-      { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
     ],
   },
   {
@@ -125,13 +123,22 @@ const menuSections: MenuSection[] = [
       },
     ],
   },
+  {
+    title: "SISTEMA",
+    icon: Settings,
+    iconColor: "text-neutral-400",
+    items: [
+      { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
+      { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
+      { path: "/admin/guia-missao", label: "Guia Operacional", icon: BookOpen },
+      { path: "/admin/simulador-missao", label: "Simulador Missão", icon: Play },
+    ],
+  },
 ];
 
 const rootItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
   { path: "/admin/chat", label: "Chat", icon: MessageCircle },
-  { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
-  { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
 ];
 
 function prefetchRoute(path: string) {
@@ -213,7 +220,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
 
 const SidebarNav = memo(function SidebarNav({ location, isAdmin, unreadCount }: { location: string; isAdmin: boolean; unreadCount: number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
 
   const toggleGroup = useCallback((label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
