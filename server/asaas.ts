@@ -43,6 +43,50 @@ function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string
   };
 }
 
+function todayDateStr(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Record<string, any> {
+  const payload: Record<string, any> = {
+    serviceDescription: opts.description || DESCRICAO_SERVICO_FIXA,
+    observations: opts.observations || `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
+    value: opts.value,
+    deductions: 0,
+    effectiveDate: todayDateStr(),
+    municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
+    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
+    municipalServiceName: DESCRICAO_SERVICO_FIXA,
+    taxes: {
+      retainIss: false,
+      iss: ISS_ALIQUOTA,
+      cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
+    },
+  };
+  if (opts.paymentId) payload.payment = opts.paymentId;
+  if (opts.customerId) payload.customer = opts.customerId;
+  return payload;
+}
+
+async function emitNfseImmediate(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Promise<{ id: string; status: string; number?: string }> {
+  const payload = buildNfseInvoicePayload(opts);
+  const result = await asaasRequest("POST", "/invoices", payload);
+  const nfId = result.id;
+  console.log(`[asaas] NFS-e criada via /invoices: id=${nfId}, status=${result.status}`);
+
+  if (nfId && result.status !== "AUTHORIZED" && result.status !== "PROCESSING") {
+    try {
+      const authResult = await asaasRequest("POST", `/invoices/${nfId}/authorize`);
+      console.log(`[asaas] NFS-e ${nfId} authorize called: status=${authResult.status}`);
+      return { id: nfId, status: authResult.status || "AUTHORIZED", number: authResult.number ? String(authResult.number) : undefined };
+    } catch (authErr: any) {
+      console.log(`[asaas] NFS-e ${nfId} authorize failed (non-blocking): ${authErr.message}`);
+    }
+  }
+
+  return { id: nfId, status: result.status || "SCHEDULED", number: result.number ? String(result.number) : undefined };
+}
+
 async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
   const apiKey = getApiKey();
   const url = `${ASAAS_API_URL}${path}`;
@@ -357,9 +401,12 @@ export function registerAsaasRoutes(app: Express) {
 
           if (asaasPaymentId) {
             try {
-              const fiscalPayload = buildFiscalPayload(parsedValue, clientCpfCnpj || "");
-              await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
-              console.log(`[asaas] NFS-e scheduled for individual invoice, payment ${asaasPaymentId}`);
+              const nfResult = await emitNfseImmediate({
+                paymentId: asaasPaymentId,
+                value: parsedValue,
+                description: description || DESCRICAO_SERVICO_FIXA,
+              });
+              console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}: id=${nfResult.id}, status=${nfResult.status}`);
             } catch (nfErr: any) {
               console.log(`[asaas] NFS-e auto-emission (individual) non-blocking: ${nfErr.message}`);
             }
@@ -603,54 +650,23 @@ export function registerAsaasRoutes(app: Express) {
       const cpfCnpj = invoice.client_cpf_cnpj || "";
       if (!cpfCnpj) return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
 
-      const fiscalPayload = buildFiscalPayload(parseFloat(invoice.value), cpfCnpj);
-      let result: any;
-      let method = "fiscalInfo";
-
+      let result: { id: string; status: string; number?: string };
       try {
-        result = await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}/fiscalInfo`, fiscalPayload);
-      } catch (fiscalErr: any) {
-        console.log(`[asaas] fiscalInfo failed (${fiscalErr.message}), trying invoices API...`);
-        try {
-          const now = new Date();
-          const deduction = parseFloat(invoice.value) * (ISS_ALIQUOTA / 100);
-          const invoicePayload = {
-            payment: invoice.asaas_payment_id,
-            serviceDescription: invoice.description || DESCRICAO_SERVICO_FIXA,
-            observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
-            value: parseFloat(invoice.value),
-            deductions: 0,
-            effectiveDatePeriod: "MONTHLY",
-            municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
-            municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
-            municipalServiceName: DESCRICAO_SERVICO_FIXA,
-            taxes: {
-              retainIss: false,
-              iss: ISS_ALIQUOTA,
-              cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
-            },
-          };
-          result = await asaasRequest("POST", "/invoices", invoicePayload);
-          method = "invoices";
-        } catch (invErr: any) {
-          const is404 = fiscalErr.message.includes("404");
-          const errDetail = is404
-            ? "O módulo de Nota Fiscal (NFS-e) não está ativado na sua conta Asaas. " +
-              "Para ativar: acesse Asaas → Configurações → Nota Fiscal → configure a Inscrição Municipal e os dados da prefeitura. " +
-              "Após a configuração, tente novamente."
-            : `Erro Asaas: ${fiscalErr.message}`;
-          throw new Error(errDetail);
-        }
+        result = await emitNfseImmediate({
+          paymentId: invoice.asaas_payment_id,
+          value: parseFloat(invoice.value),
+          description: invoice.description || DESCRICAO_SERVICO_FIXA,
+        });
+      } catch (emitErr: any) {
+        throw new Error(`Erro ao emitir NFS-e: ${emitErr.message}`);
       }
 
       const updates: Record<string, any> = {
-        nfse_status: result.status || "SCHEDULED",
+        nfse_status: result.status || "AUTHORIZED",
         updated_at: new Date().toISOString(),
       };
-      if (result.externalUrl) updates.nfse_url = result.externalUrl;
-      if (result.invoiceUrl) updates.nfse_url = result.invoiceUrl;
       if (result.number) updates.nfse_number = String(result.number);
-      if (result.id && method === "invoices") updates.nfse_number = String(result.id);
+      else if (result.id) updates.nfse_number = String(result.id);
 
       const { data, error } = await supabaseAdmin.from("invoices").update(updates).eq("id", id).select().single();
       if (error) throw error;
@@ -659,11 +675,11 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "EMITIR_NFSE", targetId: invoice.asaas_payment_id, targetType: "invoice",
-        details: `NFS-e solicitada (${method}) para fatura #${id} (${invoice.asaas_payment_id}). Status: ${result.status || 'SCHEDULED'}`,
+        details: `NFS-e emitida imediatamente para fatura #${id} (${invoice.asaas_payment_id}). Status: ${result.status}`,
         ipAddress: (req as any).ip,
       });
 
-      console.log(`[asaas] NFS-e emitida via ${method}: payment=${invoice.asaas_payment_id}, status=${result.status}`);
+      console.log(`[asaas] NFS-e emitida imediatamente: payment=${invoice.asaas_payment_id}, status=${result.status}, id=${result.id}`);
       res.json({ ...data, nfseResult: result });
     } catch (err: any) {
       console.error("[asaas] Erro NFS-e:", err.message);
@@ -1063,36 +1079,16 @@ export function registerAsaasRoutes(app: Express) {
 
           if (asaasPaymentId) {
             try {
-              const fiscalPayload = buildFiscalPayload(totalValue, cpfCnpj);
-              let nfResult: any;
-              let nfMethod = "fiscalInfo";
-              try {
-                nfResult = await asaasRequest("POST", `/payments/${asaasPaymentId}/fiscalInfo`, fiscalPayload);
-              } catch (fiscalErr: any) {
-                console.log(`[asaas] fiscalInfo failed for consolidated (${fiscalErr.message}), trying /invoices...`);
-                const nfsePayload = {
-                  payment: asaasPaymentId,
-                  serviceDescription: descricaoFiscal.substring(0, 500),
-                  observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
-                  value: totalValue,
-                  deductions: 0,
-                  effectiveDatePeriod: "MONTHLY",
-                  municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
-                  municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
-                  municipalServiceName: DESCRICAO_SERVICO_FIXA,
-                  taxes: {
-                    retainIss: false,
-                    iss: ISS_ALIQUOTA,
-                    cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
-                  },
-                };
-                nfResult = await asaasRequest("POST", "/invoices", nfsePayload);
-                nfMethod = "invoices";
-              }
-              nfseStatus = nfResult.status || "SCHEDULED";
-              if (nfResult.id && nfMethod === "invoices") nfseNumber = String(nfResult.id);
+              const nfResult = await emitNfseImmediate({
+                paymentId: asaasPaymentId,
+                value: totalValue,
+                description: descricaoFiscal.substring(0, 500),
+                observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
+              });
+              nfseStatus = nfResult.status || "AUTHORIZED";
               if (nfResult.number) nfseNumber = String(nfResult.number);
-              console.log(`[asaas] NFS-e emitida via ${nfMethod} para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
+              else if (nfResult.id) nfseNumber = String(nfResult.id);
+              console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}. ID: ${nfResult.id}, Status: ${nfseStatus}`);
             } catch (nfErr: any) {
               nfseStatus = "ERROR";
               console.log(`[asaas] NFS-e auto-emission error (non-blocking): ${nfErr.message}`);
