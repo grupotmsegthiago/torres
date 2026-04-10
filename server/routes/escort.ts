@@ -1376,6 +1376,38 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/escort/billings/:id/liberar-faturamento", requireAuth, requireDiretoria, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (billing.status !== "FATURADO" && billing.status !== "PAGO") {
+        return res.status(400).json({ message: "Somente notas com status 'Faturado' ou 'Pago' podem ser liberadas" });
+      }
+
+      const previousStatus = billing.status;
+      const { data, error } = await supabaseAdmin.from("escort_billings").update({
+        status: "A_VERIFICAR",
+        revisado_por: null,
+        revisado_em: null,
+        boletim_gerado: false,
+      }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+
+      await removeAutoTransaction("escort_billing", req.params.id);
+      await removeAutoTransaction("service_order", String(billing.service_order_id));
+
+      await logSystemAudit({
+        userId: user.id, userName: user.name, userRole: user.role,
+        action: "LIBERAR_REFATURAMENTO", targetId: req.params.id, targetType: "escort_billing",
+        details: `OS #${billing.service_order_id} liberada para refaturamento. Status anterior: ${previousStatus}. Cliente: ${billing.client_name}`,
+        ipAddress: req.ip,
+      });
+
+      res.json(data);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/escort/billings/pendentes", requireAdminRole, async (req, res) => {
     try {
       const { data, error } = await supabaseAdmin.from("escort_billings").select("*").eq("status", "A_VERIFICAR").order("created_at", { ascending: false });

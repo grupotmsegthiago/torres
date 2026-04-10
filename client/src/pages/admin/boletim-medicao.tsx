@@ -159,6 +159,17 @@ export default function BoletimMedicaoPage() {
     onError: (err: Error) => toast({ title: "Erro ao reabrir", description: err.message, variant: "destructive" }),
   });
 
+  const liberarFaturamentoMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/liberar-faturamento`);
+    },
+    onSuccess: () => {
+      invalidateAllRelated();
+      toast({ title: "Liberada", description: "Nota liberada para refaturamento. Status voltou para 'A Verificar'." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao liberar", description: err.message, variant: "destructive" }),
+  });
+
   const salvarMedicaoMutation = useMutation({
     mutationFn: async (payload: { billingId: string; [key: string]: any }) => {
       const { billingId, ...data } = payload;
@@ -625,6 +636,17 @@ export default function BoletimMedicaoPage() {
                                       >
                                         <Eye size={15} className="text-neutral-500" />
                                       </button>
+                                      {isDiretoria && b && ["FATURADO", "PAGO"].includes(b.status) && (
+                                        <button
+                                          onClick={() => { if (confirm("Liberar esta nota faturada para refaturamento? O status voltará para 'A Verificar'.")) liberarFaturamentoMutation.mutate(b.id); }}
+                                          disabled={liberarFaturamentoMutation.isPending}
+                                          className="p-1.5 rounded-lg hover:bg-indigo-50 border border-transparent hover:border-indigo-200 transition-all"
+                                          title="Liberar para Refaturamento"
+                                          data-testid={`button-liberar-faturamento-${os.id}`}
+                                        >
+                                          <RotateCcw size={15} className="text-indigo-500" />
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -831,13 +853,13 @@ export default function BoletimMedicaoPage() {
           </DialogContent>
         </Dialog>
 
-        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
+        {selectedOs && <OsDetailModal os={selectedOs} onClose={() => setSelectedOs(null)} isDiretoria={isDiretoria} editingFields={editingFields} setEditingFields={setEditingFields} overrideKmChegada={overrideKmChegada} setOverrideKmChegada={setOverrideKmChegada} overrideKmFim={overrideKmFim} setOverrideKmFim={setOverrideKmFim} overrideHoraChegada={overrideHoraChegada} setOverrideHoraChegada={setOverrideHoraChegada} overrideHoraFim={overrideHoraFim} setOverrideHoraFim={setOverrideHoraFim} overrideMutation={overrideMutation} calcularMutation={calcularMutation} aprovarMutation={aprovarMutation} rejeitarMutation={rejeitarMutation} reabrirMutation={reabrirMutation} liberarFaturamentoMutation={liberarFaturamentoMutation} salvarBillingMutation={salvarBillingMutation} pedagioValue={pedagioValue} setPedagioValue={setPedagioValue} observacoesValue={observacoesValue} setObservacoesValue={setObservacoesValue} getBillingStatus={getBillingStatus} isLiveOs={isLiveOs} />}
       </div>
     </AdminLayout>
   );
 }
 
-function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
+function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
   const b = os.billing;
   const status = getBillingStatus(os);
   const isPendente = b?.status === "A_VERIFICAR";
@@ -1154,6 +1176,17 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                       >
                         {reabrirMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
                         Reabrir para Revisão
+                      </button>
+                    )}
+                    {isDiretoria && (b.status === "FATURADO" || b.status === "PAGO") && (
+                      <button
+                        onClick={() => { if (confirm("Liberar esta nota faturada para refaturamento? O status voltará para 'A Verificar'.")) liberarFaturamentoMutation.mutate(b.id); }}
+                        disabled={liberarFaturamentoMutation.isPending}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-800 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                        data-testid="button-liberar-faturamento"
+                      >
+                        {liberarFaturamentoMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                        Liberar para Refaturamento
                       </button>
                     )}
                   </div>
