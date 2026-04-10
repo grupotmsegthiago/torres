@@ -1257,6 +1257,32 @@ Responda APENAS com JSON válido (sem markdown):
     }
   });
 
+  app.post("/api/mission/photo-inspections-batch", requireAuth, async (req, res) => {
+    try {
+      const { osIds } = req.body;
+      if (!Array.isArray(osIds) || osIds.length === 0) return res.json({});
+      const ids = osIds.map(Number).filter(n => !isNaN(n));
+      if (ids.length === 0) return res.json({});
+      const { data, error } = await supabaseAdmin.from("mission_photos")
+        .select("service_order_id, ai_inspection_status")
+        .in("service_order_id", ids)
+        .not("ai_inspection_status", "is", null);
+      if (error) return res.status(500).json({ message: error.message });
+      const summary: Record<number, { total: number; approved: number; rejected: number; pending: number }> = {};
+      (data || []).forEach((row: any) => {
+        const osId = row.service_order_id;
+        if (!summary[osId]) summary[osId] = { total: 0, approved: 0, rejected: 0, pending: 0 };
+        summary[osId].total++;
+        if (row.ai_inspection_status === "approved") summary[osId].approved++;
+        else if (row.ai_inspection_status === "rejected") summary[osId].rejected++;
+        else summary[osId].pending++;
+      });
+      res.json(summary);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/mission/:osId/photo-inspections", requireAuth, async (req, res) => {
     try {
       const osId = Number(req.params.osId);

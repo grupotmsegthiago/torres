@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronUp, ArrowUpDown, CalendarDays, Pencil,
   X, MapPin, Truck, User, DollarSign, TrendingUp, TrendingDown,
   Fuel, CircleDollarSign, Receipt, Shield, Phone, Navigation,
-  Gauge, Timer, Package, Eye, Target,
+  Gauge, Timer, Package, Eye, Target, Camera,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
@@ -114,7 +114,7 @@ function getTodayBRT(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-function OSSummaryModal({ os, onClose, onNavigateFinanceiro }: { os: ReportOS; onClose: () => void; onNavigateFinanceiro: (id: number) => void }) {
+function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, inspectionSummary }: { os: ReportOS; onClose: () => void; onNavigateFinanceiro: (id: number) => void; onNavigatePhotos: (id: number) => void; inspectionSummary?: { total: number; approved: number; rejected: number; pending: number } | null }) {
   const lc = os.liveCost;
   const cv = lc?.contrato_valores;
   const sNorm = os.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
@@ -163,6 +163,20 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro }: { os: ReportOS; o
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
+                onClick={() => onNavigatePhotos(os.id)}
+                className={`gap-1.5 font-bold text-xs relative ${inspectionSummary?.rejected ? "bg-red-500 hover:bg-red-600 text-white" : "bg-purple-500 hover:bg-purple-600 text-white"}`}
+                data-testid="button-photos-os"
+              >
+                <Camera className="w-4 h-4" />
+                Fotos
+                {inspectionSummary?.rejected ? (
+                  <span className="absolute -top-1.5 -right-1.5 bg-white text-red-600 text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center border border-red-500 animate-pulse">
+                    {inspectionSummary.rejected}
+                  </span>
+                ) : null}
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => onNavigateFinanceiro(os.id)}
                 className="bg-amber-500 hover:bg-amber-600 text-black gap-1.5 font-bold text-xs"
                 data-testid="button-financeiro-os"
@@ -178,6 +192,36 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro }: { os: ReportOS; o
         </div>
 
         <div className="p-6 space-y-5">
+          {inspectionSummary?.rejected ? (
+            <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 animate-pulse cursor-pointer" onClick={() => onNavigatePhotos(os.id)} data-testid="alert-photo-divergence">
+              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-red-700">
+                  {inspectionSummary.rejected} foto{inspectionSummary.rejected > 1 ? "s" : ""} com divergência detectada pela IA
+                </p>
+                <p className="text-xs text-red-500">
+                  {inspectionSummary.approved} aprovada{inspectionSummary.approved !== 1 ? "s" : ""} · {inspectionSummary.rejected} rejeitada{inspectionSummary.rejected !== 1 ? "s" : ""} de {inspectionSummary.total} total — Clique para ver detalhes
+                </p>
+              </div>
+              <Camera className="w-5 h-5 text-red-400 shrink-0" />
+            </div>
+          ) : inspectionSummary && inspectionSummary.total > 0 ? (
+            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 cursor-pointer" onClick={() => onNavigatePhotos(os.id)} data-testid="alert-photo-ok">
+              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-emerald-700">
+                  {inspectionSummary.approved} foto{inspectionSummary.approved !== 1 ? "s" : ""} aprovada{inspectionSummary.approved !== 1 ? "s" : ""} pela IA
+                </p>
+                <p className="text-xs text-emerald-500">Inspeção visual sem divergências — Clique para ver galeria</p>
+              </div>
+              <Camera className="w-5 h-5 text-emerald-400 shrink-0" />
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="p-4 border-neutral-200">
               <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -382,6 +426,24 @@ export default function RelatorioOSPage() {
       return res.json();
     },
     staleTime: 30000,
+  });
+
+  const osIds = useMemo(() => gridData.map(o => o.id), [gridData]);
+
+  const { data: inspectionMap = {} } = useQuery<Record<number, { total: number; approved: number; rejected: number; pending: number }>>({
+    queryKey: ["/api/mission/photo-inspections-batch", osIds],
+    queryFn: async () => {
+      if (osIds.length === 0) return {};
+      const res = await authFetch("/api/mission/photo-inspections-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ osIds }),
+      });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: osIds.length > 0,
+    staleTime: 60000,
   });
 
   const filtered = useMemo(() => {
@@ -764,6 +826,31 @@ export default function RelatorioOSPage() {
                             >
                               <Pencil className="w-3.5 h-3.5 text-blue-600" />
                             </Button>
+                            {(() => {
+                              const insp = inspectionMap[o.id];
+                              const hasPhotos = insp && insp.total > 0;
+                              const hasRejected = insp && insp.rejected > 0;
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className={`h-7 w-7 p-0 relative ${hasRejected ? "hover:bg-red-50" : "hover:bg-purple-50"}`}
+                                  onClick={() => navigate(`/admin/photo-inspection/${o.id}`)}
+                                  title={hasRejected ? `Fotos com divergência - ${o.osNumber}` : `Inspeção de Fotos ${o.osNumber}`}
+                                  data-testid={`button-photo-inspection-${o.id}`}
+                                >
+                                  <Camera className={`w-3.5 h-3.5 ${hasRejected ? "text-red-600" : hasPhotos ? "text-purple-600" : "text-neutral-400"}`} />
+                                  {hasRejected && (
+                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center animate-pulse">
+                                      <AlertTriangle className="w-2 h-2 text-white" />
+                                    </span>
+                                  )}
+                                  {hasPhotos && !hasRejected && (
+                                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white" />
+                                  )}
+                                </Button>
+                              );
+                            })()}
                           </div>
                         </td>
                       </tr>
@@ -792,6 +879,8 @@ export default function RelatorioOSPage() {
           os={selectedOs}
           onClose={() => setSelectedOs(null)}
           onNavigateFinanceiro={() => { setSelectedOs(null); navigate(`/admin/financeiro?search=${selectedOs!.osNumber}`); }}
+          onNavigatePhotos={() => { setSelectedOs(null); navigate(`/admin/photo-inspection/${selectedOs!.id}`); }}
+          inspectionSummary={inspectionMap[selectedOs.id] || null}
         />
       )}
     </AdminLayout>
