@@ -56,6 +56,7 @@ export default function BoletimMedicaoPage() {
   });
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
   const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number; minDate: string; maxDate: string } | null>(null);
+  const [aprovarFaturarLoading, setAprovarFaturarLoading] = useState(false);
   const [pedagioValue, setPedagioValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [editingFields, setEditingFields] = useState(false);
@@ -827,8 +828,10 @@ export default function BoletimMedicaoPage() {
                 Cancelar
               </Button>
               <Button
+                disabled={aprovarFaturarLoading}
                 onClick={async () => {
-                  if (!aprovarFaturarDialog) return;
+                  if (!aprovarFaturarDialog || aprovarFaturarLoading) return;
+                  setAprovarFaturarLoading(true);
                   try {
                     for (const billingId of aprovarFaturarDialog.billingIds) {
                       await apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "APROVADA" });
@@ -842,17 +845,22 @@ export default function BoletimMedicaoPage() {
                     });
                     invalidateAllRelated();
                     setCheckedOsIds(new Set());
-                    toast({ title: "Sucesso", description: `${aprovarFaturarDialog.billingIds.length} faturas geradas no Asaas com sucesso` });
+                    toast({ title: "Sucesso", description: `${aprovarFaturarDialog.billingIds.length} fatura(s) gerada(s) no Asaas com sucesso` });
                     setAprovarFaturarDialog(null);
                   } catch (err: any) {
                     toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  } finally {
+                    setAprovarFaturarLoading(false);
                   }
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-xs font-bold uppercase gap-2"
                 data-testid="button-confirm-aprovar-faturar"
               >
-                <CheckCircle2 size={14} />
-                Confirmar
+                {aprovarFaturarLoading ? (
+                  <><Loader2 size={14} className="animate-spin" /> Processando...</>
+                ) : (
+                  <><CheckCircle2 size={14} /> Confirmar</>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

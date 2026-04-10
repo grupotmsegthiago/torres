@@ -919,10 +919,18 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  const gerarFaturaLocks = new Map<number, number>();
+
   app.post("/api/boletim-medicao/gerar-fatura/:clientId", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const clientId = parseInt(req.params.clientId);
       if (!clientId) return res.status(400).json({ message: "clientId inválido" });
+
+      const lastCall = gerarFaturaLocks.get(clientId);
+      if (lastCall && Date.now() - lastCall < 10000) {
+        return res.status(409).json({ message: "Fatura já está sendo gerada para este cliente. Aguarde alguns segundos." });
+      }
+      gerarFaturaLocks.set(clientId, Date.now());
 
       const { billingType, sendToAsaas, dueDate, startDate, endDate, expectedTotal } = req.body;
       const user = (req as any).user;
