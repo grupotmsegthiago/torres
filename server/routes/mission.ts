@@ -1099,6 +1099,8 @@ Responda APENAS com JSON válido (sem markdown):
       motorista_foto: "Foto Motorista", doc_crlv: "CRLV", doc_nota: "Nota Fiscal",
       destino_entrega: "Entrega Destino", destino_carga: "Carga Destino",
       base_viatura_retorno: "Viatura Retorno",
+      foto_local_destino: "Local de Destino",
+      foto_local_origem: "Local de Origem",
     };
     const emp = await storage.getEmployee(user.employeeId);
     const stepLabel = PHOTO_STEP_LABELS[step] || step;

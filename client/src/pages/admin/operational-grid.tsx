@@ -6953,7 +6953,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             onClick={async () => {
                               const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                               const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                              let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                              let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}`;
                               let sharePhoto = u.photoUrl;
                               if (sharePhoto === "[has_photo]" && typeof u.id === "number") {
                                 try { const r = await authFetch(`/api/mission/updates/${u.id}/photo`); const d = await r.json(); sharePhoto = d.photoUrl || null; } catch { sharePhoto = null; }
@@ -6992,7 +6992,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                                 onClick={async () => {
                                   const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                                   const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}\n🔲 *ATUALIZAÇÃO:* ${u.message || "—"}`;
+                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}`;
                                   const ok = await copyTextToClipboard(reportText);
                                   toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
                                   fireCopyAudit(u.id);
