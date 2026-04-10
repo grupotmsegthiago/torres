@@ -40,14 +40,14 @@ import type { Express } from "express";
     triangulo: "triângulo de sinalização",
   };
 
-  async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[], kmValue?: number | null) {
+  async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[], kmValue?: number | null): Promise<{ status: string; result: any } | null> {
     const inspectionConfig = INSPECTION_STEPS[step];
     const isChecklistEquipment = checklistItems && checklistItems.length > 0;
-    if (!inspectionConfig && !isChecklistEquipment) return;
+    if (!inspectionConfig && !isChecklistEquipment) return null;
 
     const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
     const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-    if (!apiKey) { console.log("[ai-inspection] No AI key, skipping"); return; }
+    if (!apiKey) { console.log("[ai-inspection] No AI key, skipping"); return null; }
 
     try {
       await supabaseAdmin.from("mission_photos").update({ ai_inspection_status: "analisando" }).eq("id", photoId);
@@ -258,6 +258,8 @@ Responda APENAS com JSON válido (sem markdown):
 
       console.log(`[ai-inspection] Photo #${photoId} step=${step} → ${status}`);
 
+      const aiResult = { status, ...result };
+
       if (hasDivergence) {
         try {
           const so = await storage.getServiceOrder(serviceOrderId);
@@ -307,9 +309,11 @@ Responda APENAS com JSON válido (sem markdown):
           console.error(`[ai-inspection] Email failed: ${emailErr.message}`);
         }
       }
+      return aiResult;
     } catch (err: any) {
       console.error(`[ai-inspection] Error analyzing photo #${photoId}: ${err.message}`);
       await supabaseAdmin.from("mission_photos").update({ ai_inspection_status: "erro", ai_inspection_result: { error: err.message } }).eq("id", photoId);
+      return null;
     }
   }
 
@@ -1220,16 +1224,23 @@ Responda APENAS com JSON válido (sem markdown):
     }
 
     const shouldInspect = !!INSPECTION_STEPS[step];
+    let aiInspection: { status: string; result: any } | null = null;
     if (shouldInspect) {
       const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
       const escortedPlate = (so as any).escortedVehiclePlate || "";
-      runPhotoInspection(photo.id, serviceOrderId, user.employeeId!, step, photoData, vehicle?.plate || "", escortedPlate, undefined, kmValue ? Number(kmValue) : null).catch(e =>
-        console.error(`[ai-inspection] background error: ${e.message}`)
-      );
+      try {
+        aiInspection = await runPhotoInspection(photo.id, serviceOrderId, user.employeeId!, step, photoData, vehicle?.plate || "", escortedPlate, undefined, kmValue ? Number(kmValue) : null);
+      } catch (e: any) {
+        console.error(`[ai-inspection] error: ${e.message}`);
+      }
     }
 
     const { photoData: _, ...safePhoto } = photo;
-    res.status(201).json(safePhoto);
+    res.status(201).json({
+      ...safePhoto,
+      ai_inspection_status: aiInspection?.status || null,
+      ai_inspection_result: aiInspection?.result || null,
+    });
   });
 
   app.get("/api/mission/:osId/inspection-logs", requireAuth, async (req, res) => {

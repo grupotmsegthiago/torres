@@ -112,7 +112,21 @@ function useGeoLocation() {
   return { getPosition };
 }
 
-function CameraCapture({ label, onCapture, captured, hint }: { label: string; onCapture: (data: string) => void; captured: boolean; hint?: string }) {
+type AiStatus = "idle" | "uploading" | "analisando" | "aprovado" | "divergente" | "erro";
+interface AiPhotoResult {
+  status: AiStatus;
+  result?: any;
+}
+
+function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, onRetake }: {
+  label: string;
+  onCapture: (data: string) => void;
+  captured: boolean;
+  hint?: string;
+  aiStatus?: AiStatus;
+  aiResult?: any;
+  onRetake?: () => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,18 +153,67 @@ function CameraCapture({ label, onCapture, captured, hint }: { label: string; on
     reader.readAsDataURL(file);
   };
 
+  const isAnalyzing = aiStatus === "uploading" || aiStatus === "analisando";
+  const isApproved = aiStatus === "aprovado";
+  const isDivergent = aiStatus === "divergente";
+
+  const handleClick = () => {
+    if (isDivergent && onRetake) {
+      onRetake();
+    }
+    inputRef.current?.click();
+  };
+
+  let btnClass = "border-neutral-300 bg-white text-neutral-600";
+  if (isAnalyzing) btnClass = "border-amber-400 bg-amber-50 text-amber-700";
+  else if (isApproved) btnClass = "border-emerald-500 bg-emerald-50 text-emerald-700";
+  else if (isDivergent) btnClass = "border-red-500 bg-red-50 text-red-700 animate-pulse";
+  else if (captured) btnClass = "border-neutral-900 bg-neutral-900 text-white";
+
   return (
     <div>
       <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} data-testid={`input-camera-${label.toLowerCase().replace(/\s/g, '-')}`} />
       <button
-        onClick={() => inputRef.current?.click()}
-        className={`w-full h-14 rounded-xl border-2 flex items-center justify-center gap-3 text-sm font-bold uppercase tracking-wider transition-all active:scale-[0.98] ${captured ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300 bg-white text-neutral-600"}`}
+        onClick={handleClick}
+        disabled={isAnalyzing}
+        className={`w-full h-14 rounded-xl border-2 flex items-center justify-center gap-3 text-sm font-bold uppercase tracking-wider transition-all active:scale-[0.98] disabled:opacity-70 ${btnClass}`}
         data-testid={`button-photo-${label.toLowerCase().replace(/\s/g, '-')}`}
       >
-        {captured ? <CheckCircle2 className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
+        {isAnalyzing ? (
+          <Loader2 className="w-5 h-5 animate-spin" />
+        ) : isApproved ? (
+          <CheckCircle2 className="w-5 h-5" />
+        ) : isDivergent ? (
+          <AlertCircle className="w-5 h-5" />
+        ) : captured ? (
+          <CheckCircle2 className="w-5 h-5" />
+        ) : (
+          <Camera className="w-5 h-5" />
+        )}
         {label}
+        {isAnalyzing && <span className="text-[10px] normal-case font-normal ml-1">IA analisando...</span>}
       </button>
-      {hint && !captured && (
+      {isApproved && (
+        <p className="text-[10px] text-emerald-600 mt-1 text-center font-bold flex items-center justify-center gap-1">
+          <Sparkles className="w-3 h-3" /> IA Aprovada — {aiResult?.observacao ? aiResult.observacao.substring(0, 60) : "Foto dentro do padrão"}
+        </p>
+      )}
+      {isDivergent && (
+        <div className="mt-1.5 bg-red-50 border border-red-200 rounded-lg p-2">
+          <p className="text-[10px] text-red-700 font-bold flex items-center gap-1 mb-1">
+            <AlertCircle className="w-3 h-3" /> IA Rejeitou — Tire novamente
+          </p>
+          {aiResult?.divergencias?.length > 0 && (
+            <ul className="text-[10px] text-red-600 list-disc list-inside space-y-0.5">
+              {aiResult.divergencias.map((d: string, i: number) => <li key={i}>{d}</li>)}
+            </ul>
+          )}
+          {aiResult?.observacao && (
+            <p className="text-[10px] text-red-500 mt-1 italic">{aiResult.observacao.substring(0, 80)}</p>
+          )}
+        </div>
+      )}
+      {hint && !captured && !isDivergent && (
         <p className="text-[10px] text-neutral-400 mt-1 text-center italic">{hint}</p>
       )}
     </div>
@@ -873,6 +936,7 @@ export default function MobileMissaoPage() {
   const { toast } = useToast();
   const { getPosition } = useGeoLocation();
   const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [aiResults, setAiResults] = useState<Record<string, AiPhotoResult>>({});
   const [kmValue, setKmValue] = useState("");
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
@@ -933,6 +997,7 @@ export default function MobileMissaoPage() {
 
   const resetStepState = useCallback(() => {
     setPhotos({});
+    setAiResults({});
     setKmValue("");
     setDriverName("");
     setDriverPhone("");
@@ -1093,7 +1158,7 @@ export default function MobileMissaoPage() {
     };
   }, []);
 
-  const uploadPhoto = async (step: string, label: string, photoData: string, km?: number) => {
+  const uploadPhoto = async (step: string, label: string, photoData: string, km?: number): Promise<AiPhotoResult | null> => {
     const pos = await getPosition();
     const payload = {
       serviceOrderId: mission.serviceOrderId,
@@ -1107,16 +1172,53 @@ export default function MobileMissaoPage() {
     };
     try {
       if (!navigator.onLine) throw new Error("offline");
-      await apiRequest("POST", "/api/mission/photo", payload);
+      const res = await apiRequest("POST", "/api/mission/photo", payload);
+      const data = await res.json();
       logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""}`);
+      if (data.ai_inspection_status) {
+        return { status: data.ai_inspection_status, result: data.ai_inspection_result };
+      }
+      return null;
     } catch (err) {
       if (isNetworkError(err)) {
         enqueueAction("/api/mission/photo", "POST", payload);
         toast({ title: "Foto salva localmente", description: "Será reenviada automaticamente quando o servidor responder." });
         logAuditAction("photo_captured", "/mobile/missao", `Foto: ${label} | Etapa: ${step} | OS #${mission.serviceOrderId}${km ? ` | KM: ${km}` : ""} (offline)`);
+        return null;
       } else {
         throw err;
       }
+    }
+  };
+
+  const uploadPhotoImmediate = async (label: string, photoData: string) => {
+    if (!mission) return;
+    const key = label.toLowerCase().replace(/\s/g, '-');
+    const stepMap = PHOTO_STEP_MAP[currentStep] || {};
+    const backendStep = stepMap[label] || currentStep;
+    const km = config.needsKm ? parseInt(kmValue) : undefined;
+
+    setAiResults(prev => ({ ...prev, [key]: { status: "uploading" } }));
+
+    try {
+      const aiResult = await uploadPhoto(backendStep, label, photoData, km);
+      if (aiResult) {
+        setAiResults(prev => ({ ...prev, [key]: aiResult }));
+        if (aiResult.status === "aprovado") {
+          toast({ title: `${label} — IA Aprovada`, description: aiResult.result?.observacao?.substring(0, 60) || "Foto dentro do padrão." });
+        } else if (aiResult.status === "divergente") {
+          toast({
+            title: `${label} — IA Rejeitou`,
+            description: aiResult.result?.divergencias?.[0] || "Foto não atende os critérios. Tire outra.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        setAiResults(prev => ({ ...prev, [key]: { status: "aprovado" } }));
+      }
+    } catch (err: any) {
+      setAiResults(prev => ({ ...prev, [key]: { status: "erro" } }));
+      toast({ title: "Erro ao enviar foto", description: err.message, variant: "destructive" });
     }
   };
 
@@ -1153,6 +1255,25 @@ export default function MobileMissaoPage() {
       return;
     }
 
+    const anyAnalyzing = Object.values(aiResults).some(r => r.status === "uploading" || r.status === "analisando");
+    if (anyAnalyzing) {
+      toast({ title: "Aguarde", description: "A IA ainda está analisando suas fotos.", variant: "destructive" });
+      return;
+    }
+
+    const divergentPhotos = config.photos.filter(label => {
+      const key = label.toLowerCase().replace(/\s/g, '-');
+      return aiResults[key]?.status === "divergente";
+    });
+    if (divergentPhotos.length > 0) {
+      toast({
+        title: "Fotos rejeitadas pela IA",
+        description: `Tire novamente: ${divergentPhotos.join(", ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (config.needsChecklist) {
       const allChecked = VEHICLE_CHECKLIST_ITEMS.every(item => checklist[item.id]);
       if (!allChecked) {
@@ -1163,14 +1284,6 @@ export default function MobileMissaoPage() {
 
     setSubmitting(true);
     try {
-      const stepMap = PHOTO_STEP_MAP[currentStep] || {};
-      for (const label of config.photos) {
-        const key = label.toLowerCase().replace(/\s/g, '-');
-        const backendStep = stepMap[label] || currentStep;
-        if (photos[key]) {
-          await uploadPhoto(backendStep, label, photos[key], config.needsKm ? parseInt(kmValue) : undefined);
-        }
-      }
       await advanceMission();
       toast({ title: "Etapa concluída!" });
     } catch (err: any) {
@@ -1248,19 +1361,14 @@ export default function MobileMissaoPage() {
       return;
     }
 
+    const anyAnalyzing = Object.values(aiResults).some(r => r.status === "uploading" || r.status === "analisando");
+    if (anyAnalyzing) {
+      toast({ title: "Aguarde", description: "A IA ainda está analisando suas fotos.", variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      if (config.photos) {
-        const stepMap = PHOTO_STEP_MAP[currentStep] || {};
-        for (const label of config.photos) {
-          const key = label.toLowerCase().replace(/\s/g, '-');
-          const backendStep = stepMap[label] || currentStep;
-          if (photos[key]) {
-            const isKmPhoto = label === "Hodômetro";
-            await uploadPhoto(backendStep, label, photos[key], isKmPhoto && config.needsKm ? parseInt(kmValue) : undefined);
-          }
-        }
-      }
       await apiRequest("POST", "/api/mission/nova-entrega", {
         serviceOrderId: mission.serviceOrderId,
       });
@@ -1911,6 +2019,10 @@ export default function MobileMissaoPage() {
 
         {currentStep === "checkout_armamento" && config.photos && (
           <div className="space-y-3">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-emerald-700 font-medium">Validação IA ativa — cada foto será analisada automaticamente. Se rejeitada, tire outra.</p>
+            </div>
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
               <Eye className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
               <p className="text-[11px] text-amber-700 font-medium">Fotografe cada arma com o número de série visível na imagem.</p>
@@ -1922,8 +2034,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                     hint="Número de série deve estar visível"
                   />
                 );
@@ -1950,8 +2065,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                   />
                 );
               })}
@@ -2000,8 +2118,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                   />
                 );
               })}
@@ -2043,8 +2164,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                     hint={isAgentPhoto ? "Agente posicionado à frente da viatura, devidamente equipado" : undefined}
                   />
                 );
@@ -2093,8 +2217,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                     hint={label === "Hodômetro" ? "Foto do hodômetro com KM visível" : "Fotografia do local de destino/entrega"}
                   />
                 );
@@ -2317,8 +2444,11 @@ export default function MobileMissaoPage() {
                   <CameraCapture
                     key={key}
                     label={label}
-                    onCapture={(data) => setPhotos(prev => ({ ...prev, [key]: data }))}
+                    onCapture={(data) => { setPhotos(prev => ({ ...prev, [key]: data })); uploadPhotoImmediate(label, data); }}
                     captured={!!photos[key]}
+                    aiStatus={aiResults[key]?.status}
+                    aiResult={aiResults[key]?.result}
+                    onRetake={() => { setPhotos(prev => { const n = { ...prev }; delete n[key]; return n; }); setAiResults(prev => { const n = { ...prev }; delete n[key]; return n; }); }}
                   />
                 );
               })}
