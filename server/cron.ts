@@ -782,7 +782,7 @@ function getCronMailTransporter() {
   });
 }
 
-const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br";
+const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br, thiago@grupotmseg.com.br";
 
 export async function sendDailySummaryEmail(targetDate?: string): Promise<{ success: boolean; message: string }> {
   const transporter = getCronMailTransporter();
