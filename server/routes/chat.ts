@@ -308,16 +308,36 @@ export function registerChatRoutes(app: Express) {
   app.get("/api/chat/unread-count", requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const isDiretoria = req.user!.role === "diretoria" || req.user!.role === "admin";
 
-      const { data: myParts } = await supabaseAdmin
-        .from("chat_participants").select("conversation_id, last_read_at")
-        .eq("user_id", userId);
+      let parts: { conversation_id: string; last_read_at: string | null }[] = [];
 
-      if (!myParts || myParts.length === 0) {
+      if (isDiretoria) {
+        const { data: allConvs } = await supabaseAdmin
+          .from("chat_conversations").select("id");
+        const allConvIds = (allConvs || []).map((c: any) => c.id);
+
+        const { data: myParts } = await supabaseAdmin
+          .from("chat_participants").select("conversation_id, last_read_at")
+          .eq("user_id", userId);
+        const myPartsMap = new Map((myParts || []).map((p: any) => [p.conversation_id, p.last_read_at]));
+
+        parts = allConvIds.map(cid => ({
+          conversation_id: cid,
+          last_read_at: myPartsMap.get(cid) || null,
+        }));
+      } else {
+        const { data: myParts } = await supabaseAdmin
+          .from("chat_participants").select("conversation_id, last_read_at")
+          .eq("user_id", userId);
+        parts = myParts || [];
+      }
+
+      if (parts.length === 0) {
         return res.json({ total: 0, unreadCount: 0 });
       }
 
-      const counts = await Promise.all((myParts).map(async (p) => {
+      const counts = await Promise.all(parts.map(async (p) => {
         let q = supabaseAdmin
           .from("chat_messages").select("id", { count: "exact", head: true })
           .eq("conversation_id", p.conversation_id)

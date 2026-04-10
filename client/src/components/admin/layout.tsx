@@ -138,7 +138,6 @@ const menuSections: MenuSection[] = [
 
 const rootItems: MenuItem[] = [
   { path: "/admin/dashboard", label: "Painel", icon: LayoutDashboard },
-  { path: "/admin/chat", label: "Chat", icon: MessageCircle },
 ];
 
 function prefetchRoute(path: string) {

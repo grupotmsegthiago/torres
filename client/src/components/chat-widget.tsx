@@ -315,6 +315,26 @@ function MissionInviteCard({ msg, conversationId, onAccepted }: { msg: ChatMessa
   );
 }
 
+const NOTIFICATION_SOUND_URL = "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgkKqzmGRGPm2Rr66lbkc4WIqkr6VxTDpRgJqoqHhSPE19l6aqfVQ7S3aPoal+Vj1LdZCjqH5XP0x0kKOpflc/THSQo6h+Vz9MdJCjqH5XP0x0kKOpfldATHSQo6h+Vz9MdJCjqH5XP0x0kKOpfldATHSQo6h+V0BMdJCjqH5XP0x0j6KoflhATHOPoqd+WEBMc4+ip35YQExzj6Knflg/THOPoqd+WD9Mc4+ip35YQExzj6KnfVhATHSQo6h9V0BMdI+ip35YQE1zj6KnflhATXOPoqd+WEBNc4+ip35YQExzj6Knflg/S3OPoqd+WD9MdJCjqH5XP0x0kKOoflc/THSQo6h+Vz9MdJCjp35XP0x0kKOnfVc/THSQo6d9WT5Kc4+ip31ZPktzj6KnfVk/S3OPoqd+WD9Mc4+ip35YP0xzkKOnflg/THOQo6d+WD9MdJCjp35XP0x0kKOnfVg/THSQo6h+Vz9MdJCjqH5XP0x0kKOofldATHSQo6h+";
+let audioCtx: AudioContext | null = null;
+
+function playNotificationSound() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.4);
+  } catch {}
+}
+
 export default function ChatWidget() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -375,18 +395,29 @@ export default function ChatWidget() {
   const activeConv = conversations.find(c => c.id === activeConvId);
 
   useEffect(() => {
-    if (!open) return;
     const channel = supabase
       .channel("widget-chat-rt")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
-        if (msg.conversation_id === activeConvId) refetchMsgs();
-        refetchConvs();
+        if (msg.sender_id === user?.id) return;
+
+        if (open && msg.conversation_id === activeConvId) refetchMsgs();
+        if (open) refetchConvs();
         queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
+
+        const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
+        if (!isDiretoria) {
+          playNotificationSound();
+          toast({
+            title: "💬 Nova mensagem",
+            description: "Você recebeu uma nova mensagem no chat.",
+            duration: 4000,
+          });
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [activeConvId, open]);
+  }, [activeConvId, open, user?.id, user?.role]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
