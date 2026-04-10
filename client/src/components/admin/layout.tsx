@@ -77,6 +77,7 @@ const menuSections: MenuSection[] = [
       {
         label: "Frota",
         icon: Car,
+        iconColor: "text-sky-500",
         children: [
           { path: "/admin/vehicles", label: "Veículos", icon: Car },
           { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
