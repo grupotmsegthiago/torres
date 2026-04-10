@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
   import { lastMissionPos, lastRecordedPos, MISSION_POS_MIN_DISTANCE } from "./operational";
-  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist } from "./_helpers";
+  import { createSmtpTransporter, getSmtpFrom, parseEmailList, MISSION_STEPS, STEP_REQUIRED_PHOTOS, nowBRTString, haversineDist, removeAutoTransaction } from "./_helpers";
   import { calcularEscolta, extractKmFromText } from "../billing-calc";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
@@ -2091,14 +2091,85 @@ import type { Express } from "express";
 
       const timeBRT = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
 
+      await storage.updateServiceOrder(osId, {
+        status: "recusada",
+        revenueValue: 0,
+      } as any);
+      await supabaseAdmin.from("service_orders").update({
+        fat_calculado: 0,
+        custo_total_alocado: 0,
+        lucro_calculado: 0,
+        margem_calculada: 0,
+        valor_estimado: 0,
+        pedagio_estimado: 0,
+        custos_congelados_em: now.toISOString(),
+        custos_congelados_por: `recusada_por_${emp.name}`,
+      }).eq("id", osId);
+
+      try {
+        await supabaseAdmin.from("escort_billings")
+          .update({ status: "CANCELADA" })
+          .eq("service_order_id", osId)
+          .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+      } catch (_e) {}
+
+      try {
+        const { data: pendingTxs } = await supabaseAdmin.from("financial_transactions")
+          .select("id, asaas_payment_id")
+          .eq("origin_type", "service_order")
+          .eq("origin_id", String(osId))
+          .not("asaas_payment_id", "is", null);
+        if (pendingTxs?.length && process.env.ASAAS_API_KEY) {
+          const apiKey = process.env.ASAAS_API_KEY;
+          const baseUrl = apiKey.startsWith("$aact_") ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
+          for (const tx of pendingTxs) {
+            if (!tx.asaas_payment_id) continue;
+            try {
+              await fetch(`${baseUrl}/payments/${tx.asaas_payment_id}`, {
+                method: "DELETE",
+                headers: { "access_token": apiKey },
+              });
+              console.log(`[OS-recusada] Asaas payment ${tx.asaas_payment_id} cancelled for OS #${osCheck.osNumber}`);
+            } catch (asaasErr: any) {
+              console.error(`[OS-recusada] Asaas cancel failed: ${asaasErr.message}`);
+            }
+          }
+        }
+      } catch (_e) {}
+
+      try {
+        const { data: existingCosts } = await supabaseAdmin.from("mission_costs")
+          .select("id")
+          .eq("service_order_id", osId);
+        if (existingCosts?.length) {
+          for (const mc of existingCosts) {
+            try { await removeAutoTransaction("mission_cost", String(mc.id)); } catch (_e) {}
+          }
+        }
+        await supabaseAdmin.from("mission_costs").delete().eq("service_order_id", osId);
+      } catch (_e) {}
+
+      try { await removeAutoTransaction("service_order", String(osId)); } catch (_e) {}
+
+      if (osCheck.vehicleId) {
+        try { await storage.updateVehicle(osCheck.vehicleId, { status: "disponível" }); } catch (_e) {}
+      }
+      if ((osCheck as any).kitId) {
+        try { await storage.updateWeaponKit((osCheck as any).kitId, { status: "disponível" }); } catch (_e) {}
+      }
+
       await logSystemAudit({
         userId, userName: req.user!.name || emp.name, userRole: req.user!.role,
-        action: "mission_acceptance_refuse",
+        action: "OS_RECUSADA",
         targetId: String(osId), targetType: "service_order",
         details: JSON.stringify({
           osNumber: osCheck.osNumber, employeeId: emp.id, employeeName: emp.name,
           respondedAt: timeBRT, ipAddress, deviceInfo, reason: notes.trim(),
           acceptanceToken: acceptance.acceptance_token,
+          previousStatus: osCheck.status,
+          faturamentoZerado: true,
+          billingsCanceladas: true,
+          custosDeletados: true,
         }),
         ipAddress,
       });
