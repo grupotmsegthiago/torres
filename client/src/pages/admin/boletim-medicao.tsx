@@ -64,7 +64,7 @@ export default function BoletimMedicaoPage() {
   const [overrideKmFim, setOverrideKmFim] = useState("");
   const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
-  const [periodFilter, setPeriodFilter] = useState<string | null>(null);
+  const [periodFilter, setPeriodFilter] = useState<string | null>("mes");
   const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
   const [editBilling, setEditBilling] = useState<{
     km_inicial: string; km_final: string; fat_acionamento: string;
@@ -289,11 +289,21 @@ export default function BoletimMedicaoPage() {
     return { clientId: Number(cid), clientName: group.clientName, clientCnpj: group.clientCnpj, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; clientCnpj: string | null; orders: any[] }[];
 
-  const totalOs = osConcluidas.length;
-  const liveCount = osConcluidas.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
-  const pendingCount = osConcluidas.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
-  const approvedCount = osConcluidas.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
-  const foraCicloCount = osConcluidas.filter(o => {
+  const periodFilteredOs = periodFilter
+    ? (() => {
+        const { start, end } = getPeriodRange(periodFilter);
+        return osConcluidas.filter(o => {
+          const d = o.scheduledDate ? new Date(_eu(o.scheduledDate)) : o.createdAt ? new Date(_eu(o.createdAt)) : null;
+          return d && d >= start && d < end;
+        });
+      })()
+    : osConcluidas;
+
+  const totalOs = periodFilteredOs.length;
+  const liveCount = periodFilteredOs.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
+  const pendingCount = periodFilteredOs.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
+  const approvedCount = periodFilteredOs.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
+  const foraCicloCount = periodFilteredOs.filter(o => {
     if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
     const bStatus = o.billing?.status;
     if (bStatus === "FATURADO" || bStatus === "PAGO") return false;
@@ -302,9 +312,12 @@ export default function BoletimMedicaoPage() {
     const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
-  const totalFaturamento = osConcluidas.reduce((acc, o) => {
+  const totalFaturamento = periodFilteredOs.reduce((acc, o) => {
     const b = o.billing;
-    return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
+    if (!b) return acc;
+    const fatTotal = Number(b.fat_total || 0);
+    if (fatTotal > 0) return acc + fatTotal;
+    return acc + Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
   }, 0);
 
   const getBillingStatus = (os: any) => {
