@@ -271,6 +271,11 @@ export default function MobileAbastecimentoPage() {
           </div>
         </div>
 
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-start gap-2">
+          <span className="text-amber-600 text-lg leading-none mt-0.5">⚠️</span>
+          <p className="text-xs font-semibold text-amber-800">ATENÇÃO, favor solicitar a nota do abastecimento no CNPJ — <span className="font-black">36.982.392/0001-89</span></p>
+        </div>
+
         <div className="flex items-center gap-2">
           {stepOrder.map((s, i) => (
             <div key={s} className="flex items-center gap-2 flex-1">
