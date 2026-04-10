@@ -213,6 +213,11 @@ export default function BoletimMedicaoPage() {
       const fresh = osConcluidas.find((o: any) => o.id === selectedOs.id);
       if (fresh && fresh !== selectedOs) {
         setSelectedOs(fresh);
+        const fb = fresh.billing;
+        if (fb) {
+          setPedagioValue(String(fb.despesas_pedagio || 0));
+          setObservacoesValue(fb.observacoes || "");
+        }
         return;
       }
     }
