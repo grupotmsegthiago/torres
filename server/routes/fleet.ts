@@ -7,6 +7,85 @@ import type { Express } from "express";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction } from "./_helpers";
 
+  async function runAiValidation(fuelingId: number) {
+    const fueling = await storage.getVehicleFueling(fuelingId);
+    if (!fueling) return;
+    const receiptUrl = fueling.receiptPhoto;
+    if (!receiptUrl) {
+      await supabaseAdmin.from("vehicle_fueling").update({ ai_validation_status: "sem_foto", ai_validation_result: { status: "sem_foto", observacao: "Sem foto de NF" } }).eq("id", fuelingId);
+      return;
+    }
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+    const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+    if (!apiKey) { console.log("[ai-validate] No AI key configured, skipping"); return; }
+
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({ apiKey, baseURL });
+
+    const totalCost = Number(fueling.totalCost) || 0;
+    const liters = Number(fueling.liters) || 0;
+    const costPerLiter = Number(fueling.costPerLiter) || 0;
+    const fuelType = fueling.fuelType || "gasolina";
+    const station = fueling.station || "";
+
+    await supabaseAdmin.from("vehicle_fueling").update({ ai_validation_status: "pendente" }).eq("id", fuelingId);
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `Você é um auditor de notas fiscais de abastecimento de combustível.
+Analise a foto do cupom/nota fiscal e compare com os dados informados pelo motorista.
+Dados informados:
+- Valor total: R$ ${totalCost.toFixed(2)}
+- Litros: ${liters.toFixed(2)}L
+- Preço/litro: R$ ${costPerLiter.toFixed(3)}
+- Combustível: ${fuelType}
+- Posto: ${station}
+
+Responda APENAS com um JSON válido (sem markdown):
+{
+  "validado": true ou false,
+  "valor_nf": valor extraído da NF ou null,
+  "litros_nf": litros extraídos ou null,
+  "preco_litro_nf": preço por litro extraído ou null,
+  "combustivel_nf": tipo de combustível na NF ou null,
+  "posto_nf": nome do posto na NF ou null,
+  "divergencias": ["lista de divergências encontradas"] ou [],
+  "observacao": "breve observação da análise"
+}
+Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com observação explicativa.`
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analise esta nota fiscal de abastecimento:" },
+            { type: "image_url", image_url: { url: receiptUrl } },
+          ],
+        },
+      ],
+      max_tokens: 500,
+    });
+
+    const raw = response.choices[0]?.message?.content || "";
+    let result: any;
+    try {
+      const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      result = JSON.parse(cleaned);
+    } catch {
+      result = { validado: false, observacao: raw, divergencias: ["Não foi possível analisar automaticamente"] };
+    }
+
+    const status = result.validado ? "validado" : "verificar";
+    await supabaseAdmin.from("vehicle_fueling").update({
+      ai_validation_status: status,
+      ai_validation_result: { status, ...result },
+    }).eq("id", fuelingId);
+
+    console.log(`[ai-validate] Fueling #${fuelingId} → ${status}`);
+  }
+
   export function registerFleetRoutes(app: Express) {
     app.get("/api/trips", requireAuth, async (_req, res) => {
     const data = await storage.getTrips();
@@ -200,6 +279,10 @@ import type { Express } from "express";
           console.log(`[Fueling→DRE] Admin linked fueling #${data.id} R$${fuelAmount.toFixed(2)} to OS #${activeOs[0].os_number}`);
         }
       }
+    }
+
+    if (data && data.id && parsed.data.receiptPhoto) {
+      runAiValidation(data.id).catch(err => console.error(`[ai-validate] Background validation failed for fueling #${data.id}:`, err.message));
     }
 
     res.status(201).json(data);
@@ -405,73 +488,37 @@ import type { Express } from "express";
   });
 
 
+  app.post("/api/fueling/ai-validate-batch", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: pending } = await supabaseAdmin.from("vehicle_fueling")
+        .select("id")
+        .not("receipt_photo", "is", null)
+        .is("ai_validation_status", null)
+        .order("id", { ascending: false })
+        .limit(50);
+      if (!pending || pending.length === 0) return res.json({ queued: 0, message: "Nenhum abastecimento pendente" });
+      const queued = pending.length;
+      res.json({ queued, message: `${queued} abastecimento(s) enviados para validação IA` });
+      (async () => {
+        for (const row of pending) {
+          try { await runAiValidation(row.id); } catch (err: any) { console.error(`[ai-validate-batch] #${row.id} failed:`, err.message); }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        console.log(`[ai-validate-batch] Completed ${queued} validations`);
+      })();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/fueling/:id/ai-validate", requireAuth, requireAdminRole, async (req, res) => {
     try {
-      const fueling = await storage.getVehicleFueling(Number(req.params.id));
-      if (!fueling) return res.status(404).json({ message: "Abastecimento não encontrado" });
-
-      const receiptUrl = fueling.receiptPhoto;
-      if (!receiptUrl) return res.json({ status: "sem_foto", message: "Sem foto de NF para validar" });
-
-      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-      if (!apiKey) return res.status(500).json({ message: "Chave de IA não configurada" });
-
-      const OpenAI = (await import("openai")).default;
-      const openai = new OpenAI({ apiKey, baseURL });
-
-      const totalCost = Number(fueling.totalCost) || 0;
-      const liters = Number(fueling.liters) || 0;
-      const costPerLiter = Number(fueling.costPerLiter) || 0;
-      const fuelType = fueling.fuelType || "gasolina";
-      const station = fueling.station || "";
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `Você é um auditor de notas fiscais de abastecimento de combustível.
-Analise a foto do cupom/nota fiscal e compare com os dados informados pelo motorista.
-Dados informados:
-- Valor total: R$ ${totalCost.toFixed(2)}
-- Litros: ${liters.toFixed(2)}L
-- Preço/litro: R$ ${costPerLiter.toFixed(3)}
-- Combustível: ${fuelType}
-- Posto: ${station}
-
-Responda APENAS com um JSON válido (sem markdown):
-{
-  "validado": true ou false,
-  "valor_nf": valor extraído da NF ou null,
-  "litros_nf": litros extraídos ou null,
-  "preco_litro_nf": preço por litro extraído ou null,
-  "combustivel_nf": tipo de combustível na NF ou null,
-  "posto_nf": nome do posto na NF ou null,
-  "divergencias": ["lista de divergências encontradas"] ou [],
-  "observacao": "breve observação da análise"
-}
-Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com observação explicativa.`
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Analise esta nota fiscal de abastecimento:" },
-              { type: "image_url", image_url: { url: receiptUrl } },
-            ],
-          },
-        ],
-        max_tokens: 500,
-      });
-
-      const raw = response.choices[0]?.message?.content || "";
-      try {
-        const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        const parsed = JSON.parse(cleaned);
-        res.json({ status: parsed.validado ? "validado" : "verificar", ...parsed });
-      } catch {
-        res.json({ status: "verificar", observacao: raw, divergencias: ["Não foi possível analisar automaticamente"] });
-      }
+      const id = Number(req.params.id);
+      await runAiValidation(id);
+      const updated = await storage.getVehicleFueling(id);
+      if (!updated) return res.status(404).json({ message: "Abastecimento não encontrado" });
+      const result = (updated as any).aiValidationResult || { status: "sem_foto" };
+      res.json(result);
     } catch (err: any) {
       console.error("[ai-validate] Error:", err.message);
       res.status(500).json({ message: err.message });

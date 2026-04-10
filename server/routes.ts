@@ -56,6 +56,8 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ethanol_price DECIMAL(10,3)",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS fuel_recommendation TEXT",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS recommendation_followed BOOLEAN",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ai_validation_status TEXT",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ai_validation_result JSONB",
   ];
 
   let ok = false;

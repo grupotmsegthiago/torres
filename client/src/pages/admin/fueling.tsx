@@ -555,6 +555,103 @@ function TicketLogPanel({ fueling }: { fueling: VehicleFueling }) {
   );
 }
 
+function AiValidationBadge({ fueling }: { fueling: VehicleFueling }) {
+  const st = (fueling as any).aiValidationStatus;
+  const result = (fueling as any).aiValidationResult as any;
+  const { toast } = useToast();
+
+  const revalidate = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/fueling/${fueling.id}/ai-validate`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
+      toast({ title: "Validação IA atualizada" });
+    },
+    onError: (err: any) => toast({ title: "Erro IA", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="border-t border-neutral-200 pt-3">
+      <div className="flex items-center gap-2 mb-2">
+        <ShieldCheck className="w-4 h-4 text-indigo-600" />
+        <h3 className="text-sm font-bold text-neutral-900">Validação IA da Nota Fiscal</h3>
+      </div>
+
+      {st === "pendente" && (
+        <div className="flex items-center gap-2 text-indigo-600">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Analisando nota fiscal...</span>
+        </div>
+      )}
+
+      {st === "validado" && result && (
+        <div className="rounded-lg p-4 border bg-green-50 border-green-200" data-testid="card-ai-result">
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle2 className="w-5 h-5 text-green-600" />
+            <span className="font-bold text-green-700 text-sm">Validado</span>
+          </div>
+          {result.observacao && <p className="text-sm text-neutral-700 mb-2">{result.observacao}</p>}
+          {result.valor_nf !== undefined && result.valor_nf !== null && (
+            <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+              <div><span className="text-neutral-500">Valor NF:</span> <span className="font-bold">R$ {Number(result.valor_nf).toFixed(2)}</span></div>
+              <div><span className="text-neutral-500">Valor Informado:</span> <span className="font-bold">R$ {Number(fueling.totalCost).toFixed(2)}</span></div>
+              {result.litros_nf && <div><span className="text-neutral-500">Litros NF:</span> <span className="font-bold">{Number(result.litros_nf).toFixed(2)}L</span></div>}
+              {result.combustivel_nf && <div><span className="text-neutral-500">Combustível NF:</span> <span className="font-bold">{result.combustivel_nf}</span></div>}
+              {result.posto_nf && <div className="col-span-2"><span className="text-neutral-500">Posto NF:</span> <span className="font-bold">{result.posto_nf}</span></div>}
+            </div>
+          )}
+          <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => revalidate.mutate()} disabled={revalidate.isPending} data-testid="button-ai-retry">
+            {revalidate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Eye className="w-3 h-3 mr-1" />} Analisar novamente
+          </Button>
+        </div>
+      )}
+
+      {st === "verificar" && result && (
+        <div className="rounded-lg p-4 border bg-red-50 border-red-200" data-testid="card-ai-result">
+          <div className="flex items-center gap-2 mb-2">
+            <XCircle className="w-5 h-5 text-red-600" />
+            <span className="font-bold text-red-700 text-sm">Verificar</span>
+          </div>
+          {result.observacao && <p className="text-sm text-neutral-700 mb-2">{result.observacao}</p>}
+          {result.valor_nf !== undefined && result.valor_nf !== null && (
+            <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+              <div><span className="text-neutral-500">Valor NF:</span> <span className="font-bold">R$ {Number(result.valor_nf).toFixed(2)}</span></div>
+              <div><span className="text-neutral-500">Valor Informado:</span> <span className="font-bold">R$ {Number(fueling.totalCost).toFixed(2)}</span></div>
+              {result.litros_nf && <div><span className="text-neutral-500">Litros NF:</span> <span className="font-bold">{Number(result.litros_nf).toFixed(2)}L</span></div>}
+              {result.combustivel_nf && <div><span className="text-neutral-500">Combustível NF:</span> <span className="font-bold">{result.combustivel_nf}</span></div>}
+            </div>
+          )}
+          {result.divergencias && result.divergencias.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {result.divergencias.map((d: string, i: number) => (
+                <div key={i} className="flex items-start gap-1 text-xs text-red-600">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>{d}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => revalidate.mutate()} disabled={revalidate.isPending} data-testid="button-ai-retry">
+            {revalidate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Eye className="w-3 h-3 mr-1" />} Analisar novamente
+          </Button>
+        </div>
+      )}
+
+      {(!st || st === "sem_foto") && (
+        <div className="text-sm text-neutral-400">
+          {!fueling.receiptPhoto ? "Sem foto de NF para validar." : (
+            <Button variant="outline" size="sm" onClick={() => revalidate.mutate()} disabled={revalidate.isPending} data-testid="button-ai-validate">
+              {revalidate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1" />} Validar com IA
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: VehicleFueling; vehicle?: Vehicle; driverName?: string | null; onClose: () => void }) {
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
 
@@ -699,6 +796,8 @@ function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: Veh
 
             <TicketLogPanel fueling={fueling} />
 
+            <AiValidationBadge fueling={fueling} />
+
             <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
               Registrado em {fueling.createdAt ? new Date((/[Zz]$/.test(fueling.createdAt) || /[+-]\d{2}:\d{2}$/.test(fueling.createdAt)) ? fueling.createdAt : fueling.createdAt + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-"} · ID #{fueling.id}
             </div>
@@ -706,6 +805,27 @@ function FuelingDetail({ fueling, vehicle, driverName, onClose }: { fueling: Veh
         </div>
       </div>
     </>
+  );
+}
+
+function BatchValidateButton() {
+  const { toast } = useToast();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/fueling/ai-validate-batch");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: data.message || "Validação em lote iniciada" });
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["/api/fueling"] }), 5000);
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+  return (
+    <Button variant="outline" size="sm" onClick={() => mutation.mutate()} disabled={mutation.isPending} data-testid="button-batch-validate">
+      {mutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1" />}
+      Validar NFs
+    </Button>
   );
 }
 
@@ -786,6 +906,9 @@ export default function FuelingPage() {
           <Button variant={viewMode === "history" ? "default" : "outline"} size="sm" onClick={() => setViewMode("history")} data-testid="button-view-history">
             <Fuel className="w-4 h-4 mr-1" /> Histórico
           </Button>
+          {isDiretoria && (
+            <BatchValidateButton />
+          )}
           <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-fueling">
             <Plus className="w-4 h-4 mr-2" /> Novo Abastecimento
           </Button>
@@ -976,14 +1099,15 @@ export default function FuelingPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Motorista</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Autorizado por</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold text-purple-600 uppercase tracking-wider bg-purple-50/50">TLog</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-indigo-600 uppercase tracking-wider bg-indigo-50/50">NF IA</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={14} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
+                  <tr><td colSpan={15} className="p-8 text-center text-neutral-400">Carregando...</td></tr>
                 ) : filteredFuelings.length === 0 ? (
-                  <tr><td colSpan={14} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
+                  <tr><td colSpan={15} className="p-8 text-center text-neutral-400">Nenhum abastecimento encontrado</td></tr>
                 ) : (
                   [...filteredFuelings].sort((a, b) => b.date.localeCompare(a.date)).map((f) => {
                     const v = getVehicle(f.vehicleId);
@@ -1037,6 +1161,15 @@ export default function FuelingPage() {
                           if (tls === "nfe_enviada") return <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />;
                           if (tls === "erro") return <XCircle className="w-4 h-4 text-red-500 mx-auto" />;
                           return <span className="text-neutral-300">—</span>;
+                        })()}</td>
+                        <td className="px-4 py-3 text-center bg-indigo-50/30" data-testid={`ai-status-${f.id}`}>{(() => {
+                          const st = (f as any).aiValidationStatus;
+                          if (st === "validado") return <span className="inline-flex items-center gap-1 text-green-700 text-xs font-semibold"><CheckCircle2 className="w-3.5 h-3.5" />OK</span>;
+                          if (st === "verificar") return <span className="inline-flex items-center gap-1 text-red-600 text-xs font-semibold"><AlertTriangle className="w-3.5 h-3.5" />Verificar</span>;
+                          if (st === "pendente") return <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin mx-auto" />;
+                          if (st === "sem_foto") return <span className="text-neutral-300 text-xs">—</span>;
+                          if (!f.receiptPhoto) return <span className="text-neutral-300 text-xs">—</span>;
+                          return <span className="text-amber-500 text-xs font-medium">Aguard.</span>;
                         })()}</td>
                         <td className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" onClick={() => setDetailItem(f)} data-testid={`button-detail-${f.id}`}><Eye className="w-4 h-4 text-blue-500" /></Button>

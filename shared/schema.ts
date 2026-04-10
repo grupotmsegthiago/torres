@@ -325,6 +325,8 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   ticketlogStatus: text("ticketlog_status"),
   ticketlogNfeData: jsonb("ticketlog_nfe_data"),
   ticketlogCodigoEstab: text("ticketlog_codigo_estab"),
+  aiValidationStatus: text("ai_validation_status"),
+  aiValidationResult: jsonb("ai_validation_result"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
