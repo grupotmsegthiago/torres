@@ -126,7 +126,7 @@ const menuSections: MenuSection[] = [
   {
     title: "SISTEMA",
     icon: Settings,
-    iconColor: "text-neutral-400",
+    iconColor: "text-rose-400",
     items: [
       { path: "/admin/auditoria", label: "Auditoria", icon: Shield, adminOnly: true },
       { path: "/admin/usuarios", label: "Usuários", icon: UserCog, adminOnly: true },
