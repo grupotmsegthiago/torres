@@ -290,7 +290,7 @@ export function registerAsaasRoutes(app: Express) {
                 const payment = await asaasRequest("GET", `/payments/${inv.asaas_payment_id}`);
                 const upd: Record<string, any> = { updated_at: new Date().toISOString() };
                 if (payment.status && payment.status !== inv.status) upd.status = payment.status;
-                if (payment.netValue) upd.net_value = payment.netValue;
+                if (payment.value || payment.netValue) upd.net_value = payment.value || payment.netValue;
                 if (payment.invoiceUrl) upd.invoice_url = payment.invoiceUrl;
                 if (payment.paymentDate) upd.payment_date = payment.paymentDate;
                 if (Object.keys(upd).length > 1) {
@@ -597,7 +597,7 @@ export function registerAsaasRoutes(app: Express) {
 
       const updates: Record<string, any> = {
         status: payment.status,
-        net_value: payment.netValue,
+        net_value: payment.value || payment.netValue,
         invoice_url: payment.invoiceUrl,
         bank_slip_url: payment.bankSlip?.url || payment.bankSlipUrl,
         updated_at: new Date().toISOString(),
@@ -876,7 +876,7 @@ export function registerAsaasRoutes(app: Express) {
         updated_at: new Date().toISOString(),
       };
       if (payment.paymentDate) updates.payment_date = payment.paymentDate;
-      if (payment.netValue) updates.net_value = payment.netValue;
+      if (payment.value || payment.netValue) updates.net_value = payment.value || payment.netValue;
 
       const { data: updatedInvoice } = await supabaseAdmin
         .from("invoices")
