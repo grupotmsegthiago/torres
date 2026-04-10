@@ -1284,6 +1284,7 @@ import type { Express } from "express";
 
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
+      if (acao === "APROVADA" && billing.status === "APROVADA") return res.json(billing);
       if (billing.status !== "A_VERIFICAR") return res.status(400).json({ message: "Somente OS com status 'A Verificar' podem ser revisadas" });
 
       const updateData: any = {
