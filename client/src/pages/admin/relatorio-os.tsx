@@ -15,6 +15,7 @@ import {
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
 import { useLocation } from "wouter";
+import { exportFormattedExcel } from "@/lib/excel-export";
 
 interface ReportOS {
   id: number;
@@ -456,12 +457,12 @@ export default function RelatorioOSPage() {
     return sortDir === "asc" ? <ChevronUp className="w-3 h-3 text-white" /> : <ChevronDown className="w-3 h-3 text-white" />;
   };
 
-  const exportCSV = () => {
-    const headers = ["#", "OS", "Status", "Cliente", "Veíc. Escoltado", "Viatura", "Agente 1", "Agente 2", "Origem", "Destino", "Data Inicial", "Hora Inicial", "Data Final", "Hora Final", "Faturamento", "Custo Total", "Pedágio", "Resultado", "% Acerto", "KM Total"];
+  const exportExcel = () => {
+    const headers = ["#", "OS", "Status", "Cliente", "Veíc. Escoltado", "Viatura", "Agente 1", "Agente 2", "Origem", "Destino", "Data Inicial", "Hora Inicial", "Data Final", "Hora Final", "Faturamento", "Custo Total", "Pedágio", "Resultado", "% Margem", "KM Total"];
     const rows = filtered.map((o, i) => [
       i + 1,
       o.osNumber,
-      o.status,
+      o.status === "completed" ? "Concluída" : o.status === "in_progress" ? "Em Andamento" : o.status === "cancelled" ? "Cancelada" : o.status,
       o.clientName,
       o.escortedVehiclePlate || "",
       o.vehicle?.plate || "",
@@ -473,21 +474,40 @@ export default function RelatorioOSPage() {
       fmtTime(o.missionStartedAt || o.scheduledDate),
       fmtDateShort(o.completedDate),
       fmtTime(o.completedDate),
-      (o.liveCost?.faturamento || 0).toFixed(2),
-      (o.liveCost?.custo_total || 0).toFixed(2),
-      (o.liveCost?.custo_pedagio || 0).toFixed(2),
-      (o.liveCost?.resultado || 0).toFixed(2),
+      Number((o.liveCost?.faturamento || 0).toFixed(2)),
+      Number((o.liveCost?.custo_total || 0).toFixed(2)),
+      Number((o.liveCost?.custo_pedagio || 0).toFixed(2)),
+      Number((o.liveCost?.resultado || 0).toFixed(2)),
       ((o.liveCost?.margem_pct || 0)).toFixed(1) + "%",
-      (o.liveCost?.km_total || 0).toFixed(0),
+      Number((o.liveCost?.km_total || 0).toFixed(0)),
     ]);
-    const csv = [headers.join(";"), ...rows.map(r => r.join(";"))].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio_os_${new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const totFat = filtered.reduce((s, o) => s + (o.liveCost?.faturamento || 0), 0);
+    const totCusto = filtered.reduce((s, o) => s + (o.liveCost?.custo_total || 0), 0);
+    const totPed = filtered.reduce((s, o) => s + (o.liveCost?.custo_pedagio || 0), 0);
+    const totRes = filtered.reduce((s, o) => s + (o.liveCost?.resultado || 0), 0);
+    const totKm = filtered.reduce((s, o) => s + (o.liveCost?.km_total || 0), 0);
+    const totalsRow: (string | number)[] = Array(20).fill("");
+    totalsRow[0] = "TOTAL";
+    totalsRow[13] = `${filtered.length} OS`;
+    totalsRow[14] = Number(totFat.toFixed(2));
+    totalsRow[15] = Number(totCusto.toFixed(2));
+    totalsRow[16] = Number(totPed.toFixed(2));
+    totalsRow[17] = Number(totRes.toFixed(2));
+    totalsRow[18] = totFat > 0 ? ((totRes / totFat) * 100).toFixed(1) + "%" : "0%";
+    totalsRow[19] = Number(totKm.toFixed(0));
+    const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    exportFormattedExcel({
+      title: "RELATÓRIO DE ORDENS DE SERVIÇO — TORRES VIGILÂNCIA PATRIMONIAL",
+      subtitle: "CNPJ 36.982.392/0001-89 — Serviço de Escolta Armada",
+      period: `Gerado em ${today}`,
+      headers,
+      colWidths: [5, 12, 12, 25, 14, 12, 20, 20, 28, 28, 12, 10, 12, 10, 14, 14, 12, 14, 10, 10],
+      rows,
+      totalsRow,
+      currencyColumns: [14, 15, 16, 17],
+      fileName: `Relatorio_OS_${new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}.xlsx`,
+      sheetName: "Relatório OS",
+    });
   };
 
   return (
@@ -574,9 +594,9 @@ export default function RelatorioOSPage() {
                 <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
                 Atualizar
               </Button>
-              <Button size="sm" onClick={exportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-csv">
+              <Button size="sm" onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-excel">
                 <Download className="w-4 h-4" />
-                Exportar CSV
+                Exportar Excel
               </Button>
             </div>
             {metas.receita > 0 && (

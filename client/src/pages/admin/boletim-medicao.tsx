@@ -11,8 +11,9 @@ import {
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
-  CircleDot, Timer,
+  CircleDot, Timer, Download,
 } from "lucide-react";
+import { exportFormattedExcel } from "@/lib/excel-export";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -341,6 +342,63 @@ export default function BoletimMedicaoPage() {
 
   const isLiveOs = (os: any) => (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
 
+  const exportBoletimExcel = () => {
+    if (periodFilteredOs.length === 0) return;
+    const headers = ["#", "OS", "Cliente", "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Receitas OS", "Total", "Status"];
+    const rows = periodFilteredOs.map((os: any, i: number) => {
+      const b = os.billing;
+      const route = [os.origin, os.destination].filter(Boolean).join(" → ");
+      return [
+        i + 1,
+        os.osNumber || `TOR-${String(os.id).padStart(4, "0")}`,
+        os.clientName || "",
+        route.substring(0, 50) || "",
+        os.vehiclePlate || "",
+        os.employee1Name || "",
+        os.scheduledDate ? new Date(_eu(os.scheduledDate)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "",
+        b?.horario_inicio || "",
+        b?.horario_fim || "",
+        Number(b?.km_inicial || 0),
+        Number(b?.km_final || 0),
+        Number(b?.km_total || 0),
+        Number(b?.km_franquia || 0),
+        Number(b?.km_excedente || 0),
+        fmtHoras(Number(b?.horas_trabalhadas || 0)),
+        Number(b?.fat_acionamento || 0),
+        Number(b?.fat_hora_extra || 0),
+        Number(b?.fat_km || 0),
+        Number(b?.despesas_pedagio || 0),
+        Number(b?.fat_adicional_noturno || 0),
+        Number(b?.receitas_os || 0),
+        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.receitas_os || 0),
+        b?.status === "A_VERIFICAR" ? "A Verificar" : b?.status === "APROVADA" ? "Aprovada" : b?.status === "FATURADO" ? "Faturado" : b?.status || "—",
+      ];
+    });
+    const totals: (string | number)[] = Array(23).fill("");
+    totals[0] = "TOTAL";
+    totals[14] = `${periodFilteredOs.length} OS`;
+    totals[15] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
+    totals[16] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_hora_extra || 0), 0).toFixed(2));
+    totals[17] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
+    totals[18] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
+    totals[19] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
+    totals[20] = Number(periodFilteredOs.reduce((s: number, o: any) => s + Number(o.billing?.receitas_os || 0), 0).toFixed(2));
+    totals[21] = Number(totalFaturamento.toFixed(2));
+    const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    exportFormattedExcel({
+      title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+      subtitle: "CNPJ 36.982.392/0001-89 — Serviço de Escolta Armada Caracterizada",
+      period: `Gerado em ${today}`,
+      headers,
+      colWidths: [5, 12, 25, 30, 12, 20, 12, 10, 10, 10, 10, 9, 9, 9, 8, 13, 13, 13, 12, 12, 12, 14, 12],
+      rows,
+      totalsRow: totals,
+      currencyColumns: [15, 16, 17, 18, 19, 20, 21],
+      fileName: `Boletim_Medicao_${new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}.xlsx`,
+      sheetName: "Boletim",
+    });
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6" data-testid="page-boletim-medicao">
@@ -349,6 +407,10 @@ export default function BoletimMedicaoPage() {
             <h1 className="text-2xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
             <p className="text-xs text-neutral-400 font-semibold mt-1">Verificação e aprovação de faturamento das ordens de serviço</p>
           </div>
+          <Button size="sm" onClick={exportBoletimExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-boletim-excel">
+            <Download className="w-4 h-4" />
+            Exportar Excel
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

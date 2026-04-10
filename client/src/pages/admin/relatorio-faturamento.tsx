@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import * as XLSX from "xlsx";
+import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -419,32 +419,42 @@ export default function RelatorioFaturamentoPage() {
 
   const handleExportExcel = useCallback(() => {
     if (rowsData.length === 0) return;
-    const wb = XLSX.utils.book_new();
-    const headerGroup = ["TABELA ACORDADA", "", "", "", "", "", "", "INFORMAÇÕES DA VIAGEM", "", "", "", "", "", "KILOMETRAGEM", "", "", "HORÁRIOS", "", "", "KM EXCEDENTE", "", "", "HORA EXCEDENTE", "", "", "VALORES", ""];
-    const headerSub = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA", "KM EXTRA", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "INICIAL", "FINAL", "TOTAL", "INICIAL", "FINAL", "TOTAL", "KM", "VALOR", "TOTAL", "HORA", "VALOR", "TOTAL", "PEDÁGIO", "TOTAL"];
-    const titleRow = ["BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL"];
-    const periodRow = [getPeriodLabel()];
-    const subtitleRow = ["REFERENTE AO SERVIÇO DE ESCOLTA ARMADA"];
+    const headers = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
     const dataRows = rowsData.map(r => [
-      r.id, r.route, fmt(r.activationFee), r.franchiseHoursFmt, r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "-", fmt(r.unitHr), fmt(r.unitKm),
+      r.id, r.route, Number(r.activationFee || 0), r.franchiseHoursFmt, r.franchiseKm > 0 ? r.franchiseKm : 0, Number(r.unitHr || 0), Number(r.unitKm || 0),
       r.startDate, r.startTime, r.viatura, r.cargoPlate, r.endDate, r.endTime,
-      r.kmStart > 0 ? fmtNum(r.kmStart) : "-", r.kmEnd > 0 ? fmtNum(r.kmEnd) : "-", r.kmTotal > 0 ? fmtNum(r.kmTotal) : "-",
+      r.kmStart > 0 ? r.kmStart : 0, r.kmEnd > 0 ? r.kmEnd : 0, r.kmTotal > 0 ? r.kmTotal : 0,
       r.startTime, r.endTime, r.timeTotal,
-      r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : "-", r.kmExtraQtd > 0 ? fmt(r.kmExtraUnit) : "-", r.kmExtraTotal > 0 ? fmt(r.kmExtraTotal) : "R$ 0,00",
-      r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "-", r.hrExtraQtd > 0 ? fmt(r.hrExtraUnit) : "-", r.hrExtraTotal > 0 ? fmt(r.hrExtraTotal) : "R$ 0,00",
-      r.tollVal > 0 ? fmt(r.tollVal) : "R$ 0,00", fmt(r.totalGeral),
+      r.kmExtraQtd > 0 ? r.kmExtraQtd : 0, r.kmExtraQtd > 0 ? Number(r.kmExtraUnit || 0) : 0, Number(r.kmExtraTotal || 0),
+      r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "0:00", r.hrExtraQtd > 0 ? Number(r.hrExtraUnit || 0) : 0, Number(r.hrExtraTotal || 0),
+      Number(r.tollVal || 0), Number(r.totalGeral || 0),
     ]);
-    const totalRow = Array(27).fill("");
-    totalRow[0] = "TOTAL";
-    totalRow[26] = fmt(grandTotal);
-    const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
-    const ws = XLSX.utils.aoa_to_sheet(allRows);
-    ws["!cols"] = [{ wch: 10 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+    const totals: (string | number)[] = Array(27).fill("");
+    totals[0] = "TOTAL";
+    totals[26] = Number(grandTotal.toFixed(2));
     const clientLabel = displayClientName || "CLIENTE";
     const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
-    const fileName = `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20)}_${periodShort}.xlsx`;
-    XLSX.utils.book_append_sheet(wb, ws, "Boletim");
-    XLSX.writeFile(wb, fileName, { compression: true });
+    exportFormattedExcel({
+      title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+      subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientLabel}`,
+      period: getPeriodLabel(),
+      headers,
+      groupHeaders: [
+        { label: "TABELA ACORDADA", span: 7 },
+        { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
+        { label: "KILOMETRAGEM", span: 3 },
+        { label: "HORÁRIOS", span: 3 },
+        { label: "KM EXCEDENTE", span: 3 },
+        { label: "HORA EXCEDENTE", span: 3 },
+        { label: "VALORES", span: 2 },
+      ],
+      colWidths: [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14],
+      rows: dataRows,
+      totalsRow: totals,
+      currencyColumns: [2, 5, 6, 20, 21, 23, 24, 25, 26],
+      fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20)}_${periodShort}.xlsx`,
+      sheetName: "Boletim",
+    });
   }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
   const fontBase = "'Inter', 'Segoe UI', system-ui, sans-serif";
