@@ -1,7 +1,7 @@
 import type { Express } from "express";
   import { storage } from "../storage";
   import { supabaseAdmin } from "../supabase";
-  import { requireAuth, requireDiretoria } from "../auth";
+  import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
   import * as ticketlog from "../ticketlog";
 
@@ -404,6 +404,79 @@ import type { Express } from "express";
     }
   });
 
+
+  app.post("/api/fueling/:id/ai-validate", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const fueling = await storage.getVehicleFueling(Number(req.params.id));
+      if (!fueling) return res.status(404).json({ message: "Abastecimento não encontrado" });
+
+      const receiptUrl = fueling.receiptPhoto;
+      if (!receiptUrl) return res.json({ status: "sem_foto", message: "Sem foto de NF para validar" });
+
+      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+      const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+      if (!apiKey) return res.status(500).json({ message: "Chave de IA não configurada" });
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey, baseURL });
+
+      const totalCost = Number(fueling.totalCost) || 0;
+      const liters = Number(fueling.liters) || 0;
+      const costPerLiter = Number(fueling.costPerLiter) || 0;
+      const fuelType = fueling.fuelType || "gasolina";
+      const station = fueling.station || "";
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um auditor de notas fiscais de abastecimento de combustível.
+Analise a foto do cupom/nota fiscal e compare com os dados informados pelo motorista.
+Dados informados:
+- Valor total: R$ ${totalCost.toFixed(2)}
+- Litros: ${liters.toFixed(2)}L
+- Preço/litro: R$ ${costPerLiter.toFixed(3)}
+- Combustível: ${fuelType}
+- Posto: ${station}
+
+Responda APENAS com um JSON válido (sem markdown):
+{
+  "validado": true ou false,
+  "valor_nf": valor extraído da NF ou null,
+  "litros_nf": litros extraídos ou null,
+  "preco_litro_nf": preço por litro extraído ou null,
+  "combustivel_nf": tipo de combustível na NF ou null,
+  "posto_nf": nome do posto na NF ou null,
+  "divergencias": ["lista de divergências encontradas"] ou [],
+  "observacao": "breve observação da análise"
+}
+Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com observação explicativa.`
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Analise esta nota fiscal de abastecimento:" },
+              { type: "image_url", image_url: { url: receiptUrl } },
+            ],
+          },
+        ],
+        max_tokens: 500,
+      });
+
+      const raw = response.choices[0]?.message?.content || "";
+      try {
+        const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        res.json({ status: parsed.validado ? "validado" : "verificar", ...parsed });
+      } catch {
+        res.json({ status: "verificar", observacao: raw, divergencias: ["Não foi possível analisar automaticamente"] });
+      }
+    } catch (err: any) {
+      console.error("[ai-validate] Error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   }
   

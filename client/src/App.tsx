@@ -46,6 +46,7 @@ const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
 const JornadaDiretoriaPage = lazy(() => import("@/pages/admin/jornada-diretoria"));
 const ChatPage = lazy(() => import("@/pages/admin/chat"));
 const PontoOperacionalPage = lazy(() => import("@/pages/admin/ponto-operacional"));
+const RelatorioAbastecimentoPage = lazy(() => import("@/pages/admin/relatorio-abastecimento"));
 
 const MobileHomePage = lazy(() => import("@/pages/mobile/home"));
 const MobileMissaoPage = lazy(() => import("@/pages/mobile/missao"));
@@ -194,6 +195,7 @@ function Router() {
         <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
         <Route path="/admin/relatorio-os">{() => <ProtectedRoute component={RelatorioOSPage} />}</Route>
+        <Route path="/admin/relatorio-abastecimento">{() => <ProtectedRoute component={RelatorioAbastecimentoPage} />}</Route>
         <Route path="/admin/cotacao-gasto">{() => <ProtectedRoute component={CotacaoGastoPage} />}</Route>
         <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
         <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
