@@ -10,7 +10,7 @@ import type { Express } from "express";
   import { logSystemAudit } from "../audit";
   import { randomUUID } from "crypto";
 
-  const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition"; expectedItem?: string }> = {
+  const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
     viatura_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda da viatura" },
     viatura_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita da viatura" },
@@ -21,6 +21,16 @@ import type { Express } from "express";
     viatura_retorno_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda viatura retorno" },
     viatura_retorno_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita viatura retorno" },
     viatura_retorno_traseira: { type: "vehicle_condition", expectedItem: "Traseira viatura retorno" },
+    km_saida: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM de saída" },
+    km_chegada: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM de chegada" },
+    km_final: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM final" },
+    base_hodometro: { type: "odometer", expectedItem: "Hodômetro do painel na base" },
+    agente_equipado: { type: "agent", expectedItem: "Agente de escolta devidamente equipado com colete e armamento" },
+    arma_pistola_1: { type: "weapon", expectedItem: "Pistola principal do agente" },
+    arma_pistola_2: { type: "weapon", expectedItem: "Segunda pistola" },
+    arma_espingarda: { type: "weapon", expectedItem: "Espingarda / arma longa" },
+    foto_local_destino: { type: "scene", expectedItem: "Local de destino da entrega" },
+    foto_local_origem: { type: "scene", expectedItem: "Local de origem da coleta" },
   };
 
   const CHECKLIST_EQUIPMENT_MAP: Record<string, string> = {
@@ -30,7 +40,7 @@ import type { Express } from "express";
     triangulo: "triângulo de sinalização",
   };
 
-  async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[]) {
+  async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[], kmValue?: number | null) {
     const inspectionConfig = INSPECTION_STEPS[step];
     const isChecklistEquipment = checklistItems && checklistItems.length > 0;
     if (!inspectionConfig && !isChecklistEquipment) return;
@@ -85,6 +95,90 @@ Responda APENAS com JSON válido (sem markdown):
   "item_esperado": "${inspectionConfig.expectedItem}",
   "item_encontrado": true/false,
   "condicao": "bom/dano_visivel/irregular",
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      } else if (inspectionConfig?.type === "odometer") {
+        promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
+Analise esta foto do painel/hodômetro do veículo.
+1. Leia o valor do hodômetro/odômetro visível no painel.
+2. Verifique se a foto é nítida e legível.
+3. Confirme se realmente mostra um painel de veículo com hodômetro.
+${kmValue ? `O valor informado pelo agente foi: ${kmValue} km.` : ""}
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "km_lido": number ou null,
+  "km_informado": ${kmValue || "null"},
+  "km_confere": true/false/null,
+  "condicao": "legivel/parcialmente_legivel/ilegivel",
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      } else if (inspectionConfig?.type === "agent") {
+        promptText = `Você é um auditor de segurança de uma empresa de escolta armada.
+Analise esta foto do agente de escolta. Verifique:
+1. O agente está usando colete balístico/tático?
+2. O agente está portando arma de fogo visível (no coldre ou em mãos)?
+3. A apresentação geral é profissional e adequada para operação de escolta?
+4. O uniforme está correto (se visível)?
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "colete_visivel": true/false,
+  "armamento_visivel": true/false,
+  "uniforme_correto": true/false/null,
+  "apresentacao": "adequada/inadequada/inconclusivo",
+  "condicao": "bom/irregular/inconclusivo",
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      } else if (inspectionConfig?.type === "weapon") {
+        promptText = `Você é um auditor de segurança de uma empresa de escolta armada.
+Analise esta foto de armamento. Verifique:
+1. A foto mostra claramente uma arma de fogo (${inspectionConfig.expectedItem})?
+2. É possível identificar o tipo de arma (pistola, espingarda, etc)?
+3. A arma aparenta estar em bom estado de conservação?
+4. A foto foi tirada de forma adequada para registro/controle?
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "tipo_arma": "pistola/espingarda/outra/nao_identificada",
+  "condicao": "bom/danificado/inconclusivo",
+  "divergencias": [] ou ["lista de problemas"],
+  "observacao": "breve análise"
+}`;
+      } else if (inspectionConfig?.type === "scene") {
+        promptText = `Você é um auditor operacional de uma empresa de escolta armada.
+Analise esta foto do local (${inspectionConfig.expectedItem}). Verifique:
+1. A foto mostra um local adequado (pátio, portaria, doca de carga)?
+2. Há elementos identificáveis do local (nome da empresa, endereço, placa)?
+3. As condições ambientais estão normais (iluminação, segurança)?
+
+Responda APENAS com JSON válido (sem markdown):
+{
+  "placa_detectada": null,
+  "placa_confere": null,
+  "angulo_correto": true/false,
+  "item_esperado": "${inspectionConfig.expectedItem}",
+  "item_encontrado": true/false,
+  "local_identificavel": true/false,
+  "condicao": "adequado/inadequado/inconclusivo",
   "divergencias": [] ou ["lista de problemas"],
   "observacao": "breve análise"
 }`;
@@ -1129,7 +1223,7 @@ Responda APENAS com JSON válido (sem markdown):
     if (shouldInspect) {
       const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
       const escortedPlate = (so as any).escortedVehiclePlate || "";
-      runPhotoInspection(photo.id, serviceOrderId, user.employeeId!, step, photoData, vehicle?.plate || "", escortedPlate).catch(e =>
+      runPhotoInspection(photo.id, serviceOrderId, user.employeeId!, step, photoData, vehicle?.plate || "", escortedPlate, undefined, kmValue ? Number(kmValue) : null).catch(e =>
         console.error(`[ai-inspection] background error: ${e.message}`)
       );
     }
@@ -1162,6 +1256,82 @@ Responda APENAS com JSON válido (sem markdown):
         .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ message: error.message });
       res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/mission/:osId/photos-gallery", requireAuth, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const { data: photos, error } = await supabaseAdmin.from("mission_photos")
+        .select("id, service_order_id, employee_id, step, photo_data, km_value, latitude, longitude, ai_inspection_status, ai_inspection_result, created_at")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+      if (error) return res.status(500).json({ message: error.message });
+
+      const { data: logs } = await supabaseAdmin.from("inspection_logs")
+        .select("id, mission_photo_id, step, status, detected_plate, plate_match, expected_plate, item_condition, divergences, ai_raw_response, created_at")
+        .eq("service_order_id", osId)
+        .order("created_at", { ascending: true });
+
+      const logMap = new Map((logs || []).map(l => [l.mission_photo_id, l]));
+
+      const result = (photos || []).map(p => ({
+        id: p.id,
+        step: p.step,
+        photoData: p.photo_data,
+        kmValue: p.km_value,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        aiStatus: p.ai_inspection_status || "pendente",
+        aiResult: p.ai_inspection_result || null,
+        inspectionLog: logMap.get(p.id) || null,
+        createdAt: p.created_at,
+      }));
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/mission/:osId/re-inspect", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const osId = Number(req.params.osId);
+      const { photoIds } = req.body;
+
+      const so = await storage.getServiceOrder(osId);
+      if (!so) return res.status(404).json({ message: "OS não encontrada" });
+
+      const vehicle = so.vehicleId ? await storage.getVehicle(so.vehicleId) : null;
+      const escortedPlate = (so as any).escortedVehiclePlate || "";
+
+      let query = supabaseAdmin.from("mission_photos")
+        .select("id, step, photo_data, km_value, employee_id")
+        .eq("service_order_id", osId);
+
+      if (photoIds && photoIds.length > 0) {
+        query = query.in("id", photoIds);
+      }
+
+      const { data: photos, error } = await query.order("created_at");
+      if (error) return res.status(500).json({ message: error.message });
+
+      const toInspect = (photos || []).filter(p => !!INSPECTION_STEPS[p.step]);
+      if (toInspect.length === 0) return res.json({ message: "Nenhuma foto elegível para inspeção", count: 0 });
+
+      let started = 0;
+      for (const p of toInspect) {
+        runPhotoInspection(
+          p.id, osId, p.employee_id || 0, p.step, p.photo_data,
+          vehicle?.plate || "", escortedPlate, undefined, p.km_value
+        ).catch(e => console.error(`[ai-reinspect] error photo #${p.id}: ${e.message}`));
+        started++;
+      }
+
+      console.log(`[ai-reinspect] Started ${started} inspections for OS #${so.osNumber}`);
+      res.json({ message: `Inspeção iniciada para ${started} foto(s)`, count: started });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

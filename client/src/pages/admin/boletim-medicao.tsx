@@ -11,7 +11,7 @@ import {
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
-  CircleDot, Timer, Download, Send, Mail,
+  CircleDot, Timer, Download, Send, Mail, Camera,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1114,6 +1114,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                 {isApproved && <CheckCircle2 size={12} />}
                 {status.label}
               </span>
+              <a href={`/admin/photo-inspection/${os.id}`} target="_blank" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-amber-400" title="Fotos / Inspeção IA" data-testid="link-photo-inspection"><Camera size={18} /></a>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"><X size={18} /></button>
             </div>
           </div>
