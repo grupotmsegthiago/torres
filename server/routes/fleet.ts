@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
   import * as ticketlog from "../ticketlog";
 
-  import { logFinancialAudit, createAutoTransaction, removeAutoTransaction } from "./_helpers";
+  import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
 
   async function runAiValidation(fuelingId: number) {
     const fueling = await storage.getVehicleFueling(fuelingId);
@@ -84,6 +84,59 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     }).eq("id", fuelingId);
 
     console.log(`[ai-validate] Fueling #${fuelingId} → ${status}`);
+
+    if (status === "verificar") {
+      try {
+        const vehicle = fueling.vehicleId ? await storage.getVehicle(fueling.vehicleId) : null;
+        const driver = fueling.driverId ? await storage.getEmployee(fueling.driverId) : null;
+        const plate = vehicle?.plate || "N/A";
+        const agentName = driver?.name || "N/A";
+        const divergencias = (result.divergencias || []).map((d: string) => `<li style="color:#c0392b">${d}</li>`).join("");
+        const valorInfo = fueling.totalCost ? `R$ ${Number(fueling.totalCost).toFixed(2)}` : "N/A";
+        const valorNF = result.valor_nf != null ? `R$ ${Number(result.valor_nf).toFixed(2)}` : "N/A";
+        const litrosInfo = fueling.liters ? `${Number(fueling.liters).toFixed(2)}L` : "N/A";
+        const litrosNF = result.litros_nf != null ? `${Number(result.litros_nf).toFixed(2)}L` : "N/A";
+        const dataBR = fueling.date ? new Date(fueling.date + "T12:00:00").toLocaleDateString("pt-BR") : "N/A";
+        const posto = fueling.station || "N/A";
+
+        const html = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#c0392b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
+              <h2 style="margin:0;font-size:18px">⚠️ Alerta: Divergência na Validação de Abastecimento</h2>
+            </div>
+            <div style="background:#fff;border:1px solid #e0e0e0;padding:24px;border-radius:0 0 8px 8px">
+              <p style="margin:0 0 16px;color:#333">A validação automática da IA encontrou divergência(s) na nota fiscal do abastecimento abaixo:</p>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold;width:40%">ID Abastecimento</td><td style="padding:6px 12px">#${fuelingId}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Data</td><td style="padding:6px 12px">${dataBR}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Veículo</td><td style="padding:6px 12px">${plate} ${vehicle?.model || ""}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Agente</td><td style="padding:6px 12px">${agentName}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Posto</td><td style="padding:6px 12px">${posto}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Valor Informado</td><td style="padding:6px 12px">${valorInfo}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Valor NF (IA)</td><td style="padding:6px 12px;color:#c0392b;font-weight:bold">${valorNF}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Litros Informados</td><td style="padding:6px 12px">${litrosInfo}</td></tr>
+                <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Litros NF (IA)</td><td style="padding:6px 12px;color:#c0392b;font-weight:bold">${litrosNF}</td></tr>
+              </table>
+              ${divergencias ? `<div style="background:#fdf2f2;border:1px solid #f5c6cb;border-radius:6px;padding:12px;margin-bottom:16px"><p style="margin:0 0 8px;font-weight:bold;color:#c0392b">Divergências encontradas:</p><ul style="margin:0;padding-left:20px">${divergencias}</ul></div>` : ""}
+              ${result.observacao ? `<p style="margin:0 0 16px;color:#555"><strong>Observação IA:</strong> ${result.observacao}</p>` : ""}
+              <p style="margin:0;font-size:12px;color:#999">Este é um alerta automático gerado pelo sistema Torres Vigilância Patrimonial.</p>
+            </div>
+          </div>`;
+
+        const transporter = createSmtpTransporter();
+        if (transporter) {
+          await transporter.sendMail({
+            from: getSmtpFrom(),
+            to: "escolta@torresseguranca.com.br, thiago@grupotmseg.com.br",
+            subject: `⚠️ Divergência Abastecimento #${fuelingId} - ${plate} - ${dataBR}`,
+            html,
+          });
+          console.log(`[ai-validate] Alert email sent for fueling #${fuelingId}`);
+        }
+      } catch (emailErr: any) {
+        console.error(`[ai-validate] Failed to send alert email for #${fuelingId}:`, emailErr.message);
+      }
+    }
   }
 
   export function registerFleetRoutes(app: Express) {
