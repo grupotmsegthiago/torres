@@ -6,8 +6,9 @@ import { logSystemAudit } from "./audit";
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
 const CNAE_PRINCIPAL = "7870";
-const CODIGO_SERVICO_MUNICIPAL = "11.02";
-const ISS_ALIQUOTA = 5;
+const CODIGO_SERVICO_MUNICIPAL = "25";
+const CODIGO_SERVICO_MUNICIPAL_CODE = "01481";
+const ISS_ALIQUOTA = 2;
 const DESCRICAO_SERVICO_FIXA = "Ref. a Serviço de Escolta Armada Caracterizada";
 
 function getApiKey(): string {
@@ -25,7 +26,7 @@ function buildInvoiceDescription(_clientName: string, periodoInicio: string, per
 function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string, any> {
   return {
     serviceListItem: CODIGO_SERVICO_MUNICIPAL,
-    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+    municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
@@ -620,8 +621,8 @@ export function registerAsaasRoutes(app: Express) {
             value: parseFloat(invoice.value),
             deductions: 0,
             effectiveDatePeriod: "MONTHLY",
-            municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
-            municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+            municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
+            municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
             municipalServiceName: DESCRICAO_SERVICO_FIXA,
             taxes: {
               retainIss: false,
@@ -1068,8 +1069,8 @@ export function registerAsaasRoutes(app: Express) {
                   value: totalValue,
                   deductions: 0,
                   effectiveDatePeriod: "MONTHLY",
-                  municipalServiceId: CODIGO_SERVICO_MUNICIPAL,
-                  municipalServiceCode: CODIGO_SERVICO_MUNICIPAL,
+                  municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
+                  municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
                   municipalServiceName: DESCRICAO_SERVICO_FIXA,
                   taxes: {
                     retainIss: false,
