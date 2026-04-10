@@ -55,7 +55,7 @@ export default function BoletimMedicaoPage() {
     return "PENDENTE";
   });
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
-  const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number } | null>(null);
+  const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number; minDate: string; maxDate: string } | null>(null);
   const [pedagioValue, setPedagioValue] = useState("");
   const [observacoesValue, setObservacoesValue] = useState("");
   const [editingFields, setEditingFields] = useState(false);
@@ -768,12 +768,15 @@ export default function BoletimMedicaoPage() {
                                         <button
                                           onClick={() => {
                                             const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
+                                            const dates = checkedInGroup.map(o => o.billing?.data_missao || o.scheduledDate || o.completedDate || o.createdAt).filter(Boolean).map(d => d.split("T")[0]).sort();
                                             setAprovarFaturarDialog({
                                               clientId: group.clientId,
                                               clientName: group.clientName,
                                               osIds: checkedInGroup.map(o => o.id),
                                               billingIds,
                                               total: checkedTotal,
+                                              minDate: dates[0] || new Date().toISOString().split("T")[0],
+                                              maxDate: dates[dates.length - 1] || new Date().toISOString().split("T")[0],
                                             });
                                           }}
                                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm"
@@ -831,9 +834,11 @@ export default function BoletimMedicaoPage() {
                       await apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "APROVADA" });
                     }
                     await apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${aprovarFaturarDialog.clientId}`, {
-                      billingType: "BOLETO",
-                      sendToAsaas: false,
+                      billingType: "UNDEFINED",
+                      sendToAsaas: true,
                       dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
+                      startDate: aprovarFaturarDialog.minDate,
+                      endDate: aprovarFaturarDialog.maxDate,
                     });
                     invalidateAllRelated();
                     setCheckedOsIds(new Set());
