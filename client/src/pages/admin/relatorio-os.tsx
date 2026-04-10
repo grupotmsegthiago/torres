@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronUp, ArrowUpDown, CalendarDays, Pencil,
   X, MapPin, Truck, User, DollarSign, TrendingUp, TrendingDown,
   Fuel, CircleDollarSign, Receipt, Shield, Phone, Navigation,
-  Gauge, Timer, Package, Eye, Target, Check, Save,
+  Gauge, Timer, Package, Eye, Target,
 } from "lucide-react";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
@@ -351,31 +351,25 @@ export default function RelatorioOSPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(getTodayBRT());
   const [dateTo, setDateTo] = useState<string>(getTodayBRT());
-  const [editingMeta, setEditingMeta] = useState(false);
 
-  const loadMetas = useCallback(() => {
-    try {
-      const raw = localStorage.getItem("relatorio_metas");
-      if (raw) return JSON.parse(raw) as { receita: number; resultado: number; missoes: number };
-    } catch {}
-    return { receita: 0, resultado: 0, missoes: 0 };
-  }, []);
+  const META_DIARIA_VIATURA = 1800;
+  const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
 
-  const [metas, setMetas] = useState(loadMetas);
-  const [metaDraft, setMetaDraft] = useState(metas);
+  const { data: allVehicles } = useQuery<any[]>({
+    queryKey: ["/api/vehicles"],
+  });
 
-  const saveMetas = () => {
-    localStorage.setItem("relatorio_metas", JSON.stringify(metaDraft));
-    setMetas(metaDraft);
-    setEditingMeta(false);
-  };
+  const metas = useMemo(() => {
+    const activeCount = (allVehicles || []).filter(isActiveVehicle).length;
+    const d1 = new Date(dateFrom + "T12:00:00");
+    const d2 = new Date(dateTo + "T12:00:00");
+    const days = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    const receita = META_DIARIA_VIATURA * days * activeCount;
+    return { receita, viaturas: activeCount, dias: days };
+  }, [allVehicles, dateFrom, dateTo]);
 
-  const cancelMetaEdit = () => {
-    setMetaDraft(metas);
-    setEditingMeta(false);
-  };
-
-  const pctOf = (value: number, meta: number) => meta > 0 ? Math.min((value / meta) * 100, 100) : 0;
+  const pctOf = (value: number, meta: number) => meta > 0 ? Math.min((value / meta) * 100, 150) : 0;
+  const pctBar = (value: number, meta: number) => meta > 0 ? Math.min((value / meta) * 100, 100) : 0;
 
   const gridUrl = `/api/operational-grid?from=${dateFrom}&to=${dateTo}`;
 
@@ -585,20 +579,33 @@ export default function RelatorioOSPage() {
                 Exportar CSV
               </Button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+            {metas.receita > 0 && (
+              <div className="mt-4 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                <Target className="w-4 h-4 text-neutral-400 shrink-0" />
+                <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Meta do Período</span>
+                <span className="text-sm font-black text-white">{fmtBRL(metas.receita)}</span>
+                <span className="text-[10px] text-neutral-500">({metas.viaturas} viat. × {metas.dias}d × {fmtBRL(META_DIARIA_VIATURA)}/dia)</span>
+                <div className="flex-1 min-w-[120px]">
+                  <div className="flex items-center justify-between text-[9px] mb-0.5">
+                    <span className="text-neutral-500">Receita: {fmtBRL(totals.receita)}</span>
+                    <span className={`font-bold ${pctOf(totals.receita, metas.receita) >= 100 ? "text-emerald-400" : pctOf(totals.receita, metas.receita) >= 50 ? "text-amber-400" : "text-red-400"}`}>{pctOf(totals.receita, metas.receita).toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-500 ${pctOf(totals.receita, metas.receita) >= 100 ? "bg-emerald-400" : pctOf(totals.receita, metas.receita) >= 50 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${pctBar(totals.receita, metas.receita)}%` }} />
+                  </div>
+                </div>
+                {pctOf(totals.receita, metas.receita) >= 100 && (
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">Meta Batida!</span>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
               <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
                 <p className="text-[10px] text-neutral-400 uppercase font-semibold">Receita Total</p>
                 <p className="text-lg font-black text-emerald-400" data-testid="text-total-receita">{fmtBRL(totals.receita)}</p>
                 {metas.receita > 0 && (
-                  <div className="mt-1.5">
-                    <div className="flex items-center justify-between text-[9px] mb-0.5">
-                      <span className="text-neutral-500">Meta: {fmtBRL(metas.receita)}</span>
-                      <span className={`font-bold ${pctOf(totals.receita, metas.receita) >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{pctOf(totals.receita, metas.receita).toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${pctOf(totals.receita, metas.receita) >= 100 ? "bg-emerald-400" : "bg-amber-400"}`} style={{ width: `${pctOf(totals.receita, metas.receita)}%` }} />
-                    </div>
-                  </div>
+                  <p className={`text-[10px] font-bold mt-0.5 ${pctOf(totals.receita, metas.receita) >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{pctOf(totals.receita, metas.receita).toFixed(1)}% da meta</p>
                 )}
               </div>
               <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
@@ -612,114 +619,11 @@ export default function RelatorioOSPage() {
               <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
                 <p className="text-[10px] text-neutral-400 uppercase font-semibold">Resultado</p>
                 <p className={`text-lg font-black ${totals.resultado >= 0 ? "text-emerald-400" : "text-red-400"}`} data-testid="text-total-resultado">{fmtBRL(totals.resultado)}</p>
-                {metas.resultado > 0 && (
-                  <div className="mt-1.5">
-                    <div className="flex items-center justify-between text-[9px] mb-0.5">
-                      <span className="text-neutral-500">Meta: {fmtBRL(metas.resultado)}</span>
-                      <span className={`font-bold ${pctOf(totals.resultado, metas.resultado) >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{pctOf(totals.resultado, metas.resultado).toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${pctOf(totals.resultado, metas.resultado) >= 100 ? "bg-emerald-400" : "bg-amber-400"}`} style={{ width: `${pctOf(totals.resultado, metas.resultado)}%` }} />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
-                <p className="text-[10px] text-neutral-400 uppercase font-semibold">Missões</p>
-                <p className="text-lg font-black text-blue-400" data-testid="text-total-km">{filtered.length}</p>
-                {metas.missoes > 0 && (
-                  <div className="mt-1.5">
-                    <div className="flex items-center justify-between text-[9px] mb-0.5">
-                      <span className="text-neutral-500">Meta: {metas.missoes}</span>
-                      <span className={`font-bold ${pctOf(filtered.length, metas.missoes) >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{pctOf(filtered.length, metas.missoes).toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${pctOf(filtered.length, metas.missoes) >= 100 ? "bg-emerald-400" : "bg-amber-400"}`} style={{ width: `${pctOf(filtered.length, metas.missoes)}%` }} />
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
                 <p className="text-[10px] text-neutral-400 uppercase font-semibold">KM Total</p>
                 <p className="text-lg font-black text-cyan-400" data-testid="text-total-km">{Math.round(totals.km)} km</p>
               </div>
-            </div>
-
-            <div className="mt-3">
-              {!editingMeta ? (
-                <button
-                  onClick={() => { setMetaDraft(metas); setEditingMeta(true); }}
-                  className="flex items-center gap-1.5 text-[10px] text-neutral-500 hover:text-white transition-colors"
-                  data-testid="button-edit-metas"
-                >
-                  <Target className="w-3 h-3" />
-                  {metas.receita > 0 || metas.resultado > 0 || metas.missoes > 0 ? "Editar Metas" : "Definir Metas"}
-                </button>
-              ) : (
-                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
-                  <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                    <Target className="w-3 h-3" /> Definir Metas
-                  </p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[9px] text-neutral-500 uppercase font-semibold">Meta Receita (R$)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={metaDraft.receita || ""}
-                        onChange={e => setMetaDraft(d => ({ ...d, receita: Number(e.target.value) || 0 }))}
-                        className="w-full mt-0.5 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder-neutral-500 outline-none focus:border-emerald-400/50"
-                        placeholder="0"
-                        data-testid="input-meta-receita"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-neutral-500 uppercase font-semibold">Meta Resultado (R$)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="500"
-                        value={metaDraft.resultado || ""}
-                        onChange={e => setMetaDraft(d => ({ ...d, resultado: Number(e.target.value) || 0 }))}
-                        className="w-full mt-0.5 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder-neutral-500 outline-none focus:border-emerald-400/50"
-                        placeholder="0"
-                        data-testid="input-meta-resultado"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-neutral-500 uppercase font-semibold">Meta Missões (qtd)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={metaDraft.missoes || ""}
-                        onChange={e => setMetaDraft(d => ({ ...d, missoes: Number(e.target.value) || 0 }))}
-                        className="w-full mt-0.5 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder-neutral-500 outline-none focus:border-emerald-400/50"
-                        placeholder="0"
-                        data-testid="input-meta-missoes"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <button onClick={saveMetas} className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 hover:text-emerald-300 transition-colors" data-testid="button-save-metas">
-                      <Check className="w-3 h-3" /> Salvar
-                    </button>
-                    <button onClick={cancelMetaEdit} className="flex items-center gap-1 text-[10px] font-bold text-neutral-500 hover:text-neutral-300 transition-colors" data-testid="button-cancel-metas">
-                      <X className="w-3 h-3" /> Cancelar
-                    </button>
-                    {(metas.receita > 0 || metas.resultado > 0 || metas.missoes > 0) && (
-                      <button
-                        onClick={() => { const z = { receita: 0, resultado: 0, missoes: 0 }; setMetaDraft(z); setMetas(z); localStorage.removeItem("relatorio_metas"); setEditingMeta(false); }}
-                        className="flex items-center gap-1 text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors ml-auto"
-                        data-testid="button-clear-metas"
-                      >
-                        <X className="w-3 h-3" /> Limpar Metas
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
