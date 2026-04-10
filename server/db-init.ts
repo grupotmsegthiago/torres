@@ -1001,6 +1001,34 @@ export async function ensureCalcMissionRPC() {
     console.log("[db-init] fn_ajustar_data_missao trigger created OK");
   } catch (e: any) {
     console.error("[db-init] fn_ajustar_data_missao error:", e.message);
+  }
+
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS boletim_approvals (
+        id SERIAL PRIMARY KEY,
+        token TEXT NOT NULL UNIQUE,
+        client_id INTEGER NOT NULL,
+        client_name TEXT,
+        client_email TEXT,
+        period_start DATE NOT NULL,
+        period_end DATE NOT NULL,
+        billing_ids INTEGER[] NOT NULL DEFAULT '{}',
+        total_value NUMERIC(12,2) DEFAULT 0,
+        os_count INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'PENDENTE',
+        approved_at TIMESTAMPTZ,
+        approved_by_name TEXT,
+        approved_by_ip TEXT,
+        sent_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '30 days'),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_boletim_approvals_token ON boletim_approvals(token)`);
+    console.log("[db-init] boletim_approvals table ensured");
+  } catch (e: any) {
+    console.error("[db-init] boletim_approvals error:", e.message);
   } finally {
     await closeDbInitClient();
   }

@@ -153,6 +153,7 @@ import type { Express } from "express";
           ...os,
           clientName: client?.name || "—",
           clientCnpj: client?.cnpj || null,
+          clientEmail: (client as any)?.email || null,
           clientBillingCycle: (client as any)?.billingCycle || (client as any)?.billing_cycle || null,
           clientPrazoAprovacaoDias: (client as any)?.prazoAprovacaoDias || (client as any)?.prazo_aprovacao_dias || null,
           clientPaymentTermsDays: (client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || null,

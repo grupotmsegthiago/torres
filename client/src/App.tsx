@@ -43,6 +43,7 @@ const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
 const JornadaDiretoriaPage = lazy(() => import("@/pages/admin/jornada-diretoria"));
 const ChatPage = lazy(() => import("@/pages/admin/chat"));
 const PontoOperacionalPage = lazy(() => import("@/pages/admin/ponto-operacional"));
+const AprovacaoPage = lazy(() => import("@/pages/aprovacao"));
 
 const MobileHomePage = lazy(() => import("@/pages/mobile/home"));
 const MobileMissaoPage = lazy(() => import("@/pages/mobile/missao"));
@@ -214,6 +215,7 @@ function Router() {
         <Route path="/mobile/chat">{() => <MobileProtectedRoute component={MobileChatPage} />}</Route>
         <Route path="/mobile/ponto-operacional">{() => <MobileProtectedRoute component={MobilePontoOperacionalPage} />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
+        <Route path="/aprovacao/:token" component={AprovacaoPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

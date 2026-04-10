@@ -2,58 +2,21 @@ import ExcelJS from "exceljs";
 
 const DARK_BG = "1B1B1B";
 const HEADER_BG = "2D2D2D";
+const GROUP_BG = "444444";
 const ACCENT_BG = "F5F5DC";
 const WHITE = "FFFFFF";
+const RED = "FF0000";
 const BORDER_COLOR = "D4D4D4";
 
 const thinBorder: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORDER_COLOR } };
 const allBorders: Partial<ExcelJS.Borders> = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
-const noBorders: Partial<ExcelJS.Borders> = {};
-
-function applyTitleStyle(cell: ExcelJS.Cell) {
-  cell.font = { bold: true, size: 14, color: { argb: WHITE } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-}
-
-function applySubtitleStyle(cell: ExcelJS.Cell) {
-  cell.font = { bold: true, size: 10, color: { argb: WHITE } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-}
-
-function applyHeaderStyle(cell: ExcelJS.Cell) {
-  cell.font = { bold: true, size: 9, color: { argb: WHITE } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
-  cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  cell.border = allBorders;
-}
-
-function applyDataStyle(cell: ExcelJS.Cell, isEven: boolean) {
-  cell.font = { size: 9 };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-  cell.border = allBorders;
-  if (isEven) {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F9F9F9" } };
-  }
-}
-
-function applyTotalStyle(cell: ExcelJS.Cell) {
-  cell.font = { bold: true, size: 10, color: { argb: WHITE } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
-  cell.alignment = { horizontal: "center", vertical: "middle" };
-  cell.border = allBorders;
-}
 
 async function fetchLogoAsBuffer(): Promise<{ buffer: ArrayBuffer; ext: "jpeg" | "png" } | null> {
   try {
     const resp = await fetch("/logo-torres-dark.jpeg");
     if (!resp.ok) return null;
-    const buf = await resp.arrayBuffer();
-    return { buffer: buf, ext: "jpeg" };
-  } catch {
-    return null;
-  }
+    return { buffer: await resp.arrayBuffer(), ext: "jpeg" };
+  } catch { return null; }
 }
 
 export interface ExcelExportConfig {
@@ -76,10 +39,9 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   wb.created = new Date();
 
   const colCount = config.headers.length;
-  const headerRowNum = config.groupHeaders ? 6 : 5;
 
   const ws = wb.addWorksheet(config.sheetName || "Relatório", {
-    views: [{ state: "frozen", ySplit: headerRowNum }],
+    views: [{ showGridLines: false }],
     pageSetup: {
       paperSize: 9,
       orientation: "landscape",
@@ -87,65 +49,52 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       fitToWidth: 1,
       fitToHeight: 0,
       horizontalCentered: true,
-      margins: {
-        left: 0.3, right: 0.3,
-        top: 0.5, bottom: 0.5,
-        header: 0.3, footer: 0.3,
-      },
+      showRowColHeaders: false,
+      showGridLines: false,
+      margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 },
     },
     headerFooter: {
       oddFooter: "&L&8Torres Vigilância Patrimonial&C&8Página &P de &N&R&8&D",
     },
   });
 
-  ws.pageSetup.printTitlesRow = `1:${headerRowNum}`;
-
   ws.columns = config.colWidths.map((w) => ({ width: w }));
 
   const logo = await fetchLogoAsBuffer();
-  let logoRowOffset = 0;
-
   if (logo) {
-    const imageId = wb.addImage({
-      buffer: logo.buffer,
-      extension: logo.ext,
-    });
-    ws.addImage(imageId, {
-      tl: { col: 0, row: 0 },
-      ext: { width: 80, height: 80 },
-    });
-    const logoRow = ws.addRow([]);
-    logoRow.height = 60;
-    logoRowOffset = 1;
+    const imageId = wb.addImage({ buffer: logo.buffer, extension: logo.ext });
+    ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 60, height: 55 } });
   }
 
-  const titleRow = ws.addRow([config.title]);
-  const titleRowNum = titleRow.number;
-  ws.mergeCells(titleRowNum, 1, titleRowNum, colCount);
-  applyTitleStyle(titleRow.getCell(1));
-  titleRow.height = 32;
+  const row1 = ws.addRow(Array(colCount).fill(config.title));
+  ws.mergeCells(1, 1, 1, colCount);
+  const c1 = row1.getCell(1);
+  c1.font = { bold: true, size: 14, color: { argb: WHITE } };
+  c1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
+  c1.alignment = { horizontal: "center", vertical: "middle" };
+  row1.height = 32.1;
 
   if (config.period) {
-    const periodRow = ws.addRow([config.period]);
-    const prNum = periodRow.number;
-    ws.mergeCells(prNum, 1, prNum, colCount);
-    applySubtitleStyle(periodRow.getCell(1));
-    periodRow.height = 20;
+    const row2 = ws.addRow(Array(colCount).fill(config.period));
+    const r2n = row2.number;
+    ws.mergeCells(r2n, 1, r2n, colCount);
+    const c2 = row2.getCell(1);
+    c2.font = { bold: true, size: 10, color: { argb: WHITE } };
+    c2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
+    c2.alignment = { horizontal: "center", vertical: "middle" };
+    row2.height = 20;
   }
 
   if (config.subtitle) {
-    const subRow = ws.addRow([config.subtitle]);
-    const subRowNum = subRow.number;
-    ws.mergeCells(subRowNum, 1, subRowNum, colCount);
-    const cell = subRow.getCell(1);
-    cell.font = { italic: true, size: 9, color: { argb: "999999" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    subRow.height = 18;
+    const row3 = ws.addRow(Array(colCount).fill(config.subtitle));
+    const r3n = row3.number;
+    ws.mergeCells(r3n, 1, r3n, colCount);
+    const c3 = row3.getCell(1);
+    c3.font = { bold: true, italic: true, size: 9, color: { argb: RED } };
+    c3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
+    c3.alignment = { horizontal: "center", vertical: "middle" };
+    row3.height = 18;
   }
-
-  const spacerRow = ws.addRow([]);
-  spacerRow.height = 6;
 
   if (config.groupHeaders) {
     const ghValues: string[] = [];
@@ -159,15 +108,12 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
       if (g.span > 1) {
         ws.mergeCells(ghRow.number, colIdx, ghRow.number, colIdx + g.span - 1);
       }
-      const cell = ghRow.getCell(colIdx);
-      cell.font = { bold: true, size: 9, color: { argb: WHITE } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "444444" } };
-      cell.alignment = { horizontal: "center", vertical: "middle" };
-      cell.border = allBorders;
-      for (let j = 1; j < g.span; j++) {
-        const c = ghRow.getCell(colIdx + j);
-        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "444444" } };
-        c.border = allBorders;
+      for (let j = 0; j < g.span; j++) {
+        const cell = ghRow.getCell(colIdx + j);
+        cell.font = { bold: true, size: 9, color: { argb: WHITE } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GROUP_BG } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.border = allBorders;
       }
       colIdx += g.span;
     }
@@ -175,51 +121,65 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   }
 
   const headerRow = ws.addRow(config.headers);
-  const actualHeaderRowNum = headerRow.number;
+  const headerRowNum = headerRow.number;
   headerRow.height = 24;
   for (let i = 1; i <= colCount; i++) {
-    applyHeaderStyle(headerRow.getCell(i));
+    const cell = headerRow.getCell(i);
+    cell.font = { bold: true, size: 9, color: { argb: WHITE } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = allBorders;
   }
 
-  ws.pageSetup.printTitlesRow = `1:${actualHeaderRowNum}`;
+  ws.pageSetup.printTitlesRow = `1:${headerRowNum}`;
 
   const currCols = new Set(config.currencyColumns || []);
-  let lastDataRowNum = actualHeaderRowNum;
 
   config.rows.forEach((rowData, idx) => {
     const row = ws.addRow(rowData);
-    row.height = 20;
+    row.height = 20.1;
     const isEven = idx % 2 === 0;
     for (let i = 1; i <= colCount; i++) {
-      applyDataStyle(row.getCell(i), isEven);
-      if (currCols.has(i - 1)) {
-        const val = rowData[i - 1];
-        if (typeof val === "number") {
-          row.getCell(i).numFmt = '#,##0.00';
-        }
+      const cell = row.getCell(i);
+      cell.font = { size: 9 };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = allBorders;
+      if (isEven) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "F9F9F9" } };
+      }
+      if (currCols.has(i - 1) && typeof rowData[i - 1] === "number") {
+        cell.numFmt = '#,##0.00';
       }
     }
-    lastDataRowNum = row.number;
   });
 
   if (config.totalsRow) {
     const blankRow = ws.addRow([]);
     blankRow.height = 4;
-    for (let i = 1; i <= colCount; i++) {
-      blankRow.getCell(i).border = noBorders;
-    }
+
     const totalRow = ws.addRow(config.totalsRow);
-    totalRow.height = 26;
+    totalRow.height = 26.1;
     for (let i = 1; i <= colCount; i++) {
-      applyTotalStyle(totalRow.getCell(i));
-      if (currCols.has(i - 1)) {
-        const val = config.totalsRow[i - 1];
-        if (typeof val === "number") {
-          totalRow.getCell(i).numFmt = '#,##0.00';
-        }
+      const cell = totalRow.getCell(i);
+      cell.font = { bold: true, size: 10, color: { argb: WHITE } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = allBorders;
+      if (currCols.has(i - 1) && typeof config.totalsRow[i - 1] === "number") {
+        cell.numFmt = '#,##0.00';
       }
     }
-    lastDataRowNum = totalRow.number;
+  }
+
+  const lastUsedRow = ws.rowCount;
+  for (let r = lastUsedRow + 1; r <= lastUsedRow + 90; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= colCount; c++) {
+      const cell = row.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { theme: 0 } };
+      cell.border = {};
+    }
+    row.commit();
   }
 
   const buffer = await wb.xlsx.writeBuffer();

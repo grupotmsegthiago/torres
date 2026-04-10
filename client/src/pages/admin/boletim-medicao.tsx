@@ -11,7 +11,7 @@ import {
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
-  CircleDot, Timer, Download,
+  CircleDot, Timer, Download, Send, Mail,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -66,6 +66,9 @@ export default function BoletimMedicaoPage() {
   const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
   const [overrideHoraFim, setOverrideHoraFim] = useState("");
   const [periodFilter, setPeriodFilter] = useState<string | null>("mes");
+  const [enviarAprovacaoDialog, setEnviarAprovacaoDialog] = useState<{ clientId: number; clientName: string; clientEmail: string; billingIds: number[]; total: number; osCount: number; minDate: string; maxDate: string } | null>(null);
+  const [enviarAprovacaoEmail, setEnviarAprovacaoEmail] = useState("");
+  const [enviarAprovacaoLoading, setEnviarAprovacaoLoading] = useState(false);
   const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
   const [editBilling, setEditBilling] = useState<{
     km_inicial: string; km_final: string; fat_acionamento: string;
@@ -238,10 +241,10 @@ export default function BoletimMedicaoPage() {
     }
   }, [selectedOs]);
 
-  const clientGroups: Record<number, { clientName: string; clientCnpj: string | null; orders: any[] }> = {};
+  const clientGroups: Record<number, { clientName: string; clientCnpj: string | null; clientEmail: string | null; orders: any[] }> = {};
   osConcluidas.forEach(os => {
     const cid = os.clientId || 0;
-    if (!clientGroups[cid]) clientGroups[cid] = { clientName: os.clientName || "Sem Cliente", clientCnpj: os.clientCnpj || null, orders: [] };
+    if (!clientGroups[cid]) clientGroups[cid] = { clientName: os.clientName || "Sem Cliente", clientCnpj: os.clientCnpj || null, clientEmail: os.clientEmail || null, orders: [] };
     clientGroups[cid].orders.push(os);
   });
 
@@ -292,8 +295,8 @@ export default function BoletimMedicaoPage() {
       });
     }
     if (orders.length === 0) return null;
-    return { clientId: Number(cid), clientName: group.clientName, clientCnpj: group.clientCnpj, orders };
-  }).filter(Boolean) as { clientId: number; clientName: string; clientCnpj: string | null; orders: any[] }[];
+    return { clientId: Number(cid), clientName: group.clientName, clientCnpj: group.clientCnpj, clientEmail: group.clientEmail, orders };
+  }).filter(Boolean) as { clientId: number; clientName: string; clientCnpj: string | null; clientEmail: string | null; orders: any[] }[];
 
   const periodFilteredOs = periodFilter
     ? (() => {
@@ -846,26 +849,50 @@ export default function BoletimMedicaoPage() {
                                         {checkedCount} OS selecionada{checkedCount > 1 ? "s" : ""} — Total: {fmt(checkedTotal)}
                                       </span>
                                       {isDiretoria && (
-                                        <button
-                                          onClick={() => {
-                                            const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
-                                            const dates = checkedInGroup.map(o => o.billing?.data_missao || o.scheduledDate || o.completedDate || o.createdAt).filter(Boolean).map(d => d.split("T")[0]).sort();
-                                            setAprovarFaturarDialog({
-                                              clientId: group.clientId,
-                                              clientName: group.clientName,
-                                              osIds: checkedInGroup.map(o => o.id),
-                                              billingIds,
-                                              total: checkedTotal,
-                                              minDate: dates[0] || new Date().toISOString().split("T")[0],
-                                              maxDate: dates[dates.length - 1] || new Date().toISOString().split("T")[0],
-                                            });
-                                          }}
-                                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm"
-                                          data-testid={`button-aprovar-faturar-${group.clientId}`}
-                                        >
-                                          <CheckCircle2 size={12} />
-                                          Aprovar e Faturar
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
+                                              const dates = checkedInGroup.map(o => o.billing?.data_missao || o.scheduledDate || o.completedDate || o.createdAt).filter(Boolean).map(d => d.split("T")[0]).sort();
+                                              setEnviarAprovacaoEmail(group.clientEmail || "");
+                                              setEnviarAprovacaoDialog({
+                                                clientId: group.clientId,
+                                                clientName: group.clientName,
+                                                clientEmail: group.clientEmail || "",
+                                                billingIds: billingIds.map(Number),
+                                                total: checkedTotal,
+                                                osCount: checkedInGroup.length,
+                                                minDate: dates[0] || new Date().toISOString().split("T")[0],
+                                                maxDate: dates[dates.length - 1] || new Date().toISOString().split("T")[0],
+                                              });
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm"
+                                            data-testid={`button-enviar-aprovacao-${group.clientId}`}
+                                          >
+                                            <Mail size={12} />
+                                            Enviar p/ Cliente
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
+                                              const dates = checkedInGroup.map(o => o.billing?.data_missao || o.scheduledDate || o.completedDate || o.createdAt).filter(Boolean).map(d => d.split("T")[0]).sort();
+                                              setAprovarFaturarDialog({
+                                                clientId: group.clientId,
+                                                clientName: group.clientName,
+                                                osIds: checkedInGroup.map(o => o.id),
+                                                billingIds,
+                                                total: checkedTotal,
+                                                minDate: dates[0] || new Date().toISOString().split("T")[0],
+                                                maxDate: dates[dates.length - 1] || new Date().toISOString().split("T")[0],
+                                              });
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm"
+                                            data-testid={`button-aprovar-faturar-${group.clientId}`}
+                                          >
+                                            <CheckCircle2 size={12} />
+                                            Aprovar e Faturar
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   </td>
@@ -940,6 +967,82 @@ export default function BoletimMedicaoPage() {
                   <><Loader2 size={14} className="animate-spin" /> Processando...</>
                 ) : (
                   <><CheckCircle2 size={14} /> Confirmar</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!enviarAprovacaoDialog} onOpenChange={(open) => { if (!open) setEnviarAprovacaoDialog(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase">
+                <Mail className="w-5 h-5 text-blue-600" /> Enviar para Aprovação do Cliente
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Um e-mail será enviado ao cliente com um link exclusivo para revisar e aprovar o boletim de medição.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
+              <p className="text-xs font-bold text-blue-900 uppercase">{enviarAprovacaoDialog?.clientName}</p>
+              <p className="text-xs text-blue-700"><strong>{enviarAprovacaoDialog?.osCount}</strong> OS selecionada(s)</p>
+              <p className="text-lg font-black font-mono text-blue-800">{fmt(enviarAprovacaoDialog?.total || 0)}</p>
+              <p className="text-[10px] text-blue-600">
+                Período: {enviarAprovacaoDialog?.minDate ? fmtDate(enviarAprovacaoDialog.minDate) : ""} a {enviarAprovacaoDialog?.maxDate ? fmtDate(enviarAprovacaoDialog.maxDate) : ""}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-neutral-600 uppercase tracking-wider">E-mail do cliente *</label>
+              <Input
+                data-testid="input-email-aprovacao"
+                type="email"
+                value={enviarAprovacaoEmail}
+                onChange={(e) => setEnviarAprovacaoEmail(e.target.value)}
+                placeholder="email@cliente.com.br"
+                className="text-sm"
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setEnviarAprovacaoDialog(null)} className="text-xs font-bold uppercase" data-testid="button-cancel-enviar-aprovacao">
+                Cancelar
+              </Button>
+              <Button
+                disabled={enviarAprovacaoLoading || !enviarAprovacaoEmail.includes("@")}
+                onClick={async () => {
+                  if (!enviarAprovacaoDialog || enviarAprovacaoLoading) return;
+                  setEnviarAprovacaoLoading(true);
+                  try {
+                    const resp = await apiRequest("POST", "/api/boletim/enviar-aprovacao", {
+                      clientId: enviarAprovacaoDialog.clientId,
+                      clientName: enviarAprovacaoDialog.clientName,
+                      clientEmail: enviarAprovacaoEmail,
+                      periodStart: enviarAprovacaoDialog.minDate,
+                      periodEnd: enviarAprovacaoDialog.maxDate,
+                      billingIds: enviarAprovacaoDialog.billingIds,
+                      totalValue: enviarAprovacaoDialog.total,
+                      osCount: enviarAprovacaoDialog.osCount,
+                    });
+                    const result = await resp.json();
+                    if (result.emailError) {
+                      toast({ title: "Aprovação criada", description: `Link gerado mas houve erro no e-mail: ${result.emailError}. Link: ${result.approvalUrl}`, variant: "destructive" });
+                    } else {
+                      toast({ title: "E-mail enviado!", description: `Link de aprovação enviado para ${enviarAprovacaoEmail}` });
+                    }
+                    setEnviarAprovacaoDialog(null);
+                    setCheckedOsIds(new Set());
+                  } catch (err: any) {
+                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                  } finally {
+                    setEnviarAprovacaoLoading(false);
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-xs font-bold uppercase gap-2"
+                data-testid="button-confirm-enviar-aprovacao"
+              >
+                {enviarAprovacaoLoading ? (
+                  <><Loader2 size={14} className="animate-spin" /> Enviando...</>
+                ) : (
+                  <><Send size={14} /> Enviar E-mail</>
                 )}
               </Button>
             </DialogFooter>
