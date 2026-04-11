@@ -605,6 +605,75 @@ export function registerBoletimApprovalRoutes(app: Express) {
         else console.log(`[boletim-approval] ${billingIds.length} billing(s) aprovados pelo cliente ${nome || approval.client_name}`);
       }
 
+      try {
+        const transporter = createSmtpTransporter();
+        if (transporter) {
+          const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+          const approvedAt = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+          const totalFmt = fmt(approval.total_value || 0);
+
+          const notifHtml = `
+            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;">
+              <div style="background: #047857; padding: 20px 24px; text-align: center;">
+                <h1 style="color: #fff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 1px;">MEDIÇÃO APROVADA PELO CLIENTE</h1>
+              </div>
+              <div style="padding: 28px 24px;">
+                <p style="color: #333; font-size: 15px; margin: 0 0 20px; line-height: 1.6;">
+                  O cliente aprovou o boletim de medição. Segue abaixo os detalhes para dar sequência ao faturamento:
+                </p>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555; width: 40%;">Cliente</td>
+                    <td style="padding: 10px 12px; font-weight: 600;">${approval.client_name}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">Período</td>
+                    <td style="padding: 10px 12px;">${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">Qtd. OS</td>
+                    <td style="padding: 10px 12px;">${approval.os_count || billingIds.length}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">Valor Total</td>
+                    <td style="padding: 10px 12px; font-weight: 800; color: #047857; font-size: 18px;">${totalFmt}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">Aprovado por</td>
+                    <td style="padding: 10px 12px;">${nome || "Cliente"}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #e5e5e5;">
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">Data/Hora</td>
+                    <td style="padding: 10px 12px;">${approvedAt}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 12px; background: #f8fafb; font-weight: 700; color: #555;">IP</td>
+                    <td style="padding: 10px 12px; color: #888; font-size: 12px;">${clientIp}</td>
+                  </tr>
+                </table>
+                <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 16px; text-align: center;">
+                  <p style="margin: 0; color: #854d0e; font-weight: 700; font-size: 14px;">
+                    Ação necessária: Emitir NF-e e boleto para este cliente.
+                  </p>
+                </div>
+              </div>
+              <div style="background: #f1f5f9; padding: 12px 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+                <p style="color: #64748b; font-size: 11px; margin: 0;">Torres Vigilância Patrimonial — Sistema de Gestão</p>
+              </div>
+            </div>`;
+
+          await transporter.sendMail({
+            from: getSmtpFrom(),
+            to: "thiago@grupotmseg.com.br, operacional@grupotmseg.com.br",
+            subject: `✅ MEDIÇÃO APROVADA — ${approval.client_name} — ${totalFmt}`,
+            html: notifHtml,
+          });
+          console.log(`[boletim-approval] Notificação de aprovação enviada para admin`);
+        }
+      } catch (mailErr: any) {
+        console.error("[boletim-approval] Erro ao enviar notificação de aprovação:", mailErr.message);
+      }
+
       res.json({ success: true, message: "Boletim aprovado com sucesso! A nota fiscal e boleto serão emitidos em breve." });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
