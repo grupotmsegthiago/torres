@@ -260,7 +260,84 @@ Responda APENAS com JSON válido (sem markdown):
 
       const aiResult = { status, ...result };
 
-      if (hasDivergence) {
+      const ESCORTED_PLATE_PAIRS: Record<string, string> = {
+        escoltado_frente: "escoltado_traseira",
+        escoltado_traseira: "escoltado_frente",
+      };
+      const VIATURA_PLATE_PAIRS: Record<string, string> = {
+        viatura_frente: "viatura_traseira",
+        viatura_traseira: "viatura_frente",
+      };
+      const platePairStep = ESCORTED_PLATE_PAIRS[step] || VIATURA_PLATE_PAIRS[step];
+
+      if (platePairStep && inspectionConfig?.type === "plate") {
+        try {
+          const { data: pairPhotos } = await supabaseAdmin.from("mission_photos")
+            .select("id, step, ai_inspection_status, ai_inspection_result")
+            .eq("service_order_id", serviceOrderId)
+            .eq("step", platePairStep)
+            .not("ai_inspection_status", "is", null);
+
+          const pairPhoto = pairPhotos?.[pairPhotos.length - 1];
+
+          if (pairPhoto && pairPhoto.ai_inspection_status !== "analisando") {
+            const pairResult = pairPhoto.ai_inspection_result || {};
+            const thisPlateOk = result.placa_confere === true;
+            const pairPlateOk = pairResult.placa_confere === true;
+
+            if (thisPlateOk || pairPlateOk) {
+              const divergentId = thisPlateOk ? pairPhoto.id : photoId;
+              const divergentStep = thisPlateOk ? platePairStep : step;
+              const approvedPlateStep = thisPlateOk ? step : platePairStep;
+              const divergentResult = thisPlateOk ? pairResult : result;
+
+              const otherDivergences = (divergentResult.divergencias || []).filter(
+                (d: string) => !/placa.*n[aã]o.*confere|placa.*diferente|n[aã]o.*correspond/i.test(d)
+              );
+              const onlyPlateDivergence =
+                divergentResult.placa_confere === false &&
+                divergentResult.angulo_correto !== false &&
+                divergentResult.item_encontrado !== false &&
+                divergentResult.condicao !== "dano_visivel" &&
+                divergentResult.condicao !== "irregular" &&
+                divergentResult.condicao !== "ausente" &&
+                divergentResult.condicao !== "danificado" &&
+                otherDivergences.length === 0;
+
+              if (onlyPlateDivergence) {
+                const upgradedResult = {
+                  ...divergentResult,
+                  status: "aprovado",
+                  placa_aprovada_pelo_par: true,
+                  par_aprovado: approvedPlateStep,
+                  observacao_par: `Placa confirmada pela foto ${approvedPlateStep}. Pelo menos uma foto (frente/traseira) bateu com a placa esperada.`,
+                };
+
+                await supabaseAdmin.from("mission_photos").update({
+                  ai_inspection_status: "aprovado",
+                  ai_inspection_result: upgradedResult,
+                }).eq("id", divergentId);
+
+                await supabaseAdmin.from("inspection_logs").update({
+                  status: "aprovado",
+                  alerted: false,
+                }).eq("mission_photo_id", divergentId);
+
+                console.log(`[ai-inspection] Photo #${divergentId} step=${divergentStep} upgraded to APROVADO (plate matched on ${approvedPlateStep})`);
+
+                if (divergentId === photoId) {
+                  aiResult.status = "aprovado";
+                  aiResult.placa_aprovada_pelo_par = true;
+                }
+              }
+            }
+          }
+        } catch (pairErr: any) {
+          console.error(`[ai-inspection] Pair check error: ${pairErr.message}`);
+        }
+      }
+
+      if (hasDivergence && aiResult.status !== "aprovado") {
         try {
           const so = await storage.getServiceOrder(serviceOrderId);
           const emp = await storage.getEmployee(employeeId);
