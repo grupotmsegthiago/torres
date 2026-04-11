@@ -224,7 +224,7 @@ export default function AprovacaoPage() {
           <div data-testid="approval-form" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,.08)", padding: 24, marginBottom: 20 }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 15, color: "#1B1B1B" }}>Confirmar Aprovação</h3>
             <p style={{ color: "#666", fontSize: 13, margin: "0 0 16px", lineHeight: 1.6 }}>
-              Ao clicar em "Estou de acordo", você confirma que revisou todos os dados acima e autoriza a geração do faturamento correspondente.
+              Ao clicar em "APROVAR MEDIÇÃO E AUTORIZAR FATURAMENTO", você declara estar de acordo com as medições apresentadas e autoriza a emissão da nota fiscal e boleto correspondente.
             </p>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4, fontWeight: 500 }}>Seu nome completo *</label>
@@ -253,7 +253,7 @@ export default function AprovacaoPage() {
               }}
             >
               {approving ? <Loader2 style={{ width: 20, height: 20, animation: "spin 1s linear infinite" }} /> : <CheckCircle2 style={{ width: 20, height: 20 }} />}
-              {approving ? "Processando..." : "Estou de Acordo — Aprovar Medição"}
+              {approving ? "Processando..." : "APROVAR MEDIÇÃO E AUTORIZAR FATURAMENTO"}
             </button>
           </div>
         )}

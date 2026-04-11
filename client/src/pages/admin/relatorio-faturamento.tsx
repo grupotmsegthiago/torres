@@ -5,7 +5,7 @@ import { authFetch, apiRequest, invalidateRelatedQueries } from "@/lib/queryClie
 import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
-  Calculator, Calendar, Pencil, Save, X, Check, Receipt, Banknote,
+  Calculator, Calendar, Pencil, Save, X, Check, Receipt, Banknote, Send, Mail,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,9 @@ export default function RelatorioFaturamentoPage() {
     const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
     return d.toISOString().split("T")[0];
   });
+  const [sendDialog, setSendDialog] = useState(false);
+  const [sendEmail, setSendEmail] = useState("");
+  const [sendLoading, setSendLoading] = useState(false);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -113,6 +116,50 @@ export default function RelatorioFaturamentoPage() {
     suggestedDate.setDate(suggestedDate.getDate() + ptDays);
     setFaturaDueDate(suggestedDate.toISOString().split("T")[0]);
     setFaturaDialog(true);
+  };
+
+  const openSendDialog = () => {
+    const cd = clients.find((c: any) => c.id.toString() === selectedClient);
+    setSendEmail(cd?.email || cd?.contact_email || "");
+    setSendDialog(true);
+  };
+
+  const handleSendToClient = async () => {
+    if (!sendEmail || !sendEmail.includes("@")) {
+      toast({ title: "E-mail inválido", description: "Informe um e-mail válido do cliente.", variant: "destructive" });
+      return;
+    }
+    setSendLoading(true);
+    try {
+      const billingIds = billings.map((b: any) => b.id);
+      const cd = clients.find((c: any) => c.id.toString() === selectedClient);
+      const resp = await authFetch("/api/boletim/enviar-aprovacao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: Number(selectedClient),
+          clientName: cd?.name || displayClientName,
+          clientEmail: sendEmail,
+          periodStart: startDate,
+          periodEnd: endDate,
+          billingIds,
+          totalValue: grandTotal,
+          osCount: billingIds.length,
+        }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.message || "Erro ao enviar");
+      if (result.emailError) {
+        toast({ title: "Boletim criado, mas e-mail falhou", description: result.emailError, variant: "destructive" });
+      } else {
+        toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando aprovação do cliente.` });
+      }
+      setSendDialog(false);
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+    } finally {
+      setSendLoading(false);
+    }
   };
 
   const handleSetMonth = (v: string) => {
@@ -542,6 +589,9 @@ export default function RelatorioFaturamentoPage() {
                   <button onClick={openFaturaDialog} disabled={approvedBillings.length === 0} className={`${approvedBillings.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`} data-testid="btn-gerar-fatura" title={approvedBillings.length === 0 ? "Todas as OS ja foram faturadas" : ""}>
                     <Receipt size={18} /> Gerar Fatura {approvedBillings.length > 0 ? `(${approvedBillings.length})` : faturadoBillings.length > 0 ? "(Faturadas)" : ""}
                   </button>
+                  <button onClick={openSendDialog} disabled={rowsData.length === 0} className={`${rowsData.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`} data-testid="btn-enviar-cliente">
+                    <Send size={18} /> Enviar para Cliente
+                  </button>
                 </>
               )}
             </div>
@@ -918,6 +968,88 @@ export default function RelatorioFaturamentoPage() {
             >
               {gerarFaturaMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
               GERAR BOLETO + PIX (ASAAS) {fmt(grandTotal)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={sendDialog} onOpenChange={setSendDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm font-black uppercase tracking-wide">
+              <Mail className="w-5 h-5 text-blue-600" /> Enviar Boletim para Cliente
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Envia e-mail com Excel em anexo e link de aprovação digital.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            <div className="bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Cliente</p>
+                  <p className="text-sm font-black text-blue-900 uppercase" data-testid="text-send-client">{displayClientName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Valor Total</p>
+                  <p className="text-xl font-black font-mono text-blue-800" data-testid="text-send-total">{fmt(grandTotal)}</p>
+                  <p className="text-[10px] text-blue-500">{rowsData.length} OS no período</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Período</p>
+              <p className="text-xs font-bold text-gray-800" data-testid="text-send-period">{getPeriodLabel()}</p>
+            </div>
+
+            <div>
+              <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">E-mail do Cliente</Label>
+              <Input
+                type="email"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                placeholder="email@cliente.com.br"
+                className="mt-1 text-sm font-mono"
+                data-testid="input-send-email"
+              />
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1.5">
+              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">O que será enviado:</p>
+              <div className="flex items-center gap-2 text-xs text-blue-800">
+                <FileSpreadsheet size={14} className="text-blue-600 flex-shrink-0" />
+                <span className="font-medium">Boletim de Medição em Excel (protegido)</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-blue-800">
+                <Check size={14} className="text-blue-600 flex-shrink-0" />
+                <span className="font-medium">Link de aprovação digital com 1 clique</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-blue-800">
+                <Mail size={14} className="text-blue-600 flex-shrink-0" />
+                <span className="font-medium">E-mail profissional com resumo financeiro</span>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-[10px] text-amber-700 font-medium">
+                Ao aprovar, o cliente autoriza automaticamente a emissão da NFS-e e boleto. Todos os billings do período terão status atualizado para "APROVADA".
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" onClick={() => setSendDialog(false)} className="text-xs font-bold uppercase" data-testid="button-cancel-send">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSendToClient}
+              disabled={sendLoading || !sendEmail}
+              className="bg-blue-600 hover:bg-blue-700 text-xs font-black uppercase gap-2 px-6"
+              data-testid="button-confirm-send"
+            >
+              {sendLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {sendLoading ? "Enviando..." : "Enviar E-mail com Excel"}
             </Button>
           </DialogFooter>
         </DialogContent>
