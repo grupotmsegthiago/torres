@@ -1064,12 +1064,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
   const isCancelled = invoice.status === "CANCELLED";
   const isAguardando = invoice.status === "AGUARDANDO_FATURAMENTO";
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
-  const [emitirDueDate, setEmitirDueDate] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(15);
-    return d.toISOString().split("T")[0];
-  });
+  const [emitirDueDate, setEmitirDueDate] = useState("");
   const [emitirBillingType, setEmitirBillingType] = useState("BOLETO");
 
   const handleResend = async () => {
@@ -1205,33 +1200,37 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
           </div>
 
           {isAguardando && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <Bell className="w-4 h-4 text-orange-600" />
-                <p className="text-sm font-bold text-orange-800">Medição Aprovada pelo Cliente</p>
+            <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Bell className="w-5 h-5 text-orange-600" />
+                <p className="text-sm font-bold text-orange-800">Medição Aprovada — Aguardando Faturamento</p>
               </div>
-              <p className="text-xs text-orange-700">
-                Defina a data de vencimento e a forma de pagamento para emitir o boleto e NF-e automaticamente via Asaas.
+              <p className="text-xs text-orange-700 leading-relaxed">
+                O cliente já aprovou esta medição. Para gerar o boleto/PIX e NF-e no Asaas, preencha os campos abaixo e clique em "Emitir".
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs text-orange-700">Data de Vencimento *</Label>
+                  <Label className="text-xs font-bold text-orange-800">Data de Vencimento *</Label>
                   <Input
                     type="date"
                     value={emitirDueDate}
                     onChange={e => setEmitirDueDate(e.target.value)}
-                    className="h-9 mt-1"
+                    placeholder="Selecione a data"
+                    className={`h-10 mt-1 border-2 ${!emitirDueDate ? "border-red-300 bg-red-50" : "border-orange-300"}`}
                     data-testid="input-emitir-due-date"
                   />
+                  {!emitirDueDate && (
+                    <p className="text-[10px] text-red-500 mt-1 font-semibold">Obrigatório — defina a data antes de emitir</p>
+                  )}
                 </div>
                 <div>
-                  <Label className="text-xs text-orange-700">Forma de Pagamento</Label>
+                  <Label className="text-xs font-bold text-orange-800">Forma de Pagamento</Label>
                   <Select value={emitirBillingType} onValueChange={setEmitirBillingType}>
-                    <SelectTrigger className="h-9 mt-1" data-testid="select-emitir-billing-type">
+                    <SelectTrigger className="h-10 mt-1 border-2 border-orange-300" data-testid="select-emitir-billing-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="BOLETO">Boleto</SelectItem>
+                      <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
                       <SelectItem value="PIX">PIX</SelectItem>
                       <SelectItem value="UNDEFINED">Cliente Escolhe</SelectItem>
                     </SelectContent>
@@ -1239,7 +1238,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
                 </div>
               </div>
               <Button
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold"
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold h-11 text-sm"
                 onClick={() => onEmitir?.(invoice.id, emitirDueDate, emitirBillingType)}
                 disabled={!emitirDueDate}
                 data-testid="button-emitir-fatura"
