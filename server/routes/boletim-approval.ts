@@ -355,6 +355,12 @@ async function sendApprovalEmailWithExcel(
           Segue em anexo o <strong>Boletim de Medição</strong> referente ao período <strong>${period}</strong> para sua conferência e aprovação.
         </p>
 
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px 20px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0; color: #1e40af; font-size: 13px; font-weight: 600;">
+            📎 O detalhamento completo das medições está no <strong>arquivo Excel anexo</strong> a este e-mail.
+          </p>
+        </div>
+
         <div style="background: #f8fafb; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
           <table style="width: 100%; border-collapse: collapse;">
             <tr>
