@@ -339,8 +339,8 @@ async function run() {
           <p style="color: #047857; font-size: 13px; font-style: italic; margin: 0 0 16px; line-height: 1.6;">
             "Estou de acordo com as medições acima e autorizo a emissão da nota fiscal e boleto."
           </p>
-          <a href="${approvalUrl}" style="display: inline-block; background: linear-gradient(135deg, #059669, #047857); color: #fff; padding: 15px 40px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 15px; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(5,150,105,0.3);">
-            ✅ APROVAR MEDIÇÃO E AUTORIZAR FATURAMENTO
+          <a href="${approvalUrl}" style="display: inline-block; background-color: #047857; color: #ffffff; padding: 16px 44px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: 0.5px;">
+            APROVAR MEDIÇÃO E AUTORIZAR FATURAMENTO
           </a>
         </div>
         <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 16px 0 0;">
