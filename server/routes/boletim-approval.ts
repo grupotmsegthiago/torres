@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
+import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import crypto from "crypto";
-import nodemailer from "nodemailer";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -336,15 +336,8 @@ async function sendApprovalEmailWithExcel(
 ) {
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: "thiago@grupotmseg.com.br",
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  const transporter = createSmtpTransporter();
+  if (!transporter) throw new Error("SMTP não configurado");
 
   const html = `
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;">
@@ -404,7 +397,7 @@ async function sendApprovalEmailWithExcel(
   `;
 
   await transporter.sendMail({
-    from: '"Torres Vigilância Patrimonial" <thiago@grupotmseg.com.br>',
+    from: getSmtpFrom(),
     to,
     subject: `📋 Boletim de Medição — ${clientName} — ${period} — Aprovação Pendente`,
     html,

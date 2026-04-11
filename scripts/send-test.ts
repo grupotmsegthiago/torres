@@ -7,6 +7,24 @@ import fs from "fs";
 
 const sb = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
+function createSmtpTransporter() {
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host, port, secure: port === 465,
+    requireTLS: port === 587,
+    auth: { user, pass },
+    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+  });
+}
+
+function getSmtpFrom() {
+  return `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
+}
+
 const DARK_BG = "1B1B1B";
 const HEADER_BG = "2D2D2D";
 const GROUP_BG = "444444";
@@ -55,7 +73,9 @@ async function run() {
   const periodStart = "2026-04-01";
   const periodEnd = "2026-04-30";
 
+  console.log("SMTP Config:", process.env.SMTP_HOST, process.env.SMTP_USER);
   console.log("Fetching billing data for TOR-0039...");
+
   const { data: billingsData } = await sb.from("escort_billings").select("*").eq("id", billingId);
   console.log("Billings:", billingsData?.length);
 
@@ -67,7 +87,6 @@ async function run() {
       .in("id", soIds);
     ordersData = sos || [];
   }
-  console.log("Orders:", ordersData.length);
 
   const contractIds = [...new Set((billingsData || []).map((b: any) => b.contract_id).filter(Boolean))];
   let contractsData: any[] = [];
@@ -75,11 +94,10 @@ async function run() {
     const { data: cts } = await sb.from("escort_contracts").select("*").in("id", contractIds as string[]);
     contractsData = cts || [];
   }
-  console.log("Contracts:", contractsData.length);
 
   console.log("Generating Excel...");
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Torres Vigil\u00e2ncia Patrimonial";
+  wb.creator = "Torres Vigilância Patrimonial";
   const colCount = 27;
   const ws = wb.addWorksheet("Boletim", {
     views: [{ showGridLines: false }],
@@ -92,7 +110,6 @@ async function run() {
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
   const accentFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
   const applyFill = (row: ExcelJS.Row, fill: ExcelJS.Fill) => { for (let i = 1; i <= colCount; i++) row.getCell(i).fill = fill; };
-
   const emptyArr = Array(colCount).fill(null);
 
   const row1 = ws.addRow(emptyArr);
@@ -102,7 +119,7 @@ async function run() {
 
   const row2 = ws.addRow(emptyArr);
   ws.mergeCells(2, 2, 2, colCount);
-  row2.getCell(2).value = "BOLETIM DE MEDI\u00C7\u00C3O \u2014 TORRES VIGIL\u00C2NCIA PATRIMONIAL";
+  row2.getCell(2).value = "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL";
   row2.getCell(2).font = { bold: true, size: 14, color: { argb: WHITE_C } };
   row2.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
   applyFill(row2, darkFill);
@@ -120,7 +137,7 @@ async function run() {
 
   const rowP = ws.addRow(emptyArr);
   ws.mergeCells(rowP.number, 1, rowP.number, colCount);
-  rowP.getCell(1).value = "GERAL \u2014 ABRIL/2026 \u2014 M\u00CAS COMPLETO";
+  rowP.getCell(1).value = "GERAL — ABRIL/2026 — MÊS COMPLETO";
   rowP.getCell(1).font = { bold: true, size: 10, color: { argb: WHITE_C } };
   rowP.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
   applyFill(rowP, darkFill);
@@ -128,7 +145,7 @@ async function run() {
 
   const rowS = ws.addRow(emptyArr);
   ws.mergeCells(rowS.number, 1, rowS.number, colCount);
-  rowS.getCell(1).value = "REFERENTE AO SERVI\u00C7O DE ESCOLTA ARMADA \u2014 " + clientName;
+  rowS.getCell(1).value = "REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — " + clientName;
   rowS.getCell(1).font = { bold: true, italic: true, size: 9, color: { argb: RED_C } };
   rowS.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
   applyFill(rowS, accentFill);
@@ -136,9 +153,9 @@ async function run() {
 
   const groupHeaders = [
     { label: "TABELA ACORDADA", span: 7 },
-    { label: "INFORMA\u00C7\u00D5ES DA VIAGEM", span: 6 },
+    { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
     { label: "KILOMETRAGEM", span: 3 },
-    { label: "HOR\u00C1RIOS", span: 3 },
+    { label: "HORÁRIOS", span: 3 },
     { label: "KM EXCEDENTE", span: 3 },
     { label: "HORA EXCEDENTE", span: 3 },
     { label: "VALORES", span: 2 },
@@ -160,7 +177,7 @@ async function run() {
   }
   ghRow.height = 22;
 
-  const headers = ["N\u00BA", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA IN\u00CDCIO", "HORA IN\u00CDCIO", "VIATURA", "VE\u00CDC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR IN\u00CDCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PED\u00C1GIO", "TOTAL"];
+  const headers = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
   const headerRow = ws.addRow(headers);
   headerRow.height = 24;
   for (let i = 1; i <= colCount; i++) {
@@ -198,9 +215,9 @@ async function run() {
     const osNum = b.os_number || so.os_number || "TOR-0039";
     const origem = b.origem || so.origin || "";
     const destino = b.destino || so.destination || "";
-    const routeStr = (origem && destino) ? `${extractCity(origem)} \u00D7 ${extractCity(destino)}` : (origem || destino || "\u2014");
-    const viatura = b.placa_viatura || so.vehicle_plate || "\u2014";
-    const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "\u2014";
+    const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
+    const viatura = b.placa_viatura || so.vehicle_plate || "—";
+    const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "—";
     const dataMissao = b.data_missao || so.scheduled_date || b.created_at;
 
     const rowData: any[] = [
@@ -208,10 +225,10 @@ async function run() {
       Number(valorHoraExtra.toFixed(2)), Number(valorKmExtra.toFixed(2)),
       fmtDateBR(dataMissao), b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataMissao),
       viatura, escoltado, fmtDateBR(dataMissao),
-      b.horario_fim ? b.horario_fim.substring(0, 5) : "\u2014",
+      b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
       n(b.km_inicial), n(b.km_final), kmTotal,
       b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataMissao),
-      b.horario_fim ? b.horario_fim.substring(0, 5) : "\u2014",
+      b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
       fmtHHMM(horasMissao),
       kmExcedente, Number(valorKmExtra.toFixed(2)), Number(fatKmExtra.toFixed(2)),
       hrExcedente > 0 ? fmtHHMM(hrExcedente) : "0:00", Number(valorHoraExtra.toFixed(2)), Number(fatHoraExtra.toFixed(2)),
@@ -245,7 +262,6 @@ async function run() {
   }
 
   await ws.protect("TorresVP2026", { sheet: true, objects: true, scenarios: true });
-
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
   console.log("Excel generated:", buffer.length, "bytes");
 
@@ -271,98 +287,76 @@ async function run() {
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  console.log("SMTP_PASS length:", (process.env.SMTP_PASS || "").length);
-  console.log("Trying to send email...");
+  const transporter = createSmtpTransporter();
+  if (!transporter) { console.error("SMTP não configurado"); return; }
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: { user: "thiago@grupotmseg.com.br", pass: process.env.SMTP_PASS },
-  });
-
+  console.log("Verifying SMTP connection...");
   try {
     await transporter.verify();
-    console.log("SMTP connection verified OK!");
-  } catch (verifyErr: any) {
-    console.error("SMTP verify FAILED:", verifyErr.message);
-    console.log("Trying with port 465 (SSL)...");
-    
-    const transporter2 = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: "thiago@grupotmseg.com.br", pass: process.env.SMTP_PASS },
-    });
-    
-    try {
-      await transporter2.verify();
-      console.log("SMTP (465/SSL) verified OK!");
-      
-      const html = buildHtml(clientName, period, 1, grandTotal, fmt, approvalUrl);
-      await transporter2.sendMail({
-        from: '"Torres Vigil\u00e2ncia Patrimonial" <thiago@grupotmseg.com.br>',
-        to: clientEmail,
-        subject: "\uD83D\uDCCB [TESTE] Boletim de Medi\u00E7\u00E3o \u2014 TOR-0039 \u2014 " + clientName,
-        html,
-        attachments: [{
-          filename: "Boletim_OMEGA_SOLUTIONS_TOR0039.xlsx",
-          content: buffer,
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }],
-      });
-      console.log("\u2705 E-mail enviado com sucesso via porta 465!");
-      console.log("Link:", approvalUrl);
-      return;
-    } catch (e2: any) {
-      console.error("SMTP (465) also failed:", e2.message);
-    }
-    
-    console.log("Trying with Gmail workspace SMTP relay (smtp-relay.gmail.com)...");
-    const transporter3 = nodemailer.createTransport({
-      host: "smtp-relay.gmail.com",
-      port: 587,
-      secure: false,
-      auth: { user: "thiago@grupotmseg.com.br", pass: process.env.SMTP_PASS },
-    });
-    
-    try {
-      await transporter3.verify();
-      console.log("Relay SMTP verified OK!");
-      
-      const html = buildHtml(clientName, period, 1, grandTotal, fmt, approvalUrl);
-      await transporter3.sendMail({
-        from: '"Torres Vigil\u00e2ncia Patrimonial" <thiago@grupotmseg.com.br>',
-        to: clientEmail,
-        subject: "\uD83D\uDCCB [TESTE] Boletim de Medi\u00E7\u00E3o \u2014 TOR-0039 \u2014 " + clientName,
-        html,
-        attachments: [{
-          filename: "Boletim_OMEGA_SOLUTIONS_TOR0039.xlsx",
-          content: buffer,
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }],
-      });
-      console.log("\u2705 E-mail enviado com sucesso via relay!");
-      console.log("Link:", approvalUrl);
-      return;
-    } catch (e3: any) {
-      console.error("Relay also failed:", e3.message);
-    }
-    
-    console.log("\n\u274C SMTP n\u00e3o funcionou em nenhuma configura\u00e7\u00e3o.");
-    console.log("A senha de app do Gmail pode ter expirado.");
-    console.log("Excel foi salvo em: /tmp/Boletim_TESTE_TOR0039.xlsx");
+    console.log("SMTP OK!");
+  } catch (err: any) {
+    console.error("SMTP verify failed:", err.message);
     fs.writeFileSync("/tmp/Boletim_TESTE_TOR0039.xlsx", buffer);
+    console.log("Excel salvo em /tmp/Boletim_TESTE_TOR0039.xlsx");
     console.log("Approval link:", approvalUrl);
     return;
   }
 
-  const html = buildHtml(clientName, period, 1, grandTotal, fmt, approvalUrl);
+  const html = `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #1e3a5f 100%); padding: 28px 24px; text-align: center;">
+        <h1 style="color: #fff; margin: 0; font-size: 22px; letter-spacing: 2px; font-weight: 800;">TORRES VIGILÂNCIA PATRIMONIAL</h1>
+        <p style="color: #94a3b8; margin: 6px 0 0; font-size: 12px; letter-spacing: 1px;">CNPJ 36.982.392/0001-89 — Serviço de Escolta Armada</p>
+      </div>
+      <div style="padding: 32px 28px;">
+        <h2 style="color: #1B1B1B; margin: 0 0 8px; font-size: 18px; font-weight: 700;">📋 Boletim de Medição</h2>
+        <p style="color: #666; font-size: 14px; line-height: 1.7; margin: 0 0 16px;">
+          Prezado(a) <strong>${clientName}</strong>,
+        </p>
+        <p style="color: #666; font-size: 14px; line-height: 1.7; margin: 0 0 20px;">
+          Segue em anexo o <strong>Boletim de Medição</strong> referente ao período <strong>${period}</strong> para sua conferência e aprovação.
+        </p>
+        <div style="background: #f8fafb; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #64748b; font-size: 13px;">Período:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 14px; color: #1e293b;">${period}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Quantidade de OS:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 14px; color: #1e293b; border-top: 1px solid #e2e8f0;">1</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Valor Total:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: 800; font-size: 18px; color: #059669; border-top: 1px solid #e2e8f0;">${fmt(grandTotal)}</td>
+            </tr>
+          </table>
+        </div>
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 20px; margin: 24px 0; text-align: center;">
+          <p style="color: #065f46; font-size: 14px; font-weight: 600; margin: 0 0 4px;">
+            Ao clicar no botão abaixo, você declara:
+          </p>
+          <p style="color: #047857; font-size: 13px; font-style: italic; margin: 0 0 16px; line-height: 1.6;">
+            "Estou de acordo com as medições acima e autorizo a emissão da nota fiscal e boleto."
+          </p>
+          <a href="${approvalUrl}" style="display: inline-block; background: linear-gradient(135deg, #059669, #047857); color: #fff; padding: 15px 40px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 15px; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(5,150,105,0.3);">
+            ✅ APROVAR MEDIÇÃO E AUTORIZAR FATURAMENTO
+          </a>
+        </div>
+        <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 16px 0 0;">
+          Este link é válido por 30 dias. O arquivo Excel em anexo contém o detalhamento completo.
+        </p>
+      </div>
+      <div style="background: #f1f5f9; padding: 16px 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+        <p style="color: #64748b; font-size: 11px; margin: 0;">Torres Vigilância Patrimonial LTDA — Serviço de Escolta Armada Caracterizada</p>
+      </div>
+    </div>
+  `;
 
   await transporter.sendMail({
-    from: '"Torres Vigil\u00e2ncia Patrimonial" <thiago@grupotmseg.com.br>',
+    from: getSmtpFrom(),
     to: clientEmail,
-    subject: "\uD83D\uDCCB [TESTE] Boletim de Medi\u00E7\u00E3o \u2014 TOR-0039 \u2014 " + clientName,
+    subject: `📋 [TESTE] Boletim de Medição — TOR-0039 — ${clientName}`,
     html,
     attachments: [{
       filename: "Boletim_OMEGA_SOLUTIONS_TOR0039.xlsx",
@@ -370,63 +364,10 @@ async function run() {
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }],
   });
-  
-  console.log("\u2705 E-mail de teste enviado com sucesso para", clientEmail);
-  console.log("Link de aprova\u00E7\u00E3o:", approvalUrl);
-}
 
-function buildHtml(clientName: string, period: string, osCount: number, totalValue: number, fmt: (v: number) => string, approvalUrl: string): string {
-  return `
-    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;">
-      <div style="background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #1e3a5f 100%); padding: 28px 24px; text-align: center;">
-        <h1 style="color: #fff; margin: 0; font-size: 22px; letter-spacing: 2px; font-weight: 800;">TORRES VIGIL\u00C2NCIA PATRIMONIAL</h1>
-        <p style="color: #94a3b8; margin: 6px 0 0; font-size: 12px; letter-spacing: 1px;">CNPJ 36.982.392/0001-89 \u2014 Servi\u00E7o de Escolta Armada</p>
-      </div>
-      <div style="padding: 32px 28px;">
-        <h2 style="color: #1B1B1B; margin: 0 0 8px; font-size: 18px; font-weight: 700;">\uD83D\uDCCB Boletim de Medi\u00E7\u00E3o</h2>
-        <p style="color: #666; font-size: 14px; line-height: 1.7; margin: 0 0 16px;">
-          Prezado(a) <strong>${clientName}</strong>,
-        </p>
-        <p style="color: #666; font-size: 14px; line-height: 1.7; margin: 0 0 20px;">
-          Segue em anexo o <strong>Boletim de Medi\u00E7\u00E3o</strong> referente ao per\u00EDodo <strong>${period}</strong> para sua confer\u00EAncia e aprova\u00E7\u00E3o.
-        </p>
-        <div style="background: #f8fafb; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 0; color: #64748b; font-size: 13px;">Per\u00EDodo:</td>
-              <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 14px; color: #1e293b;">${period}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Quantidade de OS:</td>
-              <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 14px; color: #1e293b; border-top: 1px solid #e2e8f0;">${osCount}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Valor Total:</td>
-              <td style="padding: 8px 0; text-align: right; font-weight: 800; font-size: 18px; color: #059669; border-top: 1px solid #e2e8f0;">${fmt(totalValue)}</td>
-            </tr>
-          </table>
-        </div>
-        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 20px; margin: 24px 0; text-align: center;">
-          <p style="color: #065f46; font-size: 14px; font-weight: 600; margin: 0 0 4px;">
-            Ao clicar no bot\u00E3o abaixo, voc\u00EA declara:
-          </p>
-          <p style="color: #047857; font-size: 13px; font-style: italic; margin: 0 0 16px; line-height: 1.6;">
-            \u201CEstou de acordo com as medi\u00E7\u00F5es acima e autorizo a emiss\u00E3o da nota fiscal e boleto.\u201D
-          </p>
-          <a href="${approvalUrl}" style="display: inline-block; background: linear-gradient(135deg, #059669, #047857); color: #fff; padding: 15px 40px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 15px; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(5,150,105,0.3);">
-            \u2705 APROVAR MEDI\u00C7\u00C3O E AUTORIZAR FATURAMENTO
-          </a>
-        </div>
-        <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 16px 0 0;">
-          Este link \u00E9 v\u00E1lido por 30 dias. O arquivo Excel em anexo cont\u00E9m o detalhamento completo.
-        </p>
-      </div>
-      <div style="background: #f1f5f9; padding: 16px 24px; text-align: center; border-top: 1px solid #e2e8f0;">
-        <p style="color: #64748b; font-size: 11px; margin: 0;">Torres Vigil\u00E2ncia Patrimonial LTDA \u2014 Servi\u00E7o de Escolta Armada Caracterizada</p>
-        <p style="color: #ef4444; font-size: 10px; margin: 4px 0 0; font-weight: bold;">\u26A0\uFE0F E-MAIL DE TESTE \u2014 OS TOR-0039</p>
-      </div>
-    </div>
-  `;
+  console.log("✅ E-mail enviado com sucesso para", clientEmail);
+  console.log("De:", getSmtpFrom());
+  console.log("Approval link:", approvalUrl);
 }
 
 run().catch(e => console.error("Fatal:", e.message));
