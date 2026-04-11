@@ -606,6 +606,43 @@ export function registerBoletimApprovalRoutes(app: Express) {
       }
 
       try {
+        const { data: billingsDetail } = await supabaseAdmin
+          .from("escort_billings")
+          .select("*")
+          .in("id", billingIds);
+
+        let totalCalc = 0;
+        const osDescParts: string[] = [];
+        for (const b of (billingsDetail || [])) {
+          const fat = Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.fat_adicional_noturno || 0);
+          totalCalc += fat;
+          const osRef = b.boletim_numero || b.os_number || `OS-${b.service_order_id}`;
+          osDescParts.push(osRef);
+        }
+        if (totalCalc <= 0) totalCalc = Number(approval.total_value) || 0;
+
+        const periodLabel = `${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}`;
+        const description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;
+
+        const { error: invErr } = await supabaseAdmin.from("invoices").insert({
+          client_id: approval.client_id,
+          client_name: approval.client_name,
+          description,
+          value: totalCalc,
+          due_date: "PENDENTE",
+          billing_type: "BOLETO",
+          status: "AGUARDANDO_FATURAMENTO",
+          external_reference: `BOLETIM-${approval.id}`,
+          notes: `Aprovado por ${nome || "Cliente"} em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Billing IDs: ${billingIds.join(", ")}`,
+        });
+
+        if (invErr) console.error("[boletim-approval] Erro ao criar fatura pendente:", invErr.message);
+        else console.log(`[boletim-approval] Fatura pendente criada para ${approval.client_name} — R$${totalCalc.toFixed(2)}`);
+      } catch (invCreateErr: any) {
+        console.error("[boletim-approval] Erro ao criar fatura:", invCreateErr.message);
+      }
+
+      try {
         const transporter = createSmtpTransporter();
         if (transporter) {
           const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

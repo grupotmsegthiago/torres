@@ -62,6 +62,7 @@ interface AsaasStatus {
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; badgeCls: string; icon: any }> = {
+  AGUARDANDO_FATURAMENTO: { label: "Aguard. Faturamento", color: "bg-orange-100 text-orange-800 border-orange-200", badgeCls: "bg-orange-50 text-orange-700 border border-orange-200", icon: Bell },
   PENDING:          { label: "Pendente",     color: "bg-yellow-100 text-yellow-800 border-yellow-200", badgeCls: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: Clock },
   CONFIRMED:        { label: "Confirmado",   color: "bg-green-100 text-green-800 border-green-200",   badgeCls: "bg-green-50 text-green-700 border border-green-200",   icon: CheckCircle2 },
   RECEIVED:         { label: "Recebido",     color: "bg-emerald-100 text-emerald-800 border-emerald-200", badgeCls: "bg-emerald-50 text-emerald-700 border border-emerald-200", icon: DollarSign },
@@ -139,6 +140,9 @@ export default function FaturasPage() {
   }, [invoices, searchTerm]);
 
   const totals = useMemo(() => {
+    const aguardando = invoices.filter(i => i.status === "AGUARDANDO_FATURAMENTO");
+    const aguardandoCount = aguardando.length;
+    const aguardandoTotal = aguardando.reduce((s, i) => s + parseFloat(i.value || "0"), 0);
     const emAberto = invoices.filter(i => i.status === "PENDING").reduce((s, i) => s + parseFloat(i.value || "0"), 0);
     const emAbertoCount = invoices.filter(i => i.status === "PENDING").length;
     const pagas = invoices.filter(i => ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(i.status)).reduce((s, i) => s + parseFloat(i.net_value || i.value || "0"), 0);
@@ -146,7 +150,7 @@ export default function FaturasPage() {
     const vencidas = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).length;
     const vencidasTotal = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).reduce((s, i) => s + parseFloat(i.value || "0"), 0);
     const canceladas = invoices.filter(i => i.status === "CANCELLED").length;
-    return { emAberto, emAbertoCount, pagas, pagasCount, vencidas, vencidasTotal, canceladas, total: invoices.length };
+    return { aguardandoCount, aguardandoTotal, emAberto, emAbertoCount, pagas, pagasCount, vencidas, vencidasTotal, canceladas, total: invoices.length };
   }, [invoices]);
 
   const syncMutation = useMutation({
@@ -222,6 +226,24 @@ export default function FaturasPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const emitirMutation = useMutation({
+    mutationFn: async ({ id, dueDate, billingType }: { id: number; dueDate: string; billingType: string }) => {
+      const r = await authFetch(`/api/invoices/${id}/emitir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueDate, billingType }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Fatura emitida com sucesso!", description: data.message || "Boleto e NF-e gerados." });
+      setShowDetail(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro ao emitir fatura", description: err.message, variant: "destructive" }),
+  });
+
   const getDisplayStatus = (inv: Invoice) => {
     const isOverdue = inv.status === "PENDING" && new Date(inv.due_date + "T23:59:59") < new Date();
     return isOverdue ? STATUS_MAP.OVERDUE : (STATUS_MAP[inv.status] || STATUS_MAP.PENDING);
@@ -267,7 +289,21 @@ export default function FaturasPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            {totals.aguardandoCount > 0 && (
+              <Card className="p-4 bg-white shadow-sm border-l-4 border-l-orange-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter("AGUARDANDO_FATURAMENTO")}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center">
+                    <Bell className="w-5 h-5 text-orange-600 animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-orange-600 uppercase font-bold tracking-wider">Aguard. Faturamento</p>
+                    <p className="text-xl font-black text-orange-700" data-testid="text-aguardando-total">{fmt(totals.aguardandoTotal)}</p>
+                    <p className="text-[10px] text-orange-500 font-semibold">{totals.aguardandoCount} pendente{totals.aguardandoCount !== 1 ? "s" : ""}</p>
+                  </div>
+                </div>
+              </Card>
+            )}
             <Card className="p-4 bg-white shadow-sm border-l-4 border-l-yellow-400">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
@@ -340,6 +376,7 @@ export default function FaturasPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todos os Status</SelectItem>
+                      <SelectItem value="AGUARDANDO_FATURAMENTO">Aguard. Faturamento</SelectItem>
                       <SelectItem value="PENDING">Pendente</SelectItem>
                       <SelectItem value="CONFIRMED">Confirmado</SelectItem>
                       <SelectItem value="RECEIVED">Recebido</SelectItem>
@@ -558,6 +595,7 @@ export default function FaturasPage() {
               onCancel={() => { if (confirm("Cancelar esta fatura?")) cancelMutation.mutate(showDetail.id); }}
               syncing={syncMutation.isPending}
               isDiretoria={isDiretoria}
+              onEmitir={(id, dueDate, billingType) => emitirMutation.mutate({ id, dueDate, billingType })}
             />
           )}
         </div>
@@ -1007,7 +1045,7 @@ function NfseControlSection({ invoice }: { invoice: Invoice }) {
   );
 }
 
-function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria }: {
+function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria, onEmitir }: {
   invoice: Invoice;
   onClose: () => void;
   onSync: () => void;
@@ -1017,13 +1055,22 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
   onCancel: () => void;
   syncing: boolean;
   isDiretoria: boolean;
+  onEmitir?: (id: number, dueDate: string, billingType: string) => void;
 }) {
   const { toast } = useToast();
   const st = STATUS_MAP[invoice.status] || STATUS_MAP.PENDING;
   const StIcon = st.icon;
   const isPaid = ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(invoice.status);
   const isCancelled = invoice.status === "CANCELLED";
+  const isAguardando = invoice.status === "AGUARDANDO_FATURAMENTO";
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [emitirDueDate, setEmitirDueDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(15);
+    return d.toISOString().split("T")[0];
+  });
+  const [emitirBillingType, setEmitirBillingType] = useState("BOLETO");
 
   const handleResend = async () => {
     setResendSuccess(null);
@@ -1156,6 +1203,52 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
               </Button>
             )}
           </div>
+
+          {isAguardando && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Bell className="w-4 h-4 text-orange-600" />
+                <p className="text-sm font-bold text-orange-800">Medição Aprovada pelo Cliente</p>
+              </div>
+              <p className="text-xs text-orange-700">
+                Defina a data de vencimento e a forma de pagamento para emitir o boleto e NF-e automaticamente via Asaas.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-orange-700">Data de Vencimento *</Label>
+                  <Input
+                    type="date"
+                    value={emitirDueDate}
+                    onChange={e => setEmitirDueDate(e.target.value)}
+                    className="h-9 mt-1"
+                    data-testid="input-emitir-due-date"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-orange-700">Forma de Pagamento</Label>
+                  <Select value={emitirBillingType} onValueChange={setEmitirBillingType}>
+                    <SelectTrigger className="h-9 mt-1" data-testid="select-emitir-billing-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BOLETO">Boleto</SelectItem>
+                      <SelectItem value="PIX">PIX</SelectItem>
+                      <SelectItem value="UNDEFINED">Cliente Escolhe</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Button
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold"
+                onClick={() => onEmitir?.(invoice.id, emitirDueDate, emitirBillingType)}
+                disabled={!emitirDueDate}
+                data-testid="button-emitir-fatura"
+              >
+                <Send className="w-4 h-4 mr-2" />
+                EMITIR BOLETO + NF-e
+              </Button>
+            </div>
+          )}
 
           <NfseControlSection invoice={invoice} />
 
