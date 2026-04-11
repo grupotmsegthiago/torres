@@ -1013,7 +1013,7 @@ export async function ensureCalcMissionRPC() {
         client_email TEXT,
         period_start DATE NOT NULL,
         period_end DATE NOT NULL,
-        billing_ids INTEGER[] NOT NULL DEFAULT '{}',
+        billing_ids TEXT[] NOT NULL DEFAULT '{}',
         total_value NUMERIC(12,2) DEFAULT 0,
         os_count INTEGER DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'PENDENTE',
@@ -1026,6 +1026,7 @@ export async function ensureCalcMissionRPC() {
       )
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_boletim_approvals_token ON boletim_approvals(token)`);
+    await execSql(`ALTER TABLE boletim_approvals ALTER COLUMN billing_ids TYPE TEXT[] USING billing_ids::TEXT[]`);
     console.log("[db-init] boletim_approvals table ensured");
   } catch (e: any) {
     console.error("[db-init] boletim_approvals error:", e.message);
