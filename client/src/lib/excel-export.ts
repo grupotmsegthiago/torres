@@ -81,51 +81,65 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
   ws.columns = config.colWidths.map((w) => ({ width: w }));
 
   const logo = await fetchLogoAsBuffer();
-  if (logo) {
-    const imageId = wb.addImage({ buffer: logo.buffer, extension: logo.ext });
-    ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 60, height: 55 } });
-  }
 
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
   const accentFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT_BG } };
 
   const emptyArr = Array(colCount).fill(null);
 
-  const titleStartCol = logo ? 2 : 1;
   const row1 = ws.addRow(emptyArr);
-  ws.mergeCells(1, titleStartCol, 1, colCount);
-  const c1 = row1.getCell(titleStartCol);
-  c1.value = config.title;
-  c1.font = { bold: true, size: 14, color: { argb: WHITE } };
-  c1.alignment = { horizontal: "center", vertical: "middle" };
+  if (logo) {
+    ws.mergeCells(1, 2, 1, colCount);
+  } else {
+    ws.mergeCells(1, 1, 1, colCount);
+  }
   applyFullRowFill(ws, row1, colCount, darkFill);
-  row1.height = 32.1;
+  row1.height = 28;
   clearBeyondColumns(ws, row1.number, colCount);
 
+  const row2 = ws.addRow(emptyArr);
+  ws.mergeCells(2, 2, 2, colCount);
+  const c2 = row2.getCell(2);
+  c2.value = config.title;
+  c2.font = { bold: true, size: 14, color: { argb: WHITE } };
+  c2.alignment = { horizontal: "center", vertical: "middle" };
+  applyFullRowFill(ws, row2, colCount, darkFill);
+  row2.height = 32.1;
+  clearBeyondColumns(ws, row2.number, colCount);
+
+  if (logo) {
+    const imageId = wb.addImage({ buffer: logo.buffer, extension: logo.ext });
+    ws.addImage(imageId, {
+      tl: { col: 0, row: 0 } as any,
+      br: { col: 1, row: 2 } as any,
+      editAs: "oneCell",
+    });
+  }
+
   if (config.period) {
-    const row2 = ws.addRow(emptyArr);
-    const r2n = row2.number;
-    ws.mergeCells(r2n, 1, r2n, colCount);
-    const c2 = row2.getCell(1);
-    c2.value = config.period;
-    c2.font = { bold: true, size: 10, color: { argb: WHITE } };
-    c2.alignment = { horizontal: "center", vertical: "middle" };
-    applyFullRowFill(ws, row2, colCount, darkFill);
-    row2.height = 20;
-    clearBeyondColumns(ws, r2n, colCount);
+    const rowP = ws.addRow(emptyArr);
+    const rn = rowP.number;
+    ws.mergeCells(rn, 1, rn, colCount);
+    const cp = rowP.getCell(1);
+    cp.value = config.period;
+    cp.font = { bold: true, size: 10, color: { argb: WHITE } };
+    cp.alignment = { horizontal: "center", vertical: "middle" };
+    applyFullRowFill(ws, rowP, colCount, darkFill);
+    rowP.height = 20;
+    clearBeyondColumns(ws, rn, colCount);
   }
 
   if (config.subtitle) {
-    const row3 = ws.addRow(emptyArr);
-    const r3n = row3.number;
-    ws.mergeCells(r3n, 1, r3n, colCount);
-    const c3 = row3.getCell(1);
-    c3.value = config.subtitle;
-    c3.font = { bold: true, italic: true, size: 9, color: { argb: RED } };
-    c3.alignment = { horizontal: "center", vertical: "middle" };
-    applyFullRowFill(ws, row3, colCount, accentFill);
-    row3.height = 18;
-    clearBeyondColumns(ws, r3n, colCount);
+    const rowS = ws.addRow(emptyArr);
+    const rn = rowS.number;
+    ws.mergeCells(rn, 1, rn, colCount);
+    const cs = rowS.getCell(1);
+    cs.value = config.subtitle;
+    cs.font = { bold: true, italic: true, size: 9, color: { argb: RED } };
+    cs.alignment = { horizontal: "center", vertical: "middle" };
+    applyFullRowFill(ws, rowS, colCount, accentFill);
+    rowS.height = 18;
+    clearBeyondColumns(ws, rn, colCount);
   }
 
   if (config.groupHeaders) {
@@ -238,6 +252,25 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
     }
     row.commit();
   }
+
+  ws.protect("TorresVP2026", {
+    sheet: true,
+    objects: true,
+    scenarios: true,
+    selectLockedCells: false,
+    selectUnlockedCells: false,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertColumns: false,
+    insertRows: false,
+    insertHyperlinks: false,
+    deleteColumns: false,
+    deleteRows: false,
+    sort: false,
+    autoFilter: false,
+    pivotTables: false,
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
