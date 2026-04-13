@@ -547,6 +547,41 @@ const AUTO_PROSPECT_QUERIES = [
   "operador portuário Santos SP",
   "agente de cargas São Paulo SP",
   "despachante aduaneiro São Paulo SP",
+  "operador logístico alto valor São Paulo SP",
+  "distribuidora de medicamentos São Paulo SP contato",
+  "transporte eletrônicos carga monitorada SP",
+  "transportadora produtos químicos Barueri SP",
+  "gerenciamento de risco transporte SP",
+  "distribuidora cosméticos São Paulo SP",
+  "transporte carga fracionada São Paulo SP",
+  "logística reversa São Paulo SP",
+  "transportadora de bebidas São Paulo SP",
+  "armazém logístico Cajamar SP",
+  "condomínio logístico Embu das Artes SP",
+  "transporte de autopeças São Paulo SP",
+  "distribuidora de alimentos atacado SP",
+  "logística integrada Guarulhos SP",
+  "transportadora de encomendas SP",
+  "centro distribuição Itaquaquecetuba SP",
+  "operador logístico Cajamar Jundiaí SP",
+  "transportadora cross docking SP",
+  "logística last mile São Paulo SP",
+  "distribuidora farmacêutica Campinas SP",
+  "transporte de carga seca interior SP",
+  "transportadora de cosméticos perfumaria SP",
+  "distribuidora de materiais elétricos SP",
+  "logística fullfilment e-commerce SP",
+  "transportadora carga lotação São Paulo SP",
+  "empresa de transporte dedicado SP",
+  "logística de perecíveis São Paulo SP",
+  "transporte de máquinas equipamentos SP",
+  "distribuidora de embalagens São Paulo SP",
+  "transportadora de papel celulose SP",
+  "centro logístico Extrema MG",
+  "transportadora de cargas Uberlândia MG",
+  "logística transporte Joinville SC",
+  "transportadora Florianópolis SC",
+  "distribuidora atacado Goiânia GO",
 ];
 
 const QUERIES_PER_CYCLE = 3;
@@ -663,6 +698,41 @@ async function extractContactFromSite(siteUrl: string): Promise<{ empresa: strin
       const raw = phones[0].replace(/[^\d]/g, "");
       if (raw.length >= 10 && raw.length <= 11) {
         result.phone = `(${raw.slice(0, 2)}) ${raw.slice(2, raw.length - 4)}-${raw.slice(-4)}`;
+      }
+    }
+
+    if (!result.email) {
+      const subPages = ["/contato", "/contact", "/fale-conosco", "/sobre", "/about", "/fale_conosco", "/contatos"];
+      for (const page of subPages) {
+        try {
+          const subCtrl = new AbortController();
+          const subTimeout = setTimeout(() => subCtrl.abort(), 5000);
+          const subResp = await fetch(siteUrl + page, {
+            headers: { "User-Agent": UA, "Accept": "text/html" },
+            signal: subCtrl.signal,
+            redirect: "follow",
+          });
+          clearTimeout(subTimeout);
+          if (!subResp.ok) continue;
+          const subHtml = (await subResp.text()).substring(0, 30000);
+          const subEmails = (subHtml.match(emailRegex) || []).filter((e: string) => {
+            const l = e.toLowerCase();
+            return l.length <= 60 && !skipEmail.some(sp => l.includes(sp));
+          });
+          if (subEmails.length > 0) {
+            subEmails.sort((a: string, b: string) => {
+              const aP = a.split("@")[0].toLowerCase();
+              const bP = b.split("@")[0].toLowerCase();
+              const aS = goodPrefixes.findIndex(p => aP.includes(p));
+              const bS = goodPrefixes.findIndex(p => bP.includes(p));
+              if (aS >= 0 && bS < 0) return -1;
+              if (bS >= 0 && aS < 0) return 1;
+              return 0;
+            });
+            result.email = subEmails[0];
+            break;
+          }
+        } catch {}
       }
     }
   } catch {}

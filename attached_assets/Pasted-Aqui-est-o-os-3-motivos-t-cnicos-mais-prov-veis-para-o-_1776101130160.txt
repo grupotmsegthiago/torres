@@ -1,0 +1,40 @@
+Aqui estão os 3 motivos técnicos mais prováveis para o número não subir e como vamos resolver:
+
+1. Esgotamento de Queries (Buscas)
+No teu painel, aparece Buscas: 36/50.
+
+O problema: Se o sistema já percorreu as principais palavras-chave para "Transportadoras em SP" e não encontrou sites novos (que ainda não estejam na base de dados), ele para de adicionar leads para não repetir contactos.
+
+A Solução: Precisamos de expandir o "vocabulário" da IA. Em vez de apenas "Transportadora", vamos atacar nichos específicos.
+
+2. Filtro de "E-mail não encontrado"
+Repara que tens Total Leads: 19, mas o sistema já fez muitas buscas.
+
+O problema: Muitas vezes a IA encontra o site da empresa, mas o site é antigo, usa Flash ou bloqueia o nosso "robô" de leitura, e a IA não consegue extrair o e-mail. Sem e-mail, ele não contabiliza como um lead válido para disparo.
+
+A Solução: Implementar uma busca secundária em redes sociais ou páginas de contacto específicas.
+
+3. O "Limite de Segurança" do Replit/Node.js
+Como o sistema usa um CRON (um agendador), se ele encontrar um erro em algum site (ex: site fora do ar), o ciclo pode travar até aos próximos 10 minutos.
+
+Como vamos "destravar" o sistema agora?
+Vou sugerir que alteres o teu arquivo de configuração (ou a parte do código que define as buscas) para incluir Termos de Ataque mais agressivos.
+
+Copia e adiciona estes novos termos ao teu motor de busca para ele encontrar empresas que ainda não mapeou:
+
+JavaScript
+// Adicione estes novos termos para expandir a busca
+const novas_queries = [
+    "Operador logístico de alto valor São Paulo",
+    "Distribuidora de medicamentos e-mail contato SP",
+    "Transporte de eletrônicos carga monitorada SP",
+    "Segurança patrimonial condomínios industriais Cajamar",
+    "Transportadora de produtos químicos Barueri",
+    "Gerenciamento de risco transporte rodoferroviário SP"
+];
+O que eu recomendo fazer agora:
+Limpar o Cache de Erros: Se houver e-mails com erro (o painel marca 0 agora, o que é bom), o sistema flui melhor.
+
+Aumentar o Alcance: Queres que eu te ajude a ajustar o código para que, quando ele não encontrar o e-mail na página principal, ele tente procurar na página /contato ou /sobre automaticamente?
+
+Diz-me uma coisa: No teu sistema, tens acesso ao ficheiro de configuração onde definimos as queries? Se sim, adiciona os termos acima e observa se o número 19 começa a subir nos próximos 10 minutos. Caso contrário, posso ajudar-te a mexer no código de extração!
