@@ -48,18 +48,20 @@ export default function MobileControleCondutorPage() {
   const { toast } = useToast();
 
   const [vehicleId, setVehicleId] = useState("");
-  const [driverId, setDriverId] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [kmStart, setKmStart] = useState("");
   const [kmEnd, setKmEnd] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
+  const myEmployeeId = user?.employeeId;
+  const myName = user?.name || "Condutor";
+
   const { data: vehicles = [] } = useQuery<any[]>({ queryKey: ["/api/vehicles"] });
   const { data: employees = [] } = useQuery<any[]>({ queryKey: ["/api/employees"] });
 
   const activeDrivers = useMemo(() =>
-    (employees || []).filter((e: any) => e.status === "ativo").sort((a: any, b: any) => a.name.localeCompare(b.name)),
-    [employees]
+    (employees || []).filter((e: any) => e.status === "ativo" && e.id !== myEmployeeId).sort((a: any, b: any) => a.name.localeCompare(b.name)),
+    [employees, myEmployeeId]
   );
 
   const { data: activeSession, isLoading } = useQuery<any>({
@@ -82,6 +84,8 @@ export default function MobileControleCondutorPage() {
       toast({ title: "Condução iniciada!" });
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
       setKmStart("");
+      setVehicleId("");
+      setPartnerId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -241,6 +245,16 @@ export default function MobileControleCondutorPage() {
               Iniciar Nova Condução
             </h2>
 
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center">
+                <User className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-[10px] text-emerald-600 font-bold uppercase">Condutor</p>
+                <p className="text-sm font-black text-neutral-900" data-testid="text-my-name">{myName}</p>
+              </div>
+            </div>
+
             <div>
               <Label className="text-xs font-bold text-neutral-600">VTR (Veículo) *</Label>
               <Select value={vehicleId} onValueChange={setVehicleId}>
@@ -258,20 +272,6 @@ export default function MobileControleCondutorPage() {
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-neutral-600">Condutor Principal *</Label>
-              <Select value={driverId} onValueChange={setDriverId}>
-                <SelectTrigger className="h-11 mt-1" data-testid="select-driver">
-                  <SelectValue placeholder="Selecione o condutor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeDrivers.map((e: any) => (
-                    <SelectItem key={e.id} value={String(e.id)}>{e.name} {e.matricula ? `(${e.matricula})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
               <Label className="text-xs font-bold text-neutral-600">Condutor Parceiro</Label>
               <Select value={partnerId} onValueChange={setPartnerId}>
                 <SelectTrigger className="h-11 mt-1" data-testid="select-partner">
@@ -279,7 +279,7 @@ export default function MobileControleCondutorPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sem parceiro</SelectItem>
-                  {activeDrivers.filter((e: any) => String(e.id) !== driverId).map((e: any) => (
+                  {activeDrivers.map((e: any) => (
                     <SelectItem key={e.id} value={String(e.id)}>{e.name} {e.matricula ? `(${e.matricula})` : ""}</SelectItem>
                   ))}
                 </SelectContent>
@@ -302,11 +302,11 @@ export default function MobileControleCondutorPage() {
               className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base rounded-xl"
               onClick={() => startMutation.mutate({
                 vehicleId: parseInt(vehicleId),
-                driverId: parseInt(driverId),
+                driverId: myEmployeeId,
                 partnerId: partnerId && partnerId !== "none" ? parseInt(partnerId) : undefined,
                 kmStart: kmStart || undefined,
               })}
-              disabled={startMutation.isPending || !vehicleId || !driverId}
+              disabled={startMutation.isPending || !vehicleId || !myEmployeeId}
               data-testid="button-start-session"
             >
               <Play className="w-5 h-5 mr-2" />
