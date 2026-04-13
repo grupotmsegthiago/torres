@@ -754,6 +754,65 @@ function CountdownTimer({ seconds, label }: { seconds: number; label: string }) 
   );
 }
 
+function AutoProspectPanel() {
+  const { data: prospectStatus, refetch } = useQuery<any>({
+    queryKey: ["/api/leads/auto-prospect/status"],
+    refetchInterval: 30000,
+  });
+
+  const triggerMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/leads/auto-prospect/trigger"),
+    onSuccess: () => {
+      setTimeout(() => refetch(), 3000);
+    },
+  });
+
+  const ps = prospectStatus || { running: false, totalLeads: 0, autoLeads: 0, leadsWithEmail: 0, totalQueries: 30, currentQuery: "—", hasApiKey: false, state: { query_index: 0, total_found: 0 } };
+
+  return (
+    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Globe size={14} className="text-indigo-500" />
+          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Prospecção Automática Google</span>
+          <Badge className={`text-[10px] ${ps.running ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ps.hasApiKey ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+            {ps.running ? "EXECUTANDO" : ps.hasApiKey ? "ATIVO" : "SEM API KEY"}
+          </Badge>
+        </div>
+        <Button size="sm" onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending || ps.running || !ps.hasApiKey} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-trigger-prospect">
+          {triggerMut.isPending || ps.running ? <RefreshCw size={12} className="animate-spin" /> : <Crosshair size={12} />}
+          Buscar Agora
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <div className="bg-white border border-indigo-100 rounded-lg p-2.5">
+          <span className="text-[9px] font-bold text-neutral-400 uppercase">Leads Auto</span>
+          <p className="text-lg font-black text-indigo-700">{ps.autoLeads}</p>
+        </div>
+        <div className="bg-white border border-indigo-100 rounded-lg p-2.5">
+          <span className="text-[9px] font-bold text-neutral-400 uppercase">Com E-mail</span>
+          <p className="text-lg font-black text-emerald-700">{ps.leadsWithEmail}</p>
+        </div>
+        <div className="bg-white border border-indigo-100 rounded-lg p-2.5">
+          <span className="text-[9px] font-bold text-neutral-400 uppercase">Total Leads</span>
+          <p className="text-lg font-black text-neutral-700">{ps.totalLeads}</p>
+        </div>
+        <div className="bg-white border border-indigo-100 rounded-lg p-2.5">
+          <span className="text-[9px] font-bold text-neutral-400 uppercase">Buscas</span>
+          <p className="text-lg font-black text-purple-700">{ps.state?.query_index || 0}/{ps.totalQueries}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 text-[10px] text-neutral-500">
+        <span><strong>Query atual:</strong> {ps.currentQuery}</span>
+        <span>•</span>
+        <span>Executa a cada <strong>15 min</strong> (07h–22h)</span>
+        <span>•</span>
+        <span>Busca empresas → extrai website → gera e-mail → enfileira para disparo</span>
+      </div>
+    </div>
+  );
+}
+
 function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, onAutoEnqueue, onSendReport, onImportCsv, isEnqueuing, isDispatching, isAutoEnqueuing, isSendingReport, isImporting }: any) {
   const { toast } = useToast();
   const [queueFilter, setQueueFilter] = useState("ALL");
@@ -836,6 +895,8 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
           </div>
         ))}
       </div>
+
+      <AutoProspectPanel />
 
       <div className="bg-white border border-neutral-200 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">

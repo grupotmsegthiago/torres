@@ -496,6 +496,219 @@ async function autoEnqueueLeads() {
   }
 }
 
+const AUTO_PROSPECT_QUERIES = [
+  "transportadora de cargas São Paulo SP",
+  "empresa de logística São Paulo SP",
+  "transportadora São Paulo SP",
+  "logística e distribuição São Paulo SP",
+  "transporte de cargas Guarulhos SP",
+  "transportadora Campinas SP",
+  "logística Osasco SP",
+  "transportadora cargas Barueri SP",
+  "logística transporte Santos SP",
+  "transportadora São Bernardo SP",
+  "empresa transporte de cargas ABC paulista",
+  "logística armazenagem São Paulo SP",
+  "centro de distribuição São Paulo SP",
+  "atacadista distribuidor São Paulo SP",
+  "transportadora refrigerada São Paulo SP",
+  "transporte e-commerce São Paulo SP",
+  "operador logístico São Paulo SP",
+  "transportadora cargas Jundiaí SP",
+  "logística Ribeirão Preto SP",
+  "transportadora Sorocaba SP",
+  "transportadora cargas Mogi das Cruzes SP",
+  "logística São José dos Campos SP",
+  "transportadora de mudanças São Paulo SP",
+  "frete cargas São Paulo SP",
+  "transportadora expressa São Paulo SP",
+  "transporte cargas especiais São Paulo SP",
+  "transportadora de alimentos São Paulo SP",
+  "logística terceirizada São Paulo SP",
+  "transportadora regional interior SP",
+  "transporte industrial Diadema SP",
+];
+
+let autoProspectRunning = false;
+
+async function autoProspectGoogle() {
+  if (autoProspectRunning) return;
+  autoProspectRunning = true;
+  try {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.log("[auto-prospect] Google Maps API key não configurada, pulando");
+      return;
+    }
+
+    const now = new Date();
+    const brHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+    if (brHour < 7 || brHour >= 22) return;
+
+    await supabaseAdmin.rpc("exec_sql", {
+      query: `
+        CREATE TABLE IF NOT EXISTS auto_prospect_state (
+          id SERIAL PRIMARY KEY,
+          query_index INTEGER DEFAULT 0,
+          next_page_token TEXT,
+          total_found INTEGER DEFAULT 0,
+          last_run TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        INSERT INTO auto_prospect_state (id, query_index) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
+      `
+    });
+
+    const { data: prospectState } = await supabaseAdmin.from("auto_prospect_state")
+      .select("query_index, next_page_token, total_found")
+      .eq("id", 1)
+      .single();
+
+    let queryIndex = prospectState?.query_index || 0;
+    let nextPageToken: string | null = prospectState?.next_page_token || null;
+    let totalFound = prospectState?.total_found || 0;
+
+    if (queryIndex >= AUTO_PROSPECT_QUERIES.length) {
+      queryIndex = 0;
+      nextPageToken = null;
+    }
+
+    const query = AUTO_PROSPECT_QUERIES[queryIndex];
+    let url: string;
+
+    if (nextPageToken) {
+      url = `https://maps.googleapis.com/maps/api/place/textsearch/json?pagetoken=${encodeURIComponent(nextPageToken)}&key=${apiKey}`;
+      await new Promise(r => setTimeout(r, 2000));
+    } else {
+      url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=pt-BR&key=${apiKey}`;
+    }
+
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      console.log(`[auto-prospect] Google Places error: ${data.status} for query "${query}"`);
+      await supabaseAdmin.rpc("exec_sql", {
+        query: `UPDATE auto_prospect_state SET query_index = ${queryIndex + 1}, next_page_token = NULL, updated_at = NOW() WHERE id = 1`
+      });
+      return;
+    }
+
+    const places = data.results || [];
+    let newLeads = 0;
+
+    for (const place of places) {
+      if (!place.place_id) continue;
+
+      const { data: existing } = await supabaseAdmin.from("leads")
+        .select("id")
+        .eq("google_place_id", place.place_id)
+        .limit(1);
+
+      if (existing && existing.length > 0) continue;
+
+      let website = "";
+      let phone = "";
+      let placeEmail = "";
+
+      try {
+        const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=website,formatted_phone_number,international_phone_number&language=pt-BR&key=${apiKey}`;
+        const detailResp = await fetch(detailUrl);
+        const detailData = await detailResp.json();
+        if (detailData.result) {
+          website = detailData.result.website || "";
+          phone = detailData.result.formatted_phone_number || detailData.result.international_phone_number || "";
+        }
+      } catch (e: any) {
+        console.log(`[auto-prospect] Place Details error: ${e.message}`);
+      }
+
+      let domain = "";
+      if (website) {
+        try {
+          const u = new URL(website);
+          domain = u.hostname.replace(/^www\./, "");
+        } catch {}
+      }
+
+      if (domain) {
+        const skipDomains = ["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "youtube.com", "google.com", "blogspot.com", "wordpress.com", "wix.com", "squarespace.com"];
+        if (skipDomains.some(sd => domain.includes(sd))) {
+          domain = "";
+        }
+      }
+
+      if (domain) {
+        const prefix = EMAIL_PREFIXES[Math.floor(Math.random() * 3)];
+        placeEmail = `${prefix}@${domain}`;
+
+        const { data: emailExists } = await supabaseAdmin.from("leads")
+          .select("id")
+          .eq("email", placeEmail)
+          .limit(1);
+
+        if (emailExists && emailExists.length > 0) continue;
+      }
+
+      if (!placeEmail && !phone) continue;
+
+      const addr = place.formatted_address || "";
+      const cidadeMatch = addr.match(/,\s*([^,]+?)\s*-\s*([A-Z]{2})/);
+      const cidade = cidadeMatch ? cidadeMatch[1].trim() : "São Paulo";
+      const estado = cidadeMatch ? cidadeMatch[2].trim() : "SP";
+
+      await supabaseAdmin.from("leads").insert({
+        empresa: place.name,
+        email: placeEmail || null,
+        telefone: phone || null,
+        website: website || null,
+        endereco: addr,
+        cidade,
+        estado,
+        setor: "Transporte/Logística",
+        origem: "auto_prospect_google",
+        status: "novo",
+        google_place_id: place.place_id,
+        google_rating: place.rating || null,
+        google_total_reviews: place.user_ratings_total || null,
+        emails_enviados: 0,
+        historico: [{
+          data: nowBRTString(),
+          acao: "Importado automaticamente do Google Places",
+          usuario: "Sistema Auto-Prospect",
+          detalhes: `Query: "${query}" | Website: ${website || "N/A"} | E-mail derivado: ${placeEmail || "N/A"}`,
+        }],
+        created_at: nowBRTString(),
+        updated_at: nowBRTString(),
+      });
+
+      newLeads++;
+      totalFound++;
+    }
+
+    const newNextPageToken = data.next_page_token || null;
+    const newQueryIndex = newNextPageToken ? queryIndex : queryIndex + 1;
+
+    await supabaseAdmin.from("auto_prospect_state").update({
+      query_index: newQueryIndex,
+      next_page_token: newNextPageToken,
+      total_found: totalFound,
+      last_run: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", 1);
+
+    if (newLeads > 0) {
+      console.log(`[auto-prospect] ✓ ${newLeads} novos leads encontrados (query: "${query}"). Total acumulado: ${totalFound}`);
+    } else {
+      console.log(`[auto-prospect] Query "${query}" processada, 0 novos leads (todos já existiam ou sem e-mail)`);
+    }
+  } catch (err: any) {
+    console.error(`[auto-prospect] Erro: ${err.message}`);
+  } finally {
+    autoProspectRunning = false;
+  }
+}
+
 async function sendDailyEmailReport() {
   try {
     const transporter = createSmtpTransporter();
@@ -594,12 +807,21 @@ export function registerLeadRoutes(app: Express) {
       .catch(err => console.error("[email-queue-cron]", err.message));
   });
 
+  cron.schedule("*/15 * * * *", () => {
+    autoProspectGoogle().catch(err => console.error("[auto-prospect-cron]", err.message));
+  });
+
   cron.schedule("0 21 * * *", () => {
     sendDailyEmailReport().catch(err => console.error("[daily-report-cron]", err.message));
   }, { timezone: "America/Sao_Paulo" });
 
+  setTimeout(() => {
+    autoProspectGoogle().catch(err => console.error("[auto-prospect-init]", err.message));
+  }, 15000);
+
   console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
   console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);
+  console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 15min (07h-22h)");
   console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
 
   const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -1230,6 +1452,56 @@ export function registerLeadRoutes(app: Express) {
 
   app.get("/api/leads/setores", requireAdminRole, async (_req: Request, res: Response) => {
     res.json({ setores: SETORES_ALVO, origens: ORIGENS, statuses: LEAD_STATUSES });
+  });
+
+  app.get("/api/leads/auto-prospect/status", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      const { data: state } = await supabaseAdmin.from("auto_prospect_state")
+        .select("*").eq("id", 1).single();
+
+      const { count: totalLeads } = await supabaseAdmin.from("leads")
+        .select("id", { count: "exact", head: true });
+
+      const { count: autoLeads } = await supabaseAdmin.from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("origem", "auto_prospect_google");
+
+      const { count: leadsWithEmail } = await supabaseAdmin.from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("origem", "auto_prospect_google")
+        .not("email", "is", null);
+
+      res.json({
+        running: autoProspectRunning,
+        state: state || { query_index: 0, total_found: 0 },
+        totalQueries: AUTO_PROSPECT_QUERIES.length,
+        currentQuery: AUTO_PROSPECT_QUERIES[state?.query_index || 0] || "—",
+        totalLeads: totalLeads || 0,
+        autoLeads: autoLeads || 0,
+        leadsWithEmail: leadsWithEmail || 0,
+        hasApiKey: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY),
+      });
+    } catch (err: any) {
+      res.json({
+        running: false,
+        state: { query_index: 0, total_found: 0 },
+        totalQueries: AUTO_PROSPECT_QUERIES.length,
+        currentQuery: AUTO_PROSPECT_QUERIES[0],
+        totalLeads: 0,
+        autoLeads: 0,
+        leadsWithEmail: 0,
+        hasApiKey: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY),
+      });
+    }
+  });
+
+  app.post("/api/leads/auto-prospect/trigger", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      autoProspectGoogle().catch(err => console.error("[auto-prospect-manual]", err.message));
+      res.json({ ok: true, message: "Prospecção automática disparada" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.post("/api/leads/buscar-google", requireAdminRole, async (req: Request, res: Response) => {
