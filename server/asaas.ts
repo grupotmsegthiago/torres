@@ -30,7 +30,7 @@ function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
+    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`,
     taxes: {
       retainIss: false,
       iss: ISS_ALIQUOTA,
@@ -49,8 +49,8 @@ function todayDateStr(): string {
 
 function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Record<string, any> {
   const payload: Record<string, any> = {
-    serviceDescription: opts.description || DESCRICAO_SERVICO_FIXA,
-    observations: opts.observations || `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}.`,
+    serviceDescription: DESCRICAO_SERVICO_FIXA,
+    observations: opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim(),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
@@ -734,7 +734,7 @@ export function registerAsaasRoutes(app: Express) {
 
       if (emiteNf) {
         paymentPayload.postalService = false;
-        paymentPayload.fiscalObservations = `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. ${invoice.description || ""}`.substring(0, 500);
+        paymentPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`.substring(0, 500);
       }
 
       console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: R$${totalValue.toFixed(2)} venc=${dueDate}`);
@@ -1179,7 +1179,7 @@ export function registerAsaasRoutes(app: Express) {
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
-            consolidadoPayload.fiscalObservations = `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`;
+            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.`;
           }
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
@@ -1201,7 +1201,7 @@ export function registerAsaasRoutes(app: Express) {
                 paymentId: asaasPaymentId,
                 value: totalValue,
                 description: descricaoFiscal.substring(0, 500),
-                observations: `Referente aos serviços de Escolta Armada Caracterizada. CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}.`,
+                observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`,
               });
               nfseStatus = nfResult.status || "AUTHORIZED";
               if (nfResult.number) nfseNumber = String(nfResult.number);
@@ -1247,7 +1247,7 @@ export function registerAsaasRoutes(app: Express) {
         pix_copia_e_cola: pixCopiaECola,
         nfse_status: nfseStatus,
         nfse_number: nfseNumber,
-        notes: `Referente aos serviços de Escolta Armada Caracterizada - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
+        notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
         created_by: user?.id,
       }).select().single();
