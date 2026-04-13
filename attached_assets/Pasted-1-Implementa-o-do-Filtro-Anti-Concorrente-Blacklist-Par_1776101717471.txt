@@ -1,0 +1,51 @@
+1. Implementação do Filtro Anti-Concorrente (Blacklist)
+Para garantir que a Torres Vigilância não envie apresentações para outras empresas de escolta, precisamos de injetar uma lógica de "limpeza" imediata após a captura do site.
+
+O que adicionar no teu código de filtragem:
+JavaScript
+// Lista de termos proibidos (Concorrentes)
+const BLACKLIST_SEGURANÇA = [
+    "escolta armada", "vigilância", "segurança patrimonial", 
+    "seguranca privada", "monitoramento eletrônico", "vms",
+    "portaria remota", "segurança eletrônica", "vigilante"
+];
+
+// Função de validação rápida
+function validarLead(conteudoSite) {
+    const texto = conteudoSite.toLowerCase();
+    
+    // Se encontrar qualquer termo de segurança, retorna FALSE (não é lead)
+    const ehConcorrente = BLACKLIST_SEGURANÇA.some(termo => texto.includes(termo));
+    
+    if (ehConcorrente) {
+        return { valido: false, motivo: "Concorrente detectado" };
+    }
+    return { valido: true };
+}
+2. Ajuste Fino nas Próximas 43 Queries
+Já que o sistema vai atacar termos como "e-commerce" e "armazém geral", o ideal é usar operadores de exclusão diretamente na URL de busca do Bing/DuckDuckGo. Isso faz com que o motor de busca nem te mostre os concorrentes.
+
+Exemplo de como formatar as queries no código:
+Em vez de: "logística São Paulo"
+Usa: "logística São Paulo -vigilância -escolta -segurança"
+
+O sinal de subtração (-) antes da palavra diz ao buscador: "Mostra-me logística, mas esconde qualquer site que contenha a palavra vigilância".
+
+3. Panorama do Próximo Ciclo
+Com as melhorias de IP (User-Agent/Delay) e o filtro de exclusão, o teu fluxo será:
+
+Busca (Bing/DDG): Ataca as novas queries (ex: Distribuidoras de Cosméticos).
+
+Captura de HTML: Lê o conteúdo do site.
+
+Filtro de Segurança (O novo passo): Se o site falar em "escolta", o sistema descarta e faz o log: [Filtro] Site descartado: Concorrente encontrado.
+
+Extração e Disparo: Se for uma transportadora real, extrai o e-mail e envia a proposta.
+
+4. Documentação do "Cérebro" da IA agora:
+Identificação de Nicho: O sistema agora prioriza sites que contenham "frota", "carga", "distribuição" e "armazenagem".
+
+Proteção de Marca: Ao ignorar concorrentes, evitas que outras empresas de segurança conheçam a tua estratégia de prospecção ou o teu template de e-mail.
+
+Sugestão Técnica:
+Como tens 3 aberturas (16%), isso é um ótimo sinal! Significa que o assunto do e-mail está bom. Se o número de leads (19) começar a subir agora com as novas queries, recomendo monitorizares se algum desses novos leads é "falso positivo" (ou seja, alguém que não devia estar lá).

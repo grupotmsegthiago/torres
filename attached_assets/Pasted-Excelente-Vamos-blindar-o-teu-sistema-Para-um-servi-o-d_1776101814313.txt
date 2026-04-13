@@ -1,0 +1,65 @@
+Excelente! Vamos blindar o teu sistema. Para um serviço de Escolta Armada e Segurança Patrimonial, a precisão do "ataque" é tudo. Se o robô enviar uma proposta para um concorrente, além de desperdiçar recursos, estás a dar inteligência de mercado a quem compete contigo.
+
+Aqui tens a estrutura completa para a Blacklist de Blindagem e como integrá-la no teu motor de busca.
+
+1. Lista de Exclusão Estratégica (Concorrentes e Irrelevantes)
+Vou dividir em dois grupos: termos genéricos de segurança e nomes de grandes players do setor em São Paulo.
+
+JavaScript
+const BLACKLIST_TOTAL = [
+    // --- Termos de Serviço (Concorrentes Diretos) ---
+    "vigilância", "vigilante", "escolta armada", "segurança patrimonial", 
+    "segurança eletrônica", "monitoramento", "vms", "portaria", "seguranca",
+    "gerenciamento de risco", "pronta resposta", "rastreamento veicular",
+
+    // --- Grandes Players (Exemplos de SP para evitar) ---
+    "gruber", "prosegur", "ictsi", "verzani", "sandrini", "g4s", 
+    "security", "protege", "emmo", "aster", "grupofort", "tps"
+];
+2. Implementação do Filtro de "Pré-Disparo"
+No teu sistema Node.js no Replit, deves inserir este filtro no momento em que a IA lê o conteúdo do site (antes de validar o e-mail).
+
+JavaScript
+function validarSeEhAlvoReal(textoDoSite, url) {
+    const conteudo = textoDoSite.toLowerCase();
+    const link = url.toLowerCase();
+
+    // 1. Verifica se o próprio link já entrega que é segurança
+    // 2. Verifica se o texto do site foca em vender vigilância
+    const encontrouTermoProibido = BLACKLIST_TOTAL.some(termo => 
+        conteudo.includes(termo.toLowerCase()) || link.includes(termo.toLowerCase())
+    );
+
+    if (encontrouTermoProibido) {
+        return false; // É concorrente, descarta!
+    }
+
+    // 3. Validação Positiva: Tem que ter termos de logística/indústria
+    const termosAlvo = ["logística", "transporte", "carga", "distribuidora", "indústria", "atacado"];
+    const ehAlvoInteressante = termosAlvo.some(termo => conteudo.includes(termo));
+
+    return ehAlvoInteressante;
+}
+3. Panorama do Sistema Blindado
+Agora, o teu sistema tem uma "Parede de Fogo" (Firewall) de inteligência:
+
+Ataque: O Bing traz um site de "Logística e Segurança ABC".
+
+Defesa: A IA deteta a palavra "Segurança" ou "Vigilância" na Blacklist.
+
+Ação: O log dirá: [FILTRO] Lead descartado: Empresa de segurança detectada.
+
+Resultado: O número de leads pode subir mais devagar, mas cada um que entrar será um cliente potencial real (uma transportadora de medicamentos, e-commerce, etc.).
+
+4. Instrução de Implementação Técnica
+Para que as tuas 85 queries funcionem sem trazer lixo, altera a tua função de construção de URL de busca para incluir os operadores de exclusão do Bing:
+
+JavaScript
+// Exemplo de como a query deve sair para o buscador:
+// "transportadora de carga SP -vigilância -escolta -segurança"
+const queryFinal = `${termoDeBusca} -vigilância -escolta -segurança -monitoramento`;
+Por que isto é importante?
+O Bing respeita o operador - (menos). Isso faz com que o motor de busca filtre os resultados antes de o teu código gastar processamento a ler o site. É uma economia de tempo e evita bloqueios de IP.
+
+O que monitorizar agora?
+Nos próximos ciclos, verifica os logs para ver se aparecem mensagens de bloqueio por termos proibidos. Se o número de leads sair dos 19 e for para 25 ou 30, significa que as novas queries de nicho (farmacêutica, cosméticos) estão a funcionar.

@@ -656,13 +656,45 @@ function extractUrlsFromBing(html: string): string[] {
   return urls;
 }
 
+const EXCLUSION_TERMS = " -vigilância -escolta -segurança -monitoramento -portaria -vigilante";
+
+const BLACKLIST_COMPETITOR = [
+  "escolta armada", "vigilância patrimonial", "segurança patrimonial",
+  "seguranca privada", "segurança privada", "monitoramento eletrônico",
+  "portaria remota", "segurança eletrônica", "empresa de vigilância",
+  "serviço de escolta", "escolta de cargas", "rastreamento veicular",
+  "central de monitoramento", "cftv", "alarme monitorado",
+];
+
+const POSITIVE_TERMS = [
+  "transporte", "logística", "logistica", "distribuição", "distribuicao",
+  "frota", "carga", "armazém", "armazenagem", "frete", "entrega",
+  "atacado", "atacadista", "importação", "exportação", "e-commerce",
+  "farmacêutica", "medicamento", "alimento", "bebida", "cosmético",
+];
+
+function isCompetitor(siteContent: string): boolean {
+  const text = siteContent.toLowerCase();
+  const competitorHits = BLACKLIST_COMPETITOR.filter(t => text.includes(t)).length;
+  if (competitorHits >= 2) return true;
+  if (competitorHits === 1) {
+    const positiveHits = POSITIVE_TERMS.filter(t => text.includes(t)).length;
+    if (positiveHits < 2) return true;
+  }
+  return false;
+}
+
 async function searchDuckDuckGo(query: string): Promise<string[]> {
   const ua = randomUA();
   await randomDelay(500, 2000);
 
+  const needsExclusion = !query.toLowerCase().includes("escolta") && !query.toLowerCase().includes("segurança") && !query.toLowerCase().includes("vigilância");
+  const suffix = needsExclusion ? EXCLUSION_TERMS : "";
+  const fullQuery = query + " site:.com.br contato" + suffix;
+
   let urls: string[] = [];
   try {
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:.com.br contato")}`;
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(fullQuery)}`;
     const resp = await fetch(ddgUrl, {
       headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9" },
     });
@@ -675,7 +707,7 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
   if (urls.length === 0) {
     try {
       await randomDelay(1000, 3000);
-      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query + " site:.com.br contato")}&count=10`;
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(fullQuery)}&count=10`;
       const resp = await fetch(bingUrl, {
         headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9" },
       });
@@ -713,6 +745,11 @@ async function extractContactFromSite(siteUrl: string): Promise<{ empresa: strin
 
     const html = await resp.text();
     const chunk = html.substring(0, 50000);
+
+    if (isCompetitor(chunk)) {
+      console.log(`[auto-prospect] [Filtro] Concorrente descartado: ${result.domain}`);
+      return result;
+    }
 
     const titleMatch = chunk.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
