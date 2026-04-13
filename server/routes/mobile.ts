@@ -396,15 +396,17 @@ import type { Express } from "express";
       const empName = empData?.name || "Agente";
       const osNum = os.osNumber || `OS-${serviceOrderId}`;
 
-      const { data: existingTolls } = await supabaseAdmin.from("mission_costs")
-        .select("id")
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: recentTolls } = await supabaseAdmin.from("mission_costs")
+        .select("id, created_at")
         .eq("service_order_id", Number(serviceOrderId))
         .eq("category", "Pedágio")
         .eq("cost_type", "expense")
         .eq("amount", parsedAmount.toFixed(2))
-        .eq("employee_id", employeeId);
-      if (existingTolls && existingTolls.length > 0) {
-        return res.status(409).json({ message: "Pedágio com este valor já foi registrado para esta OS. Se for um pedágio diferente, registre com valor distinto." });
+        .eq("employee_id", employeeId)
+        .gte("created_at", fiveMinAgo);
+      if (recentTolls && recentTolls.length > 0) {
+        return res.status(409).json({ message: "Pedágio com este valor já foi registrado nos últimos 5 minutos. Aguarde um momento para registrar novamente." });
       }
 
       const pedagioIdaVolta = !!(os as any).pedagioIdaVolta;
