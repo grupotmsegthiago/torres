@@ -82,6 +82,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
           { path: "/admin/maintenance", label: "Manutenção", icon: Wrench },
           { path: "/admin/tracker", label: "Rastreador", icon: MapPin },
+          { path: "/admin/controle-condutor", label: "Controle Condutor", icon: Users },
         ],
       },
     ],

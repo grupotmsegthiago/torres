@@ -1030,6 +1030,49 @@ export async function ensureCalcMissionRPC() {
     console.log("[db-init] boletim_approvals table ensured");
   } catch (e: any) {
     console.error("[db-init] boletim_approvals error:", e.message);
+  }
+
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS driver_sessions (
+        id SERIAL PRIMARY KEY,
+        vehicle_id INTEGER NOT NULL,
+        vehicle_plate TEXT,
+        vehicle_prefix TEXT,
+        vehicle_year INTEGER,
+        driver_id INTEGER NOT NULL,
+        partner_id INTEGER,
+        driver_name TEXT NOT NULL,
+        partner_name TEXT,
+        km_start INTEGER,
+        km_end INTEGER,
+        status TEXT NOT NULL DEFAULT 'ativo',
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        ended_at TIMESTAMPTZ,
+        started_by_user_id INTEGER,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS driver_shifts (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER NOT NULL REFERENCES driver_sessions(id) ON DELETE CASCADE,
+        driver_id INTEGER NOT NULL,
+        driver_name TEXT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ended_at TIMESTAMPTZ,
+        duration_minutes NUMERIC(10,2) DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_sessions_status ON driver_sessions(status)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_sessions_vehicle ON driver_sessions(vehicle_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_driver_shifts_session ON driver_shifts(session_id)`);
+    console.log("[db-init] driver_sessions + driver_shifts tables ensured");
+  } catch (e: any) {
+    console.error("[db-init] driver_sessions error:", e.message);
   } finally {
     await closeDbInitClient();
   }

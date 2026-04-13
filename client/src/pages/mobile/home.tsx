@@ -122,6 +122,13 @@ export default function MobileHomePage() {
               <p className="text-[10px] text-neutral-400 mt-0.5">Registrar custo</p>
             </div>
           </Link>
+          <Link href="/mobile/controle-condutor">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-controle-condutor">
+              <Car className="w-6 h-6 text-sky-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Condutor</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Rodízio de direção</p>
+            </div>
+          </Link>
           <Link href="/mobile/ocorrencia">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-ocorrencia">
               <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" />

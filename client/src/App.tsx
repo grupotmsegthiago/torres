@@ -46,6 +46,8 @@ const PontoOperacionalPage = lazy(() => import("@/pages/admin/ponto-operacional"
 const AprovacaoPage = lazy(() => import("@/pages/aprovacao"));
 const PhotoInspectionPage = lazy(() => import("@/pages/admin/photo-inspection"));
 
+const ControleCondutorPage = lazy(() => import("@/pages/admin/controle-condutor"));
+
 const MobileHomePage = lazy(() => import("@/pages/mobile/home"));
 const MobileMissaoPage = lazy(() => import("@/pages/mobile/missao"));
 const MobileChecklistPage = lazy(() => import("@/pages/mobile/checklist"));
@@ -58,6 +60,7 @@ const MobilePedagioPage = lazy(() => import("@/pages/mobile/pedagio"));
 const MobileOcorrenciaPage = lazy(() => import("@/pages/mobile/ocorrencia"));
 const MobilePontoOperacionalPage = lazy(() => import("@/pages/mobile/ponto-operacional"));
 const MobileChatPage = lazy(() => import("@/pages/mobile/chat"));
+const MobileControleCondutorPage = lazy(() => import("@/pages/mobile/controle-condutor"));
 
 function LazyFallback() {
   return (
@@ -203,6 +206,7 @@ function Router() {
         <Route path="/admin/chat">{() => <ProtectedRoute component={ChatPage} />}</Route>
         <Route path="/admin/perfil">{() => <ProtectedRoute component={ProfilePage} />}</Route>
         <Route path="/admin/ponto-operacional">{() => <ProtectedRoute component={PontoOperacionalPage} />}</Route>
+        <Route path="/admin/controle-condutor">{() => <ProtectedRoute component={ControleCondutorPage} />}</Route>
         <Route path="/mobile">{() => <MobileProtectedRoute component={MobileHomePage} />}</Route>
         <Route path="/mobile/missao">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/mobile/checklist">{() => <MobileProtectedRoute component={MobileChecklistPage} />}</Route>
@@ -215,6 +219,7 @@ function Router() {
         <Route path="/mobile/ocorrencia">{() => <MobileProtectedRoute component={MobileOcorrenciaPage} />}</Route>
         <Route path="/mobile/chat">{() => <MobileProtectedRoute component={MobileChatPage} />}</Route>
         <Route path="/mobile/ponto-operacional">{() => <MobileProtectedRoute component={MobilePontoOperacionalPage} />}</Route>
+        <Route path="/mobile/controle-condutor">{() => <MobileProtectedRoute component={MobileControleCondutorPage} />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
         <Route path="/aprovacao/:token" component={AprovacaoPage} />

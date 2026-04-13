@@ -9,6 +9,7 @@ import { setupAuth } from "./auth";
 import { initCronJobs } from "./cron";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
+import { registerDriverControlRoutes } from "./routes/driver-control";
 
 const app = express();
 const httpServer = createServer(app);
@@ -103,6 +104,7 @@ app.use((req, res, next) => {
   await ensureCalcMissionRPC();
   await registerRoutes(httpServer, app);
   registerAsaasRoutes(app);
+  registerDriverControlRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
