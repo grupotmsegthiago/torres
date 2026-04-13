@@ -224,13 +224,78 @@ Responda APENAS com JSON válido (sem markdown):
         max_tokens: 600,
       });
 
-      const raw = response.choices[0]?.message?.content || "";
+      let raw = response.choices[0]?.message?.content || "";
       let result: any;
       try {
         const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
         result = JSON.parse(cleaned);
       } catch {
         result = { divergencias: ["Não foi possível analisar automaticamente"], observacao: raw, angulo_correto: true, item_encontrado: true, condicao: "inconclusivo" };
+      }
+
+      if (inspectionConfig?.type === "odometer" && kmValue && result.km_lido != null) {
+        const kmInformado = Number(kmValue);
+        const kmLido = Number(result.km_lido);
+        const diff = Math.abs(kmLido - kmInformado);
+        const tolerancePct = 0.02;
+        const toleranceAbs = 10;
+        const withinTolerance = diff <= Math.max(kmInformado * tolerancePct, toleranceAbs);
+
+        if (!withinTolerance) {
+          const MAX_RETRIES = 2;
+          const readings = [kmLido];
+          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+              const retryPrompt = `Você é um auditor de inspeção veicular. Releia com MÁXIMA ATENÇÃO o hodômetro nesta foto.
+O valor informado pelo agente é ${kmValue} km. Na tentativa anterior, foi lido ${kmLido} km.
+Analise novamente com cuidado cada dígito. Dígitos como 1 e 6, 0 e 6, 1 e 7 podem ser confundidos.
+Leia o KM total do hodômetro principal (número maior, 4-6 dígitos). IGNORE o trip/parcial.
+Responda APENAS com JSON: {"km_lido": number}`;
+              const retryResponse = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                  { role: "system", content: retryPrompt },
+                  { role: "user", content: [{ type: "text", text: "Releia o hodômetro:" }, { type: "image_url", image_url: { url: photoData } }] },
+                ],
+                max_tokens: 100,
+              });
+              const retryRaw = retryResponse.choices[0]?.message?.content || "";
+              const retryCleaned = retryRaw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+              const retryResult = JSON.parse(retryCleaned);
+              if (retryResult.km_lido != null) {
+                readings.push(Number(retryResult.km_lido));
+                const retryDiff = Math.abs(Number(retryResult.km_lido) - kmInformado);
+                if (retryDiff <= Math.max(kmInformado * tolerancePct, toleranceAbs)) {
+                  result.km_lido = Number(retryResult.km_lido);
+                  result.km_confere = true;
+                  result.divergencias = [];
+                  result.observacao = `Releitura confirmou ${retryResult.km_lido} km (tentativa ${attempt + 2}). Confere com informado.`;
+                  console.log(`[ai-inspection] Odometer retry ${attempt + 1}: ${retryResult.km_lido} — matches agent value`);
+                  break;
+                }
+              }
+            } catch (retryErr: any) {
+              console.log(`[ai-inspection] Odometer retry ${attempt + 1} failed: ${retryErr.message}`);
+            }
+          }
+
+          const finalKmLido = Number(result.km_lido);
+          const finalDiff = Math.abs(finalKmLido - kmInformado);
+          if (finalDiff <= Math.max(kmInformado * tolerancePct, toleranceAbs)) {
+            result.km_confere = true;
+            result.divergencias = (result.divergencias || []).filter((d: string) => !d.toLowerCase().includes("km") && !d.toLowerCase().includes("hodômetro") && !d.toLowerCase().includes("discrepância"));
+          } else {
+            const mostCommon = readings.sort((a, b) => readings.filter(v => v === a).length - readings.filter(v => v === b).length).pop()!;
+            result.km_lido = mostCommon;
+            result.observacao = `Leituras da IA: ${readings.join(", ")} km. Valor mais frequente: ${mostCommon}. Informado: ${kmValue}.`;
+          }
+        } else {
+          result.km_confere = true;
+          result.divergencias = (result.divergencias || []).filter((d: string) => !d.toLowerCase().includes("km") && !d.toLowerCase().includes("hodômetro") && !d.toLowerCase().includes("discrepância"));
+          if (!result.observacao || result.observacao.includes("diverge")) {
+            result.observacao = `Hodômetro lido: ${kmLido} km. Dentro da margem de tolerância do informado (${kmValue} km).`;
+          }
+        }
       }
 
       const hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
