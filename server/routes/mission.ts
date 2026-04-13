@@ -451,6 +451,14 @@ Responda APENAS com JSON: {"km_lido": number}`;
           const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
           const divergencias = (result.divergencias || []).map((d: string) => `<li style="color:#c0392b">${d}</li>`).join("");
 
+          const isUrl = photoData.startsWith("http");
+          const isBase64 = photoData.startsWith("data:image/");
+          const photoImgTag = isUrl
+            ? `<img src="${photoData}" style="max-width:100%;border-radius:6px;border:1px solid #e0e0e0" alt="Foto da inspeção" />`
+            : isBase64
+            ? `<img src="cid:inspection-photo" style="max-width:100%;border-radius:6px;border:1px solid #e0e0e0" alt="Foto da inspeção" />`
+            : "";
+
           const html = `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
               <div style="background:#c0392b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
@@ -470,10 +478,25 @@ Responda APENAS com JSON: {"km_lido": number}`;
                 </table>
                 ${divergencias ? `<div style="background:#fdf2f2;border:1px solid #f5c6cb;border-radius:6px;padding:12px;margin-bottom:16px"><p style="margin:0 0 8px;font-weight:bold;color:#c0392b">Divergências:</p><ul style="margin:0;padding-left:20px">${divergencias}</ul></div>` : ""}
                 ${result.observacao ? `<p style="margin:0 0 16px;color:#555"><strong>Observação IA:</strong> ${result.observacao}</p>` : ""}
-                ${photoData.startsWith("http") ? `<p style="margin:0 0 16px"><a href="${photoData}" style="color:#2980b9">Ver foto</a></p>` : ""}
+                ${photoImgTag ? `<div style="margin:0 0 16px;text-align:center"><p style="margin:0 0 8px;font-weight:bold;color:#333;font-size:13px">📸 Foto Analisada (${step}):</p>${photoImgTag}</div>` : ""}
+                ${isUrl ? `<p style="margin:0 0 16px;text-align:center"><a href="${photoData}" style="color:#2980b9;font-size:12px">Abrir foto em tamanho original</a></p>` : ""}
                 <p style="margin:0;font-size:12px;color:#999">Alerta automático — Torres Vigilância Patrimonial</p>
               </div>
             </div>`;
+
+          const attachments: Array<{ filename: string; content: Buffer; cid: string; contentType: string }> = [];
+          if (isBase64) {
+            const matches = photoData.match(/^data:image\/([\w+]+);base64,(.+)$/);
+            if (matches) {
+              const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+              attachments.push({
+                filename: `inspecao_${step}.${ext}`,
+                content: Buffer.from(matches[2], "base64"),
+                cid: "inspection-photo",
+                contentType: `image/${matches[1]}`,
+              });
+            }
+          }
 
           const transporter = createSmtpTransporter();
           if (transporter) {
@@ -482,6 +505,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
               to: "thiago@grupotmseg.com.br, escolta@torresseguranca.com.br",
               subject: `🔍 Divergência Inspeção ${osNumber} - ${step} - ${plate}`,
               html,
+              ...(attachments.length > 0 ? { attachments } : {}),
             });
             console.log(`[ai-inspection] Alert email sent for photo #${photoId}`);
           }
