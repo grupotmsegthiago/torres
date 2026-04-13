@@ -197,6 +197,17 @@ export default function LeadsPage() {
     },
   });
 
+  const importCsvMut = useMutation({
+    mutationFn: (leads: any[]) => apiRequest("POST", "/api/leads/import-csv", { leads }),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      toast({ title: `${data.imported} leads importados!`, description: data.message });
+    },
+    onError: (err: any) => toast({ title: "Erro na importação", description: err.message, variant: "destructive" }),
+  });
+
   const resetForm = () => setForm({
     empresa: "", cnpj: "", contato_nome: "", contato_cargo: "", telefone: "",
     email: "", website: "", endereco: "", cidade: "São Paulo", estado: "SP",
@@ -316,6 +327,8 @@ export default function LeadsPage() {
           onMarkReplied={(id: number) => markRepliedMut.mutate(id)}
           onAutoEnqueue={() => autoEnqueueMut.mutate(undefined)}
           onSendReport={() => sendReportMut.mutate(undefined)}
+          onImportCsv={(data: any[]) => importCsvMut.mutate(data)}
+          isImporting={importCsvMut.isPending}
           isEnqueuing={enqueueAllMut.isPending}
           isDispatching={dispatchNowMut.isPending}
           isAutoEnqueuing={autoEnqueueMut.isPending}
@@ -741,10 +754,50 @@ function CountdownTimer({ seconds, label }: { seconds: number; label: string }) 
   );
 }
 
-function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, onAutoEnqueue, onSendReport, isEnqueuing, isDispatching, isAutoEnqueuing, isSendingReport }: any) {
+function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, onAutoEnqueue, onSendReport, onImportCsv, isEnqueuing, isDispatching, isAutoEnqueuing, isSendingReport, isImporting }: any) {
+  const { toast } = useToast();
   const [queueFilter, setQueueFilter] = useState("ALL");
   const [showLog, setShowLog] = useState(false);
-  const st = emailStats || { total: 0, pendentes: 0, enviados: 0, lidos: 0, respondidos: 0, erros: 0, taxaAbertura: 0, taxaResposta: 0, daily: [], batchSize: 5, intervalMinutes: 10 };
+  const [showImport, setShowImport] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const st = emailStats || { total: 0, pendentes: 0, enviados: 0, lidos: 0, respondidos: 0, erros: 0, taxaAbertura: 0, taxaResposta: 0, daily: [], batchSize: 10, intervalMinutes: 5 };
+
+  const handleCsvImport = () => {
+    if (!csvText.trim()) return;
+    const lines = csvText.trim().split("\n");
+    if (lines.length < 2) {
+      toast({ title: "CSV deve ter cabeçalho + pelo menos 1 linha", variant: "destructive" });
+      return;
+    }
+    const headers = lines[0].split(/[;,\t]/).map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
+    const parsed: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(/[;,\t]/).map(v => v.trim().replace(/^["']|["']$/g, ""));
+      if (vals.length < 2) continue;
+      const row: any = {};
+      headers.forEach((h, idx) => { row[h] = vals[idx] || ""; });
+      if (row.empresa || row.company || row.razao_social) {
+        parsed.push(row);
+      }
+    }
+    if (parsed.length === 0) {
+      toast({ title: "Nenhum lead válido encontrado no CSV", description: "Verifique se o cabeçalho tem 'empresa' e 'email'", variant: "destructive" });
+      return;
+    }
+    onImportCsv(parsed);
+    setCsvText("");
+    setShowImport(false);
+  };
+
+  const handleFileUpload = (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCsvText(ev.target?.result as string || "");
+    };
+    reader.readAsText(file);
+  };
 
   const { data: dispatchLog = [] } = useQuery<any[]>({
     queryKey: ["/api/leads/dispatch-log"],
@@ -839,7 +892,11 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
           </Button>
           <Button size="sm" onClick={onDispatchNow} disabled={isDispatching || st.pendentes === 0} className="gap-1.5 bg-blue-600 hover:bg-blue-700" data-testid="btn-dispatch-now">
             {isDispatching ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
-            Disparar Agora (5)
+            Disparar Agora (10)
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowImport(true)} disabled={isImporting} className="gap-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50" data-testid="btn-import-csv">
+            {isImporting ? <RefreshCw size={12} className="animate-spin" /> : <FileText size={12} />}
+            Importar Leads (CSV)
           </Button>
           <Button size="sm" variant="outline" onClick={onClearQueue} disabled={st.pendentes === 0} className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-clear-queue">
             <Trash2 size={12} /> Limpar Fila
@@ -861,7 +918,7 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
             <Mail size={10} /> Respostas vão para escolta@ e diretoria@
           </span>
           <Badge className={`text-[9px] ${st.autoEnqueueActive ? "bg-green-50 text-green-700 border-green-200" : "bg-neutral-50 text-neutral-400 border-neutral-200"}`}>
-            <Zap size={9} className="mr-1" /> Auto-enqueue: a cada 2h (07h-21h) {st.autoEnqueueActive ? "● ON" : "○ OFF"}
+            <Zap size={9} className="mr-1" /> Auto-enqueue: a cada 5min (07h-21h) {st.autoEnqueueActive ? "● ON" : "○ OFF"}
           </Badge>
           <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[9px]">
             <BarChart3 size={9} className="mr-1" /> Relatório diário: 21h BRT
@@ -1023,6 +1080,66 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
           ))}
         </div>
       </div>
+
+      {showImport && (
+        <Dialog open onOpenChange={() => setShowImport(false)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText size={18} className="text-emerald-600" />
+                Importar Leads em Massa (CSV)
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-800 font-medium mb-1">Formato do CSV:</p>
+                <p className="text-[10px] text-blue-700 leading-relaxed">
+                  O arquivo deve ter cabeçalho na primeira linha. Colunas aceitas:<br/>
+                  <strong>empresa</strong> (obrigatório), <strong>email</strong> (obrigatório), contato_nome, telefone, segmento, cnpj, cidade, estado, origem<br/>
+                  Separadores aceitos: <code className="bg-blue-100 px-1 rounded">;</code> <code className="bg-blue-100 px-1 rounded">,</code> <code className="bg-blue-100 px-1 rounded">TAB</code>
+                </p>
+                <div className="mt-2 bg-white border border-blue-200 rounded p-2 text-[10px] font-mono text-blue-900">
+                  empresa;email;contato_nome;telefone;segmento;cidade;estado<br/>
+                  Logística XYZ;contato@xyz.com.br;João Silva;11999999999;logistica;São Paulo;SP<br/>
+                  Transportes ABC;comercial@abc.com.br;Maria;11888888888;transporte;Campinas;SP
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">Carregar arquivo CSV:</label>
+                <Input type="file" accept=".csv,.txt,.tsv" onChange={handleFileUpload} className="text-xs" data-testid="input-csv-file" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 mb-1">Ou cole o conteúdo CSV aqui:</label>
+                <Textarea
+                  value={csvText}
+                  onChange={(e) => setCsvText(e.target.value)}
+                  placeholder="empresa;email;contato_nome;telefone&#10;Empresa ABC;contato@abc.com;João;11999999999"
+                  className="min-h-[200px] text-xs font-mono"
+                  data-testid="textarea-csv"
+                />
+              </div>
+
+              {csvText && (
+                <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3">
+                  <p className="text-xs text-neutral-600">
+                    <strong>{csvText.split("\n").filter(l => l.trim()).length - 1}</strong> linhas detectadas (excluindo cabeçalho)
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowImport(false)} data-testid="btn-cancel-import">Cancelar</Button>
+                <Button onClick={handleCsvImport} disabled={!csvText.trim() || isImporting} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5" data-testid="btn-confirm-import">
+                  {isImporting ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                  Importar Leads
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

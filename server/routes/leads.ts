@@ -55,8 +55,8 @@ const EMAIL_PREFIXES = [
 ];
 
 const REPLY_TO_ADDRESSES = "escolta@torresseguranca.com.br, diretoria@torresseguranca.com.br";
-const BATCH_SIZE = 5;
-const BATCH_INTERVAL_MINUTES = 10;
+const BATCH_SIZE = 10;
+const BATCH_INTERVAL_MINUTES = 5;
 let emailDispatchRunning = false;
 
 async function ensureLeadsTable() {
@@ -423,7 +423,7 @@ async function processEmailQueue() {
 const AUTO_ENQUEUE_HOUR_START = 7;
 const AUTO_ENQUEUE_HOUR_END = 21;
 const MAX_EMAILS_PER_LEAD = 5;
-const DAYS_BETWEEN_EMAILS = 7;
+const DAYS_BETWEEN_EMAILS = 3;
 
 async function autoEnqueueLeads() {
   try {
@@ -1066,6 +1066,85 @@ export function registerLeadRoutes(app: Express) {
       await autoEnqueueLeads();
       await processEmailQueue();
       res.json({ ok: true, message: "Auto-enqueue + lote disparado manualmente" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/import-csv", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const { leads: csvLeads } = req.body;
+      if (!Array.isArray(csvLeads) || csvLeads.length === 0) {
+        return res.status(400).json({ message: "Envie um array 'leads' com os dados" });
+      }
+
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const row of csvLeads) {
+        const empresa = (row.empresa || row.company || row.razao_social || "").trim();
+        const email = (row.email || row.email_comercial || "").trim().toLowerCase();
+        const contato = (row.contato_nome || row.contato || row.responsavel || "").trim();
+        const telefone = (row.telefone || row.phone || row.tel || "").trim();
+        const setor = (row.segmento || row.setor || row.segment || row.ramo || "").trim();
+        const cnpj = (row.cnpj || "").trim();
+        const cidade = (row.cidade || row.city || "").trim();
+        const estado = (row.estado || row.uf || row.state || "SP").trim();
+        const origem = (row.origem || row.source || "importacao_csv").trim();
+
+        if (!empresa || !email) {
+          skipped++;
+          continue;
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errors.push(`E-mail inválido: ${email} (${empresa})`);
+          skipped++;
+          continue;
+        }
+
+        const { data: existing } = await supabaseAdmin.from("leads")
+          .select("id")
+          .eq("email", email)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          skipped++;
+          continue;
+        }
+
+        const { error: insertErr } = await supabaseAdmin.from("leads").insert({
+          empresa,
+          email,
+          contato_nome: contato || null,
+          telefone: telefone || null,
+          setor: setor || null,
+          cnpj: cnpj || null,
+          cidade: cidade || null,
+          estado: estado || "SP",
+          origem,
+          status: "novo",
+          emails_enviados: 0,
+          created_at: nowBRTString(),
+          updated_at: nowBRTString(),
+        });
+
+        if (insertErr) {
+          errors.push(`Erro ao inserir ${empresa}: ${insertErr.message}`);
+        } else {
+          imported++;
+        }
+      }
+
+      res.json({
+        ok: true,
+        imported,
+        skipped,
+        total: csvLeads.length,
+        errors: errors.slice(0, 10),
+        message: `${imported} lead(s) importado(s), ${skipped} ignorado(s)`,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
