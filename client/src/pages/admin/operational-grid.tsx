@@ -5091,9 +5091,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
   });
 
   const driverByVehicle = useMemo(() => {
-    const map: Record<number, { driverName: string; startedAt: string }> = {};
+    const map: Record<number, { driverName: string; startedAt: string; employeeId: number | null }> = {};
     for (const s of activeSessions) {
-      if (s.vehicle_id) map[s.vehicle_id] = { driverName: s.driver_name, startedAt: s.started_at };
+      if (s.vehicle_id) map[s.vehicle_id] = { driverName: s.driver_name, startedAt: s.started_at, employeeId: s.employee_id || null };
     }
     return map;
   }, [activeSessions]);
@@ -5147,8 +5147,6 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Velocidade</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Últ. Alerta</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
-                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Condutor</th>
-                <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Horas/Mês</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Referência</th>
@@ -5399,104 +5397,100 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     </td>
 
                     <td className="px-2 py-1.5">
-                      {v.activeOs ? (
-                        <div className="flex flex-col gap-1.5">
-                          {v.activeOs.employee1 && (
-                            <div className="flex items-center gap-1.5">
-                              <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
-                              <span className="font-bold text-xs text-neutral-900 leading-tight">
-                                {titleCase(v.activeOs.employee1.name)}
-                              </span>
-                              {v.activeOs.employee1.phone && (
-                                <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
-                                  <SiWhatsapp className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                              <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent1-${v.id}`}>
-                                <FileText className="w-3.5 h-3.5" />
-                              </Link>
-                            </div>
-                          )}
-                          {v.activeOs.employee2 && (
-                            <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
-                              <span className="font-semibold text-xs text-neutral-500 leading-tight">
-                                {titleCase(v.activeOs.employee2.name)}
-                              </span>
-                              {v.activeOs.employee2.phone && (
-                                <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
-                                  <SiWhatsapp className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                              <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent2-${v.id}`}>
-                                <FileText className="w-3.5 h-3.5" />
-                              </Link>
-                            </div>
-                          )}
-                          {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-xs">Sem agente</span>}
-                        </div>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
+                      {(() => {
+                        const driver = driverByVehicle[v.id];
+                        const driverEmpId = driver?.employeeId;
+                        const isDriver1 = driverEmpId && v.activeOs?.employee1?.id === driverEmpId;
+                        const isDriver2 = driverEmpId && v.activeOs?.employee2?.id === driverEmpId;
+                        const noAgentIsDriver = driverEmpId && !isDriver1 && !isDriver2;
 
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {driverByVehicle[v.id] ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0">
-                            <Car className="w-3 h-3 text-white" />
+                        return v.activeOs ? (
+                          <div className="flex flex-col gap-1.5">
+                            {v.activeOs.employee1 && (
+                              <div className="flex items-center gap-1.5">
+                                {isDriver1 ? (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent1-${v.id}`}>
+                                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Condutor da viatura</TooltipContent>
+                                  </Tooltip>
+                                ) : (
+                                  <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
+                                )}
+                                <span className="font-bold text-xs text-neutral-900 leading-tight">
+                                  {titleCase(v.activeOs.employee1.name)}
+                                </span>
+                                {v.activeOs.employee1.phone && (
+                                  <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
+                                    <SiWhatsapp className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                                <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent1-${v.id}`}>
+                                  <FileText className="w-3.5 h-3.5" />
+                                </Link>
+                              </div>
+                            )}
+                            {v.activeOs.employee2 && (
+                              <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
+                                {isDriver2 && (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent2-${v.id}`}>
+                                        <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Condutor da viatura</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                <span className="font-semibold text-xs text-neutral-500 leading-tight">
+                                  {titleCase(v.activeOs.employee2.name)}
+                                </span>
+                                {v.activeOs.employee2.phone && (
+                                  <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
+                                    <SiWhatsapp className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                                <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent2-${v.id}`}>
+                                  <FileText className="w-3.5 h-3.5" />
+                                </Link>
+                              </div>
+                            )}
+                            {noAgentIsDriver && driver && (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0">
+                                      <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Condutor: {driver.driverName}</TooltipContent>
+                                </Tooltip>
+                                <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{driver.driverName}</span>
+                              </div>
+                            )}
+                            {!v.activeOs.employee1 && !v.activeOs.employee2 && !noAgentIsDriver && <span className="text-neutral-300 text-xs">Sem agente</span>}
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-neutral-900 leading-tight truncate max-w-[120px]" data-testid={`text-driver-${v.id}`}>
-                              {driverByVehicle[v.id].driverName}
-                            </p>
-                            <p className="text-[10px] text-neutral-400 leading-tight">
-                              {formatTimeBRT(driverByVehicle[v.id].startedAt)}
-                            </p>
+                        ) : driver ? (
+                          <div className="flex items-center gap-1.5">
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 flex-shrink-0">
+                                  <svg viewBox="0 0 24 24" className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Condutor da viatura</TooltipContent>
+                            </Tooltip>
+                            <span className="text-xs font-bold text-emerald-700 leading-tight" data-testid={`text-driver-${v.id}`}>{driver.driverName}</span>
                           </div>
-                        </div>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                      {v.activeOs ? (() => {
-                        const emp1Id = v.activeOs!.employee1?.id;
-                        const emp2Id = v.activeOs!.employee2?.id;
-                        const h1 = emp1Id && monthlyHours ? monthlyHours[String(emp1Id)] : null;
-                        const h2 = emp2Id && monthlyHours ? monthlyHours[String(emp2Id)] : null;
-
-                        const renderHoursBadge = (h: { totalHours: number; missions: number } | null, empId: number | undefined) => {
-                          if (!h || !empId) return null;
-                          const hours = Math.round(h.totalHours * 10) / 10;
-                          const isWarning = hours > 220;
-                          const isDanger = hours > 300;
-                          return (
-                            <button
-                              onClick={() => onCostDetail?.(empId)}
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                                isDanger
-                                  ? "bg-red-600 text-white animate-pulse"
-                                  : isWarning
-                                  ? "bg-amber-100 text-amber-800 border border-amber-300"
-                                  : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                              }`}
-                              title={isDanger ? "RISCO TRABALHISTA / FADIGA" : isWarning ? "Jornada acima de 220h" : `${hours}h em ${h.missions} missões`}
-                              data-testid={`hours-badge-${empId}`}
-                            >
-                              {hours}h
-                              {isDanger && <AlertTriangle className="w-2.5 h-2.5 inline ml-0.5" />}
-                            </button>
-                          );
-                        };
-                        return (
-                          <div className="flex flex-col items-center gap-0.5">
-                            {renderHoursBadge(h1, emp1Id)}
-                            {renderHoursBadge(h2, emp2Id)}
-                          </div>
+                        ) : (
+                          <span className="text-neutral-300 text-xs">—</span>
                         );
-                      })() : <span className="text-neutral-300 text-xs">—</span>}
+                      })()}
                     </td>
+
 
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       {v.activeOs ? (
