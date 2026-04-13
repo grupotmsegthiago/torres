@@ -191,9 +191,123 @@ async function getVehiclePhotosForEmail(baseUrl: string): Promise<string> {
   }
 }
 
-async function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): Promise<string> {
+function getFollowUpContent(emailNumber: number, lead: any): { subject: string; greeting: string; body: string; cta: string; } {
+  const empresa = lead.empresa || "sua empresa";
+  const nome = lead.contato_nome || "Responsável";
+
+  if (emailNumber <= 1) {
+    return {
+      subject: `Torres Vigilância Patrimonial — Segurança para ${empresa}`,
+      greeting: `Prezado(a) <strong>${nome}</strong>,`,
+      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        A <strong>Torres Vigilância Patrimonial</strong> é especializada em <strong>Escolta Armada Caracterizada</strong> 
+        para operações de logística, transporte de cargas e valores no estado de São Paulo.
+      </p>
+      <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
+        <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
+          <li>Viaturas caracterizadas com rastreamento em tempo real</li>
+          <li>Agentes com treinamento especializado e armamento regulamentado</li>
+          <li>Monitoramento 24h via central de operações</li>
+          <li>Cobertura completa no estado de São Paulo</li>
+          <li>Relatórios operacionais digitais com fotos e geolocalização</li>
+          <li>Seguro de responsabilidade civil</li>
+        </ul>
+      </div>`,
+      cta: "SOLICITAR PROPOSTA COMERCIAL",
+    };
+  } else if (emailNumber === 2) {
+    return {
+      subject: `${nome}, proteja as cargas da ${empresa} com escolta armada`,
+      greeting: `Olá <strong>${nome}</strong>,`,
+      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        Entramos em contato recentemente apresentando nossos serviços de <strong>Escolta Armada</strong>. 
+        Gostaríamos de reforçar que a <strong>Torres Vigilância</strong> oferece uma solução completa e personalizada para a segurança logística da <strong>${empresa}</strong>.
+      </p>
+      <div style="background:#fff3e0;border-left:4px solid #e65100;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:#e65100;font-weight:bold;margin:0 0 8px;font-size:14px;">Por que escolher a Torres?</p>
+        <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
+          <li>Experiência comprovada no transporte de cargas de alto valor</li>
+          <li>Sistema digital com fotos, geolocalização e relatórios em tempo real</li>
+          <li>Frota própria de viaturas blindadas e caracterizadas</li>
+          <li>Equipe altamente treinada e regulamentada pela Polícia Federal</li>
+        </ul>
+      </div>`,
+      cta: "QUERO CONHECER A PROPOSTA",
+    };
+  } else if (emailNumber === 3) {
+    return {
+      subject: `Segurança de carga: como a ${empresa} pode reduzir riscos`,
+      greeting: `<strong>${nome}</strong>, bom dia!`,
+      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        Sabemos que a segurança no transporte de cargas é uma preocupação constante para empresas como a <strong>${empresa}</strong>. 
+        A cada ano, o Brasil registra milhares de ocorrências de roubo de cargas, gerando prejuízos enormes.
+      </p>
+      <div style="background:#e8f5e9;border-left:4px solid #2e7d32;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:#2e7d32;font-weight:bold;margin:0 0 8px;font-size:14px;">A Torres pode ajudar:</p>
+        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
+          ✅ Análise de risco personalizada para suas rotas<br/>
+          ✅ Escolta armada com viaturas rastreadas por GPS<br/>
+          ✅ Monitoramento 24h pela central de operações<br/>
+          ✅ Relatórios detalhados de cada missão com comprovação fotográfica
+        </p>
+      </div>
+      <p style="color:#555;font-size:14px;line-height:1.7;">
+        Podemos agendar uma breve conversa para apresentar uma proposta sob medida para a <strong>${empresa}</strong>?
+      </p>`,
+      cta: "AGENDAR CONVERSA",
+    };
+  } else if (emailNumber === 4) {
+    return {
+      subject: `${nome}, última oportunidade: proposta especial Torres Vigilância`,
+      greeting: `Prezado(a) <strong>${nome}</strong>,`,
+      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        Ainda não tivemos a oportunidade de conversar sobre a segurança das operações da <strong>${empresa}</strong>. 
+        Gostaríamos de oferecer uma <strong>consultoria gratuita de análise de risco</strong> para suas principais rotas.
+      </p>
+      <div style="background:#fce4ec;border-left:4px solid #c62828;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:#c62828;font-weight:bold;margin:0 0 8px;font-size:14px;">Oferta Especial:</p>
+        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
+          🎯 <strong>Consultoria gratuita</strong> de análise de risco das suas rotas<br/>
+          📊 Relatório completo com pontos críticos e recomendações<br/>
+          💰 Proposta comercial personalizada sem compromisso
+        </p>
+      </div>
+      <p style="color:#555;font-size:14px;line-height:1.7;">
+        Basta responder este e-mail ou nos chamar no WhatsApp que agendamos uma visita sem custo.
+      </p>`,
+      cta: "QUERO A CONSULTORIA GRATUITA",
+    };
+  } else {
+    return {
+      subject: `Torres Vigilância — Estamos à disposição, ${nome}`,
+      greeting: `Olá <strong>${nome}</strong>,`,
+      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        Este é nosso último contato por enquanto. Caso a <strong>${empresa}</strong> precise de serviços de 
+        <strong>Escolta Armada Caracterizada</strong> no futuro, ficaremos felizes em atendê-los.
+      </p>
+      <div style="background:#f3e5f5;border-left:4px solid #6a1b9a;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:#6a1b9a;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Canais:</p>
+        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
+          📧 escolta@torresseguranca.com.br<br/>
+          📞 (11) 96369-6699 (WhatsApp)<br/>
+          🌐 www.torresseguranca.com.br
+        </p>
+      </div>
+      <p style="color:#555;font-size:14px;line-height:1.7;">
+        Desejamos sucesso nos negócios da <strong>${empresa}</strong>. 
+        Estamos sempre à disposição para uma futura parceria.
+      </p>`,
+      cta: "FALAR COM A TORRES",
+    };
+  }
+}
+
+async function buildEmailHtml(lead: any, trackingId: string, baseUrl: string, emailNumber?: number): Promise<string> {
   const pixelUrl = `${baseUrl}/api/leads/pixel/${trackingId}.png`;
-  const vehiclePhotosHtml = await getVehiclePhotosForEmail(baseUrl);
+  const vehiclePhotosHtml = (emailNumber || 1) <= 2 ? await getVehiclePhotosForEmail(baseUrl) : "";
+  const content = getFollowUpContent(emailNumber || 1, lead);
+
   return `
 <!DOCTYPE html>
 <html><body style="font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;background:#f8f9fa;">
@@ -204,32 +318,14 @@ async function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): P
   </div>
   <div style="background:#fff;padding:30px 24px;border-radius:0 0 16px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
     <p style="color:#333;font-size:15px;line-height:1.7;">
-      Prezado(a) <strong>${lead.contato_nome || "Responsável"}</strong>,
+      ${content.greeting}
     </p>
-    <p style="color:#555;font-size:14px;line-height:1.7;">
-      A <strong>Torres Vigilância Patrimonial</strong> é especializada em <strong>Escolta Armada Caracterizada</strong> 
-      para operações de logística, transporte de cargas e valores no estado de São Paulo.
-    </p>
-    <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-      <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
-      <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
-        <li>Viaturas caracterizadas com rastreamento em tempo real</li>
-        <li>Agentes com treinamento especializado e armamento regulamentado</li>
-        <li>Monitoramento 24h via central de operações</li>
-        <li>Cobertura completa no estado de São Paulo</li>
-        <li>Relatórios operacionais digitais com fotos e geolocalização</li>
-        <li>Seguro de responsabilidade civil</li>
-      </ul>
-    </div>
+    ${content.body}
     ${vehiclePhotosHtml}
-    <p style="color:#555;font-size:14px;line-height:1.7;">
-      Gostaríamos de apresentar nossos serviços e demonstrar como podemos agregar segurança 
-      às operações da <strong>${lead.empresa}</strong>.
-    </p>
     <div style="text-align:center;margin:24px 0;">
       <a href="mailto:escolta@torresseguranca.com.br?subject=Interesse%20em%20Escolta%20-%20${encodeURIComponent(lead.empresa)}" 
          style="display:inline-block;background:#1a1a2e;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
-        SOLICITAR PROPOSTA COMERCIAL
+        ${content.cta}
       </a>
     </div>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
@@ -326,7 +422,7 @@ async function processEmailQueue() {
 
 const AUTO_ENQUEUE_HOUR_START = 7;
 const AUTO_ENQUEUE_HOUR_END = 21;
-const MAX_EMAILS_PER_LEAD = 1;
+const MAX_EMAILS_PER_LEAD = 5;
 const DAYS_BETWEEN_EMAILS = 7;
 
 async function autoEnqueueLeads() {
@@ -355,7 +451,8 @@ async function autoEnqueueLeads() {
 
     for (const lead of leads) {
       if (!lead.email) continue;
-      if ((lead.emails_enviados || 0) >= MAX_EMAILS_PER_LEAD) continue;
+      const emailsSent = lead.emails_enviados || 0;
+      if (emailsSent >= MAX_EMAILS_PER_LEAD) continue;
 
       if (lead.ultimo_contato) {
         const lastContact = new Date(lead.ultimo_contato);
@@ -371,15 +468,17 @@ async function autoEnqueueLeads() {
 
       if (existing && existing.length > 0) continue;
 
+      const nextEmailNumber = emailsSent + 1;
       const trackingId = generateTrackingId();
-      const html = await buildEmailHtml(lead, trackingId, baseUrl);
+      const content = getFollowUpContent(nextEmailNumber, lead);
+      const html = await buildEmailHtml(lead, trackingId, baseUrl, nextEmailNumber);
 
       await supabaseAdmin.from("email_queue").insert({
         lead_id: lead.id,
         to_email: lead.email,
         to_name: lead.contato_nome || "Responsável",
         empresa: lead.empresa,
-        subject: `Torres Vigilância Patrimonial — Segurança para ${lead.empresa}`,
+        subject: content.subject,
         html_body: html,
         tracking_id: trackingId,
         created_at: nowBRTString(),
@@ -490,19 +589,17 @@ export function registerLeadRoutes(app: Express) {
   });
 
   cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
-    processEmailQueue().catch(err => console.error("[email-queue-cron]", err.message));
-  });
-
-  cron.schedule("0 */2 * * *", () => {
-    autoEnqueueLeads().catch(err => console.error("[auto-enqueue-cron]", err.message));
+    autoEnqueueLeads()
+      .then(() => processEmailQueue())
+      .catch(err => console.error("[email-queue-cron]", err.message));
   });
 
   cron.schedule("0 21 * * *", () => {
     sendDailyEmailReport().catch(err => console.error("[daily-report-cron]", err.message));
   }, { timezone: "America/Sao_Paulo" });
 
-  console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos`);
-  console.log("[auto-enqueue] CRON ativo: enfileiramento automático a cada 2h (07h-21h)");
+  console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
+  console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);
   console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
 
   const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -966,8 +1063,9 @@ export function registerLeadRoutes(app: Express) {
 
   app.post("/api/leads/disparar-agora", requireAdminRole, async (_req: Request, res: Response) => {
     try {
+      await autoEnqueueLeads();
       await processEmailQueue();
-      res.json({ ok: true, message: "Lote disparado manualmente" });
+      res.json({ ok: true, message: "Auto-enqueue + lote disparado manualmente" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

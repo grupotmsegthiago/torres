@@ -826,7 +826,7 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
             </div>
             {st.pendentes === 0 && st.enviados > 0 && (
               <p className="text-[10px] text-neutral-400 text-center italic">
-                Todos os leads já foram contatados (máx {st.maxEmailsPerLead || 1} e-mail por lead). Adicione novos leads para continuar.
+                Todos os leads já atingiram o máximo de {st.maxEmailsPerLead || 5} e-mails. Adicione novos leads para continuar.
               </p>
             )}
           </div>
