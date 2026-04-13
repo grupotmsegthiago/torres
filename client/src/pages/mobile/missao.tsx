@@ -37,19 +37,19 @@ const stepConfig: Record<string, { title: string; subtitle: string; icon: any; p
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
   checkout_armamento: { title: "Armamento", subtitle: "Check-out · 1/15", icon: Crosshair, photos: ["Pistola 1", "Pistola 2", "Espingarda 12"] },
   checkout_viatura: { title: "Viatura", subtitle: "Check-out · 2/15", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"], needsChecklist: true },
-  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/15", icon: Gauge, needsKm: true, photos: ["Trip"] },
+  checkout_km_saida: { title: "KM de Saída", subtitle: "Check-out · 3/15", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   em_transito_origem: { title: "Em Trânsito", subtitle: "Deslocamento · 4/15", icon: Route },
-  checkin_chegada_km: { title: "KM Chegada", subtitle: "Chegada no Cliente · 5/15", icon: Gauge, needsKm: true, photos: ["Trip", "Agente Equipado"] },
+  checkin_chegada_km: { title: "KM Chegada", subtitle: "Chegada no Cliente · 5/15", icon: Gauge, needsKm: true, photos: ["Hodômetro", "Agente Equipado"] },
   checkin_veiculo_escoltado: { title: "Veículo Escoltado", subtitle: "Check-in · 6/15", icon: Truck, photos: ["Frente do Caminhão", "Traseira do Caminhão"] },
   checkin_dados_motorista: { title: "Dados do Motorista", subtitle: "Check-in · 7/15", icon: User, needsForm: true },
   iniciar_missao: { title: "Iniciar Missão", subtitle: "Execução · 8/15", icon: Siren },
   em_transito_destino: { title: "Em Trânsito ao Destino", subtitle: "Execução · 9/15", icon: Route },
-  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/15", icon: MapPin, photos: ["Foto do Local", "Trip"], needsKm: true },
-  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/15", icon: Gauge, needsKm: true, photos: ["Trip"] },
+  chegada_destino: { title: "Chegada no Destino", subtitle: "Entrega · 10/15", icon: MapPin, photos: ["Foto do Local", "Hodômetro"], needsKm: true },
+  checkout_km_final: { title: "KM Final", subtitle: "Finalização · 11/15", icon: Gauge, needsKm: true, photos: ["Hodômetro"] },
   checkout_viatura_retorno: { title: "Viatura Retorno", subtitle: "Finalização · 12/15", icon: Car, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira"] },
   finalizada: { title: "Entregas Finalizadas", subtitle: "Operação · 13/15", icon: CheckCircle2 },
   retorno_base: { title: "Retorno à Base", subtitle: "Logístico · 14/15", icon: Home },
-  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 15/15", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Trip"] },
+  chegada_base: { title: "Chegada na Base", subtitle: "Logístico · 15/15", icon: ClipboardCheck, photos: ["Dianteira", "Lateral Esq.", "Lateral Dir.", "Traseira", "Hodômetro"] },
   encerrada: { title: "Operação Encerrada", subtitle: "Concluída", icon: Sparkles },
 };
 
@@ -66,10 +66,10 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
     "Traseira": "viatura_traseira",
   },
   checkout_km_saida: {
-    "Trip": "km_saida",
+    "Hodômetro": "km_saida",
   },
   checkin_chegada_km: {
-    "Trip": "km_chegada",
+    "Hodômetro": "km_chegada",
     "Agente Equipado": "agente_equipado",
   },
   checkin_veiculo_escoltado: {
@@ -78,10 +78,10 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
   },
   chegada_destino: {
     "Foto do Local": "foto_local_destino",
-    "Trip": "km_final",
+    "Hodômetro": "km_final",
   },
   checkout_km_final: {
-    "Trip": "km_final",
+    "Hodômetro": "km_final",
   },
   checkout_viatura_retorno: {
     "Dianteira": "viatura_retorno_frente",
@@ -94,7 +94,7 @@ const PHOTO_STEP_MAP: Record<string, Record<string, string>> = {
     "Lateral Esq.": "base_viatura_lateral_esq",
     "Lateral Dir.": "base_viatura_lateral_dir",
     "Traseira": "base_viatura_traseira",
-    "Trip": "base_hodometro",
+    "Hodômetro": "base_hodometro",
   },
 };
 
@@ -1301,7 +1301,7 @@ export default function MobileMissaoPage() {
 
   const handleKmStep = async () => {
     if (!kmValue || isNaN(parseInt(kmValue))) {
-      toast({ title: "Informe o KM", description: "Digite a quilometragem do trip (parcial).", variant: "destructive" });
+      toast({ title: "Informe o KM", description: "Digite a quilometragem do hodômetro.", variant: "destructive" });
       return;
     }
     const allPhotos = config.photos || [];

@@ -93,7 +93,7 @@ function AiResultPanel({ photo }: { photo: PhotoItem }) {
             )}
             {r.km_lido !== undefined && (
               <div className="bg-white rounded p-2 border">
-                <span className="text-[10px] text-neutral-400 uppercase font-bold">Trip Lido pela IA</span>
+                <span className="text-[10px] text-neutral-400 uppercase font-bold">KM Lido pela IA</span>
                 <p className="font-mono font-bold text-sm">{r.km_lido != null ? Number(r.km_lido).toLocaleString("pt-BR") : "—"}</p>
                 {r.km_informado && <span className="text-[10px] text-neutral-500">Informado: {Number(r.km_informado).toLocaleString("pt-BR")}</span>}
                 {r.km_confere === true && <span className="ml-2 text-emerald-600 text-[10px]">Confere</span>}
