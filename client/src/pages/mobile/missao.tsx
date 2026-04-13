@@ -1233,7 +1233,12 @@ export default function MobileMissaoPage() {
     try {
       if (!navigator.onLine) throw new Error("offline");
       await apiRequest("POST", "/api/mission/advance", payload);
-    } catch (err) {
+    } catch (err: any) {
+      const errMsg = err?.message || "";
+      if (errMsg.includes("DRIVER_REQUIRED") || errMsg.includes("CONDUTOR_OBRIGATORIO")) {
+        setDriverRequired(true);
+        throw err;
+      }
       if (isNetworkError(err)) {
         enqueueAction("/api/mission/advance", "POST", payload);
         toast({ title: "Avanço salvo localmente", description: "Será reenviado automaticamente quando o servidor responder." });
@@ -1332,6 +1337,8 @@ export default function MobileMissaoPage() {
     }
   };
 
+  const [driverRequired, setDriverRequired] = useState(false);
+
   const handleStartMission = async () => {
     setSubmitting(true);
     try {
@@ -1341,7 +1348,12 @@ export default function MobileMissaoPage() {
       await advanceMission();
       toast({ title: "Missão iniciada!" });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      const msg = err.message || "";
+      if (msg.includes("DRIVER_REQUIRED") || msg.includes("CONDUTOR_OBRIGATORIO")) {
+        setDriverRequired(true);
+      } else {
+        toast({ title: "Erro", description: msg, variant: "destructive" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -2579,6 +2591,37 @@ export default function MobileMissaoPage() {
           </div>
         </div>
       </div>
+
+      {driverRequired && (
+        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-6" data-testid="dialog-driver-required">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mb-3">
+                <Car className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider">Condutor Obrigatório</h3>
+              <p className="text-sm text-neutral-500 mt-2 leading-relaxed">
+                Antes de iniciar a missão, você precisa registrar-se como condutor da viatura.
+              </p>
+            </div>
+            <button
+              onClick={() => { window.location.href = "/mobile/controle-condutor"; }}
+              className="w-full h-12 bg-emerald-600 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+              data-testid="button-go-driver-control"
+            >
+              <Car className="w-5 h-5" />
+              Registrar Condutor
+            </button>
+            <button
+              onClick={() => setDriverRequired(false)}
+              className="w-full h-10 bg-neutral-100 text-neutral-600 rounded-2xl font-semibold text-xs uppercase tracking-wider"
+              data-testid="button-dismiss-driver-required"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      )}
     </MobileLayout>
   );
 }

@@ -1871,6 +1871,21 @@ Responda APENAS com JSON válido (sem markdown):
       }
     }
 
+    if (currentStep === "aguardando" && so.vehicleId) {
+      const { data: activeDriver } = await supabaseAdmin
+        .from("driver_sessions")
+        .select("id")
+        .eq("vehicle_id", so.vehicleId)
+        .is("ended_at", null)
+        .limit(1);
+      if (!activeDriver?.length) {
+        return res.status(400).json({
+          message: "CONDUTOR_OBRIGATORIO: Nenhum condutor registrado para esta viatura. Acesse 'Controle de Condutor' e registre-se antes de iniciar a missão.",
+          code: "DRIVER_REQUIRED",
+        });
+      }
+    }
+
     if (so.status === "agendada" && currentStep === "aguardando") {
       await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });
     }
