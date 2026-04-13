@@ -142,7 +142,7 @@ async function sendBillingEmail(invoice: {
     ${pixSection}
     <p style="font-size:12px;color:#888;line-height:1.5;margin:20px 0 0;">
       Em caso de dúvidas, entre em contato conosco pelo e-mail 
-      <a href="mailto:financeiro@torresseguranca.com.br" style="color:#1a1a2e;">financeiro@torresseguranca.com.br</a> 
+      <a href="mailto:diretoria@torresseguranca.com.br" style="color:#1a1a2e;">diretoria@torresseguranca.com.br</a> 
       ou pelo telefone (11) 96369-6699.
     </p>
   </div>
