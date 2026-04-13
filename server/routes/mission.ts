@@ -101,6 +101,30 @@ import type { Express } from "express";
       return { approve: true, reason: "Condição inconclusiva — modo aprendizado, liberando agente" };
     }
 
+    const COSMETIC_KEYWORDS = [
+      "ferrugem", "sujeira", "sujo", "poeira", "mancha", "manchas",
+      "arranhão", "arranhões", "risco", "riscos", "desbotad",
+      "oxidação", "oxidado", "encardido", "lama", "barro",
+      "descascad", "desgaste", "desgastad", "pequeno", "leve",
+      "superficial", "superfície", "cosmético", "estético",
+    ];
+
+    const divs = result.divergencias || [];
+    if (divs.length > 0) {
+      const allCosmetic = divs.every((d: string) => {
+        const dl = d.toLowerCase();
+        return COSMETIC_KEYWORDS.some(kw => dl.includes(kw));
+      });
+      const conditionCosmetic = result.condicao === "dano_visivel" || result.condicao === "irregular";
+      if (allCosmetic && conditionCosmetic) {
+        return { approve: true, reason: `Condição cosmética (${divs.join("; ")}) — modo aprendizado, não trava operação` };
+      }
+    }
+
+    if ((result.condicao === "dano_visivel" || result.condicao === "irregular") && divs.length === 0) {
+      return { approve: true, reason: `Condição "${result.condicao}" sem divergências específicas — modo aprendizado` };
+    }
+
     return { approve: false, reason: "" };
   }
 
