@@ -805,9 +805,9 @@ function AutoProspectPanel() {
       <div className="flex items-center gap-3 text-[10px] text-neutral-500">
         <span><strong>Query atual:</strong> {ps.currentQuery}</span>
         <span>•</span>
-        <span>Executa a cada <strong>15 min</strong> (07h–22h)</span>
+        <span>A cada <strong>10 min</strong> busca <strong>3 queries</strong> (~60 leads/hora)</span>
         <span>•</span>
-        <span>Busca empresas → extrai website → gera e-mail → enfileira para disparo</span>
+        <span>Google → website → e-mail → enfileira → dispara automaticamente</span>
       </div>
     </div>
   );

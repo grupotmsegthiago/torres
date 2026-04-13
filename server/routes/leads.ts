@@ -485,7 +485,7 @@ async function autoEnqueueLeads() {
       });
 
       enqueued++;
-      if (enqueued >= 20) break;
+      if (enqueued >= 50) break;
     }
 
     if (enqueued > 0) {
@@ -527,37 +527,157 @@ const AUTO_PROSPECT_QUERIES = [
   "logística terceirizada São Paulo SP",
   "transportadora regional interior SP",
   "transporte industrial Diadema SP",
+  "transportadora de cargas Rio de Janeiro RJ",
+  "logística Belo Horizonte MG",
+  "transportadora Curitiba PR",
+  "transportadora Porto Alegre RS",
+  "logística Goiânia GO",
+  "transportadora Manaus AM",
+  "empresa de escolta armada São Paulo SP",
+  "segurança patrimonial São Paulo SP",
+  "empresa de segurança São Paulo SP",
+  "vigilância patrimonial São Paulo SP",
+  "indústria farmacêutica São Paulo SP",
+  "distribuidora de medicamentos São Paulo SP",
+  "e-commerce logística São Paulo SP",
+  "armazém geral São Paulo SP",
+  "transporte de valores São Paulo SP",
+  "empresa de mudanças São Paulo SP",
+  "transportadora carga pesada São Paulo SP",
+  "operador portuário Santos SP",
+  "agente de cargas São Paulo SP",
+  "despachante aduaneiro São Paulo SP",
 ];
 
+const QUERIES_PER_CYCLE = 3;
 let autoProspectRunning = false;
+
+async function ensureProspectState() {
+  await supabaseAdmin.rpc("exec_sql", {
+    query: `
+      CREATE TABLE IF NOT EXISTS auto_prospect_state (
+        id SERIAL PRIMARY KEY,
+        query_index INTEGER DEFAULT 0,
+        next_page_token TEXT,
+        total_found INTEGER DEFAULT 0,
+        last_run TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO auto_prospect_state (id, query_index) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
+    `
+  });
+}
+
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+const SKIP_DOMAINS = new Set([
+  "google.com", "youtube.com", "facebook.com", "instagram.com", "linkedin.com",
+  "twitter.com", "wikipedia.org", "blogspot.com", "wordpress.com", "wix.com",
+  "squarespace.com", "reclameaqui.com.br", "jusbrasil.com.br", "gov.br",
+  "guiamais.com.br", "yelp.com", "tripadvisor.com", "infojobs.com.br",
+  "indeed.com", "glassdoor.com", "olx.com.br", "mercadolivre.com.br",
+  "telelistas.net", "maps.google.com", "pinterest.com", "tiktok.com",
+]);
+
+async function searchDuckDuckGo(query: string): Promise<string[]> {
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:.com.br contato")}`;
+  const resp = await fetch(url, {
+    headers: { "User-Agent": UA, "Accept": "text/html" },
+  });
+  const html = await resp.text();
+
+  const urls: string[] = [];
+  const regex = /uddg=(https?%3A%2F%2F[^&"]+)/g;
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const decoded = decodeURIComponent(m[1]);
+    let domain = "";
+    try { domain = new URL(decoded).hostname.replace(/^www\./, ""); } catch { continue; }
+    if (SKIP_DOMAINS.has(domain)) continue;
+    const baseUrl = `https://${domain}`;
+    if (!urls.includes(baseUrl)) urls.push(baseUrl);
+  }
+
+  return urls.slice(0, 15);
+}
+
+async function extractContactFromSite(siteUrl: string): Promise<{ empresa: string; email: string; phone: string; domain: string }> {
+  const result = { empresa: "", email: "", phone: "", domain: "" };
+
+  try {
+    const u = new URL(siteUrl);
+    result.domain = u.hostname.replace(/^www\./, "");
+  } catch { return result; }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(siteUrl, {
+      headers: { "User-Agent": UA, "Accept": "text/html" },
+      signal: controller.signal,
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) return result;
+
+    const html = await resp.text();
+    const chunk = html.substring(0, 50000);
+
+    const titleMatch = chunk.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      result.empresa = titleMatch[1]
+        .replace(/\s*[-|–—»]\s*.*/g, "")
+        .replace(/Home|Início|Página Inicial/gi, "")
+        .trim()
+        .substring(0, 100);
+    }
+    if (!result.empresa || result.empresa.length < 3) {
+      result.empresa = result.domain.split(".")[0].replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+    const foundEmails = chunk.match(emailRegex) || [];
+    const skipEmail = ["@example", "@teste", "@test", "@sentry", ".png", ".jpg", ".gif", ".svg", "@wix", "@wordpress", "@google"];
+    const goodPrefixes = ["contato", "comercial", "logistica", "operacoes", "vendas", "financeiro", "sac", "atendimento", "info", "faleconosco"];
+
+    const validEmails = foundEmails.filter(e => {
+      const l = e.toLowerCase();
+      return l.length <= 60 && !skipEmail.some(sp => l.includes(sp));
+    });
+
+    validEmails.sort((a, b) => {
+      const aP = a.split("@")[0].toLowerCase();
+      const bP = b.split("@")[0].toLowerCase();
+      const aS = goodPrefixes.findIndex(p => aP.includes(p));
+      const bS = goodPrefixes.findIndex(p => bP.includes(p));
+      if (aS >= 0 && bS < 0) return -1;
+      if (bS >= 0 && aS < 0) return 1;
+      return 0;
+    });
+
+    result.email = validEmails[0] || "";
+
+    const phoneRegex = /\(?\d{2}\)?\s*\d{4,5}[\s.-]?\d{4}/g;
+    const phones = chunk.match(phoneRegex) || [];
+    if (phones.length > 0) {
+      const raw = phones[0].replace(/[^\d]/g, "");
+      if (raw.length >= 10 && raw.length <= 11) {
+        result.phone = `(${raw.slice(0, 2)}) ${raw.slice(2, raw.length - 4)}-${raw.slice(-4)}`;
+      }
+    }
+  } catch {}
+
+  return result;
+}
 
 async function autoProspectGoogle() {
   if (autoProspectRunning) return;
   autoProspectRunning = true;
+  const startTime = Date.now();
+  let totalNewLeads = 0;
+
   try {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.log("[auto-prospect] Google Maps API key não configurada, pulando");
-      return;
-    }
-
-    const now = new Date();
-    const brHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
-    if (brHour < 7 || brHour >= 22) return;
-
-    await supabaseAdmin.rpc("exec_sql", {
-      query: `
-        CREATE TABLE IF NOT EXISTS auto_prospect_state (
-          id SERIAL PRIMARY KEY,
-          query_index INTEGER DEFAULT 0,
-          next_page_token TEXT,
-          total_found INTEGER DEFAULT 0,
-          last_run TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        INSERT INTO auto_prospect_state (id, query_index) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
-      `
-    });
+    await ensureProspectState();
 
     const { data: prospectState } = await supabaseAdmin.from("auto_prospect_state")
       .select("query_index, next_page_token, total_found")
@@ -565,142 +685,101 @@ async function autoProspectGoogle() {
       .single();
 
     let queryIndex = prospectState?.query_index || 0;
-    let nextPageToken: string | null = prospectState?.next_page_token || null;
     let totalFound = prospectState?.total_found || 0;
 
-    if (queryIndex >= AUTO_PROSPECT_QUERIES.length) {
-      queryIndex = 0;
-      nextPageToken = null;
-    }
+    for (let cycle = 0; cycle < QUERIES_PER_CYCLE; cycle++) {
+      if (Date.now() - startTime > 110000) break;
 
-    const query = AUTO_PROSPECT_QUERIES[queryIndex];
-    let url: string;
+      if (queryIndex >= AUTO_PROSPECT_QUERIES.length) {
+        queryIndex = 0;
+        console.log("[auto-prospect] Todas as queries completadas, reiniciando ciclo");
+      }
 
-    if (nextPageToken) {
-      url = `https://maps.googleapis.com/maps/api/place/textsearch/json?pagetoken=${encodeURIComponent(nextPageToken)}&key=${apiKey}`;
-      await new Promise(r => setTimeout(r, 2000));
-    } else {
-      url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=pt-BR&key=${apiKey}`;
-    }
+      const query = AUTO_PROSPECT_QUERIES[queryIndex];
 
-    const resp = await fetch(url);
-    const data = await resp.json();
-
-    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-      console.log(`[auto-prospect] Google Places error: ${data.status} for query "${query}"`);
-      await supabaseAdmin.rpc("exec_sql", {
-        query: `UPDATE auto_prospect_state SET query_index = ${queryIndex + 1}, next_page_token = NULL, updated_at = NOW() WHERE id = 1`
-      });
-      return;
-    }
-
-    const places = data.results || [];
-    let newLeads = 0;
-
-    for (const place of places) {
-      if (!place.place_id) continue;
-
-      const { data: existing } = await supabaseAdmin.from("leads")
-        .select("id")
-        .eq("google_place_id", place.place_id)
-        .limit(1);
-
-      if (existing && existing.length > 0) continue;
-
-      let website = "";
-      let phone = "";
-      let placeEmail = "";
-
+      let siteUrls: string[] = [];
       try {
-        const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=website,formatted_phone_number,international_phone_number&language=pt-BR&key=${apiKey}`;
-        const detailResp = await fetch(detailUrl);
-        const detailData = await detailResp.json();
-        if (detailData.result) {
-          website = detailData.result.website || "";
-          phone = detailData.result.formatted_phone_number || detailData.result.international_phone_number || "";
+        siteUrls = await searchDuckDuckGo(query);
+        await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+      } catch (err: any) {
+        console.log(`[auto-prospect] DuckDuckGo error: ${err.message}`);
+        queryIndex++;
+        continue;
+      }
+
+      let newInQuery = 0;
+
+      for (const siteUrl of siteUrls) {
+        if (Date.now() - startTime > 110000) break;
+
+        const { data: existingSite } = await supabaseAdmin.from("leads")
+          .select("id").eq("website", siteUrl).limit(1);
+        if (existingSite && existingSite.length > 0) continue;
+
+        const contact = await extractContactFromSite(siteUrl);
+        if (!contact.empresa || contact.empresa.length < 3) continue;
+
+        const { data: existingName } = await supabaseAdmin.from("leads")
+          .select("id").ilike("empresa", `%${contact.empresa.substring(0, 30)}%`).limit(1);
+        if (existingName && existingName.length > 0) continue;
+
+        let email = contact.email;
+        if (!email && contact.domain) {
+          const prefix = EMAIL_PREFIXES[Math.floor(Math.random() * 3)];
+          email = `${prefix}@${contact.domain}`;
         }
-      } catch (e: any) {
-        console.log(`[auto-prospect] Place Details error: ${e.message}`);
-      }
-
-      let domain = "";
-      if (website) {
-        try {
-          const u = new URL(website);
-          domain = u.hostname.replace(/^www\./, "");
-        } catch {}
-      }
-
-      if (domain) {
-        const skipDomains = ["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "youtube.com", "google.com", "blogspot.com", "wordpress.com", "wix.com", "squarespace.com"];
-        if (skipDomains.some(sd => domain.includes(sd))) {
-          domain = "";
-        }
-      }
-
-      if (domain) {
-        const prefix = EMAIL_PREFIXES[Math.floor(Math.random() * 3)];
-        placeEmail = `${prefix}@${domain}`;
+        if (!email) continue;
 
         const { data: emailExists } = await supabaseAdmin.from("leads")
-          .select("id")
-          .eq("email", placeEmail)
-          .limit(1);
-
+          .select("id").eq("email", email).limit(1);
         if (emailExists && emailExists.length > 0) continue;
+
+        await supabaseAdmin.from("leads").insert({
+          empresa: contact.empresa,
+          email,
+          telefone: contact.phone || null,
+          website: siteUrl,
+          endereco: null,
+          cidade: "São Paulo",
+          estado: "SP",
+          setor: "Transporte/Logística",
+          origem: "auto_prospect_google",
+          status: "novo",
+          emails_enviados: 0,
+          historico: [{
+            data: nowBRTString(),
+            acao: "Importado automaticamente via DuckDuckGo + Web Scraping",
+            usuario: "Sistema Auto-Prospect",
+            detalhes: `Query: "${query}" | Site: ${siteUrl} | E-mail: ${email} | Tel: ${contact.phone || "N/A"} | Real: ${contact.email ? "SIM" : "derivado"}`,
+          }],
+          created_at: nowBRTString(),
+          updated_at: nowBRTString(),
+        });
+
+        newInQuery++;
+        totalNewLeads++;
+        totalFound++;
       }
 
-      if (!placeEmail && !phone) continue;
-
-      const addr = place.formatted_address || "";
-      const cidadeMatch = addr.match(/,\s*([^,]+?)\s*-\s*([A-Z]{2})/);
-      const cidade = cidadeMatch ? cidadeMatch[1].trim() : "São Paulo";
-      const estado = cidadeMatch ? cidadeMatch[2].trim() : "SP";
-
-      await supabaseAdmin.from("leads").insert({
-        empresa: place.name,
-        email: placeEmail || null,
-        telefone: phone || null,
-        website: website || null,
-        endereco: addr,
-        cidade,
-        estado,
-        setor: "Transporte/Logística",
-        origem: "auto_prospect_google",
-        status: "novo",
-        google_place_id: place.place_id,
-        google_rating: place.rating || null,
-        google_total_reviews: place.user_ratings_total || null,
-        emails_enviados: 0,
-        historico: [{
-          data: nowBRTString(),
-          acao: "Importado automaticamente do Google Places",
-          usuario: "Sistema Auto-Prospect",
-          detalhes: `Query: "${query}" | Website: ${website || "N/A"} | E-mail derivado: ${placeEmail || "N/A"}`,
-        }],
-        created_at: nowBRTString(),
-        updated_at: nowBRTString(),
-      });
-
-      newLeads++;
-      totalFound++;
+      console.log(`[auto-prospect] Query #${queryIndex} "${query}" → ${siteUrls.length} sites, ${newInQuery} novos leads`);
+      queryIndex++;
     }
 
-    const newNextPageToken = data.next_page_token || null;
-    const newQueryIndex = newNextPageToken ? queryIndex : queryIndex + 1;
-
     await supabaseAdmin.from("auto_prospect_state").update({
-      query_index: newQueryIndex,
-      next_page_token: newNextPageToken,
+      query_index: queryIndex,
+      next_page_token: null,
       total_found: totalFound,
       last_run: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq("id", 1);
 
-    if (newLeads > 0) {
-      console.log(`[auto-prospect] ✓ ${newLeads} novos leads encontrados (query: "${query}"). Total acumulado: ${totalFound}`);
-    } else {
-      console.log(`[auto-prospect] Query "${query}" processada, 0 novos leads (todos já existiam ou sem e-mail)`);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[auto-prospect] ✓ Ciclo: ${totalNewLeads} novos leads em ${elapsed}s. Total acumulado: ${totalFound}`);
+
+    if (totalNewLeads > 0) {
+      console.log("[auto-prospect] Enfileirando e-mails para novos leads...");
+      await autoEnqueueLeads();
+      await processEmailQueue();
     }
   } catch (err: any) {
     console.error(`[auto-prospect] Erro: ${err.message}`);
@@ -807,7 +886,7 @@ export function registerLeadRoutes(app: Express) {
       .catch(err => console.error("[email-queue-cron]", err.message));
   });
 
-  cron.schedule("*/15 * * * *", () => {
+  cron.schedule("*/10 * * * *", () => {
     autoProspectGoogle().catch(err => console.error("[auto-prospect-cron]", err.message));
   });
 
@@ -821,7 +900,7 @@ export function registerLeadRoutes(app: Express) {
 
   console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
   console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);
-  console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 15min (07h-22h)");
+  console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 10min (3 queries/ciclo, ~60 leads/hora)");
   console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
 
   const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -1479,7 +1558,7 @@ export function registerLeadRoutes(app: Express) {
         totalLeads: totalLeads || 0,
         autoLeads: autoLeads || 0,
         leadsWithEmail: leadsWithEmail || 0,
-        hasApiKey: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY),
+        hasApiKey: true,
       });
     } catch (err: any) {
       res.json({
@@ -1490,7 +1569,7 @@ export function registerLeadRoutes(app: Express) {
         totalLeads: 0,
         autoLeads: 0,
         leadsWithEmail: 0,
-        hasApiKey: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY),
+        hasApiKey: true,
       });
     }
   });
