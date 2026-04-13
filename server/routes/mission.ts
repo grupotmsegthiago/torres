@@ -40,6 +40,70 @@ import type { Express } from "express";
     triangulo: "triângulo de sinalização",
   };
 
+  const LEARNING_MODE = true;
+
+  const LOW_LIGHT_KEYWORDS = [
+    "baixa iluminação", "pouca luz", "escuro", "noturno", "noite",
+    "iluminação insuficiente", "difícil visualização", "pouca visibilidade",
+    "iluminação precária", "sem iluminação", "penumbra", "mal iluminad",
+    "ilegível", "não é possível ler", "não foi possível identificar",
+    "visibilidade comprometida", "imagem escura", "foto escura",
+  ];
+
+  function isNightTime(): boolean {
+    const brHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+    return brHour >= 18 || brHour < 6;
+  }
+
+  function hasLowLightIssue(result: any): boolean {
+    const text = JSON.stringify(result).toLowerCase();
+    return LOW_LIGHT_KEYWORDS.some(kw => text.includes(kw));
+  }
+
+  function shouldAutoApprove(result: any, step: string, inspectionConfig: any): { approve: boolean; reason: string } {
+    if (!LEARNING_MODE) return { approve: false, reason: "" };
+
+    const nightMode = isNightTime();
+    const lowLight = hasLowLightIssue(result);
+
+    if (inspectionConfig?.type === "plate") {
+      if (!result.placa_detectada || result.placa_confere === null) {
+        if (nightMode || lowLight) {
+          return { approve: true, reason: "Placa não identificada (baixa iluminação/noturno) — modo aprendizado" };
+        }
+        return { approve: true, reason: "Placa não identificada pela IA — modo aprendizado, liberando agente" };
+      }
+    }
+
+    if (inspectionConfig?.type === "agent") {
+      if (result.colete_visivel === false || result.item_encontrado === false) {
+        if (nightMode || lowLight) {
+          return { approve: true, reason: "Colete/equipamento não identificado (baixa iluminação/noturno) — modo aprendizado" };
+        }
+        return { approve: true, reason: "Colete/equipamento não identificado pela IA — modo aprendizado, liberando agente" };
+      }
+    }
+
+    if (lowLight || nightMode) {
+      const divs = result.divergencias || [];
+      const allLightRelated = divs.length > 0 && divs.every((d: string) => {
+        const dl = d.toLowerCase();
+        return LOW_LIGHT_KEYWORDS.some(kw => dl.includes(kw)) ||
+          dl.includes("não identificad") || dl.includes("não foi possível") ||
+          dl.includes("ilegível") || dl.includes("inconclusiv");
+      });
+      if (allLightRelated) {
+        return { approve: true, reason: `Divergências relacionadas à iluminação (${nightMode ? "horário noturno" : "baixa luz"}) — modo aprendizado` };
+      }
+    }
+
+    if (result.condicao === "inconclusivo") {
+      return { approve: true, reason: "Condição inconclusiva — modo aprendizado, liberando agente" };
+    }
+
+    return { approve: false, reason: "" };
+  }
+
   async function runPhotoInspection(photoId: number, serviceOrderId: number, employeeId: number, step: string, photoData: string, vehiclePlate?: string, escortedPlate?: string, checklistItems?: string[], kmValue?: number | null): Promise<{ status: string; result: any } | null> {
     const inspectionConfig = INSPECTION_STEPS[step];
     const isChecklistEquipment = checklistItems && checklistItems.length > 0;
@@ -55,6 +119,11 @@ import type { Express } from "express";
       const OpenAI = (await import("openai")).default;
       const openai = new OpenAI({ apiKey, baseURL });
 
+      const nightMode = isNightTime();
+      const lightContext = nightMode
+        ? "\n\nATENÇÃO: É horário noturno. Considere que a iluminação pode ser precária. Seja mais tolerante com fotos escuras ou com baixa visibilidade. Se não conseguir identificar algo por causa da iluminação, marque como inconclusivo em vez de divergente."
+        : "";
+
       let expectedPlate = "";
       let promptText = "";
 
@@ -69,6 +138,8 @@ Analise esta foto e valide:
 1. PLACA: Tente ler a placa do veículo na imagem. A placa esperada é "${expectedPlate}". Compare se a placa visível corresponde.
 2. VEÍCULO: Verifique se a foto é do ângulo correto (${inspectionConfig.expectedItem}).
 3. CONDIÇÃO: Note qualquer dano visível ou irregularidade no veículo.
+${lightContext}
+IMPORTANTE: Se a placa não for legível por baixa iluminação ou qualidade da imagem, marque placa_confere como null e placa_detectada como null. NÃO considere isso como divergência.
 
 Responda APENAS com JSON válido (sem markdown):
 {
@@ -77,7 +148,7 @@ Responda APENAS com JSON válido (sem markdown):
   "angulo_correto": true/false,
   "item_esperado": "${inspectionConfig.expectedItem}",
   "item_encontrado": true/false,
-  "condicao": "bom/dano_visivel/irregular",
+  "condicao": "bom/dano_visivel/irregular/inconclusivo",
   "divergencias": ["lista de problemas"] ou [],
   "observacao": "breve análise"
 }`;
@@ -86,7 +157,7 @@ Responda APENAS com JSON válido (sem markdown):
 Analise esta foto e valide:
 1. A foto mostra o ângulo correto: ${inspectionConfig.expectedItem}
 2. Condição aparente do veículo (danos, arranhões, amassados)
-
+${lightContext}
 Responda APENAS com JSON válido (sem markdown):
 {
   "placa_detectada": null,
@@ -134,6 +205,8 @@ Analise esta foto do agente de escolta. Verifique:
 2. O agente está portando arma de fogo visível (no coldre ou em mãos)?
 3. A apresentação geral é profissional e adequada para operação de escolta?
 4. O uniforme está correto (se visível)?
+${lightContext}
+IMPORTANTE: Se a iluminação estiver ruim e não for possível identificar colete ou armamento claramente, marque como inconclusivo em vez de divergente. Em ambiente noturno é normal ter dificuldade de visualização desses itens.
 
 Responda APENAS com JSON válido (sem markdown):
 {
@@ -157,7 +230,7 @@ Analise esta foto de armamento. Verifique:
 2. É possível identificar o tipo de arma (pistola, espingarda, etc)?
 3. A arma aparenta estar em bom estado de conservação?
 4. A foto foi tirada de forma adequada para registro/controle?
-
+${lightContext}
 Responda APENAS com JSON válido (sem markdown):
 {
   "placa_detectada": null,
@@ -176,6 +249,8 @@ Analise esta foto do local (${inspectionConfig.expectedItem}). Verifique:
 1. A foto mostra um local adequado (pátio, portaria, doca de carga)?
 2. Há elementos identificáveis do local (nome da empresa, endereço, placa)?
 3. As condições ambientais estão normais (iluminação, segurança)?
+${lightContext}
+IMPORTANTE: Em horário noturno, é normal que o local não seja totalmente identificável. Se a foto mostra um local mas com pouca iluminação, marque como inconclusivo em vez de divergente.
 
 Responda APENAS com JSON válido (sem markdown):
 {
@@ -194,7 +269,7 @@ Responda APENAS com JSON válido (sem markdown):
         promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
 A viatura de placa "${vehiclePlate}" deve conter os seguintes itens de segurança: ${itemsList}.
 Analise esta foto e identifique se os equipamentos obrigatórios estão visíveis e em bom estado.
-
+${lightContext}
 Responda APENAS com JSON válido (sem markdown):
 {
   "placa_detectada": null,
@@ -329,13 +404,26 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
-      const hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
+      let hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
         result.placa_confere === false ||
         result.angulo_correto === false ||
         result.item_encontrado === false ||
         result.condicao === "dano_visivel" || result.condicao === "irregular" || result.condicao === "ausente" || result.condicao === "danificado";
 
-      const status = hasDivergence ? "divergente" : "aprovado";
+      let status = hasDivergence ? "divergente" : "aprovado";
+      let autoApproveReason = "";
+
+      if (hasDivergence) {
+        const autoApproval = shouldAutoApprove(result, step, inspectionConfig);
+        if (autoApproval.approve) {
+          status = "aprovado";
+          autoApproveReason = autoApproval.reason;
+          result._auto_aprovado = true;
+          result._auto_aprovado_motivo = autoApproval.reason;
+          result._divergencias_originais = [...(result.divergencias || [])];
+          console.log(`[ai-inspection] AUTO-APROVADO Photo #${photoId} step=${step}: ${autoApproval.reason}`);
+        }
+      }
 
       await supabaseAdmin.from("mission_photos").update({
         ai_inspection_status: status,
@@ -356,7 +444,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         divergences: result.divergencias || [],
         ai_raw_response: raw,
         status,
-        alerted: hasDivergence,
+        alerted: hasDivergence && !autoApproveReason,
       });
 
       console.log(`[ai-inspection] Photo #${photoId} step=${step} → ${status}`);
