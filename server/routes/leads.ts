@@ -868,13 +868,44 @@ export function registerLeadRoutes(app: Express) {
       const taxaAbertura = enviados > 0 ? Math.round((lidos / enviados) * 100) : 0;
       const taxaResposta = enviados > 0 ? Math.round((respondidos / enviados) * 100) : 0;
 
+      const now = new Date();
+      const nextDispatchMs = BATCH_INTERVAL_MINUTES * 60 * 1000;
+      const minutesSinceEpoch = now.getTime();
+      const nextDispatch = new Date(Math.ceil(minutesSinceEpoch / nextDispatchMs) * nextDispatchMs);
+      const secondsUntilNext = Math.max(0, Math.floor((nextDispatch.getTime() - now.getTime()) / 1000));
+
+      const nowBrt = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const currentHour = nowBrt.getHours();
+      const autoEnqueueActive = currentHour >= AUTO_ENQUEUE_HOUR_START && currentHour < AUTO_ENQUEUE_HOUR_END;
+      const nextAutoEnqueueHour = autoEnqueueActive
+        ? (Math.floor(currentHour / 2) + 1) * 2
+        : AUTO_ENQUEUE_HOUR_START;
+
       res.json({
         total, pendentes, enviados, lidos, respondidos, erros,
         taxaAbertura, taxaResposta,
         daily,
         batchSize: BATCH_SIZE,
         intervalMinutes: BATCH_INTERVAL_MINUTES,
+        secondsUntilNextDispatch: secondsUntilNext,
+        autoEnqueueActive,
+        nextAutoEnqueueHour,
+        maxEmailsPerLead: MAX_EMAILS_PER_LEAD,
+        serverTime: now.toISOString(),
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/leads/dispatch-log", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      const { data: emails, error } = await supabaseAdmin.from("email_queue")
+        .select("id, empresa, to_email, subject, status, created_at, sent_at, opened_at, opened_count, replied, replied_at, error_message, lead_id")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      res.json(emails || []);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -711,9 +711,45 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
   );
 }
 
+function CountdownTimer({ seconds, label }: { seconds: number; label: string }) {
+  const [remaining, setRemaining] = useState(seconds);
+  useEffect(() => { setRemaining(seconds); }, [seconds]);
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const t = setInterval(() => setRemaining(p => Math.max(0, p - 1)), 1000);
+    return () => clearInterval(t);
+  }, [remaining > 0]);
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const pct = seconds > 0 ? ((seconds - remaining) / seconds) * 100 : 100;
+  return (
+    <div className="flex flex-col items-center" data-testid={`countdown-${label}`}>
+      <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1">{label}</span>
+      <div className="relative w-16 h-16">
+        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="28" fill="none" stroke="#e5e5e5" strokeWidth="4" />
+          <circle cx="32" cy="32" r="28" fill="none" stroke={remaining <= 60 ? "#f59e0b" : "#3b82f6"} strokeWidth="4" strokeDasharray={`${pct * 1.759} 175.9`} strokeLinecap="round" />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`text-xs font-black tabular-nums ${remaining <= 60 ? "text-amber-600" : "text-blue-600"}`}>
+            {mins}:{secs.toString().padStart(2, "0")}
+          </span>
+        </div>
+      </div>
+      {remaining === 0 && <span className="text-[8px] text-emerald-600 font-bold mt-0.5">Processando...</span>}
+    </div>
+  );
+}
+
 function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, onAutoEnqueue, onSendReport, isEnqueuing, isDispatching, isAutoEnqueuing, isSendingReport }: any) {
   const [queueFilter, setQueueFilter] = useState("ALL");
+  const [showLog, setShowLog] = useState(false);
   const st = emailStats || { total: 0, pendentes: 0, enviados: 0, lidos: 0, respondidos: 0, erros: 0, taxaAbertura: 0, taxaResposta: 0, daily: [], batchSize: 5, intervalMinutes: 10 };
+
+  const { data: dispatchLog = [] } = useQuery<any[]>({
+    queryKey: ["/api/leads/dispatch-log"],
+    enabled: showLog,
+  });
   const daily = st.daily || [];
 
   const maxEnviados = Math.max(...daily.map((d: any) => d.enviados || 0), 1);
@@ -758,11 +794,44 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
             <Badge variant="outline" className="text-[10px]">
               {st.batchSize} e-mails / {st.intervalMinutes}min
             </Badge>
-            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">
-              <Activity size={10} className="mr-1" /> ATIVO
+            <Badge variant="outline" className="text-[10px]">
+              máx {st.maxEmailsPerLead || 1}/lead
+            </Badge>
+            <Badge className={`text-[10px] ${st.pendentes > 0 ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-neutral-100 text-neutral-500 border-neutral-200"}`}>
+              <Activity size={10} className="mr-1" /> {st.pendentes > 0 ? "ATIVO" : "AGUARDANDO"}
             </Badge>
           </div>
         </div>
+
+        <div className="flex items-start gap-6 mb-3">
+          <div className="flex gap-4">
+            {st.secondsUntilNextDispatch != null && (
+              <CountdownTimer seconds={st.secondsUntilNextDispatch} label="Próximo Disparo" />
+            )}
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                <span className="text-lg font-black text-amber-700">{st.pendentes}</span>
+                <p className="text-[8px] font-bold text-amber-500 uppercase">Na Fila</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                <span className="text-lg font-black text-blue-700">{st.enviados}</span>
+                <p className="text-[8px] font-bold text-blue-500 uppercase">Enviados</p>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                <span className="text-lg font-black text-emerald-700">{st.lidos}</span>
+                <p className="text-[8px] font-bold text-emerald-500 uppercase">Abertos</p>
+              </div>
+            </div>
+            {st.pendentes === 0 && st.enviados > 0 && (
+              <p className="text-[10px] text-neutral-400 text-center italic">
+                Todos os leads já foram contatados (máx {st.maxEmailsPerLead || 1} e-mail por lead). Adicione novos leads para continuar.
+              </p>
+            )}
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => onEnqueueAll({})} disabled={isEnqueuing} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-enqueue-all">
             {isEnqueuing ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
@@ -783,19 +852,78 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
             {isSendingReport ? <RefreshCw size={12} className="animate-spin" /> : <BarChart3 size={12} />}
             Enviar Relatório
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowLog(!showLog)} className="gap-1.5 text-neutral-600 border-neutral-200 hover:bg-neutral-50" data-testid="btn-dispatch-log">
+            <History size={12} /> {showLog ? "Ocultar Log" : "Log de Envios"}
+          </Button>
         </div>
         <div className="flex items-center gap-3 mt-2 flex-wrap">
           <span className="text-[10px] text-neutral-400 flex items-center gap-1">
             <Mail size={10} /> Respostas vão para escolta@ e diretoria@
           </span>
-          <Badge className="bg-green-50 text-green-700 border-green-200 text-[9px]">
-            <Zap size={9} className="mr-1" /> Auto-enqueue: a cada 2h (07h-21h)
+          <Badge className={`text-[9px] ${st.autoEnqueueActive ? "bg-green-50 text-green-700 border-green-200" : "bg-neutral-50 text-neutral-400 border-neutral-200"}`}>
+            <Zap size={9} className="mr-1" /> Auto-enqueue: a cada 2h (07h-21h) {st.autoEnqueueActive ? "● ON" : "○ OFF"}
           </Badge>
           <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[9px]">
             <BarChart3 size={9} className="mr-1" /> Relatório diário: 21h BRT
           </Badge>
+          {st.serverTime && (
+            <span className="text-[9px] text-neutral-300">
+              Servidor: {new Date(st.serverTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
         </div>
       </div>
+
+      {showLog && (
+        <div className="bg-white border border-neutral-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <History size={14} className="text-neutral-400" />
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Relatório de Envios</span>
+            <Badge variant="outline" className="text-[10px]">{dispatchLog.length} registros</Badge>
+          </div>
+          <div className="space-y-1 max-h-[350px] overflow-y-auto">
+            {dispatchLog.length === 0 ? (
+              <p className="text-xs text-neutral-400 text-center py-6">Nenhum envio registrado</p>
+            ) : dispatchLog.map((log: any) => {
+              const statusMap: Record<string, { label: string; dot: string; bg: string }> = {
+                pendente: { label: "PENDENTE", dot: "bg-amber-400", bg: "bg-amber-50 text-amber-700 border-amber-200" },
+                enviado: { label: "ENVIADO", dot: "bg-blue-400", bg: "bg-blue-50 text-blue-700 border-blue-200" },
+                lido: { label: "ABERTO", dot: "bg-emerald-400", bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                erro: { label: "ERRO", dot: "bg-red-400", bg: "bg-red-50 text-red-700 border-red-200" },
+              };
+              const s = statusMap[log.status] || statusMap.pendente;
+              return (
+                <div key={log.id} className="flex items-center gap-3 p-2 rounded-lg border border-neutral-100 hover:bg-neutral-50" data-testid={`dispatch-log-${log.id}`}>
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-neutral-900 truncate">{log.empresa || "—"}</span>
+                      <Badge className={`${s.bg} text-[8px] border`}>{s.label}</Badge>
+                      {log.replied && <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[8px]">RESPONDIDO</Badge>}
+                      {log.opened_count > 0 && <span className="text-[9px] text-emerald-600 font-bold">{log.opened_count}x aberto</span>}
+                    </div>
+                    <p className="text-[10px] text-neutral-400 truncate">{log.to_email}</p>
+                    <div className="flex items-center gap-3 text-[9px] text-neutral-300 mt-0.5 flex-wrap">
+                      <span>Criado: {log.created_at ? new Date(log.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</span>
+                      {log.sent_at && <span className="text-blue-500">Enviado: {new Date(log.sent_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>}
+                      {log.opened_at && <span className="text-emerald-500">Aberto: {new Date(log.opened_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>}
+                      {log.replied_at && <span className="text-purple-500">Respondido: {new Date(log.replied_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>}
+                      {log.error_message && <span className="text-red-500 truncate max-w-[200px]">{log.error_message}</span>}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    {(log.status === "enviado" || log.status === "lido") && !log.replied && (
+                      <Button size="sm" variant="outline" onClick={() => onMarkReplied(log.id)} className="h-6 text-[9px] gap-1 text-purple-600 border-purple-200" data-testid={`log-replied-${log.id}`}>
+                        <Reply size={9} /> Respondeu
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white border border-neutral-200 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-3">
