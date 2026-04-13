@@ -66,3 +66,9 @@ id = "50K8dnFhdrGqE70v5aWlV"
 uri = "file://RELATORIO_SAUDE_FINANCEIRA.md"
 type = "text"
 title = "Relatório de Saúde Financeira - Torres"
+
+[[outputs]]
+id = "NoylSF_LFu_AQAwSUHhsQ"
+uri = "file://Boletim_Medicao_OMEGA_SOLUTIONS_Abril_2026.xlsx"
+type = "table"
+title = "Boletim de Medição - Omega Solutions - Abril/2026 (SEM TRAVAS)"
