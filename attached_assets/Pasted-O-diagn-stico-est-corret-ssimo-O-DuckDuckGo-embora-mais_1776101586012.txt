@@ -1,0 +1,53 @@
+O diagnóstico está corretíssimo. O DuckDuckGo, embora mais permissivo que o Google, também tem limites de "rate limiting". Quando ele vê muitas requisições vindas do mesmo IP do Replit (que é um IP de data center, já marcado por muitos robôs), ele simplesmente entrega uma página vazia em vez de um erro 403, para não "dar bandeira".
+
+Como vais implementar a melhoria, aqui está uma estrutura de código para o teu Scraper que ajuda a contornar esse bloqueio:
+
+1. Melhoria no Motor de Busca (Node.js)
+Para que o sistema "destrave" dos 19 leads, vamos adicionar User-Agents reais e um Delay Aleatório.
+
+JavaScript
+const axios = require('axios');
+
+// 1. Lista de User-Agents para parecer um navegador real (Chrome, Safari, Firefox)
+const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/119.0'
+];
+
+async function buscarComVariacao(query) {
+    // Escolhe um User-Agent aleatório
+    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
+    // 2. Delay aleatório entre 5 e 15 segundos para enganar o detetor de bots
+    const delay = Math.floor(Math.random() * (15000 - 5000 + 1) + 5000);
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    try {
+        console.log(`🤖 Tentando query: "${query}" com UA variado...`);
+        // Aqui vai a tua chamada ao DuckDuckGo ou Bing
+        // Exemplo: const response = await axios.get(url, { headers: { 'User-Agent': randomUA } });
+        
+    } catch (error) {
+        console.error("❌ Bloqueio detectado. Mudando para Fallback...");
+    }
+}
+2. Sugestão de Fallback (O plano B)
+Se o DuckDuckGo continuar a retornar 0, recomendo usares o Bing ou o Yahoo via busca direta de HTML. Outra técnica infalível é buscar no Google Maps (via API ou Scraper), pois para serviços de Escolta, a localização geográfica das empresas (como em polos industriais) é muito mais precisa do que a busca geral na web.
+
+3. Panorama Geral da Nova Estratégia
+Ao implementares isto, o fluxo de "ataque" do teu sistema passará a ser:
+
+Rotação de Identidade: Cada busca parece vir de um computador diferente.
+
+Ritmo Humano: O sistema deixa de ser "metralhadora" e passa a ser "atirador de elite" (mais lento, porém certeiro).
+
+Limpeza de Query: Em vez de buscas genéricas como "empresa de segurança", tenta: site:.com.br "logística" "contato" "São Paulo". Usar o operador site:.com.br ajuda a filtrar resultados inúteis.
+
+Documentação do Próximo Passo
+User-Agent: É a "assinatura" que diz ao site se és um iPhone, um PC com Windows ou um robô. Rodar isto é essencial.
+
+Delay: Impede que o servidor alvo veja um padrão matemático perfeito de 10 em 10 minutos.
+
+Uma pergunta para afinarmos o "ataque":
+Além do DuckDuckGo e Bing, gostarias que eu te ajudasse a criar um script que busca especificamente no LinkedIn ou em Diretórios de Transportadoras? Estes costumam ter e-mails mais atualizados para o setor de logística.

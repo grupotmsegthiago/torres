@@ -603,7 +603,18 @@ async function ensureProspectState() {
   });
 }
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+];
+function randomUA(): string { return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]; }
+function randomDelay(min: number, max: number): Promise<void> { return new Promise(r => setTimeout(r, min + Math.random() * (max - min))); }
+
+const UA = randomUA();
 
 const SKIP_DOMAINS = new Set([
   "google.com", "youtube.com", "facebook.com", "instagram.com", "linkedin.com",
@@ -612,15 +623,10 @@ const SKIP_DOMAINS = new Set([
   "guiamais.com.br", "yelp.com", "tripadvisor.com", "infojobs.com.br",
   "indeed.com", "glassdoor.com", "olx.com.br", "mercadolivre.com.br",
   "telelistas.net", "maps.google.com", "pinterest.com", "tiktok.com",
+  "bing.com", "msn.com", "yahoo.com",
 ]);
 
-async function searchDuckDuckGo(query: string): Promise<string[]> {
-  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:.com.br contato")}`;
-  const resp = await fetch(url, {
-    headers: { "User-Agent": UA, "Accept": "text/html" },
-  });
-  const html = await resp.text();
-
+function extractUrlsFromHtml(html: string): string[] {
   const urls: string[] = [];
   const regex = /uddg=(https?%3A%2F%2F[^&"]+)/g;
   let m;
@@ -631,6 +637,56 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
     if (SKIP_DOMAINS.has(domain)) continue;
     const baseUrl = `https://${domain}`;
     if (!urls.includes(baseUrl)) urls.push(baseUrl);
+  }
+  return urls;
+}
+
+function extractUrlsFromBing(html: string): string[] {
+  const urls: string[] = [];
+  const regex = /href="(https?:\/\/[^"]+)"/g;
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    let domain = "";
+    try { domain = new URL(m[1]).hostname.replace(/^www\./, ""); } catch { continue; }
+    if (SKIP_DOMAINS.has(domain)) continue;
+    if (!domain.endsWith(".com.br") && !domain.endsWith(".com")) continue;
+    const baseUrl = `https://${domain}`;
+    if (!urls.includes(baseUrl)) urls.push(baseUrl);
+  }
+  return urls;
+}
+
+async function searchDuckDuckGo(query: string): Promise<string[]> {
+  const ua = randomUA();
+  await randomDelay(500, 2000);
+
+  let urls: string[] = [];
+  try {
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:.com.br contato")}`;
+    const resp = await fetch(ddgUrl, {
+      headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9" },
+    });
+    const html = await resp.text();
+    urls = extractUrlsFromHtml(html);
+  } catch (err: any) {
+    console.log(`[auto-prospect] DuckDuckGo falhou: ${err.message}`);
+  }
+
+  if (urls.length === 0) {
+    try {
+      await randomDelay(1000, 3000);
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query + " site:.com.br contato")}&count=10`;
+      const resp = await fetch(bingUrl, {
+        headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "pt-BR,pt;q=0.9" },
+      });
+      const html = await resp.text();
+      urls = extractUrlsFromBing(html);
+      if (urls.length > 0) {
+        console.log(`[auto-prospect] Bing fallback: ${urls.length} sites encontrados`);
+      }
+    } catch (err: any) {
+      console.log(`[auto-prospect] Bing fallback falhou: ${err.message}`);
+    }
   }
 
   return urls.slice(0, 15);

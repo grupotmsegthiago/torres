@@ -1,0 +1,22 @@
+o Replit, os logs são fundamentais para perceberes se o sistema está a tentar aceder a um site e a ser bloqueado, ou se simplesmente não está a encontrar novos e-mails.1. Onde ver os Logs no Replit agora?Antes de mexermos no código, verifica o seguinte:No canto inferior do teu ecrã no Replit, tens uma aba chamada "Console".Lá devem estar a aparecer mensagens em tempo real. Se o número de leads não sai de 19, o Console provavelmente dirá algo como:Search returned no new results (Busca não trouxe resultados novos).Access denied / 403 Forbidden (O site da transportadora bloqueou o robô).No email found on page (Site encontrado, mas sem e-mail visível).2. Como criar um Log Detalhado (Exemplo em Node.js)Se o teu sistema não estiver a imprimir detalhes suficientes, podes adicionar uma função de log que regista tudo num ficheiro chamado atividades.log. Assim, podes abrir esse ficheiro a qualquer momento para ver o histórico.O Código de LogJavaScriptconst fs = require('fs');
+
+function registrarLog(mensagem) {
+    const timestamp = new Date().toLocaleString('pt-BR');
+    const linhaLog = `[${timestamp}] ${mensagem}\n`;
+    
+    // Escreve no console para veres agora
+    console.log(linhaLog);
+    
+    // Guarda num ficheiro para veres depois
+    fs.appendFileSync('prospeccao.log', linhaLog);
+}
+
+// EXEMPLO DE COMO USAR NO TEU SISTEMA:
+registrarLog("Iniciando busca por: 'Transportadoras Guarulhos'");
+
+// Se encontrar um lead:
+registrarLog("✅ Lead encontrado: Transportes ABC - Email: contato@abc.com.br");
+
+// Se falhar:
+registrarLog("⚠️ Aviso: O site transportesxyz.com.br não permitiu a leitura de e-mails.");
+3. Panorama do que o Log te vai mostrarAo leres o log, vais conseguir diagnosticar o "travamento" nos 19 leads:O que o Log dizO que significa na práticaStatus 429: Too Many RequestsO buscador (DuckDuckGo/Google) bloqueou-te por 10 min.Lead already in databaseO sistema está a encontrar as mesmas empresas de sempre.Timeout reaching URLA internet do servidor não conseguiu carregar o site alvo.4. Instruções para ImplementarAcede ao teu ficheiro principal (geralmente index.js ou server.js).Procura a função de busca (onde ele faz as queries).Insere o console.log ou a função registrarLog que criei acima dentro dos blocos try/catch e após cada tentativa de encontrar um e-mail.Dica de Ouro:No teu print, o botão "Log de Envios" (ao lado de Auto-Enqueue) deve mostrar o histórico de e-mails disparados. Se clicares lá e estiver vazio nos últimos minutos, confirma-se que o problema está na captação (fase anterior ao envio).Queres que eu te ajude a escrever uma função de busca mais "profunda" que procure o e-mail em subpáginas (como /contato ou /quem-somos) para tentarmos passar desses 19 leads?
