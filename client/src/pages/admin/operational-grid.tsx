@@ -5058,6 +5058,24 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
   const { data: refPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
 
+  const { data: activeSessions = [] } = useQuery<any[]>({
+    queryKey: ["/api/driver-sessions", "ativo"],
+    queryFn: async () => {
+      const res = await authFetch("/api/driver-sessions?status=ativo");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const driverByVehicle = useMemo(() => {
+    const map: Record<number, { driverName: string; startedAt: string }> = {};
+    for (const s of activeSessions) {
+      if (s.vehicle_id) map[s.vehicle_id] = { driverName: s.driver_name, startedAt: s.started_at };
+    }
+    return map;
+  }, [activeSessions]);
+
   useEffect(() => {
     const handler = (e: Event) => {
       const { vehicleId, x, y } = (e as CustomEvent).detail;
@@ -5107,6 +5125,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Velocidade</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Últ. Alerta</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Agentes</th>
+                <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Condutor</th>
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Horas/Mês</th>
                 <th className="px-2 py-1.5 text-left text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">OS / Status</th>
                 <th className="px-2 py-1.5 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wide whitespace-nowrap">Viatura</th>
@@ -5392,6 +5411,26 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             </div>
                           )}
                           {!v.activeOs.employee1 && !v.activeOs.employee2 && <span className="text-neutral-300 text-xs">Sem agente</span>}
+                        </div>
+                      ) : (
+                        <span className="text-neutral-300 text-xs">—</span>
+                      )}
+                    </td>
+
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      {driverByVehicle[v.id] ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0">
+                            <Car className="w-3 h-3 text-white" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-neutral-900 leading-tight truncate max-w-[120px]" data-testid={`text-driver-${v.id}`}>
+                              {driverByVehicle[v.id].driverName}
+                            </p>
+                            <p className="text-[10px] text-neutral-400 leading-tight">
+                              {formatTimeBRT(driverByVehicle[v.id].startedAt)}
+                            </p>
+                          </div>
                         </div>
                       ) : (
                         <span className="text-neutral-300 text-xs">—</span>
