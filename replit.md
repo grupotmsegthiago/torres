@@ -207,9 +207,10 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 
 ### Controle de Faturas (Módulo Asaas)
 - **Tabela `invoices`:** Armazena faturas localmente com vínculo opcional ao Asaas (`asaas_payment_id`, `asaas_customer_id`).
-- **Rotas API (`server/asaas.ts`):** `GET/POST /api/invoices`, `PATCH/DELETE /api/invoices/:id`, `POST /api/invoices/:id/sync`, `POST /api/invoices/:id/resend`, `GET /api/invoices/:id/pix`, `GET /api/asaas/status`, `GET /api/asaas/customers`, `POST /api/asaas/webhook`.
+- **Rotas API (`server/asaas.ts`):** `GET/POST /api/invoices`, `PATCH/DELETE /api/invoices/:id`, `POST /api/invoices/:id/sync`, `POST /api/invoices/:id/resend` (Asaas notification), `POST /api/invoices/:id/resend-email` (SMTP billing email), `GET /api/invoices/:id/pix`, `GET /api/asaas/status`, `GET /api/asaas/customers`, `POST /api/asaas/webhook`.
 - **Todas rotas protegidas por `requireAdminRole`** (exceto webhook que é público para receber eventos do Asaas).
-- **Frontend:** `/admin/faturas` — Painel de criação, visualização, sincronização, cancelamento e confirmação de pagamento de faturas. Acessível via sidebar Financeiro > Faturas / Cobranças.
+- **E-mail de Cobrança (SMTP):** Ao criar uma fatura, o sistema envia automaticamente e-mail via SMTP (Office 365) para o cliente com boleto/NF/PIX. Usa `email_financeiro` ou `email` do cadastro do cliente. Colunas `email_sent`, `email_sent_at`, `email_sent_to` na tabela `invoices` rastreiam o envio. Botão "Enviar Boleto/NF" / "Reenviar Boleto/NF" no detalhe da fatura (`/admin/faturas`). BCC automático para `thiago@grupotmseg.com.br` e `financeiro@torresseguranca.com.br`.
+- **Frontend:** `/admin/faturas` — Painel de criação, visualização, sincronização, cancelamento e confirmação de pagamento de faturas. Indicador visual de e-mail enviado (ícone MailCheck azul) na listagem. Acessível via sidebar Financeiro > Faturas / Cobranças.
 - **Funciona sem Asaas:** Se `ASAAS_API_KEY` não estiver configurada, faturas são registradas apenas localmente sem geração de boleto/PIX.
 
 ### E-mail Marketing Automatizado (Leads)

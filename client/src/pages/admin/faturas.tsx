@@ -52,6 +52,9 @@ interface Invoice {
   nfse_status: string | null;
   nfse_number: string | null;
   nf_anexo_url: string | null;
+  email_sent: boolean | null;
+  email_sent_at: string | null;
+  email_sent_to: string | null;
   created_at: string;
 }
 
@@ -513,6 +516,9 @@ export default function FaturasPage() {
                                 <Badge className="text-[9px] bg-violet-50 text-violet-600 border border-violet-200">
                                   NF
                                 </Badge>
+                              )}
+                              {inv.email_sent && (
+                                <MailCheck className="w-3.5 h-3.5 text-blue-500" title={`E-mail enviado para ${inv.email_sent_to || "cliente"}`} />
                               )}
                             </div>
                           </TableCell>
@@ -1064,6 +1070,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
   const isCancelled = invoice.status === "CANCELLED";
   const isAguardando = invoice.status === "AGUARDANDO_FATURAMENTO";
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
   const [emitirDueDate, setEmitirDueDate] = useState("");
   const [emitirBillingType, setEmitirBillingType] = useState("BOLETO");
 
@@ -1074,11 +1081,31 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       const result = await r.json();
       const now = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
-      setResendSuccess(`Notificação reenviada com sucesso às ${now}`);
+      setResendSuccess(`Notificação Asaas reenviada com sucesso às ${now}`);
       toast({ title: "Notificação reenviada ao cliente" });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id, "notifications"] });
     } catch (err: any) {
       toast({ title: "Erro ao reenviar", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleSendBillingEmail = async () => {
+    setEmailSending(true);
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/resend-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      const result = await r.json();
+      toast({ title: "E-mail enviado!", description: result.message });
+      setResendSuccess(result.message);
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar e-mail", description: err.message, variant: "destructive" });
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -1265,6 +1292,16 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             </div>
           )}
 
+          {invoice.email_sent && invoice.email_sent_to && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+              <MailCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <p className="text-xs text-blue-700 font-medium">
+                E-mail enviado para {invoice.email_sent_to}
+                {invoice.email_sent_at && ` em ${new Date(invoice.email_sent_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`}
+              </p>
+            </div>
+          )}
+
           {resendSuccess && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
@@ -1281,10 +1318,16 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
                 </Button>
                 {!isPaid && !isCancelled && (
                   <Button variant="outline" size="sm" onClick={handleResend} className="text-blue-700 border-blue-200 hover:bg-blue-50" data-testid="button-resend">
-                    <Send className="w-3.5 h-3.5 mr-1" /> Reenviar E-mail
+                    <Send className="w-3.5 h-3.5 mr-1" /> Notificar Asaas
                   </Button>
                 )}
               </>
+            )}
+            {!isCancelled && (
+              <Button variant="outline" size="sm" onClick={handleSendBillingEmail} disabled={emailSending} className="text-indigo-700 border-indigo-200 hover:bg-indigo-50" data-testid="button-send-billing-email">
+                {emailSending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Mail className="w-3.5 h-3.5 mr-1" />}
+                {invoice.email_sent ? "Reenviar Boleto/NF" : "Enviar Boleto/NF"}
+              </Button>
             )}
             {!isPaid && !isCancelled && (
               <>

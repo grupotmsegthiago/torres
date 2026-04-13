@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAdminRole } from "./auth";
 import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
+import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_helpers";
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
@@ -66,6 +67,112 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
   return payload;
+}
+
+async function sendBillingEmail(invoice: {
+  id: number;
+  client_name: string;
+  value: number;
+  due_date: string;
+  billing_type: string;
+  description: string;
+  invoice_url?: string | null;
+  bank_slip_url?: string | null;
+  nfse_url?: string | null;
+  pix_copia_e_cola?: string | null;
+  service_order_id?: number | null;
+}, clientEmail: string) {
+  const transporter = createSmtpTransporter();
+  if (!transporter || !clientEmail) {
+    console.log(`[billing-email] Skipped: ${!transporter ? "SMTP not configured" : "No client email"}`);
+    return;
+  }
+
+  const dueDateFormatted = new Date(invoice.due_date + "T12:00:00").toLocaleDateString("pt-BR");
+  const valueFormatted = invoice.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const osRef = invoice.service_order_id ? `OS #${invoice.service_order_id}` : "";
+
+  const links: string[] = [];
+  if (invoice.invoice_url) {
+    links.push(`<a href="${invoice.invoice_url}" style="display:inline-block;background:#1a1a2e;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📄 VER FATURA</a>`);
+  }
+  if (invoice.bank_slip_url) {
+    links.push(`<a href="${invoice.bank_slip_url}" style="display:inline-block;background:#0066cc;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">🏦 BOLETO BANCÁRIO</a>`);
+  }
+  if (invoice.nfse_url) {
+    links.push(`<a href="${invoice.nfse_url}" style="display:inline-block;background:#059669;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📋 NOTA FISCAL</a>`);
+  }
+
+  let pixSection = "";
+  if (invoice.pix_copia_e_cola) {
+    pixSection = `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:16px 0;">
+      <p style="font-size:13px;font-weight:bold;color:#166534;margin:0 0 8px;">Pagamento via PIX</p>
+      <p style="font-size:11px;color:#15803d;margin:0 0 8px;">Copie o código abaixo e cole no app do seu banco:</p>
+      <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:11px;color:#374151;">
+        ${invoice.pix_copia_e_cola}
+      </div>
+    </div>`;
+  }
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;">
+<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <div style="background:#1a1a2e;padding:24px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">Torres Vigilância Patrimonial</h1>
+    <p style="color:#94a3b8;font-size:12px;margin:4px 0 0;">Faturamento</p>
+  </div>
+  <div style="padding:24px;">
+    <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px;">
+      Prezado(a) <strong>${invoice.client_name}</strong>,
+    </p>
+    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:0 0 16px;">
+      Segue abaixo a cobrança referente aos serviços de escolta armada prestados${osRef ? ` (${osRef})` : ""}.
+    </p>
+    <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <table style="width:100%;font-size:13px;color:#333;">
+        <tr><td style="padding:4px 0;color:#666;">Descrição:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${invoice.description || DESCRICAO_SERVICO_FIXA}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Valor:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#1a1a2e;text-align:right;">${valueFormatted}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Vencimento:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${dueDateFormatted}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Forma:</td><td style="padding:4px 0;text-align:right;">${invoice.billing_type === "PIX" ? "PIX" : invoice.billing_type === "CREDIT_CARD" ? "Cartão" : "Boleto"}</td></tr>
+      </table>
+    </div>
+    ${links.length > 0 ? `<div style="text-align:center;margin:20px 0;">${links.join("\n")}</div>` : ""}
+    ${pixSection}
+    <p style="font-size:12px;color:#888;line-height:1.5;margin:20px 0 0;">
+      Em caso de dúvidas, entre em contato conosco pelo e-mail 
+      <a href="mailto:financeiro@torresseguranca.com.br" style="color:#1a1a2e;">financeiro@torresseguranca.com.br</a> 
+      ou pelo telefone (11) 96369-6699.
+    </p>
+  </div>
+  <div style="background:#f8f9fa;padding:16px;text-align:center;border-top:1px solid #eee;">
+    <p style="color:#888;font-size:11px;margin:2px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">CNPJ 36.982.392/0001-89</p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ escolta@torresseguranca.com.br</p>
+  </div>
+</div>
+</body></html>`;
+
+  try {
+    await transporter.sendMail({
+      from: getSmtpFrom(),
+      to: clientEmail,
+      bcc: "thiago@grupotmseg.com.br, financeiro@torresseguranca.com.br",
+      subject: `Torres Segurança - Fatura ${valueFormatted} - Venc. ${dueDateFormatted}${osRef ? ` - ${osRef}` : ""}`,
+      html,
+    });
+
+    await supabaseAdmin.from("invoices").update({
+      email_sent: true,
+      email_sent_at: nowBRTString(),
+      email_sent_to: clientEmail,
+    }).eq("id", invoice.id);
+
+    console.log(`[billing-email] ✓ Fatura #${invoice.id} enviada para ${clientEmail}`);
+  } catch (err: any) {
+    console.error(`[billing-email] ✗ Erro ao enviar fatura #${invoice.id} para ${clientEmail}: ${err.message}`);
+  }
 }
 
 async function emitNfseImmediate(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Promise<{ id: string; status: string; number?: string }> {
@@ -148,7 +255,10 @@ async function ensureInvoicesTable() {
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_url TEXT;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_status TEXT;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_number TEXT;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nf_anexo_url TEXT;`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nf_anexo_url TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT FALSE;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_to TEXT;`
     });
   } catch (e: any) {
     console.log("[asaas] ensureInvoicesTable via direct query fallback");
@@ -313,7 +423,7 @@ export function registerAsaasRoutes(app: Express) {
 
   app.post("/api/invoices", requireAdminRole, async (req: Request, res: Response) => {
     try {
-      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas } = req.body;
+      const { clientName, clientCpfCnpj, clientId, serviceOrderId, description, value, dueDate, billingType, notes, sendToAsaas, clientEmail: bodyClientEmail } = req.body;
 
       if (!clientName || !value || !dueDate || !description) {
         return res.status(400).json({ message: "Campos obrigatórios: clientName, value, dueDate, description" });
@@ -341,22 +451,23 @@ export function registerAsaasRoutes(app: Express) {
       let pixCopiaECola: string | null = null;
       let status = "PENDING";
 
+      let clientEmail: string | undefined = bodyClientEmail || undefined;
+      let clientPhone: string | undefined;
+      let clientAddress: string | undefined;
+      let clientCity: string | undefined;
+      let clientState: string | undefined;
+      let clientZip: string | undefined;
+      if (clientId) {
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip").eq("id", clientId).single();
+        if (!clientEmail) clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
+        clientPhone = cliInfo?.phone || undefined;
+        clientAddress = cliInfo?.address || undefined;
+        clientCity = cliInfo?.city || undefined;
+        clientState = cliInfo?.state || undefined;
+        clientZip = cliInfo?.zip || undefined;
+      }
+
       if (sendToAsaas && process.env.ASAAS_API_KEY) {
-        let clientEmail: string | undefined;
-        let clientPhone: string | undefined;
-        let clientAddress: string | undefined;
-        let clientCity: string | undefined;
-        let clientState: string | undefined;
-        let clientZip: string | undefined;
-        if (clientId) {
-          const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, phone, address, city, state, zip").eq("id", clientId).single();
-          clientEmail = cliInfo?.email_financeiro || cliInfo?.email || undefined;
-          clientPhone = cliInfo?.phone || undefined;
-          clientAddress = cliInfo?.address || undefined;
-          clientCity = cliInfo?.city || undefined;
-          clientState = cliInfo?.state || undefined;
-          clientZip = cliInfo?.zip || undefined;
-        }
         asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip);
 
         let emiteNf = false;
@@ -469,6 +580,23 @@ export function registerAsaasRoutes(app: Express) {
         }
         throw error;
       }
+
+      if (data && clientEmail) {
+        sendBillingEmail({
+          id: data.id,
+          client_name: clientName,
+          value: parseFloat(value),
+          due_date: dueDate,
+          billing_type: billingType || "BOLETO",
+          description: description || DESCRICAO_SERVICO_FIXA,
+          invoice_url: invoiceUrl,
+          bank_slip_url: bankSlipUrl,
+          nfse_url: data.nfse_url || null,
+          pix_copia_e_cola: pixCopiaECola,
+          service_order_id: serviceOrderId || null,
+        }, clientEmail).catch(e => console.error(`[billing-email] async error: ${e.message}`));
+      }
+
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -553,6 +681,39 @@ export function registerAsaasRoutes(app: Express) {
         .single();
       if (error) throw error;
       res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/invoices/:id/resend-email", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+      let email = req.body.email || "";
+      if (!email && invoice.client_id) {
+        const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", invoice.client_id).single();
+        email = cli?.email_financeiro || cli?.email || "";
+      }
+      if (!email) return res.status(400).json({ message: "E-mail do cliente não encontrado. Informe no campo 'email'." });
+
+      await sendBillingEmail({
+        id: invoice.id,
+        client_name: invoice.client_name,
+        value: invoice.value,
+        due_date: invoice.due_date,
+        billing_type: invoice.billing_type,
+        description: invoice.description,
+        invoice_url: invoice.invoice_url,
+        bank_slip_url: invoice.bank_slip_url,
+        nfse_url: invoice.nfse_url,
+        pix_copia_e_cola: invoice.pix_copia_e_cola,
+        service_order_id: invoice.service_order_id,
+      }, email);
+
+      res.json({ success: true, message: `E-mail enviado para ${email}` });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
