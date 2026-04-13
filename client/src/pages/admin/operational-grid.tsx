@@ -4735,6 +4735,28 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
                     <span className="font-medium text-neutral-700">{formatDateBRT(data.os.scheduledDate)}</span>
                   </div>
                 )}
+                {(data.os.origin || data.os.destination) && (
+                  <div className="mt-2 pt-2 border-t border-neutral-200 space-y-1">
+                    {data.os.origin && (
+                      <div className="flex justify-between text-xs gap-2">
+                        <span className="text-neutral-500 flex items-center gap-1 flex-shrink-0"><MapPin className="w-3 h-3 text-emerald-500" />Origem</span>
+                        <span className="font-medium text-neutral-700 text-right">{data.os.origin}</span>
+                      </div>
+                    )}
+                    {data.os.destination && (
+                      <div className="flex justify-between text-xs gap-2">
+                        <span className="text-neutral-500 flex items-center gap-1 flex-shrink-0"><MapPin className="w-3 h-3 text-red-500" />Destino</span>
+                        <span className="font-medium text-neutral-700 text-right">{data.os.destination}</span>
+                      </div>
+                    )}
+                    {data.os.route && (
+                      <div className="flex justify-between text-xs gap-2">
+                        <span className="text-neutral-500 flex items-center gap-1 flex-shrink-0"><Navigation className="w-3 h-3 text-blue-500" />Rota</span>
+                        <span className="font-medium text-neutral-700 text-right">{data.os.route}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {lc && (
                   <>
                     <div className="flex justify-between text-xs">
