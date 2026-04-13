@@ -256,6 +256,92 @@ export const CONTATO_CARGOS = [
 ];
 
 // ---------------------------------------------------------------------------
+// TEMPLATES DE E-MAIL (follow-up sequência)
+// ---------------------------------------------------------------------------
+// Cada template usa {{empresa}} e {{nome}} como placeholders (substituídos
+// automaticamente pelo motor). Edite os textos para o seu negócio.
+
+export interface EmailTemplate {
+  subject: string;
+  greeting: string;
+  highlightColor: string;
+  highlightBg: string;
+  highlightTitle: string;
+  bodyItems: string[];
+  cta: string;
+}
+
+export const EMAIL_TEMPLATES: EmailTemplate[] = [
+  {
+    subject: "{{nomeEmpresa}} — Apresentação para {{empresa}}",
+    greeting: "Prezado(a) <strong>{{nome}}</strong>,",
+    highlightColor: "#1a1a2e",
+    highlightBg: "#f0f4ff",
+    highlightTitle: "Nossos Diferenciais:",
+    bodyItems: [
+      "Diferencial 1 do seu serviço",
+      "Diferencial 2 do seu serviço",
+      "Diferencial 3 do seu serviço",
+      "Diferencial 4 do seu serviço",
+    ],
+    cta: "SOLICITAR PROPOSTA COMERCIAL",
+  },
+  {
+    subject: "{{nome}}, conheça as soluções da {{nomeEmpresa}}",
+    greeting: "Olá <strong>{{nome}}</strong>,",
+    highlightColor: "#e65100",
+    highlightBg: "#fff3e0",
+    highlightTitle: "Por que nos escolher?",
+    bodyItems: [
+      "Argumento comercial 1",
+      "Argumento comercial 2",
+      "Argumento comercial 3",
+    ],
+    cta: "QUERO CONHECER A PROPOSTA",
+  },
+  {
+    subject: "Como a {{empresa}} pode se beneficiar dos nossos serviços",
+    greeting: "<strong>{{nome}}</strong>, bom dia!",
+    highlightColor: "#2e7d32",
+    highlightBg: "#e8f5e9",
+    highlightTitle: "Podemos ajudar com:",
+    bodyItems: [
+      "✅ Benefício 1",
+      "✅ Benefício 2",
+      "✅ Benefício 3",
+      "✅ Benefício 4",
+    ],
+    cta: "AGENDAR CONVERSA",
+  },
+  {
+    subject: "{{nome}}, última oportunidade: proposta especial {{nomeEmpresa}}",
+    greeting: "Prezado(a) <strong>{{nome}}</strong>,",
+    highlightColor: "#c62828",
+    highlightBg: "#fce4ec",
+    highlightTitle: "Oferta Especial:",
+    bodyItems: [
+      "🎯 <strong>Consultoria gratuita</strong>",
+      "📊 Relatório completo com recomendações",
+      "💰 Proposta comercial personalizada sem compromisso",
+    ],
+    cta: "QUERO A CONSULTORIA GRATUITA",
+  },
+  {
+    subject: "{{nomeEmpresa}} — Estamos à disposição, {{nome}}",
+    greeting: "Olá <strong>{{nome}}</strong>,",
+    highlightColor: "#6a1b9a",
+    highlightBg: "#f3e5f5",
+    highlightTitle: "Nossos Canais:",
+    bodyItems: [
+      "📧 {{email}}",
+      "📞 {{telefone}} (WhatsApp)",
+      "🌐 {{site}}",
+    ],
+    cta: "FALAR CONOSCO",
+  },
+];
+
+// ---------------------------------------------------------------------------
 // USER AGENTS PARA ROTAÇÃO NAS BUSCAS
 // ---------------------------------------------------------------------------
 export const USER_AGENTS = [

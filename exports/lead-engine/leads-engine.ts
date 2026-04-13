@@ -20,7 +20,9 @@ import {
   SEARCH_QUERIES, SETORES_ALVO, SCORING_SETOR, ZONAS_RISCO,
   EXCLUSION_TERMS, BLACKLIST_COMPETITOR, BLACKLIST_BRANDS, POSITIVE_TERMS,
   SKIP_DOMAINS, EMAIL_PREFIXES, CONTATO_CARGOS, USER_AGENTS,
+  EMAIL_TEMPLATES,
 } from "./config";
+import type { EmailTemplate } from "./config";
 
 // =============================================================================
 // TIPOS
@@ -120,7 +122,7 @@ function createSmtpTransporter() {
     host: SMTP.host, port: SMTP.port, secure: SMTP.port === 465,
     requireTLS: SMTP.port === 587,
     auth: { user: SMTP.user, pass: SMTP.pass },
-    tls: { ciphers: "SSLv3" },
+    tls: { minVersion: "TLSv1.2" },
   });
 }
 
@@ -170,103 +172,44 @@ function isCompetitor(siteContent: string, domain?: string): boolean {
 // =============================================================================
 // TEMPLATES DE E-MAIL
 // =============================================================================
-// IMPORTANTE: Edite estes templates para refletir o seu negócio.
+function replacePlaceholders(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || "");
+}
 
 function getFollowUpContent(emailNumber: number, lead: Pick<Lead, "empresa" | "contato_nome">): FollowUpContent {
   const empresa = lead.empresa || "sua empresa";
   const nome = lead.contato_nome || "Responsável";
 
-  if (emailNumber <= 1) {
-    return {
-      subject: `${EMPRESA.nome} — Apresentação para ${empresa}`,
-      greeting: `Prezado(a) <strong>${nome}</strong>,`,
-      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
-        A <strong>${EMPRESA.nome}</strong> apresenta seus serviços para a <strong>${empresa}</strong>.
+  const templateIndex = Math.min(emailNumber - 1, EMAIL_TEMPLATES.length - 1);
+  const tpl: EmailTemplate = EMAIL_TEMPLATES[Math.max(0, templateIndex)];
+
+  const vars: Record<string, string> = {
+    empresa,
+    nome,
+    nomeEmpresa: EMPRESA.nome,
+    email: EMPRESA.email,
+    telefone: EMPRESA.telefone,
+    site: EMPRESA.site,
+  };
+
+  const itemsHtml = tpl.bodyItems
+    .map(item => `<li>${replacePlaceholders(item, vars)}</li>`)
+    .join("\n          ");
+
+  return {
+    subject: replacePlaceholders(tpl.subject, vars),
+    greeting: replacePlaceholders(tpl.greeting, vars),
+    body: `<p style="color:#555;font-size:14px;line-height:1.7;">
+        ${replacePlaceholders(tpl.greeting, vars)}
       </p>
-      <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-        <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
+      <div style="background:${tpl.highlightBg};border-left:4px solid ${tpl.highlightColor};padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="color:${tpl.highlightColor};font-weight:bold;margin:0 0 8px;font-size:14px;">${replacePlaceholders(tpl.highlightTitle, vars)}</p>
         <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
-          <li>Diferencial 1 do seu serviço</li>
-          <li>Diferencial 2 do seu serviço</li>
-          <li>Diferencial 3 do seu serviço</li>
-          <li>Diferencial 4 do seu serviço</li>
+          ${itemsHtml}
         </ul>
       </div>`,
-      cta: "SOLICITAR PROPOSTA COMERCIAL",
-    };
-  } else if (emailNumber === 2) {
-    return {
-      subject: `${nome}, conheça as soluções da ${EMPRESA.nome}`,
-      greeting: `Olá <strong>${nome}</strong>,`,
-      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
-        Entramos em contato recentemente apresentando nossos serviços. 
-        Gostaríamos de reforçar que a <strong>${EMPRESA.nome}</strong> oferece uma solução completa para a <strong>${empresa}</strong>.
-      </p>
-      <div style="background:#fff3e0;border-left:4px solid #e65100;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-        <p style="color:#e65100;font-weight:bold;margin:0 0 8px;font-size:14px;">Por que nos escolher?</p>
-        <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
-          <li>Argumento comercial 1</li>
-          <li>Argumento comercial 2</li>
-          <li>Argumento comercial 3</li>
-        </ul>
-      </div>`,
-      cta: "QUERO CONHECER A PROPOSTA",
-    };
-  } else if (emailNumber === 3) {
-    return {
-      subject: `Como a ${empresa} pode se beneficiar dos nossos serviços`,
-      greeting: `<strong>${nome}</strong>, bom dia!`,
-      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
-        Podemos agendar uma breve conversa para apresentar uma proposta sob medida para a <strong>${empresa}</strong>?
-      </p>
-      <div style="background:#e8f5e9;border-left:4px solid #2e7d32;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-        <p style="color:#2e7d32;font-weight:bold;margin:0 0 8px;font-size:14px;">Podemos ajudar com:</p>
-        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
-          ✅ Benefício 1<br/>
-          ✅ Benefício 2<br/>
-          ✅ Benefício 3<br/>
-          ✅ Benefício 4
-        </p>
-      </div>`,
-      cta: "AGENDAR CONVERSA",
-    };
-  } else if (emailNumber === 4) {
-    return {
-      subject: `${nome}, última oportunidade: proposta especial ${EMPRESA.nome}`,
-      greeting: `Prezado(a) <strong>${nome}</strong>,`,
-      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
-        Ainda não tivemos a oportunidade de conversar sobre as operações da <strong>${empresa}</strong>. 
-        Gostaríamos de oferecer uma <strong>consultoria gratuita</strong>.
-      </p>
-      <div style="background:#fce4ec;border-left:4px solid #c62828;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-        <p style="color:#c62828;font-weight:bold;margin:0 0 8px;font-size:14px;">Oferta Especial:</p>
-        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
-          🎯 <strong>Consultoria gratuita</strong><br/>
-          📊 Relatório completo com recomendações<br/>
-          💰 Proposta comercial personalizada sem compromisso
-        </p>
-      </div>`,
-      cta: "QUERO A CONSULTORIA GRATUITA",
-    };
-  } else {
-    return {
-      subject: `${EMPRESA.nome} — Estamos à disposição, ${nome}`,
-      greeting: `Olá <strong>${nome}</strong>,`,
-      body: `<p style="color:#555;font-size:14px;line-height:1.7;">
-        Este é nosso último contato por enquanto. Caso a <strong>${empresa}</strong> precise 
-        dos nossos serviços no futuro, ficaremos felizes em atendê-los.
-      </p>
-      <div style="background:#f3e5f5;border-left:4px solid #6a1b9a;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-        <p style="color:#6a1b9a;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Canais:</p>
-        <p style="color:#444;font-size:13px;line-height:1.8;margin:0;">
-          📧 ${EMPRESA.email}<br/>
-          📞 ${EMPRESA.telefone} (WhatsApp)<br/>
-          🌐 ${EMPRESA.site}
-        </p>
-      </div>`,
-      cta: "FALAR CONOSCO",
-    };
-  }
+    cta: replacePlaceholders(tpl.cta, vars),
+  };
 }
 
 function buildEmailHtml(lead: Pick<Lead, "empresa" | "contato_nome">, trackingId: string, baseUrl: string, emailNumber?: number): string {
@@ -355,7 +298,7 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
     const html = await resp.text();
     urls = extractUrlsFromHtml(html);
   } catch (err: unknown) {
-    console.log(`[lead-engine] DuckDuckGo falhou: ${err instanceof Error ? err instanceof Error ? err.message : String(err) : String(err)}`);
+    console.log(`[lead-engine] DuckDuckGo falhou: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (urls.length === 0) {
@@ -371,7 +314,7 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
         console.log(`[lead-engine] Bing fallback: ${urls.length} sites encontrados`);
       }
     } catch (err: unknown) {
-      console.log(`[lead-engine] Bing fallback falhou: ${err instanceof Error ? err instanceof Error ? err.message : String(err) : String(err)}`);
+      console.log(`[lead-engine] Bing fallback falhou: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
