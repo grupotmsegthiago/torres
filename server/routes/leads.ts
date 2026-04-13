@@ -324,6 +324,166 @@ async function processEmailQueue() {
   }
 }
 
+const AUTO_ENQUEUE_HOUR_START = 7;
+const AUTO_ENQUEUE_HOUR_END = 21;
+const MAX_EMAILS_PER_LEAD = 3;
+const DAYS_BETWEEN_EMAILS = 7;
+
+async function autoEnqueueLeads() {
+  try {
+    const now = new Date();
+    const brHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+    if (brHour < AUTO_ENQUEUE_HOUR_START || brHour >= AUTO_ENQUEUE_HOUR_END) {
+      return;
+    }
+
+    const { data: leads } = await supabaseAdmin
+      .from("leads")
+      .select("id, empresa, email, contato_nome, emails_enviados, status, ultimo_contato")
+      .not("email", "is", null)
+      .in("status", ["novo", "contatado", "qualificado"])
+      .order("created_at", { ascending: true });
+
+    if (!leads || leads.length === 0) return;
+
+    let enqueued = 0;
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.REPL_SLUG
+        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+        : "https://234c7c6a-bb34-4080-913c-2c786d224185-00-1ne4rfjd9dnv5.spock.replit.dev";
+
+    for (const lead of leads) {
+      if (!lead.email) continue;
+      if ((lead.emails_enviados || 0) >= MAX_EMAILS_PER_LEAD) continue;
+
+      if (lead.ultimo_contato) {
+        const lastContact = new Date(lead.ultimo_contato);
+        const diffDays = (now.getTime() - lastContact.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays < DAYS_BETWEEN_EMAILS) continue;
+      }
+
+      const { data: existing } = await supabaseAdmin.from("email_queue")
+        .select("id")
+        .eq("lead_id", lead.id)
+        .in("status", ["pendente"])
+        .limit(1);
+
+      if (existing && existing.length > 0) continue;
+
+      const trackingId = generateTrackingId();
+      const html = await buildEmailHtml(lead, trackingId, baseUrl);
+
+      await supabaseAdmin.from("email_queue").insert({
+        lead_id: lead.id,
+        to_email: lead.email,
+        to_name: lead.contato_nome || "Responsável",
+        empresa: lead.empresa,
+        subject: `Torres Vigilância Patrimonial — Segurança para ${lead.empresa}`,
+        html_body: html,
+        tracking_id: trackingId,
+        created_at: nowBRTString(),
+      });
+
+      enqueued++;
+      if (enqueued >= 20) break;
+    }
+
+    if (enqueued > 0) {
+      console.log(`[auto-enqueue] ${enqueued} lead(s) enfileirado(s) automaticamente`);
+    }
+  } catch (err: any) {
+    console.error("[auto-enqueue] Erro:", err.message);
+  }
+}
+
+async function sendDailyEmailReport() {
+  try {
+    const transporter = createSmtpTransporter();
+    if (!transporter) return;
+
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: allQueue } = await supabaseAdmin.from("email_queue").select("status, opened_count, replied, sent_at, created_at");
+    const { data: allLeads } = await supabaseAdmin.from("leads").select("status, temperatura, emails_enviados");
+
+    const totalEnviados = allQueue?.filter(e => e.status === "enviado" || e.status === "lido").length || 0;
+    const totalLidos = allQueue?.filter(e => e.status === "lido").length || 0;
+    const totalRespondidos = allQueue?.filter(e => e.replied).length || 0;
+    const totalPendentes = allQueue?.filter(e => e.status === "pendente").length || 0;
+    const totalErros = allQueue?.filter(e => e.status === "erro").length || 0;
+    const taxaAbertura = totalEnviados > 0 ? Math.round((totalLidos / totalEnviados) * 100) : 0;
+    const taxaResposta = totalEnviados > 0 ? Math.round((totalRespondidos / totalEnviados) * 100) : 0;
+
+    const sentToday = allQueue?.filter(e => {
+      const d = e.sent_at ? new Date(e.sent_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+      return d === today && (e.status === "enviado" || e.status === "lido");
+    }).length || 0;
+
+    const totalLeads = allLeads?.length || 0;
+    const leadsNovos = allLeads?.filter(l => l.status === "novo").length || 0;
+    const leadsContatados = allLeads?.filter(l => l.status === "contatado").length || 0;
+    const leadsQuentes = allLeads?.filter(l => l.temperatura === "quente").length || 0;
+    const leadsMornos = allLeads?.filter(l => l.temperatura === "morno").length || 0;
+    const leadsGanhos = allLeads?.filter(l => l.status === "ganho").length || 0;
+
+    const reportHtml = `
+<!DOCTYPE html>
+<html><body style="font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;background:#f8f9fa;">
+<div style="max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background:#1a1a2e;padding:24px 20px;border-radius:12px 12px 0 0;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">RELATÓRIO DIÁRIO — E-MAIL MARKETING</h1>
+    <p style="color:#a0a0c0;font-size:12px;margin:6px 0 0;">${today} | Torres Vigilância Patrimonial</p>
+  </div>
+  <div style="background:#fff;padding:24px;border-radius:0 0 12px 12px;">
+    <h3 style="color:#1a1a2e;font-size:14px;margin:0 0 12px;border-bottom:2px solid #1a1a2e;padding-bottom:6px;">Disparos de Hoje</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:6px 0;color:#555;">E-mails enviados hoje</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#1a1a2e;">${sentToday}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Pendentes na fila</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#f59e0b;">${totalPendentes}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Erros de envio</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#ef4444;">${totalErros}</td></tr>
+    </table>
+
+    <h3 style="color:#1a1a2e;font-size:14px;margin:20px 0 12px;border-bottom:2px solid #1a1a2e;padding-bottom:6px;">Acumulado Geral</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:6px 0;color:#555;">Total enviados</td><td style="padding:6px 0;text-align:right;font-weight:bold;">${totalEnviados}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Abertos / Lidos</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#22c55e;">${totalLidos} (${taxaAbertura}%)</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Respondidos</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#3b82f6;">${totalRespondidos} (${taxaResposta}%)</td></tr>
+    </table>
+
+    <h3 style="color:#1a1a2e;font-size:14px;margin:20px 0 12px;border-bottom:2px solid #1a1a2e;padding-bottom:6px;">Pipeline de Leads</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:6px 0;color:#555;">Total de leads</td><td style="padding:6px 0;text-align:right;font-weight:bold;">${totalLeads}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Novos (sem contato)</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#6366f1;">${leadsNovos}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">Contatados</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#8b5cf6;">${leadsContatados}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">🔥 Quentes</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#ef4444;">${leadsQuentes}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">🟡 Mornos</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#f59e0b;">${leadsMornos}</td></tr>
+      <tr><td style="padding:6px 0;color:#555;">✅ Ganhos (convertidos)</td><td style="padding:6px 0;text-align:right;font-weight:bold;color:#22c55e;">${leadsGanhos}</td></tr>
+    </table>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+    <p style="color:#999;font-size:11px;text-align:center;margin:0;">
+      Relatório automático gerado pelo sistema Torres.<br/>
+      Próximos disparos: ${totalPendentes} e-mail(s) na fila, processados a cada ${BATCH_INTERVAL_MINUTES} minutos.
+    </p>
+  </div>
+</div>
+</body></html>`;
+
+    await transporter.sendMail({
+      from: getSmtpFrom(),
+      to: "thiago@grupotmseg.com.br",
+      cc: "diretoria@torresseguranca.com.br",
+      subject: `[Torres] Relatório E-mail Marketing — ${today}`,
+      html: reportHtml,
+    });
+
+    console.log(`[daily-report] Relatório diário enviado para diretoria (${today})`);
+  } catch (err: any) {
+    console.error("[daily-report] Erro ao enviar relatório:", err.message);
+  }
+}
+
 export function registerLeadRoutes(app: Express) {
   Promise.all([ensureLeadsTable(), ensureEmailQueueTable()]).then(() => {
     console.log("[leads] Tabela leads + email_queue verificadas");
@@ -332,7 +492,18 @@ export function registerLeadRoutes(app: Express) {
   cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
     processEmailQueue().catch(err => console.error("[email-queue-cron]", err.message));
   });
+
+  cron.schedule("0 */2 * * *", () => {
+    autoEnqueueLeads().catch(err => console.error("[auto-enqueue-cron]", err.message));
+  });
+
+  cron.schedule("0 21 * * *", () => {
+    sendDailyEmailReport().catch(err => console.error("[daily-report-cron]", err.message));
+  }, { timezone: "America/Sao_Paulo" });
+
   console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos`);
+  console.log("[auto-enqueue] CRON ativo: enfileiramento automático a cada 2h (07h-21h)");
+  console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
 
   const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
 
@@ -766,6 +937,24 @@ export function registerLeadRoutes(app: Express) {
     try {
       await processEmailQueue();
       res.json({ ok: true, message: "Lote disparado manualmente" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/auto-enqueue", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      await autoEnqueueLeads();
+      res.json({ ok: true, message: "Auto-enqueue executado" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/enviar-relatorio", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      await sendDailyEmailReport();
+      res.json({ ok: true, message: "Relatório enviado para diretoria" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

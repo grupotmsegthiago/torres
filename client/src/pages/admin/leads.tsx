@@ -170,6 +170,23 @@ export default function LeadsPage() {
     },
   });
 
+  const autoEnqueueMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/leads/auto-enqueue"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Auto-enqueue executado com sucesso!" });
+    },
+  });
+
+  const sendReportMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/leads/enviar-relatorio"),
+    onSuccess: () => {
+      toast({ title: "Relatório enviado para diretoria!" });
+    },
+  });
+
   const markRepliedMut = useMutation({
     mutationFn: (id: number) => apiRequest("POST", `/api/leads/email-queue/${id}/marcar-respondido`),
     onSuccess: () => {
@@ -297,8 +314,12 @@ export default function LeadsPage() {
           onDispatchNow={() => dispatchNowMut.mutate(undefined)}
           onClearQueue={() => { if(confirm("Limpar todos os e-mails pendentes da fila?")) clearQueueMut.mutate(undefined); }}
           onMarkReplied={(id: number) => markRepliedMut.mutate(id)}
+          onAutoEnqueue={() => autoEnqueueMut.mutate(undefined)}
+          onSendReport={() => sendReportMut.mutate(undefined)}
           isEnqueuing={enqueueAllMut.isPending}
           isDispatching={dispatchNowMut.isPending}
+          isAutoEnqueuing={autoEnqueueMut.isPending}
+          isSendingReport={sendReportMut.isPending}
         />}
 
         {activeTab === "crm" && <>
@@ -690,7 +711,7 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
   );
 }
 
-function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, isEnqueuing, isDispatching }: any) {
+function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, onAutoEnqueue, onSendReport, isEnqueuing, isDispatching, isAutoEnqueuing, isSendingReport }: any) {
   const [queueFilter, setQueueFilter] = useState("ALL");
   const st = emailStats || { total: 0, pendentes: 0, enviados: 0, lidos: 0, respondidos: 0, erros: 0, taxaAbertura: 0, taxaResposta: 0, daily: [], batchSize: 5, intervalMinutes: 10 };
   const daily = st.daily || [];
@@ -754,9 +775,25 @@ function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll
           <Button size="sm" variant="outline" onClick={onClearQueue} disabled={st.pendentes === 0} className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-clear-queue">
             <Trash2 size={12} /> Limpar Fila
           </Button>
-          <span className="text-[10px] text-neutral-400 ml-auto flex items-center gap-1">
-            <Mail size={10} /> Respostas vão para escolta@ e diretoria@torresseguranca.com.br
+          <Button size="sm" variant="outline" onClick={onAutoEnqueue} disabled={isAutoEnqueuing} className="gap-1.5 text-purple-600 border-purple-200 hover:bg-purple-50" data-testid="btn-auto-enqueue">
+            {isAutoEnqueuing ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
+            Auto-Enqueue
+          </Button>
+          <Button size="sm" variant="outline" onClick={onSendReport} disabled={isSendingReport} className="gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50" data-testid="btn-send-report">
+            {isSendingReport ? <RefreshCw size={12} className="animate-spin" /> : <BarChart3 size={12} />}
+            Enviar Relatório
+          </Button>
+        </div>
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <span className="text-[10px] text-neutral-400 flex items-center gap-1">
+            <Mail size={10} /> Respostas vão para escolta@ e diretoria@
           </span>
+          <Badge className="bg-green-50 text-green-700 border-green-200 text-[9px]">
+            <Zap size={9} className="mr-1" /> Auto-enqueue: a cada 2h (07h-21h)
+          </Badge>
+          <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[9px]">
+            <BarChart3 size={9} className="mr-1" /> Relatório diário: 21h BRT
+          </Badge>
         </div>
       </div>
 
