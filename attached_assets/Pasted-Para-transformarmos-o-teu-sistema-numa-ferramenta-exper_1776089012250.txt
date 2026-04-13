@@ -1,0 +1,95 @@
+Para transformarmos o teu sistema numa ferramenta "expert", precisamos de dar à IA critérios de filtragem que vão além de uma simples busca. Uma IA de prospecção para Escolta Armada não procura apenas "empresas"; ela procura risco e valor, pois é aí que o teu serviço é necessário.
+
+No Replit, vamos estruturar o sistema para pensar como um Diretor de Segurança.
+
+1. O Pensamento Estratégico da IA (Lógica de Prospecção)
+Para o sistema ser eficaz em São Paulo, ele deve filtrar por indicadores de necessidade:
+
+Cargas de Alto Valor: Transportadoras de eletrónicos, fármacos, bebidas e tabaco.
+
+Operações Críticas: Empresas próximas a portos (Santos) ou grandes centros logísticos (Cajamar, Guarulhos, Campinas).
+
+Porte da Empresa: Focar em empresas com frotas próprias ou armazéns de grande dimensão.
+
+2. Panorama Geral da Solução
+O sistema será composto por:
+
+Motor de Busca Semântico: Busca por termos técnicos como "Operador Logístico", "Cross-docking", "Gerenciamento de Risco".
+
+Lógica de Pontuação (Scoring): A IA dará uma nota ao lead. Se a empresa for de "Transporte de Medicamentos", a prioridade de ataque é máxima.
+
+Webhook de Execução: O código enviará o alerta do novo lead diretamente para ti.
+
+3. O Programa: "Expert Lead Finder" (Python)
+Este código utiliza uma estrutura de dicionário para classificar a prioridade dos alvos.
+
+Python
+import time
+
+# --- DICIONÁRIO DE INTELIGÊNCIA ---
+# Definimos palavras-chave e o nível de necessidade de escolta (1 a 10)
+ALVOS_ESTRATEGICOS = {
+    "Transporte de Cargas Perigosas": 10,
+    "Logística Farmacêutica": 10,
+    "Transportadora de Eletrónicos": 9,
+    "Distribuição de Bebidas": 8,
+    "Armazém Geral e Silos": 7,
+    "Operador Logístico Multimodal": 8,
+    "Atacadista de Alimentos": 6
+}
+
+REQUISITOS_GEOGRAFICOS = ["Cajamar", "Guarulhos", "Porto de Santos", "Campinas", "Via Dutra"]
+
+def analisar_potencial(empresa_nome, setor, localizacao):
+    """
+    Simula o cérebro da IA avaliando se o cliente vale a pena 'atacar'.
+    """
+    pontuacao = ALVOS_ESTRATEGICOS.get(setor, 0)
+    
+    # Se estiver numa zona de alto risco/movimentação, aumenta a prioridade
+    for local in REQUISITOS_GEOGRAFICOS:
+        if local.lower() in localizacao.lower():
+            pontuacao += 2
+            
+    return pontuacao
+
+def sistema_prospeccao_expert():
+    print("🧠 IA DE SEGURANÇA INICIADA: Mapeando alvos em SP...")
+    
+    # Simulação de dados capturados de uma busca (Google/LinkedIn/Maps)
+    leads_encontrados = [
+        {"nome": "Pharma Log SP", "setor": "Logística Farmacêutica", "loc": "Guarulhos"},
+        {"nome": "Doces Silva", "setor": "Atacadista de Alimentos", "loc": "Interior"},
+        {"nome": "Tech Trans", "setor": "Transportadora de Eletrónicos", "loc": "Cajamar"}
+    ]
+
+    for lead in leads_encontrados:
+        score = analisar_potencial(lead['nome'], lead['setor'], lead['loc'])
+        
+        if score >= 8:
+            print(f"🔥 ALTO POTENCIAL [{score} pts]: {lead['nome']} - Iniciando envio de proposta de Escolta.")
+            # Aqui chamamos a função de envio de e-mail ou mensagem
+        elif score >= 5:
+            print(f"⚖️ POTENCIAL MÉDIO [{score} pts]: {lead['nome']} - Agendando contacto comercial.")
+        else:
+            print(f"❄️ BAIXO POTENCIAL: {lead['nome']} - Guardando na base de dados.")
+            
+        time.sleep(1)
+
+if __name__ == "__main__":
+    sistema_prospeccao_expert()
+4. Instruções para Implementação no Replit
+Passo 1: Captura de Dados Reais
+Para que este sistema não seja apenas uma simulação, precisas de dados reais. No Replit, podes instalar a biblioteca google-maps-services-python ou usar uma ferramenta de Scraping (extração de dados).
+
+Passo 2: O Prompt da "IA Expert"
+Se fores usar uma API de inteligência (como a da OpenAI integrada no Replit), o teu prompt de busca deve ser:
+
+"Atue como um Especialista em Gestão de Risco e Segurança Privada. Identifique empresas em São Paulo que operam com cargas visadas (eletrônicos, farmacêuticos) ou que possuem grandes centros de distribuição e extraia o contato do Gerente de Logística ou Segurança."
+
+5. Documentação do Sistema
+Scoring: A pontuação permite que o teu SaaS não perca tempo com empresas pequenas que não têm orçamento para escolta armada.
+
+Localização: O foco em zonas como "Cajamar" e "Dutra" é estratégico, pois são os pontos de maior incidência de roubo de carga em SP.
+
+Frequência: No Replit, podes agendar este script para rodar toda segunda-feira de manhã, procurando empresas que abriram recentemente ou que ganharam novos contratos.

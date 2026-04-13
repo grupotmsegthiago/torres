@@ -1,0 +1,93 @@
+O Replit é uma ferramenta fantástica porque permite manter o teu código a correr na nuvem (24h por dia) sem que o teu computador precise de estar ligado.
+
+Para que o teu sistema funcione de forma automática, precisamos de um código que combine a busca de dados com a lógica de filtragem. Abaixo, apresento um panorama e um código robusto para começares.
+
+1. Panorama Geral da Solução
+O sistema será dividido em três fases automáticas:
+
+Captura (O "Ataque"): O script vai procurar empresas em São Paulo nos setores de Logística, Atacado e Varejo.
+
+Filtragem Profissional: O código verifica se o perfil da empresa combina com serviços de Escolta e Segurança Patrimonial.
+
+Execução: O sistema regista o lead e envia a apresentação.
+
+Nota importante: Para "atacar" o mercado de forma automática, o ideal é usar uma API de busca (como a do Google Maps/Places), pois o Replit consegue conectar-se a elas facilmente e os dados são sempre atualizados.
+
+2. O Programa: Automatizador de Leads (Python)
+Vou criar um código que simula a estrutura de um SaaS no Replit. Ele utiliza uma lista de palavras-chave para "varrer" o mercado de São Paulo.
+
+Python
+import time
+
+# --- CONFIGURAÇÕES DO SISTEMA ---
+SETORES_ALVO = ["Transportadora", "Logística", "Atacadista", "Centro de Distribuição"]
+CIDADE = "São Paulo - SP"
+
+def buscar_leads_automático(setor):
+    """
+    Simula a busca de empresas no Google Maps/API.
+    Aqui o código procuraria o nome, telefone e e-mail.
+    """
+    print(f"🔎 Iniciando varredura no setor: {setor} em {CIDADE}...")
+    # Na vida real, aqui conectaríamos com uma API (ex: SerpApi ou Google Places)
+    # Por agora, vamos simular o retorno de um lead encontrado
+    return [
+        {"empresa": f"{setor} Paulista Ltda", "email": "contato@exemplo.com.br", "status": "Novo"},
+        {"empresa": f"Logística {setor} Express", "email": "comercial@exemplo.com", "status": "Novo"}
+    ]
+
+def enviar_apresentacao_escolta(lead):
+    """
+    Lógica de envio de e-mail ou mensagem.
+    """
+    empresa = lead['empresa']
+    email = lead['email']
+    
+    print(f"🚀 Enviando proposta de Segurança Patrimonial para: {empresa} ({email})")
+    # Aqui entraria o código de e-mail (SMTP) que vimos anteriormente
+    return True
+
+# --- FLUXO DE EXECUÇÃO AUTOMÁTICO ---
+def executar_sistema_vendas():
+    print("🤖 SISTEMA DE PROSPECÇÃO AUTOMÁTICA INICIADO")
+    
+    for setor in SETORES_ALVO:
+        # 1. Busca os leads
+        lista_de_leads = buscar_leads_automático(setor)
+        
+        # 2. Processa cada lead encontrado
+        for lead in lista_de_leads:
+            sucesso = enviar_apresentacao_escolta(lead)
+            if sucesso:
+                lead['status'] = "Contactado"
+            
+            # Pausa de segurança para não ser bloqueado como SPAM
+            time.sleep(2) 
+
+    print("✅ Ciclo de prospecção concluído.")
+
+# Iniciar o programa
+if __name__ == "__main__":
+    executar_sistema_vendas()
+3. Como Implementar no Replit (Passo a Passo)
+Cria um novo Repl: Escolhe a linguagem Python.
+
+Cria um ficheiro main.py: Cola o código acima.
+
+Configura o "Always On": No Replit (versão paga/Hacker), existe uma opção chamada "Always On". Ativa-a para que o script nunca pare de procurar leads.
+
+Base de Dados: Para o teu SaaS ser profissional, recomendo criares um ficheiro chamado leads.csv no Replit para guardar quem já foi contactado, evitando enviar e-mails repetidos para a mesma transportadora.
+
+4. Documentação dos Segmentos
+Setores Alvo: Variável que define quem o sistema vai "atacar". Podes adicionar "Indústria Farmacêutica" ou "Transporte de Valores" conforme a tua especialidade de escolta.
+
+Time Sleep: Essencial! Se o programa enviar 100 e-mails num segundo, os servidores de e-mail (Gmail/Outlook) vão banir a tua conta. O time.sleep(2) faz o sistema "respirar".
+
+Filtro Geográfico: O script foca em "São Paulo - SP" para garantir que a operação de escolta seja logisticamente viável para ti.
+
+O que queres fazer a seguir?
+Para tornar este sistema 100% real, podemos seguir por dois caminhos:
+
+Integração com Google Maps: Queres que eu te ajude a escrever o código que extrai os nomes e e-mails reais de empresas de transporte em SP usando uma API?
+
+Interface Visual: Queres criar uma página web simples (Dashboard) no Replit para veres quantos "ataques" o sistema fez hoje?
