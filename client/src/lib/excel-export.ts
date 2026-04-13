@@ -49,6 +49,7 @@ export interface ExcelExportConfig {
   sheetName?: string;
   currencyColumns?: number[];
   groupHeaders?: { label: string; span: number }[];
+  clientName?: string;
 }
 
 const BRL_FMT = '"R$ "#,##0.00';
@@ -253,24 +254,34 @@ export async function exportFormattedExcel(config: ExcelExportConfig) {
     row.commit();
   }
 
-  ws.protect("TorresVP2026", {
-    sheet: true,
-    objects: true,
-    scenarios: true,
-    selectLockedCells: false,
-    selectUnlockedCells: false,
-    formatCells: false,
-    formatColumns: false,
-    formatRows: false,
-    insertColumns: false,
-    insertRows: false,
-    insertHyperlinks: false,
-    deleteColumns: false,
-    deleteRows: false,
-    sort: false,
-    autoFilter: false,
-    pivotTables: false,
-  });
+  const isOmega = (config.clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
+
+  if (isOmega) {
+    ws.eachRow((row) => {
+      for (let c = 1; c <= colCount + 30; c++) {
+        row.getCell(c).protection = { locked: false };
+      }
+    });
+  } else {
+    ws.protect("TorresVP2026", {
+      sheet: true,
+      objects: true,
+      scenarios: true,
+      selectLockedCells: false,
+      selectUnlockedCells: false,
+      formatCells: false,
+      formatColumns: false,
+      formatRows: false,
+      insertColumns: false,
+      insertRows: false,
+      insertHyperlinks: false,
+      deleteColumns: false,
+      deleteRows: false,
+      sort: false,
+      autoFilter: false,
+      pivotTables: false,
+    });
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

@@ -96,7 +96,8 @@ async function generateBoletimExcel(
   wb.creator = "Torres Vigilância Patrimonial";
   wb.created = new Date();
 
-  const colCount = 27;
+  const isOmegaClient = clientName.toUpperCase().includes("OMEGA SOLUTIONS");
+  const colCount = isOmegaClient ? 28 : 27;
   const ws = wb.addWorksheet("Boletim", {
     views: [{ showGridLines: false }],
     pageSetup: {
@@ -107,7 +108,8 @@ async function generateBoletimExcel(
     headerFooter: { oddFooter: "&L&8Torres Vigilância Patrimonial&C&8Página &P de &N&R&8&D" },
   });
 
-  const colWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
+  const baseColWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
+  const colWidths = isOmegaClient ? [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14] : baseColWidths;
   ws.columns = colWidths.map(w => ({ width: w }));
 
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
@@ -172,15 +174,25 @@ async function generateBoletimExcel(
   rowS.height = 18;
   clearBeyond(rowS.number);
 
-  const groupHeaders = [
-    { label: "TABELA ACORDADA", span: 7 },
-    { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
-    { label: "KILOMETRAGEM", span: 3 },
-    { label: "HORÁRIOS", span: 3 },
-    { label: "KM EXCEDENTE", span: 3 },
-    { label: "HORA EXCEDENTE", span: 3 },
-    { label: "VALORES", span: 2 },
-  ];
+  const groupHeaders = isOmegaClient
+    ? [
+        { label: "TABELA ACORDADA", span: 8 },
+        { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
+        { label: "KILOMETRAGEM", span: 3 },
+        { label: "HORÁRIOS", span: 3 },
+        { label: "KM EXCEDENTE", span: 3 },
+        { label: "HORA EXCEDENTE", span: 3 },
+        { label: "VALORES", span: 2 },
+      ]
+    : [
+        { label: "TABELA ACORDADA", span: 7 },
+        { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
+        { label: "KILOMETRAGEM", span: 3 },
+        { label: "HORÁRIOS", span: 3 },
+        { label: "KM EXCEDENTE", span: 3 },
+        { label: "HORA EXCEDENTE", span: 3 },
+        { label: "VALORES", span: 2 },
+      ];
   const ghValues: string[] = [];
   for (const g of groupHeaders) { ghValues.push(g.label); for (let j = 1; j < g.span; j++) ghValues.push(""); }
   const ghRow = ws.addRow(ghValues.slice(0, colCount));
@@ -199,7 +211,10 @@ async function generateBoletimExcel(
   ghRow.height = 22;
   clearBeyond(ghRow.number);
 
-  const headers = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+  const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+  const headers = isOmegaClient
+    ? ["Nº", "ROTA", "PROCESSO", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"]
+    : baseHeaders;
   const headerRow = ws.addRow(headers);
   headerRow.height = 24;
   for (let i = 1; i <= colCount; i++) {
@@ -213,7 +228,9 @@ async function generateBoletimExcel(
 
   ws.pageSetup.printTitlesRow = `1:${headerRow.number}`;
 
-  const currCols = new Set([2, 5, 6, 20, 21, 23, 24, 25, 26]);
+  const currCols = isOmegaClient
+    ? new Set([3, 6, 7, 21, 22, 24, 25, 26, 27])
+    : new Set([2, 5, 6, 20, 21, 23, 24, 25, 26]);
   const ordersMap = new Map(orders.map(o => [o.id, o]));
   const contractsMap = new Map(contracts.map(c => [c.id, c]));
 
@@ -248,7 +265,7 @@ async function generateBoletimExcel(
     const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "—";
     const dataMissao = b.data_missao || so.scheduled_date || b.created_at;
 
-    const rowData = [
+    const baseRowData = [
       osNum, routeStr, Number(valorAcionamento.toFixed(2)), fmtHHMM(franquiaHoras), franquiaKm > 0 ? franquiaKm : 0,
       Number(valorHoraExtra.toFixed(2)), Number(valorKmExtra.toFixed(2)),
       fmtDateBR(dataMissao), b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataMissao),
@@ -262,6 +279,7 @@ async function generateBoletimExcel(
       hrExcedente > 0 ? fmtHHMM(hrExcedente) : "0:00", hrExcedente > 0 ? Number(valorHoraExtra.toFixed(2)) : 0, Number(fatHoraExtra.toFixed(2)),
       Number(fatPedagio.toFixed(2)), Number(fatTotal.toFixed(2)),
     ];
+    const rowData = isOmegaClient ? [baseRowData[0], baseRowData[1], "", ...baseRowData.slice(2)] : baseRowData;
 
     const row = ws.addRow(rowData);
     row.height = 20.1;
@@ -281,9 +299,9 @@ async function generateBoletimExcel(
   blankRow.height = 4;
   clearBeyond(blankRow.number);
 
-  const totalsArr: (string | number)[] = Array(27).fill("");
+  const totalsArr: (string | number)[] = Array(colCount).fill("");
   totalsArr[0] = "TOTAL";
-  totalsArr[26] = Number(grandTotal.toFixed(2));
+  totalsArr[colCount - 1] = Number(grandTotal.toFixed(2));
   const totalRow = ws.addRow(totalsArr);
   totalRow.height = 26.1;
   for (let i = 1; i <= colCount; i++) {
@@ -292,7 +310,7 @@ async function generateBoletimExcel(
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = allBorders;
-    if (i === 27) cell.numFmt = BRL_FMT;
+    if (i === colCount) cell.numFmt = BRL_FMT;
   }
   clearBeyond(totalRow.number);
 

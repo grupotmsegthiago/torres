@@ -466,8 +466,11 @@ export default function RelatorioFaturamentoPage() {
 
   const handleExportExcel = useCallback(() => {
     if (rowsData.length === 0) return;
-    const headers = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
-    const dataRows = rowsData.map(r => [
+    const clientLabel = displayClientName || "CLIENTE";
+    const isOmega = clientLabel.toUpperCase().includes("OMEGA SOLUTIONS");
+
+    const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+    const baseDataRows = rowsData.map(r => [
       r.id, r.route, Number(r.activationFee || 0), r.franchiseHoursFmt, r.franchiseKm > 0 ? r.franchiseKm : 0, Number(r.unitHr || 0), Number(r.unitKm || 0),
       r.startDate, r.startTime, r.viatura, r.cargoPlate, r.endDate, r.endTime,
       r.kmStart > 0 ? r.kmStart : 0, r.kmEnd > 0 ? r.kmEnd : 0, r.kmTotal > 0 ? r.kmTotal : 0,
@@ -476,17 +479,38 @@ export default function RelatorioFaturamentoPage() {
       r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : "0:00", r.hrExtraQtd > 0 ? Number(r.hrExtraUnit || 0) : 0, Number(r.hrExtraTotal || 0),
       Number(r.tollVal || 0), Number(r.totalGeral || 0),
     ]);
-    const totals: (string | number)[] = Array(27).fill("");
-    totals[0] = "TOTAL";
-    totals[26] = Number(grandTotal.toFixed(2));
-    const clientLabel = displayClientName || "CLIENTE";
-    const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
-    exportFormattedExcel({
-      title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
-      subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientLabel}`,
-      period: getPeriodLabel(),
-      headers,
-      groupHeaders: [
+
+    let headers: string[];
+    let dataRows: (string | number)[][];
+    let colWidths: number[];
+    let groupHeaders: { label: string; span: number }[];
+    let currencyColumns: number[];
+    let totalsCols: number;
+
+    if (isOmega) {
+      headers = ["Nº", "ROTA", "PROCESSO", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+      dataRows = baseDataRows.map(row => {
+        const newRow = [...row];
+        newRow.splice(2, 0, "");
+        return newRow;
+      });
+      colWidths = [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
+      groupHeaders = [
+        { label: "TABELA ACORDADA", span: 8 },
+        { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
+        { label: "KILOMETRAGEM", span: 3 },
+        { label: "HORÁRIOS", span: 3 },
+        { label: "KM EXCEDENTE", span: 3 },
+        { label: "HORA EXCEDENTE", span: 3 },
+        { label: "VALORES", span: 2 },
+      ];
+      currencyColumns = [3, 6, 7, 21, 22, 24, 25, 26, 27];
+      totalsCols = 28;
+    } else {
+      headers = baseHeaders;
+      dataRows = baseDataRows;
+      colWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
+      groupHeaders = [
         { label: "TABELA ACORDADA", span: 7 },
         { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
         { label: "KILOMETRAGEM", span: 3 },
@@ -494,13 +518,29 @@ export default function RelatorioFaturamentoPage() {
         { label: "KM EXCEDENTE", span: 3 },
         { label: "HORA EXCEDENTE", span: 3 },
         { label: "VALORES", span: 2 },
-      ],
-      colWidths: [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14],
+      ];
+      currencyColumns = [2, 5, 6, 20, 21, 23, 24, 25, 26];
+      totalsCols = 27;
+    }
+
+    const totals: (string | number)[] = Array(totalsCols).fill("");
+    totals[0] = "TOTAL";
+    totals[totalsCols - 1] = Number(grandTotal.toFixed(2));
+
+    const periodShort = `${startDate.replace(/-/g, "")}_${endDate.replace(/-/g, "")}`;
+    exportFormattedExcel({
+      title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
+      subtitle: `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientLabel}`,
+      period: getPeriodLabel(),
+      headers,
+      groupHeaders,
+      colWidths,
       rows: dataRows,
       totalsRow: totals,
-      currencyColumns: [2, 5, 6, 20, 21, 23, 24, 25, 26],
+      currencyColumns,
       fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20)}_${periodShort}.xlsx`,
       sheetName: "Boletim",
+      clientName: clientLabel,
     });
   }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
