@@ -2,14 +2,14 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Car, Play, RefreshCw, Square, Clock, ArrowLeftRight, AlertTriangle, User, Gauge, ChevronDown, ChevronUp } from "lucide-react";
+import { Car, Play, RefreshCw, Square, Clock, AlertTriangle, User, Gauge, ChevronDown, ChevronUp } from "lucide-react";
 
 function formatDuration(minutes: number) {
   const h = Math.floor(minutes / 60);
@@ -48,7 +48,6 @@ export default function MobileControleCondutorPage() {
   const { toast } = useToast();
 
   const [vehicleId, setVehicleId] = useState("");
-  const [partnerId, setPartnerId] = useState("");
   const [kmStart, setKmStart] = useState("");
   const [kmEnd, setKmEnd] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -57,12 +56,6 @@ export default function MobileControleCondutorPage() {
   const myName = user?.name || "Condutor";
 
   const { data: vehicles = [] } = useQuery<any[]>({ queryKey: ["/api/vehicles"] });
-  const { data: employees = [] } = useQuery<any[]>({ queryKey: ["/api/employees"] });
-
-  const activeDrivers = useMemo(() =>
-    (employees || []).filter((e: any) => e.status === "ativo" && e.id !== myEmployeeId).sort((a: any, b: any) => a.name.localeCompare(b.name)),
-    [employees, myEmployeeId]
-  );
 
   const { data: activeSession, isLoading } = useQuery<any>({
     queryKey: ["/api/driver-sessions/active"],
@@ -85,20 +78,6 @@ export default function MobileControleCondutorPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
       setKmStart("");
       setVehicleId("");
-      setPartnerId("");
-    },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
-  });
-
-  const swapMutation = useMutation({
-    mutationFn: async (sessionId: number) => {
-      const r = await apiRequest("POST", `/api/driver-sessions/${sessionId}/swap`);
-      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
-      return r.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: "Direção passada!", description: `Agora: ${data.newShift.driver_name}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/driver-sessions/active"] });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -184,18 +163,6 @@ export default function MobileControleCondutorPage() {
                 <p className="text-[10px] text-neutral-400">Início: {activeShift ? formatTime(activeShift.started_at) : "—"}</p>
               </div>
 
-              {activeSession.partner_id && (
-                <Button
-                  className="w-full h-14 bg-amber-500 hover:bg-amber-600 text-white font-black text-base rounded-xl"
-                  onClick={() => swapMutation.mutate(activeSession.id)}
-                  disabled={swapMutation.isPending}
-                  data-testid="button-swap-driver"
-                >
-                  <ArrowLeftRight className="w-5 h-5 mr-2" />
-                  {swapMutation.isPending ? "TROCANDO..." : "PASSAR DIREÇÃO"}
-                </Button>
-              )}
-
               <div className="border-t pt-3 space-y-2">
                 <Label className="text-xs font-bold text-neutral-700">KM Final (para encerrar)</Label>
                 <Input
@@ -272,21 +239,6 @@ export default function MobileControleCondutorPage() {
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-neutral-600">Condutor Parceiro</Label>
-              <Select value={partnerId} onValueChange={setPartnerId}>
-                <SelectTrigger className="h-11 mt-1" data-testid="select-partner">
-                  <SelectValue placeholder="Selecione o parceiro (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem parceiro</SelectItem>
-                  {activeDrivers.map((e: any) => (
-                    <SelectItem key={e.id} value={String(e.id)}>{e.name} {e.matricula ? `(${e.matricula})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
               <Label className="text-xs font-bold text-neutral-600">KM de Saída</Label>
               <Input
                 type="number"
@@ -303,7 +255,6 @@ export default function MobileControleCondutorPage() {
               onClick={() => startMutation.mutate({
                 vehicleId: parseInt(vehicleId),
                 driverId: myEmployeeId,
-                partnerId: partnerId && partnerId !== "none" ? parseInt(partnerId) : undefined,
                 kmStart: kmStart || undefined,
               })}
               disabled={startMutation.isPending || !vehicleId || !myEmployeeId}
@@ -342,7 +293,6 @@ export default function MobileControleCondutorPage() {
                     <div className="flex items-center gap-2 text-[10px] text-neutral-500">
                       <User className="w-3 h-3" />
                       <span>{s.driver_name}</span>
-                      {s.partner_name && <><span>+</span><span>{s.partner_name}</span></>}
                     </div>
                     {s.km_start && s.km_end && (
                       <div className="flex items-center gap-2 text-[10px] text-neutral-500">

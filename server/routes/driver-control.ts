@@ -78,19 +78,27 @@ export function registerDriverControlRoutes(app: Express) {
         return res.status(400).json({ message: "Veículo e condutor são obrigatórios." });
       }
 
+      const now = new Date();
+
       const { data: existing } = await supabaseAdmin.from("driver_sessions")
-        .select("id").eq("vehicle_id", vehicleId).eq("status", "ativo").maybeSingle();
+        .select("*").eq("vehicle_id", vehicleId).eq("status", "ativo").maybeSingle();
       if (existing) {
-        return res.status(400).json({ message: "Já existe uma sessão ativa para este veículo." });
+        const { data: prevShift } = await supabaseAdmin.from("driver_shifts")
+          .select("*").eq("session_id", existing.id).eq("is_active", true).maybeSingle();
+        if (prevShift) {
+          const dur = Math.round((now.getTime() - new Date(prevShift.started_at).getTime()) / 60000 * 100) / 100;
+          await supabaseAdmin.from("driver_shifts").update({
+            ended_at: now.toISOString(), duration_minutes: dur, is_active: false,
+          }).eq("id", prevShift.id);
+        }
+        await supabaseAdmin.from("driver_sessions").update({
+          status: "finalizado", ended_at: now.toISOString(),
+        }).eq("id", existing.id);
+        console.log(`[driver-control] Sessão #${existing.id} auto-finalizada (novo condutor assumiu VTR ${existing.vehicle_plate})`);
       }
 
       const { data: vehicle } = await supabaseAdmin.from("vehicles").select("plate, frota, year").eq("id", vehicleId).single();
       const { data: driver } = await supabaseAdmin.from("employees").select("name").eq("id", driverId).single();
-      let partnerName: string | null = null;
-      if (partnerId) {
-        const { data: partner } = await supabaseAdmin.from("employees").select("name").eq("id", partnerId).single();
-        partnerName = partner?.name || null;
-      }
 
       const { data: session, error } = await supabaseAdmin.from("driver_sessions").insert({
         vehicle_id: vehicleId,
@@ -98,12 +106,12 @@ export function registerDriverControlRoutes(app: Express) {
         vehicle_prefix: vehicle?.frota || "",
         vehicle_year: vehicle?.year || null,
         driver_id: driverId,
-        partner_id: partnerId || null,
+        partner_id: null,
         driver_name: driver?.name || "Condutor",
-        partner_name: partnerName,
+        partner_name: null,
         km_start: kmStart ? parseInt(kmStart) : null,
         status: "ativo",
-        started_at: new Date().toISOString(),
+        started_at: now.toISOString(),
         started_by_user_id: (req as any).user?.id || null,
         notes: notes || null,
       }).select().single();
