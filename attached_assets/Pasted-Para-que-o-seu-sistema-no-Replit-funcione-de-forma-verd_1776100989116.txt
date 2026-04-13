@@ -1,0 +1,86 @@
+Para que o seu sistema no Replit funcione de forma verdadeiramente automática e "ataque" o mercado a cada 10 minutos, precisamos de resolver dois problemas técnicos: o Motor de Busca (Scraper) e o Agendador (Scheduler).
+
+O código que você tem provavelmente roda uma vez e para. No Replit, precisamos de um "loop" infinito e de uma ferramenta que extraia dados reais do Google.
+
+1. Panorama Geral da Automação 24/7
+Para o sistema funcionar sozinho enquanto você dorme, ele seguirá este ciclo:
+
+Trigger (Gatilho): O relógio marca 10 minutos.
+
+Busca (Search): O script usa o googlesearch para encontrar sites de transportadoras em SP.
+
+Extração (Scraping): O script entra no site da empresa e procura por @ (e-mails).
+
+Disparo (Email): Envia a apresentação de escolta armada.
+
+Pausa: O sistema dorme por 10 minutos para evitar ser bloqueado pelo Google.
+
+2. O Programa: Buscador e Disparador Automático
+Você precisará instalar estas bibliotecas no seu Replit (aba Packages): googlesearch-python e requests.
+
+Python
+import time
+import requests
+import re
+from googlesearch import search
+from datetime import datetime
+
+# --- CONFIGURAÇÕES ---
+TERMOS_BUSCA = ["transportadora logística São Paulo", "operador logístico Cajamar", "distribuidora atacado SP"]
+MEU_EMAIL = "seu-email@gmail.com"
+
+def extrair_email_do_site(url):
+    """Entra no site da empresa e tenta encontrar um e-mail."""
+    try:
+        response = requests.get(url, timeout=5)
+        # Expressão regular para encontrar e-mails
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
+        return list(set(emails)) # Retorna apenas e-mails únicos
+    except:
+        return []
+
+def disparar_ataque():
+    print(f"\n--- 🕒 Início do Ciclo: {datetime.now().strftime('%H:%M:%S')} ---")
+    
+    for termo in TERMOS_BUSCA:
+        print(f"🔎 Buscando novos alvos para: {termo}")
+        # Busca os 3 primeiros resultados no Google para não ser bloqueado
+        for resultado in search(termo, num_results=3):
+            print(f"🌐 Analisando site: {resultado}")
+            
+            emails = extrair_email_do_site(resultado)
+            
+            if emails:
+                for email in emails:
+                    # Aqui chamamos a sua função de enviar e-mail
+                    print(f"🚀 ENVIANDO APRESENTAÇÃO PARA: {email}")
+                    # enviar_apresentacao(email, "Empresa Alvo") 
+            else:
+                print("⚠️ Nenhum e-mail público encontrado neste site.")
+            
+            time.sleep(2) # Pausa entre sites
+
+# --- LOOP DE 10 MINUTOS ---
+if __name__ == "__main__":
+    while True:
+        disparar_ataque()
+        print("\n😴 Ciclo completo. Aguardando 10 minutos para o próximo ataque...")
+        time.sleep(600) # 600 segundos = 10 minutos
+3. Como Implementar no Replit para não parar
+Para que o Replit não "mate" o seu processo quando você fecha o navegador:
+
+while True: O código acima usa um loop infinito. Ele nunca termina.
+
+Uptime Webview: No Replit, crie um pequeno servidor Flask (como mostrei na primeira resposta) no mesmo projeto. Isso engana o Replit e mantém o projeto "acordado" porque ele detecta que há um site ativo.
+
+Secrets: Vá ao cadeado (Secrets) no menu lateral do Replit e guarde lá o seu EMAIL_PASSWORD. Nunca escreva a senha diretamente no código.
+
+4. Documentação das Etapas
+search(termo, num_results=3): Esta função simula um humano digitando no Google. Pedimos apenas 3 resultados de cada vez para evitar que o Google peça "Captcha" (aqueles desafios de imagens).
+
+re.findall(...): É uma "Expressão Regular". Ela varre o código do site à procura de qualquer texto que tenha o formato de um e-mail.
+
+time.sleep(600): Este é o coração do seu pedido. Ele garante o intervalo exato de 10 minutos entre as buscas.
+
+Aviso de Especialista (Gentil e Direto)
+O Google tem proteções muito fortes contra robôs. Se o sistema começar a falhar, é porque o Google bloqueou o IP do Replit temporariamente. Se isso acontecer, recomendo usar uma API de Busca (como a SerpApi), que permite fazer milhares de buscas sem ser bloqueado.
