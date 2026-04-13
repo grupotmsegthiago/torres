@@ -298,6 +298,37 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
+      if (inspectionConfig?.type === "plate" && expectedPlate) {
+        const normPlate = (s: string) => String(s || "").replace(/[-\s.]/g, "").toUpperCase();
+        const expected = normPlate(expectedPlate);
+        const detected = normPlate(result.placa_detectada || "");
+        if (detected && expected) {
+          if (detected === expected) {
+            result.placa_confere = true;
+            result.divergencias = (result.divergencias || []).filter((d: string) => !d.toLowerCase().includes("placa"));
+            if (!result.observacao || result.observacao.toLowerCase().includes("não confere") || result.observacao.toLowerCase().includes("diverge")) {
+              result.observacao = `Placa ${detected} confere com a esperada.`;
+            }
+          } else {
+            let diff = 0;
+            const maxLen = Math.max(detected.length, expected.length);
+            for (let i = 0; i < maxLen; i++) {
+              if ((detected[i] || "") !== (expected[i] || "")) diff++;
+            }
+            if (diff <= 1 && maxLen >= 6) {
+              result.placa_confere = true;
+              result.divergencias = (result.divergencias || []).filter((d: string) => !d.toLowerCase().includes("placa"));
+              result.observacao = `Placa detectada "${detected}" ~= esperada "${expected}" (${diff} char diff, tolerada). Aprovado.`;
+              console.log(`[ai-inspection] Plate fuzzy match: detected="${detected}" expected="${expected}" diff=${diff} → approved`);
+            }
+          }
+        }
+        if (result.placa_confere !== false && !detected) {
+          result.placa_confere = null;
+          result.divergencias = (result.divergencias || []).filter((d: string) => !d.toLowerCase().includes("placa"));
+        }
+      }
+
       const hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
         result.placa_confere === false ||
         result.angulo_correto === false ||
