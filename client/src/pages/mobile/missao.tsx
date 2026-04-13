@@ -942,6 +942,7 @@ export default function MobileMissaoPage() {
   const [driverPhone, setDriverPhone] = useState("");
   const [driverPlate, setDriverPlate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [bypassAiRejection, setBypassAiRejection] = useState(false);
   const [cienteConfirmed, setCienteConfirmed] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
   const [earlyBlocked, setEarlyBlocked] = useState(false);
@@ -1005,6 +1006,7 @@ export default function MobileMissaoPage() {
     setCienteConfirmed(false);
     setChecklist({});
     setStatusUpdate("");
+    setBypassAiRejection(false);
   }, []);
 
   const [offlinePending, setOfflinePending] = useState(getPendingCount());
@@ -1193,6 +1195,7 @@ export default function MobileMissaoPage() {
 
   const uploadPhotoImmediate = async (label: string, photoData: string) => {
     if (!mission) return;
+    setBypassAiRejection(false);
     const key = label.toLowerCase().replace(/\s/g, '-');
     const stepMap = PHOTO_STEP_MAP[currentStep] || {};
     const backendStep = stepMap[label] || currentStep;
@@ -1270,13 +1273,17 @@ export default function MobileMissaoPage() {
       const key = label.toLowerCase().replace(/\s/g, '-');
       return aiResults[key]?.status === "divergente";
     });
-    if (divergentPhotos.length > 0) {
+    if (divergentPhotos.length > 0 && !bypassAiRejection) {
+      setBypassAiRejection(true);
       toast({
-        title: "Fotos rejeitadas pela IA",
-        description: `Tire novamente: ${divergentPhotos.join(", ")}`,
+        title: "Fotos com divergência da IA",
+        description: `Toque novamente em "Avançar" para prosseguir mesmo assim, ou tire novas fotos.`,
         variant: "destructive",
       });
       return;
+    }
+    if (bypassAiRejection) {
+      setBypassAiRejection(false);
     }
 
     if (config.needsChecklist) {
@@ -2059,11 +2066,11 @@ export default function MobileMissaoPage() {
             <button
               onClick={handlePhotoStep}
               disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              className={`w-full h-14 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 ${bypassAiRejection ? "bg-amber-600 text-white animate-pulse" : "bg-neutral-900 text-white"}`}
               data-testid="button-confirm-photos"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              Confirmar
+              {bypassAiRejection ? "Prosseguir mesmo assim" : "Confirmar"}
             </button>
           </div>
         )}
@@ -2112,11 +2119,11 @@ export default function MobileMissaoPage() {
             <button
               onClick={handlePhotoStep}
               disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              className={`w-full h-14 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 ${bypassAiRejection ? "bg-amber-600 text-white animate-pulse" : "bg-neutral-900 text-white"}`}
               data-testid="button-confirm-photos"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              Confirmar
+              {bypassAiRejection ? "Prosseguir mesmo assim" : "Confirmar"}
             </button>
           </div>
         )}
@@ -2142,11 +2149,11 @@ export default function MobileMissaoPage() {
             <button
               onClick={handlePhotoStep}
               disabled={submitting}
-              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              className={`w-full h-14 rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 ${bypassAiRejection ? "bg-amber-600 text-white animate-pulse" : "bg-neutral-900 text-white"}`}
               data-testid="button-confirm-photos"
             >
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              Confirmar
+              {bypassAiRejection ? "Prosseguir mesmo assim" : "Confirmar"}
             </button>
           </div>
         )}
