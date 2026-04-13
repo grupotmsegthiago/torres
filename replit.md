@@ -211,3 +211,11 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Todas rotas protegidas por `requireAdminRole`** (exceto webhook que é público para receber eventos do Asaas).
 - **Frontend:** `/admin/faturas` — Painel de criação, visualização, sincronização, cancelamento e confirmação de pagamento de faturas. Acessível via sidebar Financeiro > Faturas / Cobranças.
 - **Funciona sem Asaas:** Se `ASAAS_API_KEY` não estiver configurada, faturas são registradas apenas localmente sem geração de boleto/PIX.
+
+### E-mail Marketing Automatizado (Leads)
+- **Tabela `email_queue`:** Fila de e-mails com status (pendente → enviado → lido → erro), tracking_id para pixel de rastreamento, contadores de abertura.
+- **CRON automático:** Dispara 5 e-mails a cada 10 minutos para evitar bloqueio do SMTP Office 365.
+- **Pixel de rastreamento:** `GET /api/leads/pixel/:trackingId.png` — registra abertura de e-mail e atualiza lead para "morno" automaticamente.
+- **Reply-To:** Todas respostas vão para `escolta@torresseguranca.com.br` e `diretoria@torresseguranca.com.br`.
+- **Rotas API:** `POST /api/leads/enfileirar-todos` (enfileira em lote), `POST /api/leads/disparar-agora` (disparo manual), `GET /api/leads/email-stats` (estatísticas diárias), `GET /api/leads/email-queue` (fila completa), `POST /api/leads/email-queue/:id/marcar-respondido`, `POST /api/leads/email-queue/limpar-fila`.
+- **Frontend:** Aba "E-mail Marketing" na página de Leads com 8 stat cards, gráfico de barras diário (enviados/abertos/respondidos), painel de controle de fila com filtros por status.

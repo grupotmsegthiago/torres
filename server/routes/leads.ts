@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
+import cron from "node-cron";
 
 const LEAD_STATUSES = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho", "perdido", "descartado"] as const;
 const SETORES_ALVO = [
@@ -39,6 +40,24 @@ function calcLeadScore(setor?: string, endereco?: string, temperatura?: string, 
   else if ((valor_estimado || 0) >= 20000) score += 1;
   return Math.min(score, 15);
 }
+
+const CONTATO_CARGOS = [
+  "Gerente de Logística", "Gerente de Operações", "Supervisor de Transportes",
+  "Coordenador de GR", "Gerente de Riscos", "Analista de Seguros",
+  "Diretor de Operações", "Gerente de Segurança", "Coordenador de Frota",
+  "Gerente Comercial", "Supervisor de Expedição", "Contato Geral",
+];
+
+const EMAIL_PREFIXES = [
+  "contato", "comercial", "logistica", "operacoes", "transportes",
+  "gr", "riscos", "seguros", "seguranca", "gerencia", "diretoria",
+  "financeiro", "compras", "administrativo", "sac",
+];
+
+const REPLY_TO_ADDRESSES = "escolta@torresseguranca.com.br, diretoria@torresseguranca.com.br";
+const BATCH_SIZE = 5;
+const BATCH_INTERVAL_MINUTES = 10;
+let emailDispatchRunning = false;
 
 async function ensureLeadsTable() {
   const { error } = await supabaseAdmin.rpc("exec_sql", {
@@ -88,8 +107,234 @@ async function ensureLeadsTable() {
   }
 }
 
+async function ensureEmailQueueTable() {
+  const { error } = await supabaseAdmin.rpc("exec_sql", {
+    query: `
+      CREATE TABLE IF NOT EXISTS email_queue (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+        to_email TEXT NOT NULL,
+        to_name TEXT,
+        empresa TEXT,
+        subject TEXT NOT NULL,
+        html_body TEXT NOT NULL,
+        status TEXT DEFAULT 'pendente',
+        tracking_id TEXT UNIQUE,
+        opened_at TIMESTAMP,
+        opened_count INTEGER DEFAULT 0,
+        replied BOOLEAN DEFAULT FALSE,
+        replied_at TIMESTAMP,
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        campaign_tag TEXT DEFAULT 'apresentacao'
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status);
+      CREATE INDEX IF NOT EXISTS idx_email_queue_tracking ON email_queue(tracking_id);
+      CREATE INDEX IF NOT EXISTS idx_email_queue_lead ON email_queue(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_email_queue_sent ON email_queue(sent_at);
+    `,
+  });
+  if (error) {
+    console.log("[leads] email_queue table via RPC failed:", error.message);
+  }
+}
+
+function generateTrackingId(): string {
+  return `trk_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+}
+
+function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): string {
+  const pixelUrl = `${baseUrl}/api/leads/pixel/${trackingId}.png`;
+  return `
+<!DOCTYPE html>
+<html><body style="font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;background:#f8f9fa;">
+<div style="max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background:#1a1a2e;padding:30px 20px;border-radius:16px 16px 0 0;text-align:center;">
+    <h1 style="color:#fff;font-size:22px;margin:0;letter-spacing:1px;">TORRES VIGILÂNCIA PATRIMONIAL</h1>
+    <p style="color:#a0a0c0;font-size:12px;margin:8px 0 0;">CNPJ 36.982.392/0001-89</p>
+  </div>
+  <div style="background:#fff;padding:30px 24px;border-radius:0 0 16px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+    <p style="color:#333;font-size:15px;line-height:1.7;">
+      Prezado(a) <strong>${lead.contato_nome || "Responsável"}</strong>,
+    </p>
+    <p style="color:#555;font-size:14px;line-height:1.7;">
+      A <strong>Torres Vigilância Patrimonial</strong> é especializada em <strong>Escolta Armada Caracterizada</strong> 
+      para operações de logística, transporte de cargas e valores no estado de São Paulo.
+    </p>
+    <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
+      <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
+      <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
+        <li>Viaturas blindadas e caracterizadas com rastreamento em tempo real</li>
+        <li>Agentes com treinamento especializado e armamento regulamentado</li>
+        <li>Monitoramento 24h via central de operações</li>
+        <li>Cobertura completa no estado de São Paulo</li>
+        <li>Relatórios operacionais digitais com fotos e geolocalização</li>
+        <li>Seguro de responsabilidade civil</li>
+      </ul>
+    </div>
+    <p style="color:#555;font-size:14px;line-height:1.7;">
+      Gostaríamos de apresentar nossos serviços e demonstrar como podemos agregar segurança 
+      às operações da <strong>${lead.empresa}</strong>.
+    </p>
+    <div style="text-align:center;margin:24px 0;">
+      <a href="mailto:escolta@torresseguranca.com.br?subject=Interesse%20em%20Escolta%20-%20${encodeURIComponent(lead.empresa)}" 
+         style="display:inline-block;background:#1a1a2e;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
+        SOLICITAR PROPOSTA COMERCIAL
+      </a>
+    </div>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+    <div style="text-align:center;">
+      <p style="color:#888;font-size:12px;margin:4px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
+      <p style="color:#999;font-size:11px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ escolta@torresseguranca.com.br</p>
+      <p style="color:#999;font-size:11px;margin:2px 0;">🌐 www.torresseguranca.com.br</p>
+    </div>
+  </div>
+</div>
+<img src="${pixelUrl}" width="1" height="1" style="display:none;" alt="" />
+</body></html>`;
+}
+
+async function processEmailQueue() {
+  if (emailDispatchRunning) return;
+  emailDispatchRunning = true;
+  try {
+    const transporter = createSmtpTransporter();
+    if (!transporter) {
+      console.log("[email-queue] SMTP não configurado, pulando");
+      return;
+    }
+
+    const { data: pending } = await supabaseAdmin
+      .from("email_queue")
+      .select("*")
+      .eq("status", "pendente")
+      .order("created_at", { ascending: true })
+      .limit(BATCH_SIZE);
+
+    if (!pending || pending.length === 0) return;
+
+    console.log(`[email-queue] Processando lote de ${pending.length} e-mail(s)...`);
+
+    for (const email of pending) {
+      try {
+        await transporter.sendMail({
+          from: getSmtpFrom(),
+          to: email.to_email,
+          replyTo: REPLY_TO_ADDRESSES,
+          subject: email.subject,
+          html: email.html_body,
+          headers: {
+            "X-Torres-Tracking": email.tracking_id,
+            "List-Unsubscribe": `<mailto:escolta@torresseguranca.com.br?subject=Descadastrar>`,
+          },
+        });
+
+        await supabaseAdmin.from("email_queue").update({
+          status: "enviado",
+          sent_at: nowBRTString(),
+        }).eq("id", email.id);
+
+        if (email.lead_id) {
+          const { data: lead } = await supabaseAdmin.from("leads").select("emails_enviados, historico, status").eq("id", email.lead_id).single();
+          if (lead) {
+            const hist = Array.isArray(lead.historico) ? [...lead.historico] : [];
+            hist.push({
+              data: nowBRTString(),
+              acao: "E-mail disparado automaticamente",
+              usuario: "Sistema",
+              detalhes: `Enviado para ${email.to_email}`,
+            });
+            await supabaseAdmin.from("leads").update({
+              emails_enviados: (lead.emails_enviados || 0) + 1,
+              ultimo_contato: nowBRTString(),
+              status: lead.status === "novo" ? "contatado" : lead.status,
+              historico: hist,
+              updated_at: nowBRTString(),
+            }).eq("id", email.lead_id);
+          }
+        }
+
+        console.log(`[email-queue] ✓ Enviado: ${email.to_email} (${email.empresa})`);
+
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (err: any) {
+        console.error(`[email-queue] ✗ Erro ${email.to_email}: ${err.message}`);
+        await supabaseAdmin.from("email_queue").update({
+          status: "erro",
+          error_message: err.message,
+        }).eq("id", email.id);
+      }
+    }
+
+    console.log(`[email-queue] Lote concluído: ${pending.length} processado(s)`);
+  } catch (err: any) {
+    console.error("[email-queue] Erro geral:", err.message);
+  } finally {
+    emailDispatchRunning = false;
+  }
+}
+
 export function registerLeadRoutes(app: Express) {
-  ensureLeadsTable().then(() => console.log("[leads] Tabela leads verificada"));
+  Promise.all([ensureLeadsTable(), ensureEmailQueueTable()]).then(() => {
+    console.log("[leads] Tabela leads + email_queue verificadas");
+  });
+
+  cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
+    processEmailQueue().catch(err => console.error("[email-queue-cron]", err.message));
+  });
+  console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos`);
+
+  const PIXEL_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+
+  app.get("/api/leads/pixel/:trackingId.png", async (req: Request, res: Response) => {
+    try {
+      const { trackingId } = req.params;
+      const tid = trackingId.replace(".png", "");
+
+      const { data: email } = await supabaseAdmin.from("email_queue")
+        .select("id, opened_count, opened_at, lead_id")
+        .eq("tracking_id", tid)
+        .single();
+
+      if (email) {
+        const updates: any = {
+          opened_count: (email.opened_count || 0) + 1,
+        };
+        if (!email.opened_at) {
+          updates.opened_at = nowBRTString();
+          updates.status = "lido";
+        }
+        await supabaseAdmin.from("email_queue").update(updates).eq("id", email.id);
+
+        if (email.lead_id && !email.opened_at) {
+          const { data: lead } = await supabaseAdmin.from("leads").select("historico").eq("id", email.lead_id).single();
+          if (lead) {
+            const hist = Array.isArray(lead.historico) ? [...lead.historico] : [];
+            hist.push({
+              data: nowBRTString(),
+              acao: "E-mail foi aberto/lido",
+              usuario: "Sistema",
+              detalhes: "O destinatário abriu o e-mail de apresentação",
+            });
+            await supabaseAdmin.from("leads").update({
+              historico: hist,
+              temperatura: "morno",
+              updated_at: nowBRTString(),
+            }).eq("id", email.lead_id);
+          }
+        }
+      }
+    } catch (_e) {}
+
+    res.set({
+      "Content-Type": "image/gif",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+    res.send(PIXEL_GIF);
+  });
 
   app.get("/api/leads", requireAdminRole, async (_req: Request, res: Response) => {
     try {
@@ -210,89 +455,220 @@ export function registerLeadRoutes(app: Express) {
   app.post("/api/leads/:id/enviar-apresentacao", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const user = (req as any).user;
       const { data: lead, error } = await supabaseAdmin.from("leads").select("*").eq("id", id).single();
       if (error || !lead) return res.status(404).json({ error: "Lead não encontrado" });
       if (!lead.email) return res.status(400).json({ error: "Lead não possui e-mail cadastrado" });
 
-      const transporter = createSmtpTransporter();
-      if (!transporter) return res.status(500).json({ error: "SMTP não configurado" });
+      const trackingId = generateTrackingId();
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const html = buildEmailHtml(lead, trackingId, baseUrl);
 
-      const html = `
-<!DOCTYPE html>
-<html><body style="font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;background:#f8f9fa;">
-<div style="max-width:600px;margin:0 auto;padding:20px;">
-  <div style="background:#1a1a2e;padding:30px 20px;border-radius:16px 16px 0 0;text-align:center;">
-    <h1 style="color:#fff;font-size:22px;margin:0;letter-spacing:1px;">TORRES VIGILÂNCIA PATRIMONIAL</h1>
-    <p style="color:#a0a0c0;font-size:12px;margin:8px 0 0;">CNPJ 36.982.392/0001-89</p>
-  </div>
-  <div style="background:#fff;padding:30px 24px;border-radius:0 0 16px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-    <p style="color:#333;font-size:15px;line-height:1.7;">
-      Prezado(a) <strong>${lead.contato_nome || "Responsável"}</strong>,
-    </p>
-    <p style="color:#555;font-size:14px;line-height:1.7;">
-      A <strong>Torres Vigilância Patrimonial</strong> é especializada em <strong>Escolta Armada Caracterizada</strong> 
-      para operações de logística, transporte de cargas e valores no estado de São Paulo.
-    </p>
-    <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
-      <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
-      <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
-        <li>Viaturas blindadas e caracterizadas com rastreamento em tempo real</li>
-        <li>Agentes com treinamento especializado e armamento regulamentado</li>
-        <li>Monitoramento 24h via central de operações</li>
-        <li>Cobertura completa no estado de São Paulo</li>
-        <li>Relatórios operacionais digitais com fotos e geolocalização</li>
-        <li>Seguro de responsabilidade civil</li>
-      </ul>
-    </div>
-    <p style="color:#555;font-size:14px;line-height:1.7;">
-      Gostaríamos de apresentar nossos serviços e demonstrar como podemos agregar segurança 
-      às operações da <strong>${lead.empresa}</strong>.
-    </p>
-    <div style="text-align:center;margin:24px 0;">
-      <a href="mailto:escolta@torresseguranca.com.br?subject=Interesse%20em%20Escolta%20-%20${encodeURIComponent(lead.empresa)}" 
-         style="display:inline-block;background:#1a1a2e;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
-        SOLICITAR PROPOSTA COMERCIAL
-      </a>
-    </div>
-    <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
-    <div style="text-align:center;">
-      <p style="color:#888;font-size:12px;margin:4px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
-      <p style="color:#999;font-size:11px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ escolta@torresseguranca.com.br</p>
-      <p style="color:#999;font-size:11px;margin:2px 0;">🌐 www.torresseguranca.com.br</p>
-    </div>
-  </div>
-</div>
-</body></html>`;
+      const { data: existing } = await supabaseAdmin.from("email_queue")
+        .select("id").eq("lead_id", id).eq("to_email", lead.email)
+        .in("status", ["pendente", "enviado"]).maybeSingle();
 
-      await transporter.sendMail({
-        from: getSmtpFrom(),
-        to: lead.email,
+      if (existing) {
+        return res.json({ ok: true, message: "E-mail já está na fila ou foi enviado recentemente", queued: false });
+      }
+
+      await supabaseAdmin.from("email_queue").insert({
+        lead_id: Number(id),
+        to_email: lead.email,
+        to_name: lead.contato_nome || "Responsável",
+        empresa: lead.empresa,
         subject: `Torres Vigilância Patrimonial — Segurança para ${lead.empresa}`,
-        html,
+        html_body: html,
+        tracking_id: trackingId,
+        created_at: nowBRTString(),
       });
 
-      const hist = Array.isArray(lead.historico) ? [...lead.historico] : [];
-      hist.push({
-        data: nowBRTString(),
-        acao: "Apresentação enviada por e-mail",
-        usuario: user?.name || "Sistema",
-        detalhes: `E-mail enviado para ${lead.email}`,
-      });
-
-      await supabaseAdmin.from("leads").update({
-        emails_enviados: (lead.emails_enviados || 0) + 1,
-        ultimo_contato: nowBRTString(),
-        status: lead.status === "novo" ? "contatado" : lead.status,
-        historico: hist,
-        updated_at: nowBRTString(),
-      }).eq("id", id);
-
-      res.json({ ok: true, message: `Apresentação enviada para ${lead.email}` });
+      res.json({ ok: true, message: `E-mail adicionado à fila de disparo para ${lead.email}`, queued: true });
     } catch (err: any) {
-      console.error("[leads] Erro envio apresentação:", err.message);
+      console.error("[leads] Erro ao enfileirar:", err.message);
       res.status(500).json({ error: err.message });
     }
+  });
+
+  app.post("/api/leads/enfileirar-todos", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const { setores, cidades, temperatura, status_filter } = req.body;
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+      let query = supabaseAdmin.from("leads").select("*")
+        .not("email", "is", null)
+        .not("status", "in", "(ganho,perdido,descartado)");
+
+      if (setores && setores.length > 0) query = query.in("setor", setores);
+      if (cidades && cidades.length > 0) query = query.in("cidade", cidades);
+      if (temperatura) query = query.eq("temperatura", temperatura);
+      if (status_filter) query = query.eq("status", status_filter);
+
+      const { data: leads, error } = await query;
+      if (error) throw error;
+
+      let queued = 0;
+      let skipped = 0;
+
+      for (const lead of (leads || [])) {
+        if (!lead.email) { skipped++; continue; }
+
+        const { data: existing } = await supabaseAdmin.from("email_queue")
+          .select("id").eq("lead_id", lead.id).eq("to_email", lead.email)
+          .in("status", ["pendente", "enviado", "lido"]).maybeSingle();
+
+        if (existing) { skipped++; continue; }
+
+        const trackingId = generateTrackingId();
+        const html = buildEmailHtml(lead, trackingId, baseUrl);
+
+        await supabaseAdmin.from("email_queue").insert({
+          lead_id: lead.id,
+          to_email: lead.email,
+          to_name: lead.contato_nome || "Responsável",
+          empresa: lead.empresa,
+          subject: `Torres Vigilância Patrimonial — Segurança para ${lead.empresa}`,
+          html_body: html,
+          tracking_id: trackingId,
+          created_at: nowBRTString(),
+        });
+        queued++;
+      }
+
+      res.json({ ok: true, queued, skipped, total: (leads || []).length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/leads/email-queue", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin.from("email_queue")
+        .select("id, lead_id, to_email, to_name, empresa, subject, status, tracking_id, opened_at, opened_count, replied, replied_at, error_message, sent_at, created_at, campaign_tag")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/leads/email-stats", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      const { data: queue, error } = await supabaseAdmin.from("email_queue")
+        .select("status, sent_at, opened_at, replied, created_at");
+      if (error) throw error;
+
+      const items = queue || [];
+      const pendentes = items.filter(e => e.status === "pendente").length;
+      const enviados = items.filter(e => e.status === "enviado" || e.status === "lido").length;
+      const lidos = items.filter(e => e.status === "lido").length;
+      const respondidos = items.filter(e => e.replied).length;
+      const erros = items.filter(e => e.status === "erro").length;
+      const total = items.length;
+
+      const dailyMap: Record<string, { enviados: number; lidos: number; respondidos: number; erros: number }> = {};
+
+      for (const item of items) {
+        const dateStr = item.sent_at
+          ? new Date(item.sent_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+          : item.created_at
+            ? new Date(item.created_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })
+            : null;
+        if (!dateStr) continue;
+
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { enviados: 0, lidos: 0, respondidos: 0, erros: 0 };
+
+        if (item.status === "enviado" || item.status === "lido") dailyMap[dateStr].enviados++;
+        if (item.status === "lido") dailyMap[dateStr].lidos++;
+        if (item.replied) dailyMap[dateStr].respondidos++;
+        if (item.status === "erro") dailyMap[dateStr].erros++;
+      }
+
+      const daily = Object.entries(dailyMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-30)
+        .map(([date, counts]) => ({ date, ...counts }));
+
+      const taxaAbertura = enviados > 0 ? Math.round((lidos / enviados) * 100) : 0;
+      const taxaResposta = enviados > 0 ? Math.round((respondidos / enviados) * 100) : 0;
+
+      res.json({
+        total, pendentes, enviados, lidos, respondidos, erros,
+        taxaAbertura, taxaResposta,
+        daily,
+        batchSize: BATCH_SIZE,
+        intervalMinutes: BATCH_INTERVAL_MINUTES,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/email-queue/:id/marcar-respondido", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await supabaseAdmin.from("email_queue").update({
+        replied: true,
+        replied_at: nowBRTString(),
+        status: "lido",
+      }).eq("id", id);
+
+      const { data: email } = await supabaseAdmin.from("email_queue").select("lead_id").eq("id", id).single();
+      if (email?.lead_id) {
+        const { data: lead } = await supabaseAdmin.from("leads").select("historico").eq("id", email.lead_id).single();
+        if (lead) {
+          const hist = Array.isArray(lead.historico) ? [...lead.historico] : [];
+          hist.push({
+            data: nowBRTString(),
+            acao: "Lead respondeu ao e-mail",
+            usuario: "Sistema",
+            detalhes: "Marcado como respondido manualmente",
+          });
+          await supabaseAdmin.from("leads").update({
+            historico: hist,
+            temperatura: "quente",
+            updated_at: nowBRTString(),
+          }).eq("id", email.lead_id);
+        }
+      }
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/leads/email-queue/:id", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      await supabaseAdmin.from("email_queue").delete().eq("id", req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/email-queue/limpar-fila", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      const { error } = await supabaseAdmin.from("email_queue").delete().eq("status", "pendente");
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/leads/disparar-agora", requireAdminRole, async (_req: Request, res: Response) => {
+    try {
+      await processEmailQueue();
+      res.json({ ok: true, message: "Lote disparado manualmente" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/leads/cargos-sugeridos", requireAdminRole, async (_req: Request, res: Response) => {
+    res.json({ cargos: CONTATO_CARGOS, emailPrefixes: EMAIL_PREFIXES });
   });
 
   app.post("/api/leads/:id/converter", requireAdminRole, async (req: Request, res: Response) => {

@@ -17,7 +17,8 @@ import {
   Flame, Snowflake, ThermometerSun, Clock, DollarSign, Filter,
   ArrowRight, Eye, Trash2, RefreshCw, CheckCircle2, XCircle,
   AlertTriangle, Crosshair, BarChart3, Users, FileText, Zap,
-  ExternalLink, History, Award, Shield
+  ExternalLink, History, Award, Shield, Inbox, MailOpen, Reply,
+  Play, Pause, Timer, Activity, AlertCircle
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
@@ -55,6 +56,7 @@ function ScoreBadge({ score }: { score: number }) {
 export default function LeadsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"crm" | "email">("crm");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [setorFilter, setSetorFilter] = useState<string>("ALL");
@@ -72,6 +74,8 @@ export default function LeadsPage() {
 
   const { data: leads = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/leads"] });
   const { data: config } = useQuery<any>({ queryKey: ["/api/leads/setores"] });
+  const { data: emailStats } = useQuery<any>({ queryKey: ["/api/leads/email-stats"], refetchInterval: 30000 });
+  const { data: emailQueue = [] } = useQuery<any[]>({ queryKey: ["/api/leads/email-queue"], enabled: activeTab === "email", refetchInterval: 15000 });
 
   const [form, setForm] = useState<any>({
     empresa: "", cnpj: "", contato_nome: "", contato_cargo: "", telefone: "",
@@ -126,6 +130,46 @@ export default function LeadsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({ title: data.existing ? "Lead vinculado a cliente existente" : "Cliente criado a partir do lead!" });
       setShowDetail(null);
+    },
+  });
+
+  const enqueueAllMut = useMutation({
+    mutationFn: (filters: any) => apiRequest("POST", "/api/leads/enfileirar-todos", filters),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-queue"] });
+      toast({ title: `${data.queued} e-mail(s) enfileirados · ${data.skipped} já enviado(s)` });
+    },
+    onError: (err: any) => toast({ title: "Erro ao enfileirar", description: err.message, variant: "destructive" }),
+  });
+
+  const dispatchNowMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/leads/disparar-agora"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Lote disparado manualmente!" });
+    },
+  });
+
+  const clearQueueMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/leads/email-queue/limpar-fila"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-queue"] });
+      toast({ title: "Fila de pendentes limpa" });
+    },
+  });
+
+  const markRepliedMut = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/leads/email-queue/${id}/marcar-respondido`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/email-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Marcado como respondido" });
     },
   });
 
@@ -215,15 +259,42 @@ export default function LeadsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setShowGoogleSearch(true)} className="gap-1.5" data-testid="btn-google-search">
-              <Search size={14} /> Prospectar Google
-            </Button>
-            <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-new-lead">
-              <Plus size={14} /> Novo Lead
-            </Button>
+            <div className="flex border border-neutral-200 rounded-lg overflow-hidden mr-2">
+              <button onClick={() => setActiveTab("crm")} className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1 ${activeTab === "crm" ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50"}`} data-testid="tab-crm">
+                <Target size={12} /> CRM
+              </button>
+              <button onClick={() => setActiveTab("email")} className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1 ${activeTab === "email" ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50"}`} data-testid="tab-email">
+                <Mail size={12} /> E-mail Marketing
+                {emailStats?.pendentes > 0 && <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white rounded-full text-[8px] font-black">{emailStats.pendentes}</span>}
+              </button>
+            </div>
+            {activeTab === "crm" && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setShowGoogleSearch(true)} className="gap-1.5" data-testid="btn-google-search">
+                  <Search size={14} /> Prospectar Google
+                </Button>
+                <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-new-lead">
+                  <Plus size={14} /> Novo Lead
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
+        {activeTab === "email" && <EmailMarketingTab
+          emailStats={emailStats}
+          emailQueue={emailQueue}
+          leads={leads}
+          config={config}
+          onEnqueueAll={(f: any) => enqueueAllMut.mutate(f)}
+          onDispatchNow={() => dispatchNowMut.mutate(undefined)}
+          onClearQueue={() => { if(confirm("Limpar todos os e-mails pendentes da fila?")) clearQueueMut.mutate(undefined); }}
+          onMarkReplied={(id: number) => markRepliedMut.mutate(id)}
+          isEnqueuing={enqueueAllMut.isPending}
+          isDispatching={dispatchNowMut.isPending}
+        />}
+
+        {activeTab === "crm" && <>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
           {[
             { label: "Total", value: stats.total, icon: Users, color: "border-neutral-200", click: "ALL" },
@@ -355,6 +426,7 @@ export default function LeadsPage() {
             ))}
           </div>
         )}
+        </>}
       </div>
 
       <Dialog open={showForm} onOpenChange={setShowForm}>
@@ -578,6 +650,178 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         {isPending ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
         Cadastrar Lead
       </Button>
+    </div>
+  );
+}
+
+function EmailMarketingTab({ emailStats, emailQueue, leads, config, onEnqueueAll, onDispatchNow, onClearQueue, onMarkReplied, isEnqueuing, isDispatching }: any) {
+  const [queueFilter, setQueueFilter] = useState("ALL");
+  const st = emailStats || { total: 0, pendentes: 0, enviados: 0, lidos: 0, respondidos: 0, erros: 0, taxaAbertura: 0, taxaResposta: 0, daily: [], batchSize: 5, intervalMinutes: 10 };
+  const daily = st.daily || [];
+
+  const maxEnviados = Math.max(...daily.map((d: any) => d.enviados || 0), 1);
+
+  const filteredQueue = useMemo(() => {
+    if (queueFilter === "ALL") return emailQueue;
+    return emailQueue.filter((e: any) => e.status === queueFilter);
+  }, [emailQueue, queueFilter]);
+
+  const leadsComEmail = leads.filter((l: any) => l.email && !["ganho", "perdido", "descartado"].includes(l.status)).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {[
+          { label: "Na Fila", value: st.pendentes, icon: Inbox, color: "border-amber-200", bg: "bg-amber-50" },
+          { label: "Enviados", value: st.enviados, icon: Send, color: "border-blue-200", bg: "bg-blue-50" },
+          { label: "Abertos", value: st.lidos, icon: MailOpen, color: "border-emerald-200", bg: "bg-emerald-50" },
+          { label: "Respondidos", value: st.respondidos, icon: Reply, color: "border-purple-200", bg: "bg-purple-50" },
+          { label: "Erros", value: st.erros, icon: AlertCircle, color: "border-red-200", bg: "bg-red-50" },
+          { label: "Taxa Abertura", value: `${st.taxaAbertura}%`, icon: Eye, color: "border-sky-200", bg: "bg-sky-50" },
+          { label: "Taxa Resposta", value: `${st.taxaResposta}%`, icon: Activity, color: "border-violet-200", bg: "bg-violet-50" },
+          { label: "Total", value: st.total, icon: Mail, color: "border-neutral-200", bg: "bg-neutral-50" },
+        ].map((s, i) => (
+          <div key={i} className={`${s.bg} border ${s.color} rounded-xl p-3`}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <s.icon size={12} className="text-neutral-400" />
+              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">{s.label}</span>
+            </div>
+            <p className="text-lg font-black text-neutral-900">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Timer size={14} className="text-neutral-400" />
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Automação de Disparo</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px]">
+              {st.batchSize} e-mails / {st.intervalMinutes}min
+            </Badge>
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">
+              <Activity size={10} className="mr-1" /> ATIVO
+            </Badge>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => onEnqueueAll({})} disabled={isEnqueuing} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-enqueue-all">
+            {isEnqueuing ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
+            Enfileirar Todos ({leadsComEmail})
+          </Button>
+          <Button size="sm" onClick={onDispatchNow} disabled={isDispatching || st.pendentes === 0} className="gap-1.5 bg-blue-600 hover:bg-blue-700" data-testid="btn-dispatch-now">
+            {isDispatching ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
+            Disparar Agora (5)
+          </Button>
+          <Button size="sm" variant="outline" onClick={onClearQueue} disabled={st.pendentes === 0} className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50" data-testid="btn-clear-queue">
+            <Trash2 size={12} /> Limpar Fila
+          </Button>
+          <span className="text-[10px] text-neutral-400 ml-auto flex items-center gap-1">
+            <Mail size={10} /> Respostas vão para escolta@ e diretoria@torresseguranca.com.br
+          </span>
+        </div>
+      </div>
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 size={14} className="text-neutral-400" />
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">E-mails por Dia (últimos 30 dias)</span>
+        </div>
+        {daily.length === 0 ? (
+          <p className="text-xs text-neutral-400 text-center py-6">Nenhum dado de disparo ainda</p>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-end gap-1" style={{ height: 160 }}>
+              {daily.map((d: any, i: number) => {
+                const hEnv = Math.max(4, (d.enviados / maxEnviados) * 140);
+                const hLido = d.lidos > 0 ? Math.max(2, (d.lidos / maxEnviados) * 140) : 0;
+                const hResp = d.respondidos > 0 ? Math.max(2, (d.respondidos / maxEnviados) * 140) : 0;
+                const dateLabel = new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative" title={`${dateLabel}: ${d.enviados} env · ${d.lidos} abertos · ${d.respondidos} resp`}>
+                    <div className="absolute -top-6 bg-neutral-900 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                      {d.enviados} env · {d.lidos} abertos · {d.respondidos} resp
+                    </div>
+                    <div className="w-full flex flex-col items-center gap-0">
+                      {hResp > 0 && <div className="w-full max-w-[20px] bg-purple-400 rounded-t" style={{ height: hResp }} />}
+                      {hLido > 0 && <div className="w-full max-w-[20px] bg-emerald-400" style={{ height: hLido }} />}
+                      <div className="w-full max-w-[20px] bg-blue-400 rounded-b" style={{ height: hEnv }} />
+                    </div>
+                    <span className="text-[7px] text-neutral-300 -rotate-45 origin-top-left mt-1 w-8">{dateLabel}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-center gap-4 mt-2 text-[9px] text-neutral-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400 rounded" /> Enviados</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-emerald-400 rounded" /> Abertos</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-purple-400 rounded" /> Respondidos</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Inbox size={14} className="text-neutral-400" />
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Fila de E-mails</span>
+            <Badge variant="outline" className="text-[10px]">{filteredQueue.length}</Badge>
+          </div>
+          <div className="flex gap-1">
+            {[
+              { val: "ALL", label: "Todos" },
+              { val: "pendente", label: "Pendentes" },
+              { val: "enviado", label: "Enviados" },
+              { val: "lido", label: "Lidos" },
+              { val: "erro", label: "Erros" },
+            ].map(f => (
+              <button key={f.val} onClick={() => setQueueFilter(f.val)}
+                className={`px-2 py-1 text-[10px] font-bold rounded ${queueFilter === f.val ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}
+                data-testid={`queue-filter-${f.val}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+          {filteredQueue.length === 0 ? (
+            <p className="text-xs text-neutral-400 text-center py-6">Nenhum e-mail na fila</p>
+          ) : filteredQueue.map((email: any) => (
+            <div key={email.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-neutral-100 hover:bg-neutral-50 transition-colors">
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${email.status === "pendente" ? "bg-amber-400" : email.status === "enviado" ? "bg-blue-400" : email.status === "lido" ? "bg-emerald-400" : "bg-red-400"}`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-neutral-900 truncate">{email.empresa}</p>
+                  <Badge variant="outline" className={`text-[8px] ${email.status === "lido" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : email.status === "enviado" ? "bg-blue-50 text-blue-700 border-blue-200" : email.status === "erro" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                    {email.status === "lido" ? "ABERTO" : email.status === "enviado" ? "ENVIADO" : email.status === "erro" ? "ERRO" : "NA FILA"}
+                  </Badge>
+                  {email.replied && <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[8px]">RESPONDIDO</Badge>}
+                  {email.opened_count > 0 && <span className="text-[9px] text-emerald-600 font-semibold">{email.opened_count}x aberto</span>}
+                </div>
+                <p className="text-[10px] text-neutral-400 truncate">{email.to_email} · {email.to_name}</p>
+                <div className="flex items-center gap-3 text-[9px] text-neutral-300 mt-0.5">
+                  {email.sent_at && <span>Enviado: {new Date(email.sent_at).toLocaleString("pt-BR")}</span>}
+                  {email.opened_at && <span className="text-emerald-500">Aberto: {new Date(email.opened_at).toLocaleString("pt-BR")}</span>}
+                  {email.replied_at && <span className="text-purple-500">Respondido: {new Date(email.replied_at).toLocaleString("pt-BR")}</span>}
+                  {email.error_message && <span className="text-red-500">{email.error_message}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {email.status === "enviado" || email.status === "lido" ? (
+                  !email.replied && (
+                    <Button size="sm" variant="outline" onClick={() => onMarkReplied(email.id)} className="h-7 text-[10px] gap-1 text-purple-600 border-purple-200" data-testid={`btn-replied-${email.id}`}>
+                      <Reply size={10} /> Respondeu
+                    </Button>
+                  )
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
