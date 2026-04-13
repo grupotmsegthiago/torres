@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Component, type ReactNode, type ErrorInfo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
@@ -744,6 +744,37 @@ function InspectionLogsSection({ orderId }: { orderId: number }) {
       )}
     </div>
   );
+}
+
+class FormErrorBoundary extends Component<{ children: ReactNode; onClose: () => void }, { hasError: boolean; error: string }> {
+  constructor(props: { children: ReactNode; onClose: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message || "Erro desconhecido" };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[OrderForm] Crash:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="border border-red-200 rounded-lg bg-red-50 p-6 mb-6" data-testid="error-boundary-form">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            <h3 className="text-sm font-bold text-red-800">Erro ao carregar formulário</h3>
+          </div>
+          <p className="text-xs text-red-700 mb-4">{this.state.error}</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => this.setState({ hasError: false, error: "" })}>Tentar novamente</Button>
+            <Button size="sm" variant="ghost" onClick={this.props.onClose}>Fechar</Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings }: {
@@ -1974,7 +2005,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={allBillings} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} />}
+      {showForm && <FormErrorBoundary onClose={() => { setShowForm(false); setEditItem(undefined); }}><OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={allBillings} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} /></FormErrorBoundary>}
 
       {filterVehicleId && (() => {
         const fv = vehicles.find(vv => vv.id === filterVehicleId);
