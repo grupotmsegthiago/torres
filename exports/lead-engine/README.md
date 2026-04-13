@@ -72,10 +72,20 @@ No seu arquivo principal do servidor:
 
 ```typescript
 import express from "express";
-import { registerLeadRoutes } from "./leads-engine";
+import { registerLeadRoutes, setAuthMiddleware } from "./leads-engine";
 
 const app = express();
 app.use(express.json());
+
+// IMPORTANTE: Configure a autenticação ANTES de registrar as rotas.
+// Sem isso, todas as rotas protegidas retornam 403.
+setAuthMiddleware((req, res, next) => {
+  // Substitua pela sua lógica real (JWT, session, etc.)
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return res.status(401).json({ error: "Token ausente" });
+  // Valide o token aqui...
+  next();
+});
 
 // Registra todas as rotas e CRONs do lead engine
 registerLeadRoutes(app);
@@ -85,7 +95,7 @@ app.listen(5000, () => console.log("Server running on port 5000"));
 
 ### 6. Autenticação
 
-O motor usa um middleware `requireAuth` placeholder. Substitua pela sua lógica de autenticação real no arquivo `leads-engine.ts`.
+Por segurança, todas as rotas protegidas são **bloqueadas por padrão** (retornam 403). Você deve chamar `setAuthMiddleware()` com sua lógica real antes de registrar as rotas. O middleware recebe `(req, res, next)` padrão do Express.
 
 ## API Endpoints
 

@@ -11,7 +11,7 @@
 // e execute o schema.sql no seu banco de dados.
 // =============================================================================
 
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import cron from "node-cron";
@@ -21,6 +21,77 @@ import {
   EXCLUSION_TERMS, BLACKLIST_COMPETITOR, BLACKLIST_BRANDS, POSITIVE_TERMS,
   SKIP_DOMAINS, EMAIL_PREFIXES, CONTATO_CARGOS, USER_AGENTS,
 } from "./config";
+
+// =============================================================================
+// TIPOS
+// =============================================================================
+
+interface Lead {
+  id: number;
+  empresa: string;
+  cnpj: string | null;
+  contato_nome: string | null;
+  contato_cargo: string | null;
+  telefone: string | null;
+  email: string | null;
+  website: string | null;
+  endereco: string | null;
+  cidade: string;
+  estado: string;
+  setor: string | null;
+  origem: string;
+  status: string;
+  temperatura: string;
+  valor_estimado: number;
+  notas: string | null;
+  motivo_perda: string | null;
+  historico: HistoricoEntry[];
+  emails_enviados: number;
+  ultimo_contato: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface HistoricoEntry {
+  data: string;
+  acao: string;
+  usuario: string;
+  detalhes?: string;
+}
+
+interface EmailQueueItem {
+  id: number;
+  lead_id: number | null;
+  to_email: string;
+  to_name: string | null;
+  empresa: string | null;
+  subject: string;
+  html_body: string;
+  status: string;
+  tracking_id: string;
+  opened_at: string | null;
+  opened_count: number;
+  replied: boolean;
+  replied_at: string | null;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string;
+  campaign_tag: string;
+}
+
+interface SiteContact {
+  empresa: string;
+  email: string;
+  phone: string;
+  domain: string;
+}
+
+interface FollowUpContent {
+  subject: string;
+  greeting: string;
+  body: string;
+  cta: string;
+}
 
 // =============================================================================
 // INICIALIZAÇÃO DO SUPABASE
@@ -49,7 +120,7 @@ function createSmtpTransporter() {
     host: SMTP.host, port: SMTP.port, secure: SMTP.port === 465,
     requireTLS: SMTP.port === 587,
     auth: { user: SMTP.user, pass: SMTP.pass },
-    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+    tls: { ciphers: "SSLv3" },
   });
 }
 
@@ -64,7 +135,7 @@ function generateTrackingId(): string {
 // SCORING
 // =============================================================================
 
-function calcLeadScore(setor?: string, endereco?: string, temperatura?: string, valor_estimado?: number): number {
+function calcLeadScore(setor?: string | null, endereco?: string | null, temperatura?: string | null, valor_estimado?: number | null): number {
   let score = SCORING_SETOR[setor || ""] || 3;
   const addr = (endereco || "").toLowerCase();
   for (const zona of ZONAS_RISCO) {
@@ -101,7 +172,7 @@ function isCompetitor(siteContent: string, domain?: string): boolean {
 // =============================================================================
 // IMPORTANTE: Edite estes templates para refletir o seu negócio.
 
-function getFollowUpContent(emailNumber: number, lead: any): { subject: string; greeting: string; body: string; cta: string } {
+function getFollowUpContent(emailNumber: number, lead: Pick<Lead, "empresa" | "contato_nome">): FollowUpContent {
   const empresa = lead.empresa || "sua empresa";
   const nome = lead.contato_nome || "Responsável";
 
@@ -198,7 +269,7 @@ function getFollowUpContent(emailNumber: number, lead: any): { subject: string; 
   }
 }
 
-function buildEmailHtml(lead: any, trackingId: string, baseUrl: string, emailNumber?: number): string {
+function buildEmailHtml(lead: Pick<Lead, "empresa" | "contato_nome">, trackingId: string, baseUrl: string, emailNumber?: number): string {
   const pixelUrl = `${baseUrl}/api/leads/pixel/${trackingId}.png`;
   const content = getFollowUpContent(emailNumber || 1, lead);
 
@@ -283,8 +354,8 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
     });
     const html = await resp.text();
     urls = extractUrlsFromHtml(html);
-  } catch (err: any) {
-    console.log(`[lead-engine] DuckDuckGo falhou: ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`[lead-engine] DuckDuckGo falhou: ${err instanceof Error ? err instanceof Error ? err.message : String(err) : String(err)}`);
   }
 
   if (urls.length === 0) {
@@ -299,8 +370,8 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
       if (urls.length > 0) {
         console.log(`[lead-engine] Bing fallback: ${urls.length} sites encontrados`);
       }
-    } catch (err: any) {
-      console.log(`[lead-engine] Bing fallback falhou: ${err.message}`);
+    } catch (err: unknown) {
+      console.log(`[lead-engine] Bing fallback falhou: ${err instanceof Error ? err instanceof Error ? err.message : String(err) : String(err)}`);
     }
   }
 
@@ -489,18 +560,18 @@ async function processEmailQueue() {
 
         console.log(`[lead-engine] ✓ Enviado: ${email.to_email} (${email.empresa})`);
         await new Promise(r => setTimeout(r, 2000));
-      } catch (err: any) {
-        console.error(`[lead-engine] ✗ Erro ${email.to_email}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`[lead-engine] ✗ Erro ${email.to_email}: ${err instanceof Error ? err.message : String(err)}`);
         await supabaseAdmin.from("email_queue").update({
           status: "erro",
-          error_message: err.message,
+          error_message: err instanceof Error ? err.message : String(err),
         }).eq("id", email.id);
       }
     }
 
     console.log(`[lead-engine] Lote concluído: ${pending.length} processado(s)`);
-  } catch (err: any) {
-    console.error("[lead-engine] Erro geral:", err.message);
+  } catch (err: unknown) {
+    console.error("[lead-engine] Erro geral:", err instanceof Error ? err.message : String(err));
   } finally {
     emailDispatchRunning = false;
   }
@@ -574,8 +645,8 @@ async function autoEnqueueLeads() {
     if (enqueued > 0) {
       console.log(`[lead-engine] ${enqueued} lead(s) enfileirado(s) automaticamente`);
     }
-  } catch (err: any) {
-    console.error("[lead-engine] autoEnqueue erro:", err.message);
+  } catch (err: unknown) {
+    console.error("[lead-engine] autoEnqueue erro:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -614,8 +685,8 @@ async function autoProspect() {
       try {
         siteUrls = await searchDuckDuckGo(query);
         await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
-      } catch (err: any) {
-        console.log(`[lead-engine] Search error: ${err.message}`);
+      } catch (err: unknown) {
+        console.log(`[lead-engine] Search error: ${err instanceof Error ? err.message : String(err)}`);
         queryIndex++;
         continue;
       }
@@ -692,8 +763,8 @@ async function autoProspect() {
       await autoEnqueueLeads();
       await processEmailQueue();
     }
-  } catch (err: any) {
-    console.error(`[lead-engine] Erro: ${err.message}`);
+  } catch (err: unknown) {
+    console.error(`[lead-engine] Erro: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     autoProspectRunning = false;
   }
@@ -767,21 +838,31 @@ async function sendDailyEmailReport() {
     });
 
     console.log(`[lead-engine] Relatório diário enviado (${today})`);
-  } catch (err: any) {
-    console.error("[lead-engine] Erro relatório:", err.message);
+  } catch (err: unknown) {
+    console.error("[lead-engine] Erro relatório:", err instanceof Error ? err.message : String(err));
   }
 }
 
 // =============================================================================
 // MIDDLEWARE DE AUTH (ADAPTE PARA O SEU PROJETO)
 // =============================================================================
-// Substitua por seu middleware de autenticação real.
-// Esta é uma versão placeholder que aceita qualquer request com header Authorization.
+// IMPORTANTE: Substitua esta função pela sua lógica de autenticação real.
+// Por segurança, este placeholder BLOQUEIA todas as requisições por padrão.
+// Implemente a validação do token JWT/session antes de liberar o acesso.
 
-function requireAuth(req: Request, res: Response, next: Function) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: "Não autorizado" });
-  next();
+let _authMiddleware: ((req: Request, res: Response, next: NextFunction) => void) | null = null;
+
+export function setAuthMiddleware(middleware: (req: Request, res: Response, next: NextFunction) => void) {
+  _authMiddleware = middleware;
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (_authMiddleware) {
+    return _authMiddleware(req, res, next);
+  }
+  return res.status(403).json({
+    error: "Auth não configurado. Chame setAuthMiddleware() com sua lógica de autenticação.",
+  });
 }
 
 // =============================================================================
@@ -792,19 +873,19 @@ export function registerLeadRoutes(app: Express) {
   cron.schedule(`*/${EMAIL_CADENCE.batchIntervalMinutes} * * * *`, () => {
     autoEnqueueLeads()
       .then(() => processEmailQueue())
-      .catch(err => console.error("[lead-engine-cron]", err.message));
+      .catch(err => console.error("[lead-engine-cron]", err instanceof Error ? err.message : String(err)));
   });
 
   cron.schedule(PROSPECT.cronInterval, () => {
-    autoProspect().catch(err => console.error("[lead-engine-prospect-cron]", err.message));
+    autoProspect().catch(err => console.error("[lead-engine-prospect-cron]", err instanceof Error ? err.message : String(err)));
   });
 
   cron.schedule("0 21 * * *", () => {
-    sendDailyEmailReport().catch(err => console.error("[lead-engine-report-cron]", err.message));
+    sendDailyEmailReport().catch(err => console.error("[lead-engine-report-cron]", err instanceof Error ? err.message : String(err)));
   }, { timezone: PROSPECT.timezone });
 
   setTimeout(() => {
-    autoProspect().catch(err => console.error("[lead-engine-init]", err.message));
+    autoProspect().catch(err => console.error("[lead-engine-init]", err instanceof Error ? err.message : String(err)));
   }, 15000);
 
   console.log(`[lead-engine] CRON ativo: ${EMAIL_CADENCE.batchSize} e-mails a cada ${EMAIL_CADENCE.batchIntervalMinutes} min`);
@@ -824,7 +905,7 @@ export function registerLeadRoutes(app: Express) {
         .single();
 
       if (email) {
-        const updates: any = {
+        const updates: { opened_count: number; opened_at?: string; status?: string } = {
           opened_count: (email.opened_count || 0) + 1,
         };
         if (!email.opened_at) {
@@ -869,13 +950,13 @@ export function registerLeadRoutes(app: Express) {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const withScore = (data || []).map((l: any) => ({
+      const withScore = (data || []).map((l: Lead) => ({
         ...l,
         score: calcLeadScore(l.setor, l.endereco, l.temperatura, l.valor_estimado),
       }));
       res.json(withScore);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -899,8 +980,8 @@ export function registerLeadRoutes(app: Express) {
         if (l.status === "ganho") totalGanho += Number(l.valor_estimado || 0);
       }
       res.json({ total: leads.length, byStatus, byTemp, bySetor, byOrigem, totalValor, totalGanho });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -921,8 +1002,8 @@ export function registerLeadRoutes(app: Express) {
       }).select().single();
       if (error) throw error;
       res.json(data);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -959,8 +1040,8 @@ export function registerLeadRoutes(app: Express) {
       }).eq("id", id).select().single();
       if (error) throw error;
       res.json(data);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -969,8 +1050,8 @@ export function registerLeadRoutes(app: Express) {
       const { error } = await supabaseAdmin.from("leads").delete().eq("id", req.params.id);
       if (error) throw error;
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -997,8 +1078,8 @@ export function registerLeadRoutes(app: Express) {
       });
 
       res.json({ ok: true, message: `E-mail enfileirado para ${lead.email}` });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1010,8 +1091,8 @@ export function registerLeadRoutes(app: Express) {
         .limit(500);
       if (error) throw error;
       res.json(data || []);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1036,8 +1117,8 @@ export function registerLeadRoutes(app: Express) {
         batchSize: EMAIL_CADENCE.batchSize,
         intervalMinutes: EMAIL_CADENCE.batchIntervalMinutes,
       });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1046,8 +1127,8 @@ export function registerLeadRoutes(app: Express) {
       await autoEnqueueLeads();
       await processEmailQueue();
       res.json({ ok: true, message: "Lote disparado manualmente" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1096,8 +1177,8 @@ export function registerLeadRoutes(app: Express) {
       }
 
       res.json({ ok: true, imported, skipped, total: csvLeads.length });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1121,17 +1202,17 @@ export function registerLeadRoutes(app: Express) {
         totalLeads: totalLeads || 0,
         autoLeads: autoLeads || 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.json({ running: false, totalQueries: SEARCH_QUERIES.length, totalLeads: 0, autoLeads: 0 });
     }
   });
 
   app.post("/api/leads/auto-prospect/trigger", requireAuth, async (_req: Request, res: Response) => {
     try {
-      autoProspect().catch(err => console.error("[lead-engine-manual]", err.message));
+      autoProspect().catch(err => console.error("[lead-engine-manual]", err instanceof Error ? err.message : String(err)));
       res.json({ ok: true, message: "Prospecção disparada" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1164,8 +1245,8 @@ export function registerLeadRoutes(app: Express) {
         }
       }
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1173,8 +1254,8 @@ export function registerLeadRoutes(app: Express) {
     try {
       await supabaseAdmin.from("email_queue").delete().eq("id", req.params.id);
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1182,8 +1263,8 @@ export function registerLeadRoutes(app: Express) {
     try {
       await supabaseAdmin.from("email_queue").delete().eq("status", "pendente");
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1191,8 +1272,8 @@ export function registerLeadRoutes(app: Express) {
     try {
       await sendDailyEmailReport();
       res.json({ ok: true, message: "Relatório enviado" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
