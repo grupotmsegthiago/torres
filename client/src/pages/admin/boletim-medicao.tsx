@@ -41,7 +41,7 @@ const computeKm = (os: any) => {
   return Math.max(0, kmFim - kmChegada);
 };
 
-type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "FATURADA";
+type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "ENVIADA_APROVACAO" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "A_FATURAR" | "FATURADA";
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
@@ -52,7 +52,7 @@ export default function BoletimMedicaoPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("status");
-    if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "APROVADA", "REJEITADA", "FORA_CICLO", "FATURADA"].includes(s)) return s as StatusFilter;
+    if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "ENVIADA_APROVACAO", "APROVADA", "REJEITADA", "FORA_CICLO", "A_FATURAR", "FATURADA"].includes(s)) return s as StatusFilter;
     return "PENDENTE";
   });
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
@@ -113,6 +113,30 @@ export default function BoletimMedicaoPage() {
       return Array.isArray(d) ? d : [];
     },
   });
+
+  const { data: boletimApprovals = [] } = useQuery<any[]>({
+    queryKey: ["/api/boletim/aprovacoes"],
+    queryFn: async () => {
+      const r = await authFetch("/api/boletim/aprovacoes");
+      if (!r.ok) return [];
+      const d = await r.json();
+      return Array.isArray(d) ? d : [];
+    },
+    refetchInterval: 60000,
+  });
+
+  const sentBillingIds = new Set<number>();
+  const approvedByClientBillingIds = new Set<number>();
+  for (const ba of boletimApprovals) {
+    const ids: number[] = ba.billing_ids || [];
+    for (const bid of ids) {
+      if (ba.status === "APROVADO" || ba.status === "CONFIRMADO") {
+        approvedByClientBillingIds.add(bid);
+      } else if (ba.status === "PENDENTE") {
+        sentBillingIds.add(bid);
+      }
+    }
+  }
 
   const invalidateAllRelated = () => {
     invalidateRelatedQueries("billing");
@@ -272,7 +296,9 @@ export default function BoletimMedicaoPage() {
     let orders = group.orders;
     if (statusFilter === "EM_ANDAMENTO") orders = orders.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada");
     else if (statusFilter === "PENDENTE") orders = orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR");
+    else if (statusFilter === "ENVIADA_APROVACAO") orders = orders.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
     else if (statusFilter === "APROVADA") orders = orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado);
+    else if (statusFilter === "A_FATURAR") orders = orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
     else if (statusFilter === "FATURADA") orders = orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO");
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
     else if (statusFilter === "FORA_CICLO") {
@@ -311,7 +337,10 @@ export default function BoletimMedicaoPage() {
   const totalOs = periodFilteredOs.length;
   const liveCount = periodFilteredOs.filter(o => (o.status === "em_andamento" || (o.status === "agendada" && o.missionStartedAt)) && o.missionStatus !== "encerrada").length;
   const pendingCount = periodFilteredOs.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
+  const sentForApprovalCount = periodFilteredOs.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
   const approvedCount = periodFilteredOs.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
+  const faturadoCount = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").length;
+  const aFaturarCount = periodFilteredOs.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
   const foraCicloCount = periodFilteredOs.filter(o => {
     if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
     const bStatus = o.billing?.status;
@@ -321,13 +350,16 @@ export default function BoletimMedicaoPage() {
     const daysSince = Math.floor((Date.now() - mDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
-  const totalFaturamento = periodFilteredOs.reduce((acc, o) => {
+  const getBillingTotal = (o: any) => {
     const b = o.billing;
-    if (!b) return acc;
+    if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
-    if (fatTotal > 0) return acc + fatTotal;
-    return acc + Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
-  }, 0);
+    if (fatTotal > 0) return fatTotal;
+    return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+  };
+  const totalFaturamento = periodFilteredOs.reduce((acc, o) => acc + getBillingTotal(o), 0);
+  const totalFaturado = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
+  const totalAFaturar = periodFilteredOs.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").reduce((acc, o) => acc + getBillingTotal(o), 0);
 
   const getBillingStatus = (os: any) => {
     if (!os.billing) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
@@ -416,7 +448,7 @@ export default function BoletimMedicaoPage() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <button onClick={() => setStatusFilter("ALL")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ALL" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-total">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><FileText size={14} className="text-neutral-500" /></div>
@@ -431,29 +463,100 @@ export default function BoletimMedicaoPage() {
             </div>
             <p className="text-2xl font-black text-amber-700 mt-1">{pendingCount}</p>
           </button>
+          <button onClick={() => setStatusFilter("ENVIADA_APROVACAO")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ENVIADA_APROVACAO" ? "ring-2 ring-blue-500 border-blue-500" : "border-blue-200"}`} data-testid="stat-enviadas">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Send size={14} className="text-blue-600" /></div>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Enviadas</span>
+            </div>
+            <p className="text-2xl font-black text-blue-700 mt-1">{sentForApprovalCount}</p>
+            <p className="text-[9px] text-blue-400 font-semibold mt-0.5">p/ aprovação cliente</p>
+          </button>
           <button onClick={() => setStatusFilter("APROVADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "APROVADA" ? "ring-2 ring-emerald-500 border-emerald-500" : "border-emerald-200"}`} data-testid="stat-aprovadas">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><CheckCircle2 size={14} className="text-emerald-600" /></div>
               <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Aprovadas</span>
             </div>
             <p className="text-2xl font-black text-emerald-700 mt-1">{approvedCount}</p>
+            <p className="text-[9px] text-emerald-400 font-semibold mt-0.5">pelo cliente</p>
           </button>
-          <button onClick={() => setStatusFilter("FATURADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "FATURADA" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-faturamento">
+          <button onClick={() => setStatusFilter("A_FATURAR")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "A_FATURAR" ? "ring-2 ring-orange-500 border-orange-500" : "border-orange-200"}`} data-testid="stat-a-faturar">
             <div className="flex items-center gap-2 mb-1">
-              <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><DollarSign size={14} className="text-neutral-500" /></div>
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Faturamento</span>
+              <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center"><Clock size={14} className="text-orange-600" /></div>
+              <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">A Faturar</span>
             </div>
-            <p className="text-lg font-black text-neutral-900 mt-1">{fmt(totalFaturamento)}</p>
+            <p className="text-lg font-black text-orange-700 mt-1">{fmt(totalAFaturar)}</p>
+            <p className="text-[9px] text-orange-400 font-semibold mt-0.5">{aFaturarCount} OS</p>
+          </button>
+          <button onClick={() => setStatusFilter("FATURADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "FATURADA" ? "ring-2 ring-indigo-500 border-indigo-500" : "border-indigo-200"}`} data-testid="stat-faturado">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center"><DollarSign size={14} className="text-indigo-600" /></div>
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Faturado</span>
+            </div>
+            <p className="text-lg font-black text-indigo-700 mt-1">{fmt(totalFaturado)}</p>
+            <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">{faturadoCount} OS</p>
           </button>
         </div>
 
+        <div className="bg-white border border-neutral-200 rounded-xl p-3">
+          <div className="flex items-center gap-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-2">
+            <Route size={12} /> Pipeline de Faturamento
+          </div>
+          <div className="flex items-center gap-0">
+            {[
+              { label: "Pendentes", count: pendingCount, value: null, color: "bg-amber-500", filter: "PENDENTE" as StatusFilter },
+              { label: "Enviadas", count: sentForApprovalCount, value: null, color: "bg-blue-500", filter: "ENVIADA_APROVACAO" as StatusFilter },
+              { label: "Aprovadas", count: approvedCount, value: null, color: "bg-emerald-500", filter: "APROVADA" as StatusFilter },
+              { label: "A Faturar", count: aFaturarCount, value: totalAFaturar, color: "bg-orange-500", filter: "A_FATURAR" as StatusFilter },
+              { label: "Faturado", count: faturadoCount, value: totalFaturado, color: "bg-indigo-600", filter: "FATURADA" as StatusFilter },
+            ].map((step, i, arr) => {
+              const pct = totalOs > 0 ? Math.max(8, (step.count / totalOs) * 100) : 20;
+              return (
+                <div key={step.label} className="flex items-center" style={{ flex: pct }}>
+                  <button
+                    onClick={() => setStatusFilter(step.filter)}
+                    className={`w-full h-8 ${step.color} flex items-center justify-center gap-1 transition-all hover:opacity-90 cursor-pointer ${i === 0 ? "rounded-l-lg" : ""} ${i === arr.length - 1 ? "rounded-r-lg" : ""} ${statusFilter === step.filter ? "ring-2 ring-offset-1 ring-neutral-900" : ""}`}
+                    title={`${step.label}: ${step.count} OS${step.value != null ? ` · ${fmt(step.value)}` : ""}`}
+                    data-testid={`pipeline-${step.filter.toLowerCase()}`}
+                  >
+                    <span className="text-white text-[10px] font-black">{step.count}</span>
+                  </button>
+                  {i < arr.length - 1 && <ArrowRight className="w-3 h-3 text-neutral-300 flex-shrink-0 mx-0.5" />}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between mt-2 text-[9px] font-semibold text-neutral-400">
+            <span>Pendente → Enviado → Aprovado → A Faturar → Faturado</span>
+            <span>Total: {fmt(totalFaturamento)}</span>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2 flex-wrap" data-testid="filter-status">
-          {([["ALL", "Todas"], ["EM_ANDAMENTO", `Em Andamento (${liveCount})`], ["PENDENTE", "A Verificar"], ["APROVADA", "Aprovadas"], ["REJEITADA", "Rejeitadas"], ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : [])] as [StatusFilter, string][]).map(([val, label]) => (
+          {([
+            ["ALL", "Todas"],
+            ["EM_ANDAMENTO", `Em Andamento (${liveCount})`],
+            ["PENDENTE", `A Verificar (${pendingCount})`],
+            ["ENVIADA_APROVACAO", `Enviadas (${sentForApprovalCount})`],
+            ["APROVADA", `Aprovadas (${approvedCount})`],
+            ["A_FATURAR", `A Faturar (${aFaturarCount})`],
+            ["FATURADA", `Faturadas (${faturadoCount})`],
+            ["REJEITADA", "Rejeitadas"],
+            ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : []),
+          ] as [StatusFilter, string][]).map(([val, label]) => (
             <button
               key={val}
               onClick={() => setStatusFilter(val)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                statusFilter === val && val === "FORA_CICLO" ? "bg-red-600 text-white shadow-sm" : statusFilter === val ? "bg-neutral-900 text-white shadow-sm" : val === "FORA_CICLO" ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100" : "bg-white text-neutral-500 hover:bg-neutral-100 border border-neutral-200"
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                statusFilter === val && val === "FORA_CICLO" ? "bg-red-600 text-white shadow-sm"
+                : statusFilter === val && val === "ENVIADA_APROVACAO" ? "bg-blue-600 text-white shadow-sm"
+                : statusFilter === val && val === "A_FATURAR" ? "bg-orange-600 text-white shadow-sm"
+                : statusFilter === val && val === "FATURADA" ? "bg-indigo-600 text-white shadow-sm"
+                : statusFilter === val ? "bg-neutral-900 text-white shadow-sm"
+                : val === "FORA_CICLO" ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                : val === "ENVIADA_APROVACAO" ? "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                : val === "A_FATURAR" ? "bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100"
+                : val === "FATURADA" ? "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                : "bg-white text-neutral-500 hover:bg-neutral-100 border border-neutral-200"
               }`}
               data-testid={`filter-${val.toLowerCase()}`}
             >
@@ -461,17 +564,6 @@ export default function BoletimMedicaoPage() {
             </button>
           ))}
           <div className="h-6 w-px bg-neutral-200 mx-1" />
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-            className="text-xs font-bold border border-neutral-200 rounded-lg px-3 py-2 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 uppercase tracking-wider"
-            data-testid="filter-status-select"
-          >
-            <option value="ALL">Todas</option>
-            <option value="PENDENTE">Pendentes</option>
-            <option value="APROVADA">Aprovadas</option>
-            <option value="FATURADA">Faturadas</option>
-          </select>
           <select
             value={periodFilter || ""}
             onChange={e => setPeriodFilter(e.target.value || null)}
@@ -532,8 +624,11 @@ export default function BoletimMedicaoPage() {
             {filteredGroups.map(group => {
               const isExpanded = expandedClient === group.clientId;
               const groupPending = group.orders.filter(o => !o.billing || o.billing?.status === "A_VERIFICAR").length;
+              const groupSent = group.orders.filter(o => o.billing?.id && sentBillingIds.has(Number(o.billing.id)) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
               const groupApproved = group.orders.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
-              const groupTotal = group.orders.reduce((acc, o) => acc + Number(o.billing?.fat_acionamento || 0) + Number(o.billing?.fat_hora_extra || 0) + Number(o.billing?.fat_km || 0) + Number(o.billing?.despesas_pedagio || 0) + Number(o.billing?.receitas_os || 0), 0);
+              const groupFaturado = group.orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").length;
+              const groupAFaturar = group.orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
+              const groupTotal = group.orders.reduce((acc, o) => acc + getBillingTotal(o), 0);
 
               return (
                 <div key={group.clientId} className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm" data-testid={`client-group-${group.clientId}`}>
@@ -555,9 +650,12 @@ export default function BoletimMedicaoPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
                       {groupPending > 0 && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">{groupPending} pendente{groupPending > 1 ? "s" : ""}</Badge>}
+                      {groupSent > 0 && <Badge className="bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[10px]">{groupSent} enviada{groupSent > 1 ? "s" : ""}</Badge>}
                       {groupApproved > 0 && <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">{groupApproved} aprovada{groupApproved > 1 ? "s" : ""}</Badge>}
+                      {groupAFaturar > 0 && <Badge className="bg-orange-50 text-orange-700 border border-orange-200 font-bold text-[10px]">{groupAFaturar} a faturar</Badge>}
+                      {groupFaturado > 0 && <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]">{groupFaturado} faturada{groupFaturado > 1 ? "s" : ""}</Badge>}
                       {group.orders[0]?.hasContract ? (
                         <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">Tabela Cadastrada</Badge>
                       ) : (
