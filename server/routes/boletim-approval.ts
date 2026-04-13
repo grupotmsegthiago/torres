@@ -318,13 +318,23 @@ async function generateBoletimExcel(
     row.commit();
   }
 
-  await ws.protect("TorresVP2026", {
-    sheet: true, objects: true, scenarios: true,
-    selectLockedCells: false, selectUnlockedCells: false,
-    formatCells: false, formatColumns: false, formatRows: false,
-    insertColumns: false, insertRows: false, insertHyperlinks: false,
-    deleteColumns: false, deleteRows: false, sort: false, autoFilter: false, pivotTables: false,
-  });
+  const isOmega = clientName.toUpperCase().includes("OMEGA SOLUTIONS");
+
+  if (isOmega) {
+    ws.eachRow((row) => {
+      for (let c = 1; c <= colCount + 30; c++) {
+        row.getCell(c).protection = { locked: false };
+      }
+    });
+  } else {
+    await ws.protect("TorresVP2026", {
+      sheet: true, objects: true, scenarios: true,
+      selectLockedCells: false, selectUnlockedCells: false,
+      formatCells: false, formatColumns: false, formatRows: false,
+      insertColumns: false, insertRows: false, insertHyperlinks: false,
+      deleteColumns: false, deleteRows: false, sort: false, autoFilter: false, pivotTables: false,
+    });
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
