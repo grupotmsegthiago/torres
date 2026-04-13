@@ -110,7 +110,7 @@ const supabaseAdmin = createClient(
 // =============================================================================
 
 const LEAD_STATUSES = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho", "perdido", "descartado"] as const;
-const ORIGENS = ["google_places", "indicacao", "site", "telefone", "email", "evento", "rede_social", "prospecao_ativa", "outro"] as const;
+const ORIGENS = ["google_places", "indicacao", "site", "telefone", "email", "evento", "rede_social", "prospecao_ativa", "auto_prospect", "importacao_csv", "outro"] as const;
 
 function nowBRTString(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "");
