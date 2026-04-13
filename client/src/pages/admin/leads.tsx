@@ -41,6 +41,13 @@ const TEMP_CONFIG: Record<string, { label: string; icon: any; color: string }> =
 const PIPELINE_STEPS = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho"];
 const PIPELINE_COLORS = ["bg-blue-500", "bg-sky-500", "bg-amber-500", "bg-orange-500", "bg-purple-500", "bg-emerald-500"];
 
+const CARGOS_SUGERIDOS = [
+  "Gerente de Logística", "Gerente de Operações", "Supervisor de Transportes",
+  "Coordenador de GR", "Gerente de Riscos", "Analista de Seguros",
+  "Diretor de Operações", "Gerente de Segurança", "Coordenador de Frota",
+  "Gerente Comercial", "Supervisor de Expedição", "Contato Geral",
+];
+
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 function ScoreBadge({ score }: { score: number }) {
@@ -81,7 +88,7 @@ export default function LeadsPage() {
     empresa: "", cnpj: "", contato_nome: "", contato_cargo: "", telefone: "",
     email: "", website: "", endereco: "", cidade: "São Paulo", estado: "SP",
     cep: "", setor: "", origem: "prospecao_ativa", temperatura: "frio",
-    valor_estimado: 0, notas: "",
+    valor_estimado: 0, notas: "", proximo_contato: "",
   });
 
   const createMut = useMutation({
@@ -177,7 +184,7 @@ export default function LeadsPage() {
     empresa: "", cnpj: "", contato_nome: "", contato_cargo: "", telefone: "",
     email: "", website: "", endereco: "", cidade: "São Paulo", estado: "SP",
     cep: "", setor: "", origem: "prospecao_ativa", temperatura: "frio",
-    valor_estimado: 0, notas: "",
+    valor_estimado: 0, notas: "", proximo_contato: "",
   });
 
   const filtered = useMemo(() => {
@@ -526,18 +533,29 @@ export default function LeadsPage() {
 
 function LeadCard({ lead, onClick }: { lead: any; onClick: () => void }) {
   const temp = TEMP_CONFIG[lead.temperatura] || TEMP_CONFIG.frio;
+  const followUpOverdue = lead.proximo_contato && new Date(lead.proximo_contato) < new Date();
   return (
-    <button onClick={onClick} className="w-full text-left bg-white border border-neutral-200 rounded-lg p-3 hover:shadow-md transition-all cursor-pointer group" data-testid={`lead-card-${lead.id}`}>
+    <button onClick={onClick} className={`w-full text-left bg-white border rounded-lg p-3 hover:shadow-md transition-all cursor-pointer group ${followUpOverdue ? "border-red-300 bg-red-50/30" : "border-neutral-200"}`} data-testid={`lead-card-${lead.id}`}>
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-xs font-bold text-neutral-900 truncate leading-tight">{lead.empresa}</p>
         <temp.icon size={12} className={temp.color} />
       </div>
-      {lead.contato_nome && <p className="text-[10px] text-neutral-500 truncate">{lead.contato_nome}</p>}
+      {lead.contato_nome && <p className="text-[10px] text-neutral-500 truncate">{lead.contato_nome}{lead.contato_cargo ? ` · ${lead.contato_cargo}` : ""}</p>}
       {lead.setor && <Badge variant="outline" className="text-[9px] mt-1 border-neutral-200">{lead.setor}</Badge>}
       <div className="flex items-center justify-between mt-2">
         <ScoreBadge score={lead.score || 0} />
         {lead.valor_estimado > 0 && <span className="text-[10px] font-bold text-emerald-600">{fmt(lead.valor_estimado)}</span>}
       </div>
+      {followUpOverdue && (
+        <div className="flex items-center gap-1 mt-1.5 text-[9px] font-bold text-red-500">
+          <Clock size={10} /> Follow-up atrasado
+        </div>
+      )}
+      {lead.emails_enviados > 0 && (
+        <div className="flex items-center gap-1 mt-1 text-[9px] text-blue-500">
+          <Mail size={10} /> {lead.emails_enviados}x enviado
+        </div>
+      )}
     </button>
   );
 }
@@ -545,16 +563,19 @@ function LeadCard({ lead, onClick }: { lead: any; onClick: () => void }) {
 function LeadListRow({ lead, onClick }: { lead: any; onClick: () => void }) {
   const statusCfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.novo;
   const temp = TEMP_CONFIG[lead.temperatura] || TEMP_CONFIG.frio;
+  const followUpOverdue = lead.proximo_contato && new Date(lead.proximo_contato) < new Date();
   return (
-    <button onClick={onClick} className="w-full text-left bg-white border border-neutral-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer flex items-center gap-4" data-testid={`lead-row-${lead.id}`}>
+    <button onClick={onClick} className={`w-full text-left bg-white border rounded-xl p-4 hover:shadow-md transition-all cursor-pointer flex items-center gap-4 ${followUpOverdue ? "border-red-300" : "border-neutral-200"}`} data-testid={`lead-row-${lead.id}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <p className="text-sm font-bold text-neutral-900 truncate">{lead.empresa}</p>
           <Badge className={`text-[9px] border ${statusCfg.bg} ${statusCfg.color}`}>{statusCfg.label}</Badge>
           <temp.icon size={14} className={temp.color} />
+          {followUpOverdue && <Badge className="text-[8px] bg-red-100 text-red-700 border-red-200">FOLLOW-UP</Badge>}
+          {lead.emails_enviados > 0 && <Badge variant="outline" className="text-[8px] text-blue-600 border-blue-200">{lead.emails_enviados}x email</Badge>}
         </div>
         <div className="flex items-center gap-3 text-[10px] text-neutral-400">
-          {lead.contato_nome && <span className="flex items-center gap-1"><Users size={10} /> {lead.contato_nome}</span>}
+          {lead.contato_nome && <span className="flex items-center gap-1"><Users size={10} /> {lead.contato_nome}{lead.contato_cargo ? ` (${lead.contato_cargo})` : ""}</span>}
           {lead.setor && <span className="flex items-center gap-1"><Building2 size={10} /> {lead.setor}</span>}
           {lead.cidade && <span className="flex items-center gap-1"><MapPin size={10} /> {lead.cidade}/{lead.estado}</span>}
           {lead.email && <span className="flex items-center gap-1"><Mail size={10} /> {lead.email}</span>}
@@ -589,7 +610,12 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         </div>
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">Cargo</label>
-          <Input value={form.contato_cargo} onChange={e => setForm({ ...form, contato_cargo: e.target.value })} className="h-9 text-sm" data-testid="input-cargo" />
+          <Select value={form.contato_cargo || ""} onValueChange={v => setForm({ ...form, contato_cargo: v })}>
+            <SelectTrigger className="h-9 text-sm" data-testid="select-cargo"><SelectValue placeholder="Selecione o cargo" /></SelectTrigger>
+            <SelectContent>
+              {CARGOS_SUGERIDOS.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -600,6 +626,16 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
         <div>
           <label className="text-[10px] font-bold text-neutral-400 uppercase">E-mail</label>
           <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="h-9 text-sm" data-testid="input-email" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[10px] font-bold text-neutral-400 uppercase">Website</label>
+          <Input value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="www.empresa.com.br" className="h-9 text-sm" data-testid="input-website" />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-neutral-400 uppercase">Próximo Contato</label>
+          <Input type="date" value={form.proximo_contato || ""} onChange={e => setForm({ ...form, proximo_contato: e.target.value })} className="h-9 text-sm" data-testid="input-proximo-contato" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -617,9 +653,9 @@ function LeadForm({ form, setForm, setores, onSubmit, isPending }: any) {
           <Select value={form.temperatura} onValueChange={v => setForm({ ...form, temperatura: v })}>
             <SelectTrigger className="h-9 text-sm" data-testid="select-temp"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="frio">❄️ Frio</SelectItem>
-              <SelectItem value="morno">☀️ Morno</SelectItem>
-              <SelectItem value="quente">🔥 Quente</SelectItem>
+              <SelectItem value="frio">Frio</SelectItem>
+              <SelectItem value="morno">Morno</SelectItem>
+              <SelectItem value="quente">Quente</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -888,10 +924,33 @@ function LeadDetail({ lead, setores, onUpdate, onDelete, onSendPresentation, onC
                 <p className="text-sm font-bold text-neutral-900">{lead.cnpj}</p>
               </div>
             )}
+            {lead.website && (
+              <div className="bg-neutral-50 rounded-lg p-3">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase">Website</span>
+                <a href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1">
+                  <Globe size={12} /> {lead.website}
+                </a>
+              </div>
+            )}
             {lead.valor_estimado > 0 && (
               <div className="bg-neutral-50 rounded-lg p-3">
                 <span className="text-[9px] font-bold text-neutral-400 uppercase">Valor Estimado</span>
                 <p className="text-sm font-black text-emerald-600">{fmt(lead.valor_estimado)}</p>
+              </div>
+            )}
+            {lead.proximo_contato && (
+              <div className={`rounded-lg p-3 ${new Date(lead.proximo_contato) < new Date() ? "bg-red-50 border border-red-200" : "bg-blue-50"}`}>
+                <span className="text-[9px] font-bold text-neutral-400 uppercase">Próximo Contato</span>
+                <p className={`text-sm font-bold ${new Date(lead.proximo_contato) < new Date() ? "text-red-600" : "text-blue-700"}`}>
+                  {new Date(lead.proximo_contato).toLocaleDateString("pt-BR")}
+                  {new Date(lead.proximo_contato) < new Date() && <span className="text-[9px] ml-1 font-black text-red-500">ATRASADO</span>}
+                </p>
+              </div>
+            )}
+            {lead.emails_enviados > 0 && (
+              <div className="bg-blue-50 rounded-lg p-3">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase">E-mails Enviados</span>
+                <p className="text-sm font-bold text-blue-700">{lead.emails_enviados}x</p>
               </div>
             )}
           </div>
