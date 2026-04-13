@@ -144,8 +144,56 @@ function generateTrackingId(): string {
   return `trk_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 }
 
-function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): string {
+async function getVehiclePhotosForEmail(baseUrl: string): Promise<string> {
+  try {
+    const { data: vehicles } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, photo_front, photo_left, photo_rear, photo_right")
+      .not("photo_front", "is", null)
+      .limit(6);
+
+    if (!vehicles || vehicles.length === 0) return "";
+
+    const photosHtml: string[] = [];
+    let count = 0;
+    for (const v of vehicles) {
+      if (count >= 4) break;
+      const photoFields = ["photo_front", "photo_left"] as const;
+      for (const field of photoFields) {
+        if (count >= 4) break;
+        const photo = (v as any)[field];
+        if (!photo) continue;
+        const photoUrl = `${baseUrl}/api/leads/vehicle-photo/${v.id}/${field}`;
+        photosHtml.push(
+          `<td style="padding:4px;width:50%;"><img src="${photoUrl}" width="260" style="width:100%;max-width:260px;height:auto;border-radius:8px;display:block;" alt="Viatura Torres" /></td>`
+        );
+        count++;
+      }
+    }
+
+    if (photosHtml.length === 0) return "";
+
+    const rows: string[] = [];
+    for (let i = 0; i < photosHtml.length; i += 2) {
+      rows.push(`<tr>${photosHtml[i]}${photosHtml[i + 1] || "<td></td>"}</tr>`);
+    }
+
+    return `
+    <div style="margin:20px 0;">
+      <p style="color:#1a1a2e;font-weight:bold;font-size:14px;margin:0 0 12px;text-align:center;">Nossa Frota</p>
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:540px;margin:0 auto;">
+        ${rows.join("")}
+      </table>
+    </div>`;
+  } catch (err: any) {
+    console.error("[leads] Erro ao buscar fotos veículos:", err.message);
+    return "";
+  }
+}
+
+async function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): Promise<string> {
   const pixelUrl = `${baseUrl}/api/leads/pixel/${trackingId}.png`;
+  const vehiclePhotosHtml = await getVehiclePhotosForEmail(baseUrl);
   return `
 <!DOCTYPE html>
 <html><body style="font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:0;background:#f8f9fa;">
@@ -165,7 +213,7 @@ function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): string 
     <div style="background:#f0f4ff;border-left:4px solid #1a1a2e;padding:16px;margin:20px 0;border-radius:0 8px 8px 0;">
       <p style="color:#1a1a2e;font-weight:bold;margin:0 0 8px;font-size:14px;">Nossos Diferenciais:</p>
       <ul style="color:#444;font-size:13px;line-height:2;padding-left:20px;margin:0;">
-        <li>Viaturas blindadas e caracterizadas com rastreamento em tempo real</li>
+        <li>Viaturas caracterizadas com rastreamento em tempo real</li>
         <li>Agentes com treinamento especializado e armamento regulamentado</li>
         <li>Monitoramento 24h via central de operações</li>
         <li>Cobertura completa no estado de São Paulo</li>
@@ -173,6 +221,7 @@ function buildEmailHtml(lead: any, trackingId: string, baseUrl: string): string 
         <li>Seguro de responsabilidade civil</li>
       </ul>
     </div>
+    ${vehiclePhotosHtml}
     <p style="color:#555;font-size:14px;line-height:1.7;">
       Gostaríamos de apresentar nossos serviços e demonstrar como podemos agregar segurança 
       às operações da <strong>${lead.empresa}</strong>.
@@ -336,6 +385,61 @@ export function registerLeadRoutes(app: Express) {
     res.send(PIXEL_GIF);
   });
 
+  app.get("/api/leads/vehicle-photo/:vehicleId/:field", async (req: Request, res: Response) => {
+    try {
+      const { vehicleId, field } = req.params;
+      const allowedFields = ["photo_front", "photo_left", "photo_rear", "photo_right"];
+      if (!allowedFields.includes(field)) return res.status(400).send("Invalid field");
+
+      const { data: vehicle } = await supabaseAdmin
+        .from("vehicles")
+        .select(field)
+        .eq("id", parseInt(vehicleId))
+        .single();
+
+      if (!vehicle || !(vehicle as any)[field]) return res.status(404).send("Not found");
+
+      let photoData: string = (vehicle as any)[field];
+      const base64Match = photoData.match(/^data:image\/\w+;base64,(.+)/);
+      const rawBase64 = base64Match ? base64Match[1] : photoData;
+      const imgBuffer = Buffer.from(rawBase64, "base64");
+
+      const sharp = (await import("sharp")).default;
+      const metadata = await sharp(imgBuffer).metadata();
+      const w = metadata.width || 800;
+      const h = metadata.height || 600;
+
+      const plateH = Math.round(h * 0.18);
+      const plateW = Math.round(w * 0.40);
+      const plateX = Math.round((w - plateW) / 2);
+      const plateY = h - plateH - Math.round(h * 0.05);
+
+      const blurRegion = await sharp(imgBuffer)
+        .extract({ left: plateX, top: plateY, width: plateW, height: plateH })
+        .blur(30)
+        .toBuffer();
+
+      const result = await sharp(imgBuffer)
+        .composite([{
+          input: blurRegion,
+          left: plateX,
+          top: plateY,
+        }])
+        .resize(520, null, { withoutEnlargement: true })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+
+      res.set({
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "public, max-age=86400",
+      });
+      res.send(result);
+    } catch (err: any) {
+      console.error("[leads] Erro ao servir foto veículo:", err.message);
+      res.status(500).send("Error processing image");
+    }
+  });
+
   app.get("/api/leads", requireAdminRole, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
@@ -461,7 +565,7 @@ export function registerLeadRoutes(app: Express) {
 
       const trackingId = generateTrackingId();
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const html = buildEmailHtml(lead, trackingId, baseUrl);
+      const html = await buildEmailHtml(lead, trackingId, baseUrl);
 
       const { data: existing } = await supabaseAdmin.from("email_queue")
         .select("id").eq("lead_id", id).eq("to_email", lead.email)
@@ -519,7 +623,7 @@ export function registerLeadRoutes(app: Express) {
         if (existing) { skipped++; continue; }
 
         const trackingId = generateTrackingId();
-        const html = buildEmailHtml(lead, trackingId, baseUrl);
+        const html = await buildEmailHtml(lead, trackingId, baseUrl);
 
         await supabaseAdmin.from("email_queue").insert({
           lead_id: lead.id,
