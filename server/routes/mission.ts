@@ -21,10 +21,10 @@ import type { Express } from "express";
     viatura_retorno_lateral_esq: { type: "vehicle_condition", expectedItem: "Lateral esquerda viatura retorno" },
     viatura_retorno_lateral_dir: { type: "vehicle_condition", expectedItem: "Lateral direita viatura retorno" },
     viatura_retorno_traseira: { type: "vehicle_condition", expectedItem: "Traseira viatura retorno" },
-    km_saida: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM de saída" },
-    km_chegada: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM de chegada" },
-    km_final: { type: "odometer", expectedItem: "Hodômetro do painel mostrando KM final" },
-    base_hodometro: { type: "odometer", expectedItem: "Hodômetro do painel na base" },
+    km_saida: { type: "odometer", expectedItem: "Trip (parcial de viagem) do painel mostrando KM de saída" },
+    km_chegada: { type: "odometer", expectedItem: "Trip (parcial de viagem) do painel mostrando KM de chegada" },
+    km_final: { type: "odometer", expectedItem: "Trip (parcial de viagem) do painel mostrando KM final" },
+    base_hodometro: { type: "odometer", expectedItem: "Trip (parcial de viagem) do painel na base" },
     agente_equipado: { type: "agent", expectedItem: "Agente de escolta devidamente equipado com colete e armamento" },
     arma_pistola_1: { type: "weapon", expectedItem: "Pistola principal do agente" },
     arma_pistola_2: { type: "weapon", expectedItem: "Segunda pistola" },
@@ -100,10 +100,17 @@ Responda APENAS com JSON válido (sem markdown):
 }`;
       } else if (inspectionConfig?.type === "odometer") {
         promptText = `Você é um auditor de inspeção veicular de uma empresa de escolta armada.
-Analise esta foto do painel/hodômetro do veículo.
-1. Leia o valor do hodômetro/odômetro visível no painel.
+Analise esta foto do painel do veículo.
+
+IMPORTANTE: O valor que interessa é o TRIP (parcial de viagem / trip meter / trip odometer), NÃO o hodômetro total (odômetro geral).
+- O TRIP geralmente aparece como um número menor no display digital do painel, muitas vezes acompanhado da palavra "TRIP", "Trip A", "Trip B" ou "PARCIAL".
+- O hodômetro total (km geral) pode estar resetado ou ser irrelevante. IGNORE o hodômetro total.
+- Se houver dois valores visíveis (ex: hodômetro total e trip), leia APENAS o TRIP.
+- Se só houver um valor visível e não for possível distinguir, leia o valor que estiver no display digital/LCD do painel.
+
+1. Leia o valor do TRIP (parcial) visível no painel.
 2. Verifique se a foto é nítida e legível.
-3. Confirme se realmente mostra um painel de veículo com hodômetro.
+3. Confirme se realmente mostra um painel de veículo.
 ${kmValue ? `O valor informado pelo agente foi: ${kmValue} km.` : ""}
 
 Responda APENAS com JSON válido (sem markdown):
@@ -118,7 +125,7 @@ Responda APENAS com JSON válido (sem markdown):
   "km_confere": true/false/null,
   "condicao": "legivel/parcialmente_legivel/ilegivel",
   "divergencias": [] ou ["lista de problemas"],
-  "observacao": "breve análise"
+  "observacao": "breve análise sobre o TRIP lido"
 }`;
       } else if (inspectionConfig?.type === "agent") {
         promptText = `Você é um auditor de segurança de uma empresa de escolta armada.
