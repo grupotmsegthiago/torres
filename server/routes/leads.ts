@@ -664,6 +664,14 @@ const BLACKLIST_COMPETITOR = [
   "portaria remota", "segurança eletrônica", "empresa de vigilância",
   "serviço de escolta", "escolta de cargas", "rastreamento veicular",
   "central de monitoramento", "cftv", "alarme monitorado",
+  "pronta resposta", "ronda motorizada", "vigilância orgânica",
+];
+
+const BLACKLIST_BRANDS = [
+  "prosegur", "gruber", "ictsi", "verzani", "sandrini", "g4s",
+  "protege", "emmo", "aster", "grupofort", "grupo fort", "tps segurança",
+  "gocil", "segurpro", "servnac", "brinks", "securitas", "magnus",
+  "transvip", "nordeste segurança", "prosseguir", "forteseg",
 ];
 
 const POSITIVE_TERMS = [
@@ -671,10 +679,15 @@ const POSITIVE_TERMS = [
   "frota", "carga", "armazém", "armazenagem", "frete", "entrega",
   "atacado", "atacadista", "importação", "exportação", "e-commerce",
   "farmacêutica", "medicamento", "alimento", "bebida", "cosmético",
+  "indústria", "manufatura", "fabricante", "produtor", "operador logístico",
 ];
 
-function isCompetitor(siteContent: string): boolean {
+function isCompetitor(siteContent: string, domain?: string): boolean {
   const text = siteContent.toLowerCase();
+  const dom = (domain || "").toLowerCase();
+
+  if (BLACKLIST_BRANDS.some(b => text.includes(b) || dom.includes(b))) return true;
+
   const competitorHits = BLACKLIST_COMPETITOR.filter(t => text.includes(t)).length;
   if (competitorHits >= 2) return true;
   if (competitorHits === 1) {
@@ -746,7 +759,7 @@ async function extractContactFromSite(siteUrl: string): Promise<{ empresa: strin
     const html = await resp.text();
     const chunk = html.substring(0, 50000);
 
-    if (isCompetitor(chunk)) {
+    if (isCompetitor(chunk, result.domain)) {
       console.log(`[auto-prospect] [Filtro] Concorrente descartado: ${result.domain}`);
       return result;
     }
