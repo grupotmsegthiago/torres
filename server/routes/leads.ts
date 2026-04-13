@@ -326,7 +326,7 @@ async function processEmailQueue() {
 
 const AUTO_ENQUEUE_HOUR_START = 7;
 const AUTO_ENQUEUE_HOUR_END = 21;
-const MAX_EMAILS_PER_LEAD = 3;
+const MAX_EMAILS_PER_LEAD = 1;
 const DAYS_BETWEEN_EMAILS = 7;
 
 async function autoEnqueueLeads() {
