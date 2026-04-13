@@ -34,7 +34,7 @@ function LiveTimer({ startedAt }: { startedAt: string }) {
   const h = Math.floor(elapsed / 3600);
   const m = Math.floor((elapsed % 3600) / 60);
   const s = elapsed % 60;
-  const isAlert = elapsed >= 7200;
+  const isAlert = elapsed >= 14400;
 
   return (
     <div className={`font-mono text-3xl font-black tabular-nums ${isAlert ? "text-red-500 animate-pulse" : "text-emerald-600"}`} data-testid="text-live-timer">
@@ -115,7 +115,7 @@ export default function MobileControleCondutorPage() {
   });
 
   const activeShift = activeSession?.shifts?.find((s: any) => s.is_active);
-  const isAlert = activeShift && (Date.now() - new Date(activeShift.started_at).getTime()) >= 7200000;
+  const isAlert = activeShift && (Date.now() - new Date(activeShift.started_at).getTime()) >= 14400000;
 
   if (isLoading) {
     return (
@@ -166,7 +166,7 @@ export default function MobileControleCondutorPage() {
               {isAlert && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2 animate-pulse">
                   <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                  <p className="text-xs text-red-700 font-bold">ATENÇÃO: Condutor ultrapassou 2h de direção contínua!</p>
+                  <p className="text-xs text-red-700 font-bold">ATENÇÃO: Condutor ultrapassou 4h de direção contínua!</p>
                 </div>
               )}
 

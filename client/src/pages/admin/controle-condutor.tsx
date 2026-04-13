@@ -1,8 +1,7 @@
 import { useState, useMemo } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
-import { authFetch } from "@/lib/authFetch";
+import { queryClient, authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
