@@ -11,8 +11,8 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
-  Car, Play, Square, Clock, ArrowLeftRight, User, Gauge, Search,
-  AlertTriangle, Trash2, Eye, RefreshCw, Timer, FileText, ChevronDown, ChevronUp
+  Car, Play, Square, Clock, User, Gauge, Search,
+  AlertTriangle, Trash2, Eye, RefreshCw, Timer, ChevronDown, ChevronUp, ShieldAlert
 } from "lucide-react";
 
 function formatDuration(minutes: number) {
@@ -39,6 +39,12 @@ export default function ControleCondutorPage() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const [lookupPlate, setLookupPlate] = useState("");
+  const [lookupDatetime, setLookupDatetime] = useState("");
+  const [lookupResult, setLookupResult] = useState<any>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [showLookup, setShowLookup] = useState(false);
+
   const { data: sessions = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/driver-sessions", statusFilter, vehicleFilter, driverFilter, dateFrom, dateTo],
     queryFn: async () => {
@@ -61,6 +67,25 @@ export default function ControleCondutorPage() {
     (employees || []).filter((e: any) => e.status === "ativo").sort((a: any, b: any) => a.name.localeCompare(b.name)),
     [employees]
   );
+
+  const doLookup = async () => {
+    if (!lookupPlate || !lookupDatetime) {
+      toast({ title: "Informe a placa e a data/hora da infração", variant: "destructive" });
+      return;
+    }
+    setLookupLoading(true);
+    setLookupResult(null);
+    try {
+      const params = new URLSearchParams({ plate: lookupPlate, datetime: lookupDatetime });
+      const r = await authFetch(`/api/driver-sessions/lookup?${params}`);
+      if (!r.ok) throw new Error("Erro na consulta");
+      const data = await r.json();
+      setLookupResult(data);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+    setLookupLoading(false);
+  };
 
   const activeSessions = sessions.filter(s => s.status === "ativo");
   const finishedSessions = sessions.filter(s => s.status === "finalizado");
@@ -102,13 +127,123 @@ export default function ControleCondutorPage() {
             </h1>
             <p className="text-xs text-neutral-400 mt-0.5">Rodízio de direção das viaturas de escolta</p>
           </div>
-          {activeSessions.length > 0 && (
-            <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-sm px-3 py-1 animate-pulse">
-              <Play className="w-3.5 h-3.5 mr-1" />
-              {activeSessions.length} em operação
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {activeSessions.length > 0 && (
+              <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-sm px-3 py-1 animate-pulse">
+                <Play className="w-3.5 h-3.5 mr-1" />
+                {activeSessions.length} em operação
+              </Badge>
+            )}
+            <Button
+              variant={showLookup ? "default" : "outline"}
+              size="sm"
+              className={showLookup ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-amber-300 text-amber-700 hover:bg-amber-50"}
+              onClick={() => setShowLookup(!showLookup)}
+              data-testid="button-toggle-lookup"
+            >
+              <ShieldAlert className="w-4 h-4 mr-1" />
+              Consulta de Multa
+            </Button>
+          </div>
         </div>
+
+        {showLookup && (
+          <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-5 space-y-4">
+            <h2 className="text-sm font-black text-amber-900 uppercase tracking-wider flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              Identificar Condutor — Consulta de Multa
+            </h2>
+            <p className="text-xs text-amber-700">Informe a placa do veículo e a data/hora da infração para descobrir quem estava na condução.</p>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <Label className="text-[10px] font-bold text-amber-700 uppercase">Placa do Veículo</Label>
+                <Input
+                  placeholder="Ex: ABC1D23"
+                  value={lookupPlate}
+                  onChange={e => setLookupPlate(e.target.value.toUpperCase())}
+                  className="h-10 mt-1 w-40 uppercase font-mono font-bold border-amber-300"
+                  data-testid="input-lookup-plate"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] font-bold text-amber-700 uppercase">Data/Hora da Infração</Label>
+                <Input
+                  type="datetime-local"
+                  value={lookupDatetime}
+                  onChange={e => setLookupDatetime(e.target.value)}
+                  className="h-10 mt-1 w-52 border-amber-300"
+                  data-testid="input-lookup-datetime"
+                />
+              </div>
+              <Button
+                className="h-10 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                onClick={doLookup}
+                disabled={lookupLoading || !lookupPlate || !lookupDatetime}
+                data-testid="button-do-lookup"
+              >
+                <Search className="w-4 h-4 mr-1" />
+                {lookupLoading ? "Buscando..." : "Consultar"}
+              </Button>
+            </div>
+
+            {lookupResult && (
+              <div className="mt-3">
+                {lookupResult.found ? (
+                  <div className="space-y-3">
+                    {lookupResult.sessions.map((s: any) => (
+                      <div key={s.id} className="bg-white border-2 border-amber-300 rounded-xl p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Badge className="bg-amber-600 text-white font-bold">CONDUTOR IDENTIFICADO</Badge>
+                          <span className="text-[10px] text-neutral-400 font-mono">Sessão #{s.id}</span>
+                        </div>
+                        <div className="bg-amber-100 rounded-lg p-3 text-center">
+                          <p className="text-[10px] text-amber-600 font-bold uppercase">Condutor no momento da infração</p>
+                          <p className="text-xl font-black text-amber-900" data-testid="text-lookup-driver">{s.driverAtTime}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <p className="text-[10px] text-neutral-400 font-bold uppercase">VTR</p>
+                            <p className="font-bold text-neutral-800">{s.vehicle_prefix || ""} {s.vehicle_plate}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-neutral-400 font-bold uppercase">KM</p>
+                            <p className="font-mono text-neutral-700">{s.km_start?.toLocaleString("pt-BR") || "—"} → {s.km_end?.toLocaleString("pt-BR") || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-neutral-400 font-bold uppercase">Início da sessão</p>
+                            <p className="text-neutral-700">{formatFullDate(s.started_at)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-neutral-400 font-bold uppercase">Fim da sessão</p>
+                            <p className="text-neutral-700">{s.ended_at ? formatFullDate(s.ended_at) : "Em andamento"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-white border border-neutral-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-700">
+                      <AlertTriangle className="w-5 h-5" />
+                      <p className="text-sm font-bold">{lookupResult.message}</p>
+                    </div>
+                    {lookupResult.closest && lookupResult.closest.length > 0 && (
+                      <div>
+                        <p className="text-xs text-neutral-500 mb-2">Sessões mais próximas encontradas:</p>
+                        {lookupResult.closest.map((s: any) => (
+                          <div key={s.id} className="bg-neutral-50 rounded-lg p-2 mb-1 text-xs">
+                            <span className="font-bold">{s.driver_name}</span> — {s.vehicle_plate} — {formatTime(s.started_at)} → {s.ended_at ? formatTime(s.ended_at) : "ativo"}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {activeSessions.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -133,7 +268,6 @@ export default function ControleCondutorPage() {
                 <div className="flex items-center gap-2 text-xs text-neutral-600">
                   <User className="w-3 h-3" />
                   <span>{s.driver_name}</span>
-                  {s.partner_name && <><span className="text-neutral-300">|</span><span>{s.partner_name}</span></>}
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-neutral-400 mt-1">
                   <Clock className="w-3 h-3" />
@@ -217,7 +351,6 @@ export default function ControleCondutorPage() {
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">#</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">VTR</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">Condutor</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">Parceiro</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">Início</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">Fim</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-neutral-500 uppercase">KM</th>
@@ -236,7 +369,6 @@ export default function ControleCondutorPage() {
                           <span className="text-neutral-400 text-xs ml-1">{s.vehicle_plate}</span>
                         </td>
                         <td className="px-3 py-2 font-medium text-neutral-800">{s.driver_name}</td>
-                        <td className="px-3 py-2 text-neutral-500">{s.partner_name || "—"}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{formatTime(s.started_at)}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{s.ended_at ? formatTime(s.ended_at) : "—"}</td>
                         <td className="px-3 py-2 text-xs text-neutral-600 font-mono">
@@ -329,13 +461,9 @@ function SessionDetailDialog({ session, onClose, onDelete }: { session: any; onC
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Placa</p>
                 <p className="text-sm font-bold text-neutral-900">{session.vehicle_plate}</p>
               </div>
-              <div>
+              <div className="col-span-2">
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Condutor</p>
                 <p className="text-sm font-bold text-neutral-800">{session.driver_name}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-neutral-400 font-bold uppercase">Parceiro</p>
-                <p className="text-sm text-neutral-700">{session.partner_name || "—"}</p>
               </div>
               <div>
                 <p className="text-[10px] text-neutral-400 font-bold uppercase">Início</p>

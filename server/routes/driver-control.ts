@@ -17,7 +17,7 @@ export function registerDriverControlRoutes(app: Express) {
 
       if (status && status !== "ALL") query = query.eq("status", status);
       if (vehicleId) query = query.eq("vehicle_id", parseInt(vehicleId));
-      if (driverId) query = query.or(`driver_id.eq.${parseInt(driverId)},partner_id.eq.${parseInt(driverId)}`);
+      if (driverId) query = query.eq("driver_id", parseInt(driverId));
       if (dateFrom) query = query.gte("started_at", `${dateFrom}T00:00:00`);
       if (dateTo) query = query.lte("started_at", `${dateTo}T23:59:59`);
 
@@ -37,7 +37,7 @@ export function registerDriverControlRoutes(app: Express) {
       let query = supabaseAdmin.from("driver_sessions").select("*").eq("status", "ativo");
 
       if (employeeId) {
-        query = query.or(`driver_id.eq.${employeeId},partner_id.eq.${employeeId}`);
+        query = query.eq("driver_id", employeeId);
       }
 
       const { data, error } = await query.limit(1).maybeSingle();
@@ -273,6 +273,66 @@ export function registerDriverControlRoutes(app: Express) {
         kmTotal: session.km_end && session.km_start ? session.km_end - session.km_start : null,
       });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/driver-sessions/lookup", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const plate = (req.query.plate as string || "").toUpperCase().trim();
+      const datetime = req.query.datetime as string;
+
+      if (!plate || !datetime) {
+        return res.status(400).json({ message: "Placa e data/hora são obrigatórios." });
+      }
+
+      const ts = new Date(datetime).toISOString();
+
+      const { data: sessions } = await supabaseAdmin.from("driver_sessions")
+        .select("*")
+        .ilike("vehicle_plate", `%${plate}%`)
+        .lte("started_at", ts)
+        .or(`ended_at.gte.${ts},ended_at.is.null`)
+        .order("started_at", { ascending: false })
+        .limit(5);
+
+      if (!sessions || sessions.length === 0) {
+        const { data: closest } = await supabaseAdmin.from("driver_sessions")
+          .select("*")
+          .ilike("vehicle_plate", `%${plate}%`)
+          .lte("started_at", ts)
+          .order("started_at", { ascending: false })
+          .limit(3);
+
+        return res.json({
+          found: false,
+          message: "Nenhuma sessão ativa encontrada nesse momento exato.",
+          closest: closest || [],
+        });
+      }
+
+      const enriched = [];
+      for (const s of sessions) {
+        const { data: shifts } = await supabaseAdmin.from("driver_shifts")
+          .select("*").eq("session_id", s.id).order("started_at", { ascending: true });
+
+        const activeAtTime = (shifts || []).find((sh: any) => {
+          const shStart = new Date(sh.started_at).getTime();
+          const shEnd = sh.ended_at ? new Date(sh.ended_at).getTime() : Date.now();
+          return new Date(datetime).getTime() >= shStart && new Date(datetime).getTime() <= shEnd;
+        });
+
+        enriched.push({
+          ...s,
+          shifts: shifts || [],
+          driverAtTime: activeAtTime ? activeAtTime.driver_name : s.driver_name,
+          driverIdAtTime: activeAtTime ? activeAtTime.driver_id : s.driver_id,
+        });
+      }
+
+      res.json({ found: true, sessions: enriched });
+    } catch (err: any) {
+      console.error("[driver-control] lookup error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });
