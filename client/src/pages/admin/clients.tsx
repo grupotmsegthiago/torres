@@ -118,6 +118,15 @@ const TAG_COLORS = {
     button: "bg-blue-500 hover:bg-blue-600 text-white",
     ring: "focus:ring-blue-400",
   },
+  purple: {
+    bg: "bg-purple-50",
+    border: "border-purple-300",
+    text: "text-purple-800",
+    icon: "text-purple-500",
+    close: "text-purple-400 hover:text-purple-700",
+    button: "bg-purple-500 hover:bg-purple-600 text-white",
+    ring: "focus:ring-purple-400",
+  },
 } as const;
 
 function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
@@ -380,16 +389,13 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Contratual</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-                <Input
-                  value={form.emailContratual}
-                  onChange={(e) => setForm({ ...form, emailContratual: e.target.value })}
-                  className="pl-9"
-                  placeholder="contrato@empresa.com.br"
-                  data-testid="input-client-email-contratual"
-                />
-              </div>
+              <EmailTagInput
+                value={form.emailContratual}
+                onChange={(val) => setForm({ ...form, emailContratual: val })}
+                placeholder="Digite o e-mail..."
+                colorScheme="purple"
+                testId="input-client-email-contratual"
+              />
             </div>
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Operacional (OS)</label>
