@@ -2168,20 +2168,36 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const updates: any = { missionStatus: nextStep };
 
     if (!so.missionStartedAt && ["checkout_armamento", "checkout_viatura", "checkout_km_saida", "em_transito_origem"].includes(currentStep)) {
-      const nowUTC = new Date().toISOString().replace(/\.\d{3}Z$/, "");
+      const nowBRT = nowBRTString();
       if (so.scheduledDate) {
-        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toISOString().replace(/\.\d{3}Z$/, "");
+        const scheduledStr = typeof so.scheduledDate === "string" ? so.scheduledDate : new Date(so.scheduledDate).toISOString();
         const nowMs = new Date().getTime();
-        const schedMs = new Date(scheduledStr + "Z").getTime();
+        const schedMs = new Date(scheduledStr).getTime();
         const diffMin = (schedMs - nowMs) / 60000;
         if (diffMin > 0 && diffMin <= 30) {
           updates.missionStartedAt = scheduledStr;
         } else {
-          updates.missionStartedAt = nowUTC;
+          updates.missionStartedAt = nowBRT;
         }
       } else {
-        updates.missionStartedAt = nowUTC;
+        updates.missionStartedAt = nowBRT;
       }
+    }
+
+    if (currentStep === "iniciar_missao" && req.body.timestamp) {
+      const ts = req.body.timestamp;
+      const parsed = new Date(ts);
+      if (!isNaN(parsed.getTime())) {
+        if (!ts.includes("+") && !ts.includes("-0") && !ts.includes("Z")) {
+          updates.missionStartedAt = ts + "-03:00";
+        } else {
+          updates.missionStartedAt = ts;
+        }
+      }
+    }
+
+    if (currentStep === "iniciar_missao" && !so.missionStartedAt && !updates.missionStartedAt) {
+      updates.missionStartedAt = nowBRTString();
     }
 
     if (nextStep === "finalizada") {
