@@ -428,25 +428,18 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
-      let hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
+      const hasDivergence = (result.divergencias && result.divergencias.length > 0) ||
         result.placa_confere === false ||
         result.angulo_correto === false ||
         result.item_encontrado === false ||
         result.condicao === "dano_visivel" || result.condicao === "irregular" || result.condicao === "ausente" || result.condicao === "danificado";
 
-      let status = hasDivergence ? "divergente" : "aprovado";
-      let autoApproveReason = "";
+      const status = "aprovado";
 
       if (hasDivergence) {
-        const autoApproval = shouldAutoApprove(result, step, inspectionConfig);
-        if (autoApproval.approve) {
-          status = "aprovado";
-          autoApproveReason = autoApproval.reason;
-          result._auto_aprovado = true;
-          result._auto_aprovado_motivo = autoApproval.reason;
-          result._divergencias_originais = [...(result.divergencias || [])];
-          console.log(`[ai-inspection] AUTO-APROVADO Photo #${photoId} step=${step}: ${autoApproval.reason}`);
-        }
+        result._observacoes_ia = result.divergencias || [];
+        result._condicao_detectada = result.condicao;
+        console.log(`[ai-inspection] Photo #${photoId} step=${step}: divergências registradas como relatório (não trava operação): ${(result.divergencias || []).join("; ")}`);
       }
 
       await supabaseAdmin.from("mission_photos").update({
@@ -468,7 +461,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         divergences: result.divergencias || [],
         ai_raw_response: raw,
         status,
-        alerted: hasDivergence && !autoApproveReason,
+        alerted: hasDivergence,
       });
 
       console.log(`[ai-inspection] Photo #${photoId} step=${step} → ${status}`);
@@ -552,7 +545,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         }
       }
 
-      if (hasDivergence && aiResult.status !== "aprovado") {
+      if (hasDivergence) {
         try {
           const so = await storage.getServiceOrder(serviceOrderId);
           const emp = await storage.getEmployee(employeeId);
@@ -561,7 +554,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
           const agentName = emp?.name || "N/A";
           const plate = vehicle?.plate || vehiclePlate || "N/A";
           const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-          const divergencias = (result.divergencias || []).map((d: string) => `<li style="color:#c0392b">${d}</li>`).join("");
+          const divergencias = (result.divergencias || []).map((d: string) => `<li style="color:#e67e22">${d}</li>`).join("");
 
           const isUrl = photoData.startsWith("http");
           const isBase64 = photoData.startsWith("data:image/");
@@ -573,11 +566,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
           const html = `
             <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-              <div style="background:#c0392b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
-                <h2 style="margin:0;font-size:18px">🔍 Alerta: Divergência na Inspeção Veicular (IA)</h2>
+              <div style="background:#e67e22;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
+                <h2 style="margin:0;font-size:18px">📋 Relatório: Observação na Inspeção (IA)</h2>
               </div>
               <div style="background:#fff;border:1px solid #e0e0e0;padding:24px;border-radius:0 0 8px 8px">
-                <p style="margin:0 0 16px;color:#333">A IA detectou uma divergência durante a inspeção do checklist da missão.</p>
+                <p style="margin:0 0 16px;color:#333">A IA identificou observações durante a inspeção. <strong>A operação não foi travada.</strong></p>
                 <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
                   <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold;width:40%">Missão</td><td style="padding:6px 12px">${osNumber}</td></tr>
                   <tr><td style="padding:6px 12px;background:#f8f9fa;font-weight:bold">Viatura</td><td style="padding:6px 12px">${plate}</td></tr>
@@ -615,7 +608,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
             await transporter.sendMail({
               from: getSmtpFrom(),
               to: "thiago@grupotmseg.com.br, escolta@torresseguranca.com.br",
-              subject: `🔍 Divergência Inspeção ${osNumber} - ${step} - ${plate}`,
+              subject: `📋 Relatório Inspeção ${osNumber} - ${step} - ${plate}`,
               html,
               ...(attachments.length > 0 ? { attachments } : {}),
             });

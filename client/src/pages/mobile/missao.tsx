@@ -158,16 +158,13 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
   const isDivergent = aiStatus === "divergente";
 
   const handleClick = () => {
-    if (isDivergent && onRetake) {
-      onRetake();
-    }
     inputRef.current?.click();
   };
 
   let btnClass = "border-neutral-300 bg-white text-neutral-600";
   if (isAnalyzing) btnClass = "border-amber-400 bg-amber-50 text-amber-700";
   else if (isApproved) btnClass = "border-emerald-500 bg-emerald-50 text-emerald-700";
-  else if (isDivergent) btnClass = "border-red-500 bg-red-50 text-red-700 animate-pulse";
+  else if (isDivergent) btnClass = "border-amber-500 bg-amber-50 text-amber-700";
   else if (captured) btnClass = "border-neutral-900 bg-neutral-900 text-white";
 
   return (
@@ -199,9 +196,9 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
         </p>
       )}
       {isDivergent && (
-        <div className="mt-1.5 bg-red-50 border border-red-200 rounded-lg p-2">
-          <p className="text-[10px] text-red-700 font-bold flex items-center gap-1 mb-1">
-            <AlertCircle className="w-3 h-3" /> IA Rejeitou — Tire novamente
+        <div className="mt-1.5 bg-amber-50 border border-amber-200 rounded-lg p-2">
+          <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mb-1">
+            <AlertCircle className="w-3 h-3" /> Observação da IA
           </p>
           {aiResult?.divergencias?.length > 0 && (
             <ul className="text-[10px] text-red-600 list-disc list-inside space-y-0.5">
@@ -1211,9 +1208,8 @@ export default function MobileMissaoPage() {
           toast({ title: `${label} — IA Aprovada`, description: aiResult.result?.observacao?.substring(0, 60) || "Foto dentro do padrão." });
         } else if (aiResult.status === "divergente") {
           toast({
-            title: `${label} — IA Rejeitou`,
-            description: aiResult.result?.divergencias?.[0] || "Foto não atende os critérios. Tire outra.",
-            variant: "destructive",
+            title: `${label} — Observação IA`,
+            description: aiResult.result?.divergencias?.[0] || "A IA registrou uma observação.",
           });
         }
       } else {
@@ -2040,7 +2036,7 @@ export default function MobileMissaoPage() {
           <div className="space-y-3">
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-emerald-700 font-medium">Validação IA ativa — cada foto será analisada automaticamente. Se rejeitada, tire outra.</p>
+              <p className="text-[11px] text-emerald-700 font-medium">Validação IA ativa — cada foto será analisada automaticamente. Observações serão registradas no relatório.</p>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
               <Eye className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
