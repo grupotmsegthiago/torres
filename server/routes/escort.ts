@@ -1349,7 +1349,7 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/escort/billings/:id/reabrir", requireAuth, requireDiretoria, async (req, res) => {
+  app.post("/api/escort/billings/:id/reabrir", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
