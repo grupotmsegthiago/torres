@@ -40,10 +40,29 @@ const fmtTime = (iso?: string | null) => {
   }
 };
 
+const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
 const fmtTimeOnly = (iso?: string | null) => {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+};
+
+const fmtScheduled = (iso?: string | null) => {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      weekday: "short",
+    }).formatToParts(d);
+    const wdShort = parts.find(p => p.type === "weekday")?.value || "";
+    const map: Record<string, string> = { Sun: "Domingo", Mon: "Segunda", Tue: "Terça", Wed: "Quarta", Thu: "Quinta", Fri: "Sexta", Sat: "Sábado" };
+    const dh = d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    return `${map[wdShort] || wdShort} - ${dh}`;
   } catch {
     return iso;
   }
@@ -234,8 +253,8 @@ export default function AgendaVtrPage() {
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <span className="text-[10px] font-black text-neutral-700 font-mono">{os.osNumber}</span>
-                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-mono">
-                              {fmtTimeOnly(os.scheduledDate)}
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                              {fmtScheduled(os.scheduledDate)}
                             </span>
                           </div>
                           <p className="text-xs font-semibold text-neutral-800 truncate">{os.clientName || "—"}</p>
