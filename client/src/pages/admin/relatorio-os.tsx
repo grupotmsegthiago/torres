@@ -507,13 +507,21 @@ export default function RelatorioOSPage() {
   }, [gridData]);
 
   const totals = useMemo(() => {
-    const t = { receita: 0, custo: 0, pedagio: 0, resultado: 0, km: 0 };
+    const t = { receita: 0, custo: 0, pedagio: 0, resultado: 0, km: 0, pagamento: 0, salario: 0, diaria: 0, combustivel: 0, manutencao: 0, multa: 0, outros: 0 };
     filtered.forEach(o => {
-      t.receita += o.liveCost?.faturamento || 0;
-      t.custo += o.liveCost?.custo_total || 0;
-      t.pedagio += o.liveCost?.custo_pedagio || 0;
-      t.resultado += o.liveCost?.resultado || 0;
-      t.km += o.liveCost?.km_total || 0;
+      const lc = o.liveCost;
+      t.receita += lc?.faturamento || 0;
+      t.custo += lc?.custo_total || 0;
+      t.pedagio += lc?.custo_pedagio || 0;
+      t.resultado += lc?.resultado || 0;
+      t.km += lc?.km_total || 0;
+      t.pagamento += lc?.pagamento || 0;
+      t.salario += lc?.custo_salario || 0;
+      t.diaria += lc?.custo_diaria || 0;
+      t.combustivel += lc?.custo_combustivel || 0;
+      t.manutencao += lc?.custo_manutencao || 0;
+      t.multa += lc?.custo_multa || 0;
+      t.outros += lc?.custo_outros || 0;
     });
     return t;
   }, [filtered]);
@@ -699,10 +707,40 @@ export default function RelatorioOSPage() {
                   <p className={`text-[10px] font-bold mt-0.5 ${pctOf(totals.receita, metas.receita) >= 100 ? "text-emerald-400" : "text-amber-400"}`}>{pctOf(totals.receita, metas.receita).toFixed(1)}% da meta</p>
                 )}
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
-                <p className="text-[10px] text-neutral-400 uppercase font-semibold">Custo Total</p>
-                <p className="text-lg font-black text-red-400" data-testid="text-total-custo">{fmtBRL(totals.custo)}</p>
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-left hover:bg-white/10 transition-colors" data-testid="btn-total-custo-detail">
+                    <p className="text-[10px] text-neutral-400 uppercase font-semibold flex items-center gap-1">
+                      Custo Total <Info className="w-3 h-3" />
+                    </p>
+                    <p className="text-lg font-black text-red-400" data-testid="text-total-custo">{fmtBRL(totals.custo)}</p>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-3 text-xs" align="start">
+                  <div className="font-bold text-neutral-700 mb-2 uppercase text-[10px] tracking-wider">Detalhamento de Custos do Período</div>
+                  <div className="space-y-1">
+                    {[
+                      { label: "Pagamento Agentes (VRP)", v: totals.pagamento },
+                      { label: "Salários (rateio diário)", v: totals.salario },
+                      { label: "Diária Contrato (rateio)", v: totals.diaria },
+                      { label: "Combustível (rateio)", v: totals.combustivel },
+                      { label: "Manutenção (rateio dia)", v: totals.manutencao },
+                      { label: "Multas (rateio)", v: totals.multa },
+                      { label: "Pedágio", v: totals.pedagio },
+                      { label: "Outros Custos", v: totals.outros },
+                    ].map((it) => (
+                      <div key={it.label} className="flex justify-between">
+                        <span className="text-neutral-600">{it.label}</span>
+                        <span className={`font-semibold ${it.v > 0 ? "text-red-700" : "text-neutral-300"}`}>{fmtBRL(it.v)}</span>
+                      </div>
+                    ))}
+                    <div className="border-t border-neutral-200 mt-2 pt-2 flex justify-between font-bold">
+                      <span>TOTAL</span>
+                      <span className="text-red-700">{fmtBRL(totals.custo)}</span>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
                 <p className="text-[10px] text-neutral-400 uppercase font-semibold">Pedágio Total</p>
                 <p className="text-lg font-black text-amber-400" data-testid="text-total-pedagio">{fmtBRL(totals.pedagio)}</p>
