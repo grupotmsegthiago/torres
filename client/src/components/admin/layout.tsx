@@ -72,6 +72,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
           { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar, iconColor: "text-sky-500" },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
+          { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
         ],
       },
