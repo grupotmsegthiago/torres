@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,7 @@ const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { style: "currency", cur
 const fmtDate = (s?: string | null) => s ? new Date(s).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 
 export default function RelatorioNFPage() {
+  const [, setLocation] = useLocation();
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = today.slice(0, 8) + "01";
 
@@ -284,19 +285,27 @@ export default function RelatorioNFPage() {
                       <td className="px-3 py-2 text-center">
                         <div className="inline-flex items-center gap-1">
                           {i.nfse_url && (
-                            <a href={`/api/invoices/${i.id}/nfse-pdf`} target="_blank" rel="noopener noreferrer" title="Ver espelho da NF">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-emerald-600 hover:bg-emerald-50" data-testid={`button-view-nf-${i.id}`}>
-                                <Eye className="w-3.5 h-3.5" />
-                              </Button>
-                            </a>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-emerald-600 hover:bg-emerald-50"
+                              title="Ver espelho da NF"
+                              onClick={() => window.open(`/api/invoices/${i.id}/nfse-pdf`, "_blank", "noopener,noreferrer")}
+                              data-testid={`button-view-nf-${i.id}`}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
                           )}
-                          <Link href="/admin/faturas">
-                            <a title="Abrir fatura">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-indigo-600 hover:bg-indigo-50" data-testid={`button-open-invoice-${i.id}`}>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </Button>
-                            </a>
-                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-indigo-600 hover:bg-indigo-50"
+                            title="Abrir fatura"
+                            onClick={() => setLocation("/admin/faturas")}
+                            data-testid={`button-open-invoice-${i.id}`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
