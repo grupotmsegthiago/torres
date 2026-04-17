@@ -93,6 +93,24 @@ export default function RelatorioFaturamentoPage() {
     return acc + total;
   }, 0), [approvedBillings, contracts]);
 
+  const liberarRefaturarMutation = useMutation({
+    mutationFn: async (billingIds: string[]) => {
+      const results = await Promise.allSettled(
+        billingIds.map(id => apiRequest("POST", `/api/escort/billings/${id}/liberar-faturamento`))
+      );
+      const ok = results.filter(r => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      return { ok, fail };
+    },
+    onSuccess: ({ ok, fail }) => {
+      invalidateRelatedQueries();
+      setBillings(prev => prev.filter(b => b.status !== "FATURADO" && b.status !== "FATURADA"));
+      if (fail === 0) toast({ title: "Liberadas", description: `${ok} OS liberada(s) para refaturamento.` });
+      else toast({ title: "Liberação parcial", description: `${ok} liberada(s), ${fail} com erro.`, variant: "destructive" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
   const gerarFaturaMutation = useMutation({
     mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string; startDate: string; endDate: string; expectedTotal: number }) => {
       return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal });
@@ -646,23 +664,51 @@ export default function RelatorioFaturamentoPage() {
       )}
 
       {reportGenerated && faturadoBillings.length > 0 && approvedBillings.length === 0 && (
-        <div className="mt-4 no-print bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3" data-testid="banner-todas-faturadas">
-          <Check size={20} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-bold text-amber-900">
-              Todas as {faturadoBillings.length} OS neste periodo ja foram faturadas
-            </p>
-            <p className="text-xs text-amber-600">Para gerar nova fatura, exclua a fatura existente primeiro na tela de Faturas.</p>
+        <div className="mt-4 no-print bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3 justify-between" data-testid="banner-todas-faturadas">
+          <div className="flex items-center gap-3">
+            <Check size={20} className="text-amber-600 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                Todas as {faturadoBillings.length} OS neste periodo ja foram faturadas
+              </p>
+              <p className="text-xs text-amber-600">Para gerar nova fatura, exclua a fatura existente primeiro na tela de Faturas, ou libere as OS abaixo.</p>
+            </div>
           </div>
+          <button
+            onClick={() => {
+              if (!confirm(`Liberar todas as ${faturadoBillings.length} OS faturadas para refaturamento? O status voltará para 'A Verificar' e a cobrança vinculada deverá ser regerada.`)) return;
+              liberarRefaturarMutation.mutate(faturadoBillings.map((b: any) => String(b.id)));
+            }}
+            disabled={liberarRefaturarMutation.isPending}
+            className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase shadow-sm flex items-center gap-2 disabled:opacity-50 shrink-0"
+            data-testid="btn-liberar-todas-refaturar"
+          >
+            {liberarRefaturarMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Receipt size={14} />}
+            Liberar p/ Refaturar ({faturadoBillings.length})
+          </button>
         </div>
       )}
 
       {reportGenerated && faturadoBillings.length > 0 && approvedBillings.length > 0 && (
-        <div className="mt-4 no-print bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3" data-testid="banner-parcial-faturadas">
-          <Check size={16} className="text-amber-500 shrink-0" />
-          <p className="text-xs text-amber-700">
-            <span className="font-bold">{faturadoBillings.length} OS ja faturada{faturadoBillings.length > 1 ? "s" : ""}</span> neste periodo (marcadas em amarelo). Somente as {approvedBillings.length} aprovadas serao incluidas na nova fatura.
-          </p>
+        <div className="mt-4 no-print bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3 justify-between" data-testid="banner-parcial-faturadas">
+          <div className="flex items-center gap-3">
+            <Check size={16} className="text-amber-500 shrink-0" />
+            <p className="text-xs text-amber-700">
+              <span className="font-bold">{faturadoBillings.length} OS ja faturada{faturadoBillings.length > 1 ? "s" : ""}</span> neste periodo (marcadas em amarelo). Somente as {approvedBillings.length} aprovadas serao incluidas na nova fatura.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (!confirm(`Liberar as ${faturadoBillings.length} OS faturadas para refaturamento? O status voltará para 'A Verificar' e a cobrança vinculada deverá ser regerada.`)) return;
+              liberarRefaturarMutation.mutate(faturadoBillings.map((b: any) => String(b.id)));
+            }}
+            disabled={liberarRefaturarMutation.isPending}
+            className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase shadow-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+            data-testid="btn-liberar-parcial-refaturar"
+          >
+            {liberarRefaturarMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Receipt size={12} />}
+            Liberar Faturadas
+          </button>
         </div>
       )}
 
