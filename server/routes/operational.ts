@@ -257,17 +257,6 @@ import type { Express } from "express";
       console.error("[grid] rateio diário falhou:", e.message);
     }
 
-    // Diária do contrato por (cliente, dia)
-    for (const [key, ids] of osByClientDay.entries()) {
-      const clientId = Number(key.split(":")[0]);
-      const contrato: any = activeContractsByClient.get(clientId);
-      if (!contrato) continue;
-      const valorDiaria = Number(contrato.valor_diaria || contrato.diaria_valor || 0);
-      if (!valorDiaria || ids.length === 0) continue;
-      const share = valorDiaria / ids.length;
-      for (const id of ids) addRateio(rateioDiaria, id, share);
-    }
-
     const osIds = activeOrders.map(o => o.id);
 
     const safeFrom = async (table: string, osIds: number[], selectCols = "*") => {
@@ -330,6 +319,17 @@ import type { Express } from "express";
       if (c.status === "Ativo" && c.client_id && !activeContractsByClient.has(c.client_id)) {
         activeContractsByClient.set(c.client_id, c);
       }
+    }
+
+    // Diária do contrato por (cliente, dia)
+    for (const [key, ids] of osByClientDay.entries()) {
+      const clientId = Number(key.split(":")[0]);
+      const contrato: any = activeContractsByClient.get(clientId);
+      if (!contrato) continue;
+      const valorDiaria = Number(contrato.valor_diaria || contrato.diaria_valor || 0);
+      if (!valorDiaria || ids.length === 0) continue;
+      const share = valorDiaria / ids.length;
+      for (const id of ids) addRateio(rateioDiaria, id, share);
     }
 
     const allMissionCosts = toCamelArray(missionCostsRes.data || []);
