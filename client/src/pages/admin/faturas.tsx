@@ -294,78 +294,78 @@ export default function FaturasPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-            <Card className="p-4 bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-md border-0 text-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <DollarSign className="w-5 h-5 text-white" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <Card className="p-3 bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-md border-0 text-white">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <DollarSign className="w-4 h-4 text-white" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-indigo-100 uppercase font-bold tracking-wider">Total</p>
-                  <p className="text-xl font-black text-white" data-testid="text-total-geral">{fmt(totals.totalGeral)}</p>
-                  <p className="text-[10px] text-indigo-100 font-semibold">{totals.totalGeralCount} fatura{totals.totalGeralCount !== 1 ? "s" : ""}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-indigo-100 uppercase font-bold tracking-wider truncate">Total</p>
+                  <p className="text-base font-black text-white truncate" data-testid="text-total-geral">{fmt(totals.totalGeral)}</p>
+                  <p className="text-[9px] text-indigo-100 font-semibold truncate">{totals.totalGeralCount} fatura{totals.totalGeralCount !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
             {totals.aguardandoCount > 0 && (
-              <Card className="p-4 bg-white shadow-sm border-l-4 border-l-orange-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter("AGUARDANDO_FATURAMENTO")}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center">
-                    <Bell className="w-5 h-5 text-orange-600 animate-pulse" />
+              <Card className="p-3 bg-white shadow-sm border-l-4 border-l-orange-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter("AGUARDANDO_FATURAMENTO")}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <Bell className="w-4 h-4 text-orange-600 animate-pulse" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-orange-600 uppercase font-bold tracking-wider">Aguard. Faturamento</p>
-                    <p className="text-xl font-black text-orange-700" data-testid="text-aguardando-total">{fmt(totals.aguardandoTotal)}</p>
-                    <p className="text-[10px] text-orange-500 font-semibold">{totals.aguardandoCount} pendente{totals.aguardandoCount !== 1 ? "s" : ""}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-orange-600 uppercase font-bold tracking-wider truncate">Aguard. Fatur.</p>
+                    <p className="text-base font-black text-orange-700 truncate" data-testid="text-aguardando-total">{fmt(totals.aguardandoTotal)}</p>
+                    <p className="text-[9px] text-orange-500 font-semibold truncate">{totals.aguardandoCount} pendente{totals.aguardandoCount !== 1 ? "s" : ""}</p>
                   </div>
                 </div>
               </Card>
             )}
-            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-yellow-400">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-yellow-600" />
+            <Card className="p-3 bg-white shadow-sm border-l-4 border-l-yellow-400">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-yellow-50 flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-4 h-4 text-yellow-600" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Em Aberto</p>
-                  <p className="text-xl font-black text-yellow-700" data-testid="text-pending-total">{fmt(totals.emAberto)}</p>
-                  <p className="text-[10px] text-neutral-400">{totals.emAbertoCount} fatura{totals.emAbertoCount !== 1 ? "s" : ""}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-emerald-400">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Pagas</p>
-                  <p className="text-xl font-black text-emerald-700" data-testid="text-received-total">{fmt(totals.pagas)}</p>
-                  <p className="text-[10px] text-neutral-400">{totals.pagasCount} fatura{totals.pagasCount !== 1 ? "s" : ""}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider truncate">Em Aberto</p>
+                  <p className="text-base font-black text-yellow-700 truncate" data-testid="text-pending-total">{fmt(totals.emAberto)}</p>
+                  <p className="text-[9px] text-neutral-400 truncate">{totals.emAbertoCount} fatura{totals.emAbertoCount !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-red-400">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-red-500" />
+            <Card className="p-3 bg-white shadow-sm border-l-4 border-l-emerald-400">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Vencidas</p>
-                  <p className="text-xl font-black text-red-700" data-testid="text-overdue-count">{fmt(totals.vencidasTotal)}</p>
-                  <p className="text-[10px] text-neutral-400">{totals.vencidas} fatura{totals.vencidas !== 1 ? "s" : ""}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider truncate">Pagas</p>
+                  <p className="text-base font-black text-emerald-700 truncate" data-testid="text-received-total">{fmt(totals.pagas)}</p>
+                  <p className="text-[9px] text-neutral-400 truncate">{totals.pagasCount} fatura{totals.pagasCount !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-4 bg-white shadow-sm border-l-4 border-l-neutral-300">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center">
-                  <XCircle className="w-5 h-5 text-neutral-400" />
+            <Card className="p-3 bg-white shadow-sm border-l-4 border-l-red-400">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-neutral-500 uppercase font-bold tracking-wider">Canceladas</p>
-                  <p className="text-xl font-black text-neutral-600" data-testid="text-cancelled-count">{totals.canceladas}</p>
-                  <p className="text-[10px] text-neutral-400">fatura{totals.canceladas !== 1 ? "s" : ""}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider truncate">Vencidas</p>
+                  <p className="text-base font-black text-red-700 truncate" data-testid="text-overdue-count">{fmt(totals.vencidasTotal)}</p>
+                  <p className="text-[9px] text-neutral-400 truncate">{totals.vencidas} fatura{totals.vencidas !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 bg-white shadow-sm border-l-4 border-l-neutral-300">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                  <XCircle className="w-4 h-4 text-neutral-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider truncate">Canceladas</p>
+                  <p className="text-base font-black text-neutral-600 truncate" data-testid="text-cancelled-count">{totals.canceladas}</p>
+                  <p className="text-[9px] text-neutral-400 truncate">fatura{totals.canceladas !== 1 ? "s" : ""}</p>
                 </div>
               </div>
             </Card>
