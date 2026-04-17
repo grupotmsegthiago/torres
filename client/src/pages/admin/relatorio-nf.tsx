@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
+import AdminLayout from "@/components/admin/layout";
 
 type Invoice = {
   id: number;
@@ -141,6 +142,7 @@ export default function RelatorioNFPage() {
   ];
 
   return (
+    <AdminLayout>
     <div className="p-4 sm:p-6 space-y-5">
       <div className="rounded-2xl bg-neutral-900 text-white p-5">
         <div className="flex items-start justify-between flex-wrap gap-3">
@@ -326,5 +328,6 @@ export default function RelatorioNFPage() {
         )}
       </Card>
     </div>
+    </AdminLayout>
   );
 }
