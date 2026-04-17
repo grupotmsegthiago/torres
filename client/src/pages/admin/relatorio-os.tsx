@@ -15,7 +15,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { exportFormattedExcel } from "@/lib/excel-export";
 
 interface ReportOS {
@@ -437,6 +437,21 @@ export default function RelatorioOSPage() {
     staleTime: 30000,
   });
 
+  const { data: invoices = [] } = useQuery<any[]>({ queryKey: ["/api/invoices"], staleTime: 60000 });
+  const invoiceByOs = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const inv of invoices) {
+      const sid = inv.service_order_id ?? inv.serviceOrderId;
+      if (sid) {
+        const prev = map.get(sid);
+        if (!prev || new Date(inv.created_at || inv.createdAt || 0) > new Date(prev.created_at || prev.createdAt || 0)) {
+          map.set(sid, inv);
+        }
+      }
+    }
+    return map;
+  }, [invoices]);
+
   const osIds = useMemo(() => gridData.map(o => o.id), [gridData]);
 
   const { data: inspectionMap = {} } = useQuery<Record<number, { total: number; approved: number; rejected: number; pending: number }>>({
@@ -788,6 +803,7 @@ export default function RelatorioOSPage() {
                     <th className="px-2 py-2.5 text-right cursor-pointer select-none" onClick={() => handleSort("faturamento")}>
                       <span className="flex items-center gap-1 justify-end">Faturamento <SortIcon field="faturamento" /></span>
                     </th>
+                    <th className="px-2 py-2.5 text-center">NF / Cobrança</th>
                     <th className="px-2 py-2.5 text-right">Custo Total</th>
                     <th className="px-2 py-2.5 text-right cursor-pointer select-none" onClick={() => handleSort("resultado")}>
                       <span className="flex items-center gap-1 justify-end">Resultado <SortIcon field="resultado" /></span>
@@ -798,7 +814,7 @@ export default function RelatorioOSPage() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={17} className="py-12 text-center text-neutral-400">Nenhuma OS encontrada</td></tr>
+                    <tr><td colSpan={18} className="py-12 text-center text-neutral-400">Nenhuma OS encontrada</td></tr>
                   ) : filtered.map((o, idx) => {
                     const sNorm = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
                     const cfg = statusConfig[sNorm] || statusConfig.pendente;
@@ -832,6 +848,35 @@ export default function RelatorioOSPage() {
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtDateShort(o.completedDate)}</td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtTime(o.completedDate)}</td>
                         <td className="px-2 py-2 text-right font-bold text-emerald-700 whitespace-nowrap">{fat > 0 ? fmtBRL(fat) : "—"}</td>
+                        <td className="px-2 py-2 text-center whitespace-nowrap">
+                          {(() => {
+                            const inv = invoiceByOs.get(o.id);
+                            if (!inv) {
+                              const concluida = sNorm === "concluida";
+                              return concluida && fat > 0
+                                ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200" data-testid={`badge-nf-${o.id}`}>Não Faturado</span>
+                                : <span className="text-[10px] text-neutral-300">—</span>;
+                            }
+                            const st = (inv.status || "").toUpperCase();
+                            const map: Record<string, { label: string; cls: string }> = {
+                              AGUARDANDO_FATURAMENTO: { label: "Aguard. Faturamento", cls: "text-orange-700 bg-orange-50 border-orange-200" },
+                              PENDING:                 { label: "Em Aberto", cls: "text-yellow-700 bg-yellow-50 border-yellow-200" },
+                              CONFIRMED:               { label: "Recebido", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+                              RECEIVED:                { label: "Recebido", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+                              RECEIVED_IN_CASH:        { label: "Pago Manual", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+                              OVERDUE:                 { label: "Vencido", cls: "text-red-700 bg-red-50 border-red-200" },
+                              CANCELLED:               { label: "Cancelado", cls: "text-neutral-500 bg-neutral-100 border-neutral-200" },
+                            };
+                            const cfgInv = map[st] || { label: st || "Faturado", cls: "text-blue-700 bg-blue-50 border-blue-200" };
+                            return (
+                              <Link href="/admin/faturas">
+                                <a className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border hover:opacity-80 ${cfgInv.cls}`} data-testid={`badge-nf-${o.id}`} title={`Fatura #${inv.id}${inv.due_date ? ` · venc ${inv.due_date}` : ""}`}>
+                                  {cfgInv.label}
+                                </a>
+                              </Link>
+                            );
+                          })()}
+                        </td>
                         <td className="px-2 py-2 text-right text-red-600 whitespace-nowrap">
                           {custoT > 0 ? (
                             <Popover>
