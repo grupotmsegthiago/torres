@@ -986,11 +986,28 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
             </div>
           </div>
           {invoice.nfse_url ? (
-            <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-authorized">
-                <ExternalLink className="w-3 h-3 mr-1" /> Visualizar NFS-e
-              </Button>
-            </a>
+            <div className="space-y-2">
+              <div className="bg-white border border-emerald-200 rounded-lg overflow-hidden" style={{ height: 520 }}>
+                <iframe
+                  src={`/api/invoices/${invoice.id}/nfse-pdf`}
+                  className="w-full h-full"
+                  title="Espelho da NFS-e"
+                  data-testid="iframe-nfse-mirror"
+                />
+              </div>
+              <div className="flex gap-2">
+                <a href={`/api/invoices/${invoice.id}/nfse-pdf`} target="_blank" rel="noopener noreferrer" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-fullscreen">
+                    <ExternalLink className="w-3 h-3 mr-1" /> Abrir em tela cheia
+                  </Button>
+                </a>
+                <a href={invoice.nfse_url} target="_blank" rel="noopener noreferrer" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-100" data-testid="button-view-nfse-asaas">
+                    <ExternalLink className="w-3 h-3 mr-1" /> Abrir no Asaas
+                  </Button>
+                </a>
+              </div>
+            </div>
           ) : (
             <p className="text-[10px] text-emerald-600">NF autorizada pelo Asaas. Aguardando processamento da prefeitura para liberar o PDF/XML. Clique em "Sincronizar" no rodapé desta tela para atualizar — pode levar alguns minutos.</p>
           )}

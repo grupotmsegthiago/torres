@@ -1130,6 +1130,33 @@ export function registerAsaasRoutes(app: Express) {
               timestamp: log.created_at,
             });
           }
+          if (log.action === "EMITIR_NFSE") {
+            timeline.push({
+              type: "sent",
+              icon: "receipt",
+              label: "NFS-e solicitada ao Asaas",
+              detail: log.details,
+              timestamp: log.created_at,
+            });
+          }
+          if (log.action === "CANCELAR_NFSE") {
+            timeline.push({
+              type: "error",
+              icon: "alert",
+              label: "NFS-e cancelada (Diretoria)",
+              detail: log.details,
+              timestamp: log.created_at,
+            });
+          }
+          if (log.action === "ANEXAR_NF") {
+            timeline.push({
+              type: "resent",
+              icon: "receipt",
+              label: "NF anexada manualmente",
+              detail: log.details,
+              timestamp: log.created_at,
+            });
+          }
         }
       }
 
@@ -1172,6 +1199,50 @@ export function registerAsaasRoutes(app: Express) {
     } catch (err: any) {
       console.error("[asaas] notifications error:", err.message);
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/invoices/:id/nfse-pdf", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).send("Fatura não encontrada");
+
+      let pdfUrl: string | null = invoice.nfse_url || null;
+
+      let nfId: string | null = null;
+      if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
+        nfId = String(invoice.nfse_number);
+      } else if (invoice.asaas_payment_id) {
+        try {
+          const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+          nfId = fiscalInfo?.id || null;
+          if (!pdfUrl && fiscalInfo?.pdfUrl) pdfUrl = fiscalInfo.pdfUrl;
+        } catch {}
+      }
+
+      if (!pdfUrl && nfId) {
+        try {
+          const nfDetails = await asaasRequest("GET", `/invoices/${nfId}`);
+          pdfUrl = nfDetails?.pdfUrl || nfDetails?.pdf || null;
+        } catch {}
+      }
+
+      if (!pdfUrl) return res.status(404).send("PDF da NFS-e indisponível");
+
+      const upstream = await fetch(pdfUrl);
+      if (!upstream.ok) return res.status(502).send("Falha ao obter PDF do Asaas");
+
+      const ct = upstream.headers.get("content-type") || "application/pdf";
+      res.setHeader("Content-Type", ct);
+      res.setHeader("Content-Disposition", `inline; filename="nfse-${id}.pdf"`);
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.removeHeader("Content-Security-Policy");
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.send(buf);
+    } catch (err: any) {
+      console.error("[asaas] nfse-pdf error:", err.message);
+      res.status(500).send(err.message);
     }
   });
 
