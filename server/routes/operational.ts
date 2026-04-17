@@ -154,6 +154,120 @@ import type { Express } from "express";
       return `${parts[0]} ${parts[parts.length - 1]}`;
     };
 
+    // ===== RATEIO DIÁRIO: pré-cálculo de custos por OS =====
+    const osDateOf = (o: any): string | null => {
+      const src = o.scheduledDate || o.missionStartedAt || o.completedDate || o.createdAt;
+      if (!src) return null;
+      try { return new Date(src).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); } catch { return null; }
+    };
+
+    const osByVehicleDay = new Map<string, number[]>();
+    const osByEmployeeDay = new Map<string, number[]>();
+    const osByClientDay = new Map<string, number[]>();
+    for (const o of activeOrders) {
+      if (o.status === "recusada" || o.status === "cancelada") continue;
+      const d = osDateOf(o);
+      if (!d) continue;
+      if (o.vehicleId) {
+        const k = `${o.vehicleId}:${d}`;
+        const arr = osByVehicleDay.get(k) || []; arr.push(o.id); osByVehicleDay.set(k, arr);
+      }
+      for (const eid of [o.assignedEmployeeId, o.assignedEmployee2Id]) {
+        if (!eid) continue;
+        const k = `${eid}:${d}`;
+        const arr = osByEmployeeDay.get(k) || []; arr.push(o.id); osByEmployeeDay.set(k, arr);
+      }
+      if (o.clientId) {
+        const k = `${o.clientId}:${d}`;
+        const arr = osByClientDay.get(k) || []; arr.push(o.id); osByClientDay.set(k, arr);
+      }
+    }
+
+    const rateioSalario = new Map<number, number>();
+    const rateioCombustivel = new Map<number, number>();
+    const rateioManutencao = new Map<number, number>();
+    const rateioMulta = new Map<number, number>();
+    const rateioDiaria = new Map<number, number>();
+    const addRateio = (m: Map<number, number>, id: number, v: number) => m.set(id, (m.get(id) || 0) + v);
+
+    try {
+      const empIds = Array.from(new Set(activeOrders.flatMap(o => [o.assignedEmployeeId, o.assignedEmployee2Id]).filter(Boolean) as number[]));
+      const vehIds = Array.from(new Set(activeOrders.map(o => o.vehicleId).filter(Boolean) as number[]));
+
+      const [salRes, fuelDayRes, maintRes, finesRes] = await Promise.all([
+        empIds.length > 0
+          ? supabaseAdmin.from("employee_salaries").select("employee_id, base_salary, effective_date").in("employee_id", empIds).lte("effective_date", rangeTo).order("effective_date", { ascending: false })
+          : Promise.resolve({ data: [] as any[] }),
+        vehIds.length > 0
+          ? supabaseAdmin.from("vehicle_fueling").select("vehicle_id, total_cost, date").in("vehicle_id", vehIds).gte("date", rangeFrom).lte("date", rangeTo)
+          : Promise.resolve({ data: [] as any[] }),
+        vehIds.length > 0
+          ? supabaseAdmin.from("vehicle_maintenance").select("vehicle_id, cost, date").in("vehicle_id", vehIds).gte("date", rangeFrom).lte("date", rangeTo)
+          : Promise.resolve({ data: [] as any[] }),
+        empIds.length > 0
+          ? supabaseAdmin.from("employee_fines").select("employee_id, amount, date").in("employee_id", empIds).gte("date", rangeFrom + "T00:00:00").lte("date", rangeTo + "T23:59:59")
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      // Salário diário por funcionário (mais recente vigente)
+      const salaryByEmp = new Map<number, number>();
+      for (const s of (salRes.data || [])) {
+        if (!salaryByEmp.has(s.employee_id)) salaryByEmp.set(s.employee_id, Number(s.base_salary || 0));
+      }
+      for (const [key, ids] of osByEmployeeDay.entries()) {
+        const empId = Number(key.split(":")[0]);
+        const monthly = salaryByEmp.get(empId) || 0;
+        if (!monthly || ids.length === 0) continue;
+        const daily = monthly / 30;
+        const share = daily / ids.length;
+        for (const id of ids) addRateio(rateioSalario, id, share);
+      }
+
+      // Combustível por (veículo, dia)
+      for (const f of (fuelDayRes.data || [])) {
+        const d = (f.date || "").slice(0, 10);
+        const k = `${f.vehicle_id}:${d}`;
+        const ids = osByVehicleDay.get(k);
+        if (!ids || ids.length === 0) continue;
+        const share = Number(f.total_cost || 0) / ids.length;
+        for (const id of ids) addRateio(rateioCombustivel, id, share);
+      }
+
+      // Manutenção por (veículo, dia do evento)
+      for (const m of (maintRes.data || [])) {
+        const d = (m.date || "").slice(0, 10);
+        const k = `${m.vehicle_id}:${d}`;
+        const ids = osByVehicleDay.get(k);
+        if (!ids || ids.length === 0) continue;
+        const share = Number(m.cost || 0) / ids.length;
+        for (const id of ids) addRateio(rateioManutencao, id, share);
+      }
+
+      // Multas por (funcionário, dia)
+      for (const f of (finesRes.data || [])) {
+        const d = f.date ? new Date(f.date).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+        if (!d) continue;
+        const k = `${f.employee_id}:${d}`;
+        const ids = osByEmployeeDay.get(k);
+        if (!ids || ids.length === 0) continue;
+        const share = Number(f.amount || 0) / ids.length;
+        for (const id of ids) addRateio(rateioMulta, id, share);
+      }
+    } catch (e: any) {
+      console.error("[grid] rateio diário falhou:", e.message);
+    }
+
+    // Diária do contrato por (cliente, dia)
+    for (const [key, ids] of osByClientDay.entries()) {
+      const clientId = Number(key.split(":")[0]);
+      const contrato: any = activeContractsByClient.get(clientId);
+      if (!contrato) continue;
+      const valorDiaria = Number(contrato.valor_diaria || contrato.diaria_valor || 0);
+      if (!valorDiaria || ids.length === 0) continue;
+      const share = valorDiaria / ids.length;
+      for (const id of ids) addRateio(rateioDiaria, id, share);
+    }
+
     const osIds = activeOrders.map(o => o.id);
 
     const safeFrom = async (table: string, osIds: number[], selectCols = "*") => {
@@ -289,6 +403,7 @@ import type { Express } from "express";
           horas_missao: number;
           faturamento: number; pagamento: number; resultado: number; margem_pct: number;
           custo_combustivel: number; custo_pedagio: number; custo_outros: number; custo_total: number;
+          custo_salario: number; custo_diaria: number; custo_manutencao: number; custo_multa: number;
           contrato_nome: string | null;
           contrato_valores: { valor_acionamento: number; franquia_horas: number; franquia_km: number; valor_hora_extra: number; valor_km_extra: number; valor_km_carregado: number; vrp_base: number } | null;
         } | null = null;
@@ -473,6 +588,20 @@ import type { Express } from "express";
 
             const useFrozen = !!(o as any).custos_congelados_em;
 
+            const rSal = rateioSalario.get(o.id) || 0;
+            const rDia = rateioDiaria.get(o.id) || 0;
+            const rManu = rateioManutencao.get(o.id) || 0;
+            const rMul = rateioMulta.get(o.id) || 0;
+            const rComb = rateioCombustivel.get(o.id) || 0;
+            const rateioExtraTotal = rSal + rDia + rManu + rMul;
+            const baseComb = useFrozen ? (Number((o as any).custo_combustivel_alocado) || frozenComb) : frozenComb;
+            const baseCustoTotal = useFrozen ? (Number((o as any).custo_total_alocado) || frozenCustoTotal) : frozenCustoTotal;
+            const combFinal = baseComb > 0 ? baseComb : rComb;
+            const custoTotalFinal = baseCustoTotal + (combFinal - baseComb) + rateioExtraTotal;
+            const baseFat = useFrozen ? (Number((o as any).fat_calculado) || frozenFat) : frozenFat;
+            const resultadoFinal = baseFat - custoTotalFinal;
+            const margemFinal = baseFat > 0 ? (resultadoFinal / baseFat) * 100 : 0;
+
             liveCost = {
               km_inicial: kmInicial,
               km_atual: kmFinalNorm,
@@ -484,12 +613,16 @@ import type { Express } from "express";
               fat_km_extra: billing.fat_km,
               horas_excedentes: billing.horas_excedentes,
               pagamento: useFrozen ? (Number((o as any).custo_pagamento_alocado) || frozenPag) : frozenPag,
-              custo_combustivel: useFrozen ? (Number((o as any).custo_combustivel_alocado) || frozenComb) : frozenComb,
+              custo_combustivel: combFinal,
               custo_pedagio: useFrozen ? (Number((o as any).custo_pedagio_alocado) || frozenPed) : frozenPed,
               custo_outros: useFrozen ? (Number((o as any).custo_outros_alocado) || frozenOut) : frozenOut,
-              custo_total: useFrozen ? (Number((o as any).custo_total_alocado) || frozenCustoTotal) : frozenCustoTotal,
-              resultado: useFrozen ? (Number((o as any).lucro_calculado) || frozenLucro) : frozenLucro,
-              margem_pct: useFrozen ? (Number((o as any).margem_calculada) || frozenMargem) : frozenMargem,
+              custo_salario: rSal,
+              custo_diaria: rDia,
+              custo_manutencao: rManu,
+              custo_multa: rMul,
+              custo_total: custoTotalFinal,
+              resultado: resultadoFinal,
+              margem_pct: margemFinal,
               frozen: useFrozen,
               fuel_allocated: o.fuelAllocated !== false && (useFrozen ? Number((o as any).custo_combustivel_alocado) > 0 : custoCombustivel > 0),
               fuel_allocated_hint: fuelAllocatedHint,

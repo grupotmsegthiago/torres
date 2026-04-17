@@ -50,6 +50,10 @@ interface ReportOS {
     custo_combustivel: number;
     custo_pedagio: number;
     custo_outros: number;
+    custo_salario?: number;
+    custo_diaria?: number;
+    custo_manutencao?: number;
+    custo_multa?: number;
     custo_total: number;
     resultado: number;
     margem_pct: number;
@@ -352,7 +356,11 @@ function OSSummaryModal({ os, onClose, onNavigateFinanceiro, onNavigatePhotos, i
                 <TrendingDown className="w-3.5 h-3.5" /> Despesas (Custos)
               </h4>
               <MoneyRow label="Pagamento Agentes (VRP)" value={lc?.pagamento || 0} color="text-red-700" />
-              <MoneyRow label="Combustível" value={lc?.custo_combustivel || 0} color="text-red-700" />
+              <MoneyRow label="Salários (rateio diário)" value={lc?.custo_salario || 0} color="text-red-700" />
+              <MoneyRow label="Diária Contrato (rateio)" value={lc?.custo_diaria || 0} color="text-red-700" />
+              <MoneyRow label="Combustível (rateio)" value={lc?.custo_combustivel || 0} color="text-red-700" />
+              <MoneyRow label="Manutenção (rateio dia)" value={lc?.custo_manutencao || 0} color="text-red-700" />
+              <MoneyRow label="Multas (rateio)" value={lc?.custo_multa || 0} color="text-red-700" />
               <MoneyRow label="Pedágio" value={lc?.custo_pedagio || 0} color="text-red-700" />
               <MoneyRow label="Outros Custos" value={lc?.custo_outros || 0} color="text-red-700" />
               <div className="my-2 border-t-2 border-red-200" />
