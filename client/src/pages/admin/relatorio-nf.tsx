@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
   Download, RefreshCw, ExternalLink, Eye,
@@ -51,6 +52,28 @@ const fmtDate = (s?: string | null) => s ? new Date(s).toLocaleDateString("pt-BR
 
 export default function RelatorioNFPage() {
   const [, setLocation] = useLocation();
+  const [nfModal, setNfModal] = useState<{ id: number; url: string | null; loading: boolean; error: string | null } | null>(null);
+
+  useEffect(() => {
+    return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
+  }, [nfModal?.url]);
+
+  const openNfMirror = async (id: number) => {
+    setNfModal({ id, url: null, loading: true, error: null });
+    try {
+      const res = await authFetch(`/api/invoices/${id}/nfse-pdf`);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setNfModal({ id, url, loading: false, error: null });
+    } catch (e: any) {
+      setNfModal({ id, url: null, loading: false, error: e?.message || "Erro ao carregar NF" });
+    }
+  };
+
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = today.slice(0, 8) + "01";
 
@@ -292,7 +315,7 @@ export default function RelatorioNFPage() {
                               size="icon"
                               className="h-6 w-6 text-emerald-600 hover:bg-emerald-50"
                               title="Ver espelho da NF"
-                              onClick={() => window.open(`/api/invoices/${i.id}/nfse-pdf`, "_blank", "noopener,noreferrer")}
+                              onClick={() => openNfMirror(i.id)}
                               data-testid={`button-view-nf-${i.id}`}
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -328,6 +351,50 @@ export default function RelatorioNFPage() {
         )}
       </Card>
     </div>
+
+    <Dialog open={!!nfModal} onOpenChange={(o) => { if (!o) setNfModal(null); }}>
+      <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 flex flex-col" data-testid="dialog-nf-mirror">
+        <DialogHeader className="px-5 py-3 border-b flex-row items-center justify-between space-y-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Receipt className="w-5 h-5 text-emerald-600" />
+            Espelho da Nota Fiscal {nfModal?.id ? `#${nfModal.id}` : ""}
+          </DialogTitle>
+          {nfModal?.url && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => nfModal?.url && window.open(nfModal.url, "_blank", "noopener,noreferrer")}
+              className="mr-8"
+              data-testid="button-nf-fullscreen"
+            >
+              <ExternalLink className="w-4 h-4 mr-1.5" /> Tela cheia
+            </Button>
+          )}
+        </DialogHeader>
+        <div className="flex-1 bg-neutral-100 overflow-hidden">
+          {nfModal?.loading && (
+            <div className="h-full flex items-center justify-center text-neutral-600">
+              <Loader2 className="w-6 h-6 animate-spin mr-2" /> Carregando espelho da NF...
+            </div>
+          )}
+          {nfModal?.error && (
+            <div className="h-full flex flex-col items-center justify-center text-red-600 p-6 text-center">
+              <AlertTriangle className="w-10 h-10 mb-3" />
+              <div className="font-bold mb-1">Não foi possível carregar a NF</div>
+              <div className="text-xs text-neutral-600 max-w-md">{nfModal.error}</div>
+            </div>
+          )}
+          {nfModal?.url && (
+            <iframe
+              src={nfModal.url}
+              title="Espelho da NF"
+              className="w-full h-full border-0"
+              data-testid="iframe-nf-mirror"
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
     </AdminLayout>
   );
 }
