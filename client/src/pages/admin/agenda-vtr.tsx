@@ -226,7 +226,7 @@ export default function AgendaVtrPage() {
                     )}
 
                     {overdue.map((os) => (
-                      <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
+                      <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
                           className="block bg-red-50 border-2 border-red-300 rounded-lg p-3 hover:bg-red-100 transition-colors cursor-pointer"
                           data-testid={`mission-overdue-${os.id}`}
@@ -274,7 +274,7 @@ export default function AgendaVtrPage() {
                     ))}
 
                     {active.map((os) => (
-                      <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
+                      <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
                           className="block bg-emerald-50/70 border-2 border-emerald-300 rounded-lg p-3 hover:bg-emerald-50 transition-colors cursor-pointer"
                           data-testid={`mission-active-${os.id}`}
@@ -325,7 +325,7 @@ export default function AgendaVtrPage() {
                     )}
 
                     {scheduled.map((os) => (
-                      <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
+                      <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
                           className="block bg-white border border-neutral-200 rounded-lg p-2.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors cursor-pointer"
                           data-testid={`mission-scheduled-${os.id}`}
@@ -380,7 +380,7 @@ export default function AgendaVtrPage() {
           </div>
           <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
             {orphanOrders.map((os) => (
-              <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
+              <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                 <a className="block bg-white border border-amber-200 rounded-lg p-2.5 hover:border-amber-400 transition-colors" data-testid={`orphan-os-${os.id}`}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-[10px] font-black text-neutral-700 font-mono">{os.osNumber}</span>
