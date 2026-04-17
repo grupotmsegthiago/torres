@@ -639,6 +639,37 @@ export default function BoletimMedicaoPage() {
               const groupAFaturar = group.orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
               const groupTotal = group.orders.reduce((acc, o) => acc + getBillingTotal(o), 0);
 
+              const cycleQuinzenal = group.orders[0]?.clientBillingCycle === "quinzenal";
+              const brToday = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+              const dayBR = brToday.getDate();
+              let closedQuinzenaRange: { start: Date; end: Date; label: string } | null = null;
+              if (cycleQuinzenal) {
+                if (dayBR >= 16) {
+                  closedQuinzenaRange = {
+                    start: new Date(brToday.getFullYear(), brToday.getMonth(), 1),
+                    end: new Date(brToday.getFullYear(), brToday.getMonth(), 16),
+                    label: `1ª Quinzena (1-15/${String(brToday.getMonth() + 1).padStart(2, "0")})`,
+                  };
+                } else {
+                  const prev = new Date(brToday.getFullYear(), brToday.getMonth() - 1, 1);
+                  closedQuinzenaRange = {
+                    start: new Date(prev.getFullYear(), prev.getMonth(), 16),
+                    end: new Date(prev.getFullYear(), prev.getMonth() + 1, 1),
+                    label: `2ª Quinzena (16-31/${String(prev.getMonth() + 1).padStart(2, "0")})`,
+                  };
+                }
+              }
+              const quinzenaPendentes = closedQuinzenaRange
+                ? group.orders.filter(o => {
+                    const status = o.billing?.status;
+                    if (status === "APROVADA" || status === "FATURADO" || status === "FATURADA" || status === "PAGO" || status === "RECUSADA" || status === "CANCELADA") return false;
+                    const ref = o.billing?.data_missao || o.scheduledDate || o.completedDate;
+                    if (!ref) return false;
+                    const d = new Date(_eu(ref));
+                    return d >= closedQuinzenaRange!.start && d < closedQuinzenaRange!.end;
+                  })
+                : [];
+
               return (
                 <div key={group.clientId} className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm" data-testid={`client-group-${group.clientId}`}>
                   <button
@@ -676,8 +707,41 @@ export default function BoletimMedicaoPage() {
                           {group.orders[0].clientPaymentTermsDays ? ` · D+${group.orders[0].clientPaymentTermsDays}` : ""}
                         </Badge>
                       )}
+                      {quinzenaPendentes.length > 0 && (
+                        <Badge className="bg-red-100 text-red-800 border border-red-300 font-bold text-[10px] animate-pulse" data-testid={`badge-quinzena-pendente-${group.clientId}`}>
+                          ⚠ {quinzenaPendentes.length} OS pendente{quinzenaPendentes.length > 1 ? "s" : ""} da quinzena fechada
+                        </Badge>
+                      )}
                     </div>
                   </button>
+
+                  {quinzenaPendentes.length > 0 && closedQuinzenaRange && (
+                    <div className="bg-red-50 border-t border-b border-red-200 px-5 py-3" data-testid={`alert-quinzena-${group.clientId}`}>
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-red-800 uppercase tracking-wider">
+                            Quinzena fechada com {quinzenaPendentes.length} OS sem aprovação — {closedQuinzenaRange.label}
+                          </p>
+                          <p className="text-[11px] text-red-700 mt-1">
+                            O sistema bloqueará a geração de fatura desta quinzena enquanto houver OS pendentes. Aprove ou recuse cada OS abaixo:
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {quinzenaPendentes.slice(0, 20).map((os: any) => (
+                              <span key={os.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-red-300 rounded text-[10px] font-mono text-red-700">
+                                {os.osNumber || `TOR-${String(os.id).padStart(4, "0")}`}
+                                <span className="text-red-400">·</span>
+                                <span className="text-red-600">{os.billing?.status || "sem cálculo"}</span>
+                              </span>
+                            ))}
+                            {quinzenaPendentes.length > 20 && (
+                              <span className="text-[10px] text-red-600 font-bold">+{quinzenaPendentes.length - 20} OS</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {isExpanded && (
                     <div className="border-t border-neutral-100">
@@ -1063,7 +1127,13 @@ export default function BoletimMedicaoPage() {
                     toast({ title: "Sucesso", description: `${aprovarFaturarDialog.billingIds.length} fatura(s) gerada(s) no Asaas com sucesso` });
                     setAprovarFaturarDialog(null);
                   } catch (err: any) {
-                    toast({ title: "Erro", description: err.message, variant: "destructive" });
+                    const isQuinzenaBlock = err?.message?.includes("QUINZENA_INCOMPLETA") || err?.message?.includes("BLOQUEADO") || err?.message?.includes("quinzena");
+                    toast({
+                      title: isQuinzenaBlock ? "⛔ Quinzena incompleta" : "Erro",
+                      description: err.message,
+                      variant: "destructive",
+                      duration: isQuinzenaBlock ? 12000 : 6000,
+                    });
                   } finally {
                     setAprovarFaturarLoading(false);
                   }

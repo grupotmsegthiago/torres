@@ -1388,9 +1388,41 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, billing_cycle, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
+
+      if (clientData?.billing_cycle === "quinzenal") {
+        const { data: allInPeriod } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, status, boletim_numero, service_order_id, data_missao")
+          .eq("client_id", clientId)
+          .gte("data_missao", fromDate)
+          .lte("data_missao", toDate)
+          .not("status", "in", '("RECUSADA","CANCELADA","FATURADA","FATURADO")');
+        const blocking = (allInPeriod || []).filter((b: any) =>
+          !["APROVADA"].includes(b.status)
+        );
+        if (blocking.length > 0) {
+          gerarFaturaLocks.delete(clientId);
+          const osList = blocking.map((b: any) => ({
+            id: b.id,
+            osRef: b.boletim_numero || `OS-${b.service_order_id}`,
+            status: b.status,
+            dataMissao: b.data_missao,
+          }));
+          const refs = osList.map(o => `${o.osRef} (${o.status})`).slice(0, 10).join(", ");
+          const extra = osList.length > 10 ? ` +${osList.length - 10} OS` : "";
+          return res.status(409).json({
+            code: "QUINZENA_INCOMPLETA",
+            message: `BLOQUEADO: ${blocking.length} OS desta quinzena ainda NÃO está(ão) aprovada(s) para faturamento. Regularize antes de faturar: ${refs}${extra}.`,
+            pendingOs: osList,
+            totalPendente: blocking.length,
+            periodo: { startDate, endDate },
+          });
+        }
+        console.log(`[asaas] Validação quinzenal OK para cliente ${clientId}: 0 OS pendentes no período ${startDate} a ${endDate}.`);
+      }
       const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || undefined;
       const clientPhoneConsolidado = clientData?.phone || undefined;
 
