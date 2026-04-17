@@ -6,7 +6,7 @@ import { queryClient } from "@/lib/queryClient";
 import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
-  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle,
+  ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,7 @@ const menuSections: MenuSection[] = [
         iconColor: "text-amber-500",
         children: [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
+          { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar, iconColor: "text-sky-500" },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
           { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
         ],

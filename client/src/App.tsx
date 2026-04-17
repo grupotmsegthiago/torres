@@ -25,6 +25,7 @@ const TimesheetsPage = lazy(() => import("@/pages/admin/timesheets"));
 const TrackerPage = lazy(() => import("@/pages/admin/tracker"));
 const MissionPage = lazy(() => import("@/pages/admin/mission"));
 const OperationalGridPage = lazy(() => import("@/pages/admin/operational-grid"));
+const AgendaVtrPage = lazy(() => import("@/pages/admin/agenda-vtr"));
 const GuiaMissaoPage = lazy(() => import("@/pages/admin/guia-missao"));
 const WeaponsPage = lazy(() => import("@/pages/admin/weapons"));
 const UsersPage = lazy(() => import("@/pages/admin/users"));
@@ -191,6 +192,7 @@ function Router() {
         <Route path="/admin/tracker">{() => <ProtectedRoute component={TrackerPage} />}</Route>
         <Route path="/admin/mission">{() => <ProtectedRoute component={MissionPage} />}</Route>
         <Route path="/admin/operational-grid">{() => <ProtectedRoute component={OperationalGridPage} />}</Route>
+        <Route path="/admin/agenda-vtr">{() => <ProtectedRoute component={AgendaVtrPage} />}</Route>
         <Route path="/admin/laudo/:osId">{() => <ProtectedRoute component={LaudoPage} />}</Route>
         <Route path="/admin/guia-missao">{() => <ProtectedRoute component={GuiaMissaoPage} />}</Route>
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
