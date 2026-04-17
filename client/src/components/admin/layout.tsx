@@ -72,7 +72,6 @@ const menuSections: MenuSection[] = [
           { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
           { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar, iconColor: "text-sky-500" },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
-          { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
         ],
       },
@@ -121,6 +120,7 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
+          { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
