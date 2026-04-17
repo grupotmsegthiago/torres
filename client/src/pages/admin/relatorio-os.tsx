@@ -10,8 +10,9 @@ import {
   ChevronDown, ChevronUp, ArrowUpDown, CalendarDays, Pencil,
   X, MapPin, Truck, User, DollarSign, TrendingUp, TrendingDown,
   Fuel, CircleDollarSign, Receipt, Shield, Phone, Navigation,
-  Gauge, Timer, Package, Eye, Target, Camera,
+  Gauge, Timer, Package, Eye, Target, Camera, Info,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -793,7 +794,48 @@ export default function RelatorioOSPage() {
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtDateShort(o.completedDate)}</td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtTime(o.completedDate)}</td>
                         <td className="px-2 py-2 text-right font-bold text-emerald-700 whitespace-nowrap">{fat > 0 ? fmtBRL(fat) : "—"}</td>
-                        <td className="px-2 py-2 text-right text-red-600 whitespace-nowrap">{custoT > 0 ? fmtBRL(custoT) : "—"}</td>
+                        <td className="px-2 py-2 text-right text-red-600 whitespace-nowrap">
+                          {custoT > 0 ? (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button className="inline-flex items-center gap-1 hover:underline" data-testid={`btn-custo-detail-${o.id}`}>
+                                  {fmtBRL(custoT)}
+                                  <Info className="w-3 h-3 text-neutral-400" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-72 p-3 text-xs" align="end">
+                                <div className="font-bold text-neutral-700 mb-2 uppercase text-[10px] tracking-wider">Detalhamento de Custos</div>
+                                {(() => {
+                                  const lc = o.liveCost!;
+                                  const items: { label: string; v: number }[] = [
+                                    { label: "Pagamento Agentes (VRP)", v: lc.pagamento || 0 },
+                                    { label: "Salários (rateio diário)", v: lc.custo_salario || 0 },
+                                    { label: "Diária Contrato (rateio)", v: lc.custo_diaria || 0 },
+                                    { label: "Combustível (rateio)", v: lc.custo_combustivel || 0 },
+                                    { label: "Manutenção (rateio dia)", v: lc.custo_manutencao || 0 },
+                                    { label: "Multas (rateio)", v: lc.custo_multa || 0 },
+                                    { label: "Pedágio", v: lc.custo_pedagio || 0 },
+                                    { label: "Outros Custos", v: lc.custo_outros || 0 },
+                                  ];
+                                  return (
+                                    <div className="space-y-1">
+                                      {items.map((it) => (
+                                        <div key={it.label} className="flex justify-between">
+                                          <span className="text-neutral-600">{it.label}</span>
+                                          <span className={`font-semibold ${it.v > 0 ? "text-red-700" : "text-neutral-300"}`}>{fmtBRL(it.v)}</span>
+                                        </div>
+                                      ))}
+                                      <div className="border-t border-neutral-200 mt-2 pt-2 flex justify-between font-bold">
+                                        <span>TOTAL</span>
+                                        <span className="text-red-700">{fmtBRL(custoT)}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </PopoverContent>
+                            </Popover>
+                          ) : "—"}
+                        </td>
                         <td className={`px-2 py-2 text-right font-black whitespace-nowrap ${result >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fat > 0 ? fmtBRL(result) : "—"}</td>
                         <td className="px-2 py-2 text-center whitespace-nowrap">
                           {fat > 0 ? (
