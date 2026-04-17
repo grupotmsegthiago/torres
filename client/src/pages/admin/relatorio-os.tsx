@@ -438,7 +438,14 @@ export default function RelatorioOSPage() {
   });
 
   const { data: invoices = [] } = useQuery<any[]>({ queryKey: ["/api/invoices"], staleTime: 60000 });
+  const { data: invoiceMap = {} } = useQuery<Record<string, { invoiceId: number; billingStatus: string }>>({
+    queryKey: ["/api/service-orders/invoice-map"],
+    staleTime: 60000,
+  });
   const invoiceByOs = useMemo(() => {
+    const byId = new Map<number, any>();
+    for (const inv of invoices) byId.set(inv.id, inv);
+
     const map = new Map<number, any>();
     for (const inv of invoices) {
       const sid = inv.service_order_id ?? inv.serviceOrderId;
@@ -449,8 +456,14 @@ export default function RelatorioOSPage() {
         }
       }
     }
+    for (const [osId, info] of Object.entries(invoiceMap)) {
+      const osIdNum = Number(osId);
+      if (map.has(osIdNum)) continue;
+      const inv = byId.get(info.invoiceId);
+      if (inv) map.set(osIdNum, inv);
+    }
     return map;
-  }, [invoices]);
+  }, [invoices, invoiceMap]);
 
   const osIds = useMemo(() => gridData.map(o => o.id), [gridData]);
 

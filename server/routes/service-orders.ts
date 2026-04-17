@@ -73,6 +73,24 @@ import type { Express } from "express";
     res.json(enriched);
   });
 
+  app.get("/api/service-orders/invoice-map", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const { data: billings } = await supabaseAdmin
+        .from("escort_billings")
+        .select("service_order_id, invoice_id, status")
+        .not("invoice_id", "is", null);
+      const map: Record<string, { invoiceId: number; billingStatus: string }> = {};
+      for (const b of billings || []) {
+        if (b.service_order_id != null && b.invoice_id != null) {
+          map[String(b.service_order_id)] = { invoiceId: b.invoice_id, billingStatus: b.status };
+        }
+      }
+      res.json(map);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/boletim-medicao/os-concluidas", requireAuth, requireAdminRole, async (_req, res) => {
     try {
       const allOrders = await storage.getServiceOrders();
