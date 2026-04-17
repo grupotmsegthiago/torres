@@ -356,7 +356,15 @@ export default function RelatorioFaturamentoPage() {
   };
 
   const rowsData = useMemo(() => {
-    return billings.map((b) => {
+    const sorted = [...billings].sort((a, b) => {
+      const da = new Date(a.data_missao || a.created_at || 0).getTime();
+      const db = new Date(b.data_missao || b.created_at || 0).getTime();
+      if (da !== db) return da - db;
+      const ta = (a.horario_inicio || "").toString();
+      const tb = (b.horario_inicio || "").toString();
+      return ta.localeCompare(tb);
+    });
+    return sorted.map((b) => {
       const ct = getContractForBilling(b);
       const n = (v: any) => Number(v) || 0;
       const franquiaHoras = n(ct?.franquia_horas) || n(b.franquia_horas);
