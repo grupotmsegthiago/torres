@@ -919,15 +919,32 @@ const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any 
   WAITING_MUNICIPAL_PROCESSING: { label: "Aguardando Prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock },
 };
 
-function NfseControlSection({ invoice }: { invoice: Invoice }) {
+function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDiretoria?: boolean }) {
   const { toast } = useToast();
   const [emitting, setEmitting] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   const nfStatus = invoice.nfse_status ? (NFSE_STATUS_MAP[invoice.nfse_status] || { label: invoice.nfse_status, color: "bg-neutral-100 text-neutral-600 border-neutral-200", icon: FileText }) : null;
   const hasNfse = !!invoice.nfse_status;
   const isAuthorized = invoice.nfse_status === "AUTHORIZED" || invoice.nfse_status === "SYNCHRONIZED";
   const isError = invoice.nfse_status === "ERROR";
   const canEmit = invoice.asaas_payment_id && !isAuthorized && invoice.status !== "CANCELLED";
+
+  const handleCancelNfse = async () => {
+    if (!confirm(`Tem certeza que deseja CANCELAR a NFS-e desta fatura?\n\nEsta ação solicitará o cancelamento da nota junto à prefeitura via Asaas. Não pode ser desfeita.`)) return;
+    setCanceling(true);
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/cancel-nfse`, { method: "POST" });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.message || "Erro ao cancelar NFS-e");
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "NFS-e cancelada", description: body.message });
+    } catch (err: any) {
+      toast({ title: "Erro ao cancelar NFS-e", description: err.message, variant: "destructive" });
+    } finally {
+      setCanceling(false);
+    }
+  };
 
   const handleEmitNfse = async () => {
     setEmitting(true);
@@ -975,7 +992,7 @@ function NfseControlSection({ invoice }: { invoice: Invoice }) {
               </Button>
             </a>
           ) : (
-            <p className="text-[10px] text-emerald-600">Aguardando processamento pela prefeitura. Clique em "Sincronizar" para atualizar.</p>
+            <p className="text-[10px] text-emerald-600">NF autorizada pelo Asaas. Aguardando processamento da prefeitura para liberar o PDF/XML. Clique em "Sincronizar" no rodapé desta tela para atualizar — pode levar alguns minutos.</p>
           )}
         </div>
       )}
@@ -1040,6 +1057,23 @@ function NfseControlSection({ invoice }: { invoice: Invoice }) {
             <><RefreshCw className="w-3 h-3 mr-1" /> Re-emitir NFS-e</>
           ) : (
             <><Receipt className="w-3 h-3 mr-1" /> Emitir NFS-e via Asaas</>
+          )}
+        </Button>
+      )}
+
+      {hasNfse && isDiretoria && invoice.nfse_status !== "CANCELED" && invoice.nfse_status !== "CANCELLED" && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs text-red-700 border-red-200 hover:bg-red-50"
+          onClick={handleCancelNfse}
+          disabled={canceling}
+          data-testid="button-cancel-nfse"
+        >
+          {canceling ? (
+            <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Cancelando NFS-e...</>
+          ) : (
+            <><XCircle className="w-3 h-3 mr-1" /> Cancelar NFS-e (Diretoria)</>
           )}
         </Button>
       )}
@@ -1276,7 +1310,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             </div>
           )}
 
-          <NfseControlSection invoice={invoice} />
+          <NfseControlSection invoice={invoice} isDiretoria={isDiretoria} />
 
           {invoice.pix_qr_code && (
             <div className="text-center bg-white border rounded-xl p-4">

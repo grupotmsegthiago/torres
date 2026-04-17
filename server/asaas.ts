@@ -510,7 +510,7 @@ export function registerAsaasRoutes(app: Express) {
             } catch {}
           }
 
-          if (asaasPaymentId) {
+          if (asaasPaymentId && emiteNf) {
             try {
               const nfResult = await emitNfseImmediate({
                 paymentId: asaasPaymentId,
@@ -521,6 +521,8 @@ export function registerAsaasRoutes(app: Express) {
             } catch (nfErr: any) {
               console.log(`[asaas] NFS-e auto-emission (individual) non-blocking: ${nfErr.message}`);
             }
+          } else if (asaasPaymentId && !emiteNf) {
+            console.log(`[asaas] NFS-e NÃO emitida (cliente ${clientId} com emite_nf=false). Apenas boleto/cobrança gerada.`);
           }
 
           await logSystemAudit({
@@ -862,6 +864,64 @@ export function registerAsaasRoutes(app: Express) {
       res.json({ ...data, nfseResult: result });
     } catch (err: any) {
       console.error("[asaas] Erro NFS-e:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/invoices/:id/cancel-nfse", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ message: "Somente a diretoria pode cancelar Notas Fiscais." });
+      }
+
+      const id = parseInt(req.params.id);
+      const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
+      if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+      if (!invoice.nfse_status) return res.status(400).json({ message: "Esta fatura não possui NFS-e emitida." });
+
+      let nfId: string | null = null;
+      if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
+        nfId = String(invoice.nfse_number);
+      } else if (invoice.asaas_payment_id) {
+        try {
+          const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+          nfId = fiscalInfo?.id || null;
+        } catch {}
+      }
+
+      let cancelStatus = "CANCELED";
+      let cancelMessage = "NFS-e cancelada localmente.";
+      if (nfId) {
+        try {
+          const cancelResult = await asaasRequest("POST", `/invoices/${nfId}/cancel`);
+          cancelStatus = cancelResult?.status || "CANCELED";
+          cancelMessage = `NFS-e ${nfId} cancelada no Asaas (status: ${cancelStatus}).`;
+          console.log(`[asaas] NFS-e ${nfId} cancelada com sucesso. Status: ${cancelStatus}`);
+        } catch (cancelErr: any) {
+          console.error(`[asaas] Erro ao cancelar NFS-e ${nfId}: ${cancelErr.message}`);
+          return res.status(500).json({ message: `Erro ao cancelar NFS-e no Asaas: ${cancelErr.message}` });
+        }
+      } else {
+        console.log(`[asaas] NFS-e da fatura #${id} sem ID Asaas. Apenas marcando como cancelada localmente.`);
+      }
+
+      const { data: updated, error: updErr } = await supabaseAdmin.from("invoices").update({
+        nfse_status: cancelStatus,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id).select().single();
+      if (updErr) throw updErr;
+
+      await logSystemAudit({
+        userId: user?.id, userName: user?.name, userRole: user?.role,
+        action: "CANCELAR_NFSE", targetId: String(id), targetType: "invoice",
+        details: `NFS-e da fatura #${id} cancelada por ${user?.name || "diretoria"}. ${cancelMessage}`,
+        ipAddress: (req as any).ip,
+      });
+
+      res.json({ success: true, message: cancelMessage, invoice: updated });
+    } catch (err: any) {
+      console.error("[asaas] Erro ao cancelar NFS-e:", err.message);
       res.status(500).json({ message: err.message });
     }
   });
