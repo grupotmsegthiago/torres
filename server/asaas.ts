@@ -1230,15 +1230,30 @@ export function registerAsaasRoutes(app: Express) {
 
       if (!pdfUrl) return res.status(404).send("PDF da NFS-e indisponível");
 
-      const upstream = await fetch(pdfUrl);
+      const upstream = await fetch(pdfUrl, { redirect: "follow" });
       if (!upstream.ok) return res.status(502).send("Falha ao obter PDF do Asaas");
 
-      const ct = upstream.headers.get("content-type") || "application/pdf";
-      res.setHeader("Content-Type", ct);
-      res.setHeader("Content-Disposition", `inline; filename="nfse-${id}.pdf"`);
+      const ct = (upstream.headers.get("content-type") || "").toLowerCase();
+      let buf = Buffer.from(await upstream.arrayBuffer());
+      const isPdf = ct.includes("pdf") || (buf.length >= 4 && buf.slice(0, 4).toString() === "%PDF");
+
+      if (isPdf) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="nfse-${id}.pdf"`);
+      } else {
+        let html = buf.toString("utf-8");
+        html = html.replace(/<script[\s\S]*?<\/script>/gi, "");
+        html = html.replace(/\son[a-z]+="[^"]*"/gi, "");
+        html = html.replace(/\son[a-z]+='[^']*'/gi, "");
+        if (!/<base\s/i.test(html)) {
+          const base = `<base href="${new URL(pdfUrl).origin}/" target="_blank">`;
+          html = html.replace(/<head[^>]*>/i, m => `${m}${base}`);
+        }
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        buf = Buffer.from(html, "utf-8");
+      }
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
       res.removeHeader("Content-Security-Policy");
-      const buf = Buffer.from(await upstream.arrayBuffer());
       res.send(buf);
     } catch (err: any) {
       console.error("[asaas] nfse-pdf error:", err.message);
