@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Car, Radio, Clock, MapPin, Calendar, User, AlertCircle, ChevronRight, Activity } from "lucide-react";
+import AdminLayout from "@/components/admin/layout";
 
 type GridOs = {
   id: number;
@@ -134,6 +135,7 @@ export default function AgendaVtrPage() {
   const idleVehicles = grouped.filter((g) => g.active.length === 0 && g.scheduled.length === 0).length;
 
   return (
+    <AdminLayout>
     <div className="p-4 sm:p-6 space-y-5">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -396,5 +398,6 @@ export default function AgendaVtrPage() {
         </Card>
       )}
     </div>
+    </AdminLayout>
   );
 }
