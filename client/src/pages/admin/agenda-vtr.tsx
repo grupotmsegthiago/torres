@@ -81,6 +81,22 @@ const isScheduled = (o: GridOs) =>
   o.status === "agendada" &&
   !o.missionStartedAt;
 
+const isOverdue = (o: GridOs, nowMs: number) => {
+  if (!isScheduled(o) || !o.scheduledDate) return false;
+  return new Date(o.scheduledDate).getTime() < nowMs - 5 * 60 * 1000;
+};
+
+const fmtOverdue = (iso?: string | null, nowMs?: number) => {
+  if (!iso || !nowMs) return "";
+  const diffMin = Math.floor((nowMs - new Date(iso).getTime()) / 60000);
+  if (diffMin < 60) return `${diffMin} min atrasada`;
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  if (h < 24) return `${h}h${m > 0 ? ` ${m}min` : ""} atrasada`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h atrasada`;
+};
+
 export default function AgendaVtrPage() {
   const { data: gridOrders = [], isLoading: l1 } = useQuery<GridOs[]>({
     queryKey: ["/api/operational-grid"],
@@ -92,24 +108,28 @@ export default function AgendaVtrPage() {
   });
 
   const isLoading = l1 || l2;
+  const nowMs = Date.now();
 
   const grouped = vehicles.map((v) => {
     const ordersForVehicle = gridOrders.filter((o) => o.vehicle?.plate === v.plate);
     const active = ordersForVehicle.filter(isActive);
-    const scheduled = ordersForVehicle
+    const scheduledAll = ordersForVehicle
       .filter(isScheduled)
       .sort((a, b) => {
         const ta = a.scheduledDate ? new Date(a.scheduledDate).getTime() : Infinity;
         const tb = b.scheduledDate ? new Date(b.scheduledDate).getTime() : Infinity;
         return ta - tb;
       });
-    return { vehicle: v, active, scheduled };
+    const overdue = scheduledAll.filter((o) => isOverdue(o, nowMs));
+    const scheduled = scheduledAll.filter((o) => !isOverdue(o, nowMs));
+    return { vehicle: v, active, scheduled, overdue };
   });
 
   const orphanOrders = gridOrders.filter((o) => !o.vehicle?.plate && (isActive(o) || isScheduled(o)));
 
   const totalActive = grouped.reduce((acc, g) => acc + g.active.length, 0);
   const totalScheduled = grouped.reduce((acc, g) => acc + g.scheduled.length, 0);
+  const totalOverdue = grouped.reduce((acc, g) => acc + g.overdue.length, 0);
   const busyVehicles = grouped.filter((g) => g.active.length > 0).length;
   const idleVehicles = grouped.filter((g) => g.active.length === 0 && g.scheduled.length === 0).length;
 
@@ -127,6 +147,11 @@ export default function AgendaVtrPage() {
           <Badge className="bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[10px]" data-testid="badge-scheduled-total">
             <Calendar className="w-3 h-3 mr-1" /> {totalScheduled} agendadas
           </Badge>
+          {totalOverdue > 0 && (
+            <Badge className="bg-red-50 text-red-700 border border-red-300 font-bold text-[10px] animate-pulse" data-testid="badge-overdue-total">
+              <AlertCircle className="w-3 h-3 mr-1" /> {totalOverdue} ATRASADA{totalOverdue > 1 ? "S" : ""}
+            </Badge>
+          )}
           <Badge className="bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]" data-testid="badge-busy-vehicles">
             <Car className="w-3 h-3 mr-1" /> {busyVehicles} VTR ocupadas
           </Badge>
@@ -148,20 +173,22 @@ export default function AgendaVtrPage() {
       ) : (
         <div className="overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6">
           <div className="flex gap-4 min-w-min">
-            {grouped.map(({ vehicle, active, scheduled }) => {
-              const hasActivity = active.length > 0 || scheduled.length > 0;
-              const cardBorder = active.length > 0
-                ? "border-emerald-300 ring-2 ring-emerald-100"
-                : scheduled.length > 0
-                  ? "border-blue-200"
-                  : "border-neutral-200";
+            {grouped.map(({ vehicle, active, scheduled, overdue }) => {
+              const hasActivity = active.length > 0 || scheduled.length > 0 || overdue.length > 0;
+              const cardBorder = overdue.length > 0
+                ? "border-red-300 ring-2 ring-red-100"
+                : active.length > 0
+                  ? "border-emerald-300 ring-2 ring-emerald-100"
+                  : scheduled.length > 0
+                    ? "border-blue-200"
+                    : "border-neutral-200";
               return (
                 <Card
                   key={vehicle.id}
                   className={`w-[320px] flex-shrink-0 flex flex-col bg-white border-2 ${cardBorder} shadow-sm overflow-hidden`}
                   data-testid={`card-vehicle-${vehicle.id}`}
                 >
-                  <div className={`px-4 py-3 border-b ${active.length > 0 ? "bg-emerald-50 border-emerald-200" : "bg-neutral-50 border-neutral-200"}`}>
+                  <div className={`px-4 py-3 border-b ${overdue.length > 0 ? "bg-red-50 border-red-200" : active.length > 0 ? "bg-emerald-50 border-emerald-200" : "bg-neutral-50 border-neutral-200"}`}>
                     <div className="flex items-center gap-2 justify-between">
                       <div className="flex items-center gap-2">
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${active.length > 0 ? "bg-emerald-600" : "bg-neutral-800"}`}>
@@ -172,7 +199,11 @@ export default function AgendaVtrPage() {
                           <p className="text-[10px] text-neutral-500 font-semibold uppercase">{vehicle.brand || ""} {vehicle.model}</p>
                         </div>
                       </div>
-                      {active.length > 0 ? (
+                      {overdue.length > 0 ? (
+                        <Badge className="bg-red-600 text-white border-0 font-bold text-[9px] animate-pulse">
+                          <AlertCircle className="w-2.5 h-2.5 mr-1" /> {overdue.length} ATRASADA{overdue.length > 1 ? "S" : ""}
+                        </Badge>
+                      ) : active.length > 0 ? (
                         <Badge className="bg-emerald-600 text-white border-0 font-bold text-[9px]">
                           <Radio className="w-2.5 h-2.5 mr-1 animate-pulse" /> EM CURSO
                         </Badge>
@@ -193,6 +224,54 @@ export default function AgendaVtrPage() {
                         <p className="text-[10px] text-neutral-400 mt-1">Disponível para alocação</p>
                       </div>
                     )}
+
+                    {overdue.map((os) => (
+                      <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
+                        <a
+                          className="block bg-red-50 border-2 border-red-300 rounded-lg p-3 hover:bg-red-100 transition-colors cursor-pointer"
+                          data-testid={`mission-overdue-${os.id}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-[10px] font-black text-red-800 font-mono">{os.osNumber}</span>
+                            <Badge className="bg-red-600 text-white border-0 font-bold text-[9px] animate-pulse">
+                              <AlertCircle className="w-2.5 h-2.5 mr-1" /> ATRASADA
+                            </Badge>
+                          </div>
+                          <p className="text-xs font-bold text-neutral-900 truncate">{os.clientName || "—"}</p>
+                          <div className="space-y-0.5 mt-1.5 text-[10px] text-neutral-600">
+                            {os.origin && (
+                              <div className="flex items-start gap-1">
+                                <MapPin className="w-3 h-3 mt-0.5 text-red-600 flex-shrink-0" />
+                                <span className="truncate">{os.origin}</span>
+                              </div>
+                            )}
+                            {os.destination && (
+                              <div className="flex items-start gap-1">
+                                <ChevronRight className="w-3 h-3 mt-0.5 text-red-600 flex-shrink-0" />
+                                <span className="truncate">{os.destination}</span>
+                              </div>
+                            )}
+                            {(os.employee1 || os.employee2) && (
+                              <div className="flex items-center gap-1 pt-0.5">
+                                <User className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+                                <span className="truncate font-semibold">
+                                  {[os.employee1?.name, os.employee2?.name].filter(Boolean).join(" / ")}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between gap-1 pt-1 mt-1 border-t border-red-200">
+                              <span className="text-[10px] text-red-700 font-semibold">
+                                <Clock className="w-3 h-3 inline mr-1" />
+                                Prevista {fmtScheduled(os.scheduledDate)}
+                              </span>
+                              <span className="text-[10px] font-black text-white bg-red-600 px-1.5 py-0.5 rounded">
+                                {fmtOverdue(os.scheduledDate, nowMs)}
+                              </span>
+                            </div>
+                          </div>
+                        </a>
+                      </Link>
+                    ))}
 
                     {active.map((os) => (
                       <Link key={os.id} href={`/admin/operational-grid?os=${os.id}`}>
