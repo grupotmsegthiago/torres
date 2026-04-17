@@ -289,6 +289,12 @@ export default function BoletimMedicaoPage() {
     if (period === "mes") {
       return { start: new Date(brNow.getFullYear(), brNow.getMonth(), 1), end: new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1) };
     }
+    if (period === "quinzena1") {
+      return { start: new Date(brNow.getFullYear(), brNow.getMonth(), 1), end: new Date(brNow.getFullYear(), brNow.getMonth(), 16) };
+    }
+    if (period === "quinzena2") {
+      return { start: new Date(brNow.getFullYear(), brNow.getMonth(), 16), end: new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1) };
+    }
     return { start: new Date(brNow.getFullYear(), 0, 1), end: new Date(brNow.getFullYear() + 1, 0, 1) };
   };
 
@@ -574,6 +580,8 @@ export default function BoletimMedicaoPage() {
             <option value="">Período</option>
             <option value="hoje">Hoje</option>
             <option value="semana">Esta Semana</option>
+            <option value="quinzena1">1ª Quinzena (1 a 15)</option>
+            <option value="quinzena2">2ª Quinzena (16 a 31)</option>
             <option value="mes">Este Mês</option>
             <option value="ano">Este Ano</option>
           </select>
