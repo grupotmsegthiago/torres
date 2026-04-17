@@ -581,21 +581,9 @@ export function registerAsaasRoutes(app: Express) {
         throw error;
       }
 
-      if (data && clientEmail) {
-        sendBillingEmail({
-          id: data.id,
-          client_name: clientName,
-          value: parseFloat(value),
-          due_date: dueDate,
-          billing_type: billingType || "BOLETO",
-          description: description || DESCRICAO_SERVICO_FIXA,
-          invoice_url: invoiceUrl,
-          bank_slip_url: bankSlipUrl,
-          nfse_url: data.nfse_url || null,
-          pix_copia_e_cola: pixCopiaECola,
-          service_order_id: serviceOrderId || null,
-        }, clientEmail).catch(e => console.error(`[billing-email] async error: ${e.message}`));
-      }
+      // [Política] E-mail de faturamento NÃO é enviado automaticamente na criação.
+      // Será disparado somente quando a NF for anexada (POST /api/invoices/:id/attach-nf).
+      console.log(`[billing-email] Fatura #${data.id} criada — aguardando anexo de NF para envio.`);
 
       res.json(data);
     } catch (err: any) {
@@ -644,7 +632,7 @@ export function registerAsaasRoutes(app: Express) {
       const { nf_anexo_url } = req.body;
       if (!nf_anexo_url) return res.status(400).json({ message: "URL do anexo da NF é obrigatória" });
 
-      const { data: existing } = await supabaseAdmin.from("invoices").select("id").eq("id", id).single();
+      const { data: existing } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!existing) return res.status(404).json({ message: "Fatura não encontrada" });
 
       const { data, error } = await supabaseAdmin
@@ -663,6 +651,36 @@ export function registerAsaasRoutes(app: Express) {
         details: `NF anexada à fatura #${id}`,
         ipAddress: (req as any).ip,
       });
+
+      // [Política] E-mail de faturamento é enviado APENAS após anexar a NF.
+      // Se já foi enviado antes (re-anexo), não envia novamente.
+      if (!existing.email_sent) {
+        let clientEmail = "";
+        if (existing.client_id) {
+          const { data: cli } = await supabaseAdmin.from("clients").select("email, email_financeiro").eq("id", existing.client_id).single();
+          clientEmail = cli?.email_financeiro || cli?.email || "";
+        }
+        if (clientEmail) {
+          sendBillingEmail({
+            id: existing.id,
+            client_name: existing.client_name,
+            value: Number(existing.value),
+            due_date: existing.due_date,
+            billing_type: existing.billing_type,
+            description: existing.description,
+            invoice_url: existing.invoice_url,
+            bank_slip_url: existing.bank_slip_url,
+            nfse_url: nf_anexo_url || existing.nfse_url || null,
+            pix_copia_e_cola: existing.pix_copia_e_cola,
+            service_order_id: existing.service_order_id || null,
+          }, clientEmail).catch(e => console.error(`[billing-email] async error após attach-nf: ${e.message}`));
+          console.log(`[billing-email] Disparando envio para ${clientEmail} (fatura #${id} — NF anexada)`);
+        } else {
+          console.log(`[billing-email] Fatura #${id}: NF anexada porém cliente sem e-mail cadastrado.`);
+        }
+      } else {
+        console.log(`[billing-email] Fatura #${id}: NF re-anexada — e-mail já havia sido enviado, não reenvia.`);
+      }
 
       res.json(data);
     } catch (err: any) {
