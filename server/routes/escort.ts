@@ -1392,9 +1392,8 @@ import type { Express } from "express";
 
       const previousStatus = billing.status;
       const { data, error } = await supabaseAdmin.from("escort_billings").update({
-        status: "A_VERIFICAR",
-        revisado_por: null,
-        revisado_em: null,
+        status: "APROVADA",
+        invoice_id: null,
         boletim_gerado: false,
       }).eq("id", req.params.id).select().single();
       if (error) throw error;
@@ -1402,10 +1401,14 @@ import type { Express } from "express";
       await removeAutoTransaction("escort_billing", req.params.id);
       await removeAutoTransaction("service_order", String(billing.service_order_id));
 
+      if (billing.service_order_id) {
+        await supabaseAdmin.from("service_orders").update({ status: "concluida" }).eq("id", billing.service_order_id);
+      }
+
       await logSystemAudit({
         userId: user.id, userName: user.name, userRole: user.role,
         action: "LIBERAR_REFATURAMENTO", targetId: req.params.id, targetType: "escort_billing",
-        details: `OS #${billing.service_order_id} liberada para refaturamento. Status anterior: ${previousStatus}. Cliente: ${billing.client_name}`,
+        details: `OS #${billing.service_order_id} liberada para refaturamento (APROVADA). Status anterior: ${previousStatus}. Cliente: ${billing.client_name}`,
         ipAddress: req.ip,
       });
 
