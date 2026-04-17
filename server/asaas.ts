@@ -1253,7 +1253,11 @@ export function registerAsaasRoutes(app: Express) {
         buf = Buffer.from(html, "utf-8");
       }
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("Cache-Control", "no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
       res.removeHeader("Content-Security-Policy");
+      res.removeHeader("ETag");
+      res.removeHeader("Last-Modified");
       res.send(buf);
     } catch (err: any) {
       console.error("[asaas] nfse-pdf error:", err.message);
