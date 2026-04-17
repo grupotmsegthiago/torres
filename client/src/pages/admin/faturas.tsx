@@ -607,6 +607,10 @@ export default function FaturasPage() {
           {showDetail && (
             <InvoiceDetailDialog
               invoice={showDetail}
+              clientEmiteNf={(() => {
+                const c = clients.find((cl: any) => cl.id === showDetail.client_id);
+                return c ? c.emite_nf !== false : true;
+              })()}
               onClose={() => setShowDetail(null)}
               onSync={() => syncMutation.mutate(showDetail.id)}
               onResend={() => resendMutation.mutate(showDetail.id)}
@@ -1116,8 +1120,9 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
   );
 }
 
-function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria, onEmitir }: {
+function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria, onEmitir }: {
   invoice: Invoice;
+  clientEmiteNf?: boolean;
   onClose: () => void;
   onSync: () => void;
   onResend: () => void;
@@ -1341,7 +1346,17 @@ function InvoiceDetailDialog({ invoice, onClose, onSync, onResend, onDelete, onM
             </div>
           )}
 
-          <NfseControlSection invoice={invoice} isDiretoria={isDiretoria} />
+          {clientEmiteNf ? (
+            <NfseControlSection invoice={invoice} isDiretoria={isDiretoria} />
+          ) : (
+            <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-neutral-700">Cliente isento de Nota Fiscal</p>
+                <p className="text-[10px] text-neutral-500">Esta fatura é apenas boleto/cobrança. Nenhuma NFS-e será emitida.</p>
+              </div>
+            </div>
+          )}
 
           {invoice.pix_qr_code && (
             <div className="text-center bg-white border rounded-xl p-4">
