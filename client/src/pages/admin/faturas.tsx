@@ -153,7 +153,9 @@ export default function FaturasPage() {
     const vencidas = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).length;
     const vencidasTotal = invoices.filter(i => i.status === "OVERDUE" || (i.status === "PENDING" && new Date(i.due_date + "T23:59:59") < new Date())).reduce((s, i) => s + parseFloat(i.value || "0"), 0);
     const canceladas = invoices.filter(i => i.status === "CANCELLED").length;
-    return { aguardandoCount, aguardandoTotal, emAberto, emAbertoCount, pagas, pagasCount, vencidas, vencidasTotal, canceladas, total: invoices.length };
+    const totalGeral = invoices.filter(i => i.status !== "CANCELLED").reduce((s, i) => s + parseFloat(i.value || "0"), 0);
+    const totalGeralCount = invoices.filter(i => i.status !== "CANCELLED").length;
+    return { aguardandoCount, aguardandoTotal, emAberto, emAbertoCount, pagas, pagasCount, vencidas, vencidasTotal, canceladas, totalGeral, totalGeralCount, total: invoices.length };
   }, [invoices]);
 
   const syncMutation = useMutation({
@@ -292,7 +294,19 @@ export default function FaturasPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            <Card className="p-4 bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-md border-0 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                  <DollarSign className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-indigo-100 uppercase font-bold tracking-wider">Total</p>
+                  <p className="text-xl font-black text-white" data-testid="text-total-geral">{fmt(totals.totalGeral)}</p>
+                  <p className="text-[10px] text-indigo-100 font-semibold">{totals.totalGeralCount} fatura{totals.totalGeralCount !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            </Card>
             {totals.aguardandoCount > 0 && (
               <Card className="p-4 bg-white shadow-sm border-l-4 border-l-orange-400 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setStatusFilter("AGUARDANDO_FATURAMENTO")}>
                 <div className="flex items-center gap-3">
