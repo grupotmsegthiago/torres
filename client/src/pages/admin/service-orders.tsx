@@ -2147,20 +2147,21 @@ export default function ServiceOrdersPage() {
             return "pendente";
           };
           let filtered = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
-          if (filterStatus) {
+          const isSearching = !!searchOS.trim();
+          if (filterStatus && !isSearching) {
             if (filterStatus === "reaproveitada") {
               filtered = filtered.filter(o => o.priority === "reaproveitamento");
             } else {
               filtered = filtered.filter(o => getOsStatusKey(o) === filterStatus);
             }
           }
-          if (filterClient) {
+          if (filterClient && !isSearching) {
             filtered = filtered.filter(o => o.clientId === filterClient);
           }
-          if (filterAuthorizer) {
+          if (filterAuthorizer && !isSearching) {
             filtered = filtered.filter(o => (o as any).createdByUserId === filterAuthorizer);
           }
-          if (filterPeriod) {
+          if (filterPeriod && !isSearching) {
             const now = new Date();
             const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
             const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -2213,24 +2214,24 @@ export default function ServiceOrdersPage() {
           return (
           <div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm table-fixed" data-testid="table-orders">
+            <table className="w-full text-sm" style={{ minWidth: 1400 }} data-testid="table-orders">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="w-[5%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">OS</th>
-                  <th className="w-[12%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cliente</th>
-                  <th className="w-[5%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
-                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Prior.</th>
-                  <th className="w-[8%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
-                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
-                  <th className="w-[8%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
-                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Agendado</th>
-                  <th className="w-[10%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Origem</th>
-                  <th className="w-[10%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Destino</th>
-                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída</th>
-                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Dest.</th>
-                  <th className="w-[6%] text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim</th>
-                  <th className="w-[7%] text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Autoriz.</th>
-                  <th className="w-[8%] text-right px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">OS</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" style={{ minWidth: 160 }}>Cliente</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Prior.</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Kit</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Missão</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wider whitespace-nowrap bg-blue-50">Agendado</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" style={{ minWidth: 140 }}>Origem</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider" style={{ minWidth: 140 }}>Destino</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Saída</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Cheg. Dest.</th>
+                  <th className="text-center px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Fim</th>
+                  <th className="text-left px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap">Autoriz.</th>
+                  <th className="text-right px-2 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider whitespace-nowrap" style={{ minWidth: 200 }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -2362,7 +2363,7 @@ export default function ServiceOrdersPage() {
                       return <span className={isAdmin ? "font-semibold text-neutral-800" : "text-neutral-600"}>{u.name}</span>;
                     })()}</td>
                     <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-1 flex-wrap">
+                      <div className="flex items-center justify-end gap-1 flex-nowrap">
                         {(o.status === "aberta" || o.status === "agendada") && !o.missionStatus && (
                           <Button
                             variant="ghost"

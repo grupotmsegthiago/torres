@@ -1578,7 +1578,7 @@ import type { Express } from "express";
         if (so.status === "recusada") return false;
         const startBRT = missionStartBRT(so);
         if (so.status === "em_andamento") return true;
-        const isConcluded = so.status === "concluida" || so.status === "concluída" || so.status === "cancelada" ||
+        const isConcluded = so.status === "concluida" || so.status === "concluída" ||
           so.missionStatus === "encerrada" || so.missionStatus === "finalizada";
         if (isConcluded) {
           const sdBRT = extractDatePart(so.scheduledDate);
@@ -1593,7 +1593,7 @@ import type { Express } from "express";
       });
       const todayOsIds = new Set(todayEscoltaOs.map((so: any) => so.id));
 
-      const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada").map((so: any) => so.id));
+      const recusadaOsIds = new Set(allOrders.filter((so: any) => so.status === "recusada" || so.status === "cancelada").map((so: any) => so.id));
       const items = (billings || []).filter((b: any) => !todayOsIds.has(b.service_order_id) && !recusadaOsIds.has(b.service_order_id));
 
       for (const so of todayEscoltaOs) {
