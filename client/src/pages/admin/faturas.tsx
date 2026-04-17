@@ -499,11 +499,11 @@ export default function FaturasPage() {
                               {fmtDate(inv.due_date)}
                             </span>
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <span className="text-xs text-neutral-500">{BILLING_TYPES[inv.billing_type] || inv.billing_type}</span>
+                          <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap">{BILLING_TYPES[inv.billing_type] || inv.billing_type}</span>
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <div className="flex items-center gap-1">
+                          <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                            <div className="flex items-center gap-1 whitespace-nowrap">
                               {inv.asaas_payment_id ? (
                                 <Badge className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200">
                                   {inv.status}
