@@ -199,6 +199,26 @@ export default function BoletimMedicaoPage() {
     onError: (err: Error) => toast({ title: "Erro ao liberar", description: err.message, variant: "destructive" }),
   });
 
+  const liberarFaturamentoBulkMutation = useMutation({
+    mutationFn: async (billingIds: string[]) => {
+      const results = await Promise.allSettled(
+        billingIds.map(id => apiRequest("POST", `/api/escort/billings/${id}/liberar-faturamento`))
+      );
+      const ok = results.filter(r => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      return { ok, fail };
+    },
+    onSuccess: ({ ok, fail }) => {
+      invalidateAllRelated();
+      if (fail === 0) {
+        toast({ title: "Liberadas", description: `${ok} nota(s) liberada(s) para refaturamento.` });
+      } else {
+        toast({ title: "Liberação parcial", description: `${ok} liberada(s), ${fail} com erro.`, variant: fail > 0 ? "destructive" : "default" });
+      }
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
   const salvarMedicaoMutation = useMutation({
     mutationFn: async (payload: { billingId: string; [key: string]: any }) => {
       const { billingId, ...data } = payload;
@@ -1044,6 +1064,28 @@ export default function BoletimMedicaoPage() {
                                             <Mail size={12} />
                                             Enviar p/ Cliente
                                           </button>
+                                          {(() => {
+                                            const liberables = checkedInGroup.filter(o => {
+                                              const st = (o.billing?.status || "").toUpperCase();
+                                              return st === "FATURADO" || st === "FATURADA" || st === "PAGO";
+                                            });
+                                            if (liberables.length === 0) return null;
+                                            return (
+                                              <button
+                                                onClick={() => {
+                                                  if (!confirm(`Liberar ${liberables.length} OS faturada(s) para refaturamento? O status voltará para 'A Verificar' e a cobrança vinculada precisará ser regerada.`)) return;
+                                                  const ids = liberables.map(o => String(o.billing!.id));
+                                                  liberarFaturamentoBulkMutation.mutate(ids);
+                                                }}
+                                                disabled={liberarFaturamentoBulkMutation.isPending}
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-amber-700 transition-all shadow-sm disabled:opacity-50"
+                                                data-testid={`button-liberar-refaturar-bulk-${group.clientId}`}
+                                              >
+                                                {liberarFaturamentoBulkMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                                                Liberar p/ Refaturar ({liberables.length})
+                                              </button>
+                                            );
+                                          })()}
                                           <button
                                             onClick={() => {
                                               const billingIds = checkedInGroup.map(o => o.billing?.id).filter(Boolean);
