@@ -1385,7 +1385,8 @@ import type { Express } from "express";
       const user = req.user!;
       const { data: billing, error: fetchErr } = await supabaseAdmin.from("escort_billings").select("*").eq("id", req.params.id).single();
       if (fetchErr || !billing) return res.status(404).json({ message: "Registro não encontrado" });
-      if (billing.status !== "FATURADO" && billing.status !== "PAGO") {
+      const st = String(billing.status || "").toUpperCase();
+      if (st !== "FATURADO" && st !== "FATURADA" && st !== "PAGO") {
         return res.status(400).json({ message: "Somente notas com status 'Faturado' ou 'Pago' podem ser liberadas" });
       }
 
