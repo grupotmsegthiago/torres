@@ -351,6 +351,7 @@ export default function BoletimMedicaoPage() {
     return daysSince > (Number(o.clientPrazoAprovacaoDias) || 10);
   }).length;
   const getBillingTotal = (o: any) => {
+    if (o.status === "recusada" || o.status === "cancelada") return 0;
     const b = o.billing;
     if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
@@ -375,7 +376,7 @@ export default function BoletimMedicaoPage() {
     }
   };
 
-  const isLiveOs = (os: any) => (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
+  const isLiveOs = (os: any) => os.status !== "recusada" && os.status !== "cancelada" && (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
 
   const exportBoletimExcel = () => {
     if (periodFilteredOs.length === 0) return;
@@ -936,6 +937,7 @@ export default function BoletimMedicaoPage() {
                               const checkedInGroup = group.orders.filter(o => checkedOsIds.has(o.id));
                               const checkedCount = checkedInGroup.length;
                               const checkedTotal = checkedInGroup.reduce((acc, o) => {
+                                if (o.status === "recusada" || o.status === "cancelada") return acc;
                                 const b = o.billing;
                                 return acc + Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.receitas_os || 0);
                               }, 0);
