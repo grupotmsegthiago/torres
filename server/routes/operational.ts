@@ -45,10 +45,10 @@ import type { Express } from "express";
           return matchDate >= qFrom && matchDate <= qTo;
         }
 
-        if (sdBRT && sdBRT > todayBRT) return false;
         if ((o.status === "em_andamento" || o.status === "aberta" || o.status === "agendada") && o.missionStatus !== "encerrada") {
           return true;
         }
+        if (sdBRT && sdBRT > todayBRT) return false;
         const isConcluida = o.status === "concluida" || o.status === "concluída";
         if (isConcluida || o.missionStatus === "encerrada" || o.status === "cancelada" || o.status === "recusada") {
           const udBRT = o.updatedAt ? new Date(o.updatedAt).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
