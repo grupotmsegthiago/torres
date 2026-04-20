@@ -292,7 +292,7 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
         updatePayload.email = emails[0].trim();
         const additionalEmails = emails.slice(1).map((e: string) => e.trim()).join(",");
         if (additionalEmails) updatePayload.additionalEmails = additionalEmails;
-        updatePayload.notificationDisabled = false;
+        updatePayload.notificationDisabled = true;
       }
       if (!existing.addressNumber && address) {
         const parsed = parseAddress(address);
@@ -321,7 +321,7 @@ async function findOrCreateAsaasCustomer(name: string, cpfCnpj: string, email?: 
   const customerPayload: any = {
     name,
     cpfCnpj: cleanDoc,
-    notificationDisabled: false,
+    notificationDisabled: true,
     ...parsed,
   };
   if (primaryEmail) customerPayload.email = primaryEmail;
@@ -488,7 +488,7 @@ export function registerAsaasRoutes(app: Express) {
           dueDate,
           description,
           externalReference: serviceOrderId ? `OS-${serviceOrderId}` : undefined,
-          notificationDisabled: false,
+          notificationDisabled: true,
         };
         if (emiteNf) {
           paymentPayload.postalService = false;
@@ -968,7 +968,7 @@ export function registerAsaasRoutes(app: Express) {
         dueDate,
         description: (invoice.description || `Escolta Armada — ${clientName}`).substring(0, 500),
         externalReference: invoice.external_reference || `FATURA-${id}`,
-        notificationDisabled: false,
+        notificationDisabled: true,
       };
 
       if (emiteNf) {
@@ -1536,7 +1536,7 @@ export function registerAsaasRoutes(app: Express) {
             dueDate: invoiceDueDate,
             description: descricaoFiscal.substring(0, 500),
             externalReference: `FATURA-${clientId}-${now.getTime()}`,
-            notificationDisabled: false,
+            notificationDisabled: true,
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
