@@ -1337,6 +1337,9 @@ import type { Express } from "express";
       if (acao === "REJEITADA") {
         await removeAutoTransaction("escort_billing", req.params.id);
         await removeAutoTransaction("service_order", String(billing.service_order_id));
+        if (billing.service_order_id) {
+          await supabaseAdmin.from("service_orders").update({ status: "recusada", mission_status: "encerrada" }).eq("id", billing.service_order_id);
+        }
         await logSystemAudit({
           userId: user.id, userName: user.name, userRole: user.role,
           action: "REJEITAR_MISSAO", targetId: req.params.id, targetType: "escort_billing",
