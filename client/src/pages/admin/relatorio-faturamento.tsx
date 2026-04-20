@@ -218,7 +218,7 @@ export default function RelatorioFaturamentoPage() {
       (vehiclesData || []).forEach((v: any) => vehiclesMap.set(v.id, v));
 
       const approved = (billingsData || [])
-        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "PAGO")
+        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "RECUSADA")
         .map((b: any) => {
           const so = ordersMap.get(b.service_order_id);
           if (so) {
@@ -231,6 +231,7 @@ export default function RelatorioFaturamentoPage() {
             if (!b.placa_escoltado && so.escortedVehiclePlate) b.placa_escoltado = so.escortedVehiclePlate;
             if (!b.os_number && so.osNumber) b.os_number = so.osNumber;
             if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
+            b._so_status = so.status;
           }
           return b;
         });
@@ -378,11 +379,13 @@ export default function RelatorioFaturamentoPage() {
       const kmExcedente = n(b.km_excedente) || Math.max(0, kmTotal - franquiaKm);
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
-      const fatHoraExtra = n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100;
-      const fatKmExtra = n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100;
-      const fatPedagio = n(b.despesas_pedagio);
-      const receitasOs = n(b.receitas_os);
-      const fatTotal = n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs);
+      const isRecusada = b.status === "RECUSADA" || b._so_status === "recusada" || b._so_status === "cancelada";
+      const fatHoraExtra = isRecusada ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
+      const fatKmExtra = isRecusada ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
+      const fatPedagio = isRecusada ? 0 : n(b.despesas_pedagio);
+      const receitasOs = isRecusada ? 0 : n(b.receitas_os);
+      const valorAcionamentoFinal = isRecusada ? 0 : valorAcionamento;
+      const fatTotal = isRecusada ? 0 : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs));
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";
@@ -397,7 +400,7 @@ export default function RelatorioFaturamentoPage() {
         id: osNum,
         billingId: b.id,
         route: routeStr,
-        activationFee: valorAcionamento,
+        activationFee: valorAcionamentoFinal,
         franchiseHours: franquiaHoras,
         franchiseKm: franquiaKm,
         unitHr: valorHoraExtra,
