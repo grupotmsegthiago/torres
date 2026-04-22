@@ -123,7 +123,9 @@ function computePerVehicleData(fuelings: VehicleFueling[], vehicles: Vehicle[]) 
     const intervals = computeValidIntervals(sorted);
     const kmSum = intervals.reduce((s, i) => s + i.km, 0);
     const litersSum = intervals.reduce((s, i) => s + i.liters, 0);
+    const costSum = intervals.reduce((s, i) => s + (i.cost || 0), 0);
     if (litersSum > 0 && kmSum > 0) avgKmL = kmSum / litersSum;
+    const costPerKm = kmSum > 0 && costSum > 0 ? costSum / kmSum : 0;
 
     return {
       vehicle: v,
@@ -131,6 +133,8 @@ function computePerVehicleData(fuelings: VehicleFueling[], vehicles: Vehicle[]) 
       totalLiters,
       totalCost,
       avgKmL,
+      kmDriven: kmSum,
+      costPerKm,
       lastKm: sorted.length > 0 ? sorted[sorted.length - 1].km : 0,
       lastDate: records.length > 0 ? [...records].sort((a, b) => b.date.localeCompare(a.date))[0].date : null,
     };
@@ -967,11 +971,14 @@ export default function FuelingPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {perVehicle.map(pv => {
+              {(() => {
+                const leaderId = perVehicle.reduce<{ id: number | null; avg: number }>((acc, p) => p.avgKmL > acc.avg ? { id: p.vehicle.id, avg: p.avgKmL } : acc, { id: null, avg: 0 }).id;
+                return perVehicle.map(pv => {
                 const isExpanded = expandedVehicle === pv.vehicle.id;
                 const vehicleFuelings = (fuelings || []).filter(f => f.vehicleId === pv.vehicle.id);
                 const history = computeConsumptionHistory(vehicleFuelings);
-                const avgOk = pv.avgKmL >= 7;
+                const isLeader = leaderId === pv.vehicle.id && pv.avgKmL > 0;
+                const belowGlobal = pv.avgKmL > 0 && stats.avgKmPerLiter > 0 && pv.avgKmL < stats.avgKmPerLiter * 0.9;
                 return (
                   <Card key={pv.vehicle.id} className="bg-white border-neutral-200 overflow-hidden" data-testid={`card-vehicle-consumption-${pv.vehicle.id}`}>
                     <div
@@ -983,7 +990,14 @@ export default function FuelingPage() {
                           <Fuel className="w-5 h-5 text-neutral-600" />
                         </div>
                         <div>
-                          <p className="font-bold text-neutral-900">{pv.vehicle.plate}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-neutral-900">{pv.vehicle.plate}</p>
+                            {isLeader && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1.5 py-0.5" data-testid={`badge-leader-${pv.vehicle.id}`}>
+                                <TrendingUp className="w-3 h-3" /> Líder de Eficiência
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-neutral-500">{pv.vehicle.model} {pv.vehicle.brand}</p>
                         </div>
                       </div>
@@ -1002,14 +1016,18 @@ export default function FuelingPage() {
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-neutral-400">Média</p>
-                          <p className={`font-bold flex items-center gap-1 ${pv.avgKmL > 0 ? (avgOk ? "text-green-600" : "text-red-600") : "text-neutral-400"}`}>
+                          <p className={`font-bold flex items-center gap-1 ${pv.avgKmL > 0 ? (belowGlobal ? "text-red-600" : isLeader ? "text-emerald-600" : "text-green-600") : "text-neutral-400"}`} data-testid={`text-avg-${pv.vehicle.id}`}>
                             {pv.avgKmL > 0 ? (
                               <>
-                                {!avgOk && <AlertTriangle className="w-3 h-3" />}
+                                {belowGlobal && <AlertTriangle className="w-3 h-3" />}
                                 {pv.avgKmL.toFixed(2)} km/L
                               </>
                             ) : "-"}
                           </p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-neutral-400">Custo/KM</p>
+                          <p className="font-bold text-neutral-900" data-testid={`text-cost-per-km-${pv.vehicle.id}`}>{pv.costPerKm > 0 ? `R$ ${pv.costPerKm.toFixed(2)}` : "-"}</p>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-neutral-400">Último KM</p>
@@ -1076,7 +1094,8 @@ export default function FuelingPage() {
                     )}
                   </Card>
                 );
-              })}
+              });
+              })()}
             </div>
           )}
         </div>

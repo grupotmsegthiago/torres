@@ -1,0 +1,17 @@
+Para implementar essas melhorias no seu sistema **TMSEGo** dentro do Replit, você precisa de um prompt que foque na lógica de cálculo (Backend/Supabase) e na exibição visual (Frontend).
+Como você está unificando a "Fonte da Verdade" no Backend, o ideal é pedir ao Replit para criar as funções de cálculo lá.
+Aqui está um prompt estruturado que você pode copiar e adaptar:
+### Prompt para o Replit (Foco em Análise de Frota)
+> "Preciso atualizar o módulo de frotas do sistema TMSEGo. Com base na tabela de abastecimentos do Supabase, implemente as seguintes melhorias na lógica e no componente de dashboard:
+>  1. **Cálculo de Custo/KM por Veículo:** Crie uma função que calcule o gasto total dividido pela quilometragem percorrida de cada viatura individualmente, e não apenas a média global.
+>  2. **Sistema de Alertas de Consumo:** Implemente uma lógica que compare a média de cada veículo com a média global da frota. Se o consumo de um veículo for 10% pior que a média global (ex: o Polo UEB7H08 que está fazendo 13.93 km/L), o valor da média deve aparecer em vermelho ou com um ícone de alerta.
+>  3. **Identificação de 'Melhor da Frota':** Destaque automaticamente o veículo com a melhor média de km/L com um badge 'Líder de Eficiência'.
+>  4. **Interface:** No componente de lista (Consumo por Veículo), adicione uma nova coluna chamada 'Custo por KM' e aplique a formatação de moeda brasileira (R$).
+>  5. **Persistência:** Garanta que esses cálculos sejam processados no Backend e atualizados via Supabase em tempo real sempre que um novo abastecimento for inserido."
+> 
+### Dicas Técnicas para o seu Sistema:
+ * **No Supabase:** Verifique se você tem as colunas km_inicial e km_final ou distancia_percorrida em cada entrada de abastecimento. Sem isso, o cálculo de "Custo por KM" fica impreciso.
+ * **Lógica de Cores:** Peça ao Replit para usar uma condicional simples no CSS/Tailwind:
+   * if (mediaVeiculo < mediaGlobal * 0.9) { color: 'red' }
+ * **KPI de Decisão:** Adicione um campo de "Projeção de Economia". Se a viatura UEB7H08 (a que gasta mais) chegasse à média da UER7D08 (a melhor), quanto você economizaria no mês? Isso é ótimo para mostrar para os seus 6 funcionários em uma reunião de feedback.
+**Precisa que eu ajude a ajustar o código de alguma função específica de cálculo que você já tem no Replit?**
