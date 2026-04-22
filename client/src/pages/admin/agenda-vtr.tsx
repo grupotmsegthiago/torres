@@ -382,7 +382,7 @@ export default function AgendaVtrPage() {
 function getMondayBRT(d: Date) {
   const ymd = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   const [y, m, day] = ymd.split("-").map(Number);
-  const local = new Date(Date.UTC(y, m - 1, day));
+  const local = new Date(Date.UTC(y, m - 1, day, 12, 0, 0));
   const dow = local.getUTCDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   local.setUTCDate(local.getUTCDate() + diff);
@@ -390,7 +390,23 @@ function getMondayBRT(d: Date) {
 }
 
 function ymdToBRT(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fmtDayMonth(d: Date) {
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${day}/${m}`;
+}
+
+function fmtDayMonthYear(d: Date) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${day}/${m}/${y}`;
 }
 
 function osDateBRT(iso: string) {
@@ -427,11 +443,7 @@ function OrphanWeekCalendar({ orders }: { orders: GridOs[] }) {
     byDay[k].sort((a, b) => new Date(a.scheduledDate!).getTime() - new Date(b.scheduledDate!).getTime());
   }
 
-  const weekLabel = (() => {
-    const a = days[0].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-    const b = days[6].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-    return `${a} → ${b}`;
-  })();
+  const weekLabel = `${fmtDayMonth(days[0])} → ${fmtDayMonthYear(days[6])}`;
 
   const shift = (n: number) => {
     const d = new Date(weekStart);
@@ -475,7 +487,7 @@ function OrphanWeekCalendar({ orders }: { orders: GridOs[] }) {
                 <div className={`px-2 py-2 border-b text-center sticky top-0 ${isToday ? "bg-amber-100 border-amber-300" : "bg-neutral-50 border-neutral-200"}`}>
                   <p className={`text-[10px] font-black uppercase tracking-wider ${isToday ? "text-amber-800" : "text-neutral-500"}`}>{dayLabels[i]}</p>
                   <p className={`text-sm font-black ${isToday ? "text-amber-900" : "text-neutral-800"}`}>
-                    {d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                    {fmtDayMonth(d)}
                   </p>
                   {list.length > 0 && (
                     <span className="inline-block mt-0.5 text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded px-1">
