@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Car, Radio, Clock, MapPin, Calendar, User, AlertCircle, ChevronRight, Activity } from "lucide-react";
+import { Loader2, Car, Radio, Clock, MapPin, Calendar, User, AlertCircle, ChevronRight, Activity, ChevronLeft } from "lucide-react";
 import AdminLayout from "@/components/admin/layout";
 
 type GridOs = {
@@ -372,32 +373,174 @@ export default function AgendaVtrPage() {
         </div>
       )}
 
-      {orphanOrders.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/40">
-          <div className="px-4 py-3 border-b border-amber-200 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600" />
-            <p className="text-xs font-black text-amber-800 uppercase tracking-wider">
-              {orphanOrders.length} OS sem viatura alocada
-            </p>
-          </div>
-          <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-            {orphanOrders.map((os) => (
+      <OrphanWeekCalendar orders={orphanOrders} />
+    </div>
+    </AdminLayout>
+  );
+}
+
+function getMondayBRT(d: Date) {
+  const ymd = d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const [y, m, day] = ymd.split("-").map(Number);
+  const local = new Date(Date.UTC(y, m - 1, day));
+  const dow = local.getUTCDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  local.setUTCDate(local.getUTCDate() + diff);
+  return local;
+}
+
+function ymdToBRT(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function osDateBRT(iso: string) {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+function osTimeBRT(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+}
+
+function OrphanWeekCalendar({ orders }: { orders: GridOs[] }) {
+  const [weekStart, setWeekStart] = useState<Date>(() => getMondayBRT(new Date()));
+
+  const days = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart);
+      d.setUTCDate(d.getUTCDate() + i);
+      return d;
+    });
+  }, [weekStart]);
+
+  const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const dayLabels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+  const undated: GridOs[] = [];
+  const byDay: Record<string, GridOs[]> = {};
+  for (const d of days) byDay[ymdToBRT(d)] = [];
+  for (const o of orders) {
+    if (!o.scheduledDate) { undated.push(o); continue; }
+    const ymd = osDateBRT(o.scheduledDate);
+    if (byDay[ymd]) byDay[ymd].push(o);
+  }
+  for (const k of Object.keys(byDay)) {
+    byDay[k].sort((a, b) => new Date(a.scheduledDate!).getTime() - new Date(b.scheduledDate!).getTime());
+  }
+
+  const weekLabel = (() => {
+    const a = days[0].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const b = days[6].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return `${a} → ${b}`;
+  })();
+
+  const shift = (n: number) => {
+    const d = new Date(weekStart);
+    d.setUTCDate(d.getUTCDate() + n * 7);
+    setWeekStart(d);
+  };
+
+  if (orders.length === 0) return null;
+
+  return (
+    <Card className="border-amber-200 bg-white">
+      <div className="px-4 py-3 border-b border-amber-200 flex items-center justify-between gap-3 flex-wrap bg-amber-50/40">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600" />
+          <p className="text-xs font-black text-amber-800 uppercase tracking-wider">
+            {orders.length} OS sem viatura — agenda semanal
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => shift(-1)} data-testid="button-prev-week">
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-[11px] font-bold" onClick={() => setWeekStart(getMondayBRT(new Date()))} data-testid="button-this-week">
+            Esta semana
+          </Button>
+          <span className="text-[11px] font-bold text-neutral-600 min-w-[160px] text-center" data-testid="text-week-label">{weekLabel}</span>
+          <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => shift(1)} data-testid="button-next-week">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="grid grid-cols-7 min-w-[700px] divide-x divide-neutral-200">
+          {days.map((d, i) => {
+            const ymd = ymdToBRT(d);
+            const isToday = ymd === todayYmd;
+            const list = byDay[ymd] || [];
+            return (
+              <div key={ymd} className={`flex flex-col ${isToday ? "bg-amber-50/30" : "bg-white"}`} data-testid={`col-day-${ymd}`}>
+                <div className={`px-2 py-2 border-b text-center sticky top-0 ${isToday ? "bg-amber-100 border-amber-300" : "bg-neutral-50 border-neutral-200"}`}>
+                  <p className={`text-[10px] font-black uppercase tracking-wider ${isToday ? "text-amber-800" : "text-neutral-500"}`}>{dayLabels[i]}</p>
+                  <p className={`text-sm font-black ${isToday ? "text-amber-900" : "text-neutral-800"}`}>
+                    {d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                  </p>
+                  {list.length > 0 && (
+                    <span className="inline-block mt-0.5 text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded px-1">
+                      {list.length}
+                    </span>
+                  )}
+                </div>
+                <div className="p-1.5 space-y-1.5 min-h-[280px]">
+                  {list.length === 0 && (
+                    <p className="text-[10px] text-neutral-300 text-center pt-6">—</p>
+                  )}
+                  {list.map((os) => (
+                    <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
+                      <a
+                        className="block bg-white border border-amber-300 rounded-md p-1.5 hover:border-amber-500 hover:bg-amber-50 transition-colors shadow-sm"
+                        data-testid={`orphan-os-${os.id}`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-[9px] font-black text-amber-700 bg-amber-100 px-1 py-0.5 rounded">
+                            {osTimeBRT(os.scheduledDate!)}
+                          </span>
+                          <span className="text-[9px] font-black text-neutral-500 font-mono">{os.osNumber}</span>
+                        </div>
+                        <p className="text-[10px] font-bold text-neutral-800 leading-tight line-clamp-2">{os.clientName || "—"}</p>
+                        {os.origin && (
+                          <p className="text-[9px] text-neutral-500 truncate mt-0.5 flex items-center gap-0.5">
+                            <MapPin className="w-2.5 h-2.5 flex-shrink-0 text-amber-500" />
+                            <span className="truncate">{os.origin}</span>
+                          </p>
+                        )}
+                        {os.destination && (
+                          <p className="text-[9px] text-neutral-400 truncate flex items-center gap-0.5">
+                            <ChevronRight className="w-2.5 h-2.5 flex-shrink-0" />
+                            <span className="truncate">{os.destination}</span>
+                          </p>
+                        )}
+                      </a>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {undated.length > 0 && (
+        <div className="border-t border-neutral-200 bg-neutral-50/50 p-3">
+          <p className="text-[10px] font-black text-neutral-500 uppercase tracking-wider mb-2">{undated.length} sem data agendada</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {undated.map((os) => (
               <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
-                <a className="block bg-white border border-amber-200 rounded-lg p-2.5 hover:border-amber-400 transition-colors" data-testid={`orphan-os-${os.id}`}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                <a className="block bg-white border border-amber-200 rounded-md p-2 hover:border-amber-400 transition-colors" data-testid={`orphan-undated-${os.id}`}>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="text-[10px] font-black text-neutral-700 font-mono">{os.osNumber}</span>
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">{os.status}</span>
+                    <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1 rounded">SEM DATA</span>
                   </div>
-                  <p className="text-xs font-semibold text-neutral-800 truncate">{os.clientName || "—"}</p>
-                  <p className="text-[10px] text-neutral-500 truncate mt-0.5">{os.origin}</p>
-                  <p className="text-[10px] text-neutral-400 truncate">→ {os.destination}</p>
+                  <p className="text-[11px] font-semibold text-neutral-800 truncate">{os.clientName || "—"}</p>
+                  <p className="text-[10px] text-neutral-400 truncate">{os.origin} → {os.destination}</p>
                 </a>
               </Link>
             ))}
           </div>
-        </Card>
+        </div>
       )}
-    </div>
-    </AdminLayout>
+    </Card>
   );
 }
