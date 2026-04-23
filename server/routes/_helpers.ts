@@ -36,7 +36,7 @@ export async function resilientSupabaseSingle(
 }
 
 export function nowBRTString(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "");
+  return new Date().toISOString();
 }
 
 export function parseEmailList(raw: string | null | undefined): string[] {
