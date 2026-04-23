@@ -513,15 +513,15 @@ function OrphanWeekCalendar({ orders }: { orders: GridOs[] }) {
                         </div>
                         <p className="text-[10px] font-bold text-neutral-800 leading-tight break-words">{os.clientName || "—"}</p>
                         {os.origin && (
-                          <p className="text-[9px] text-neutral-600 mt-0.5 flex items-start gap-0.5 leading-tight">
-                            <MapPin className="w-2.5 h-2.5 flex-shrink-0 text-amber-500 mt-0.5" />
-                            <span className="break-words">{os.origin}</span>
+                          <p className="text-[9px] text-neutral-600 mt-0.5 flex items-start gap-1 leading-tight">
+                            <MapPin className="w-3 h-3 flex-shrink-0 text-emerald-600 mt-0.5" fill="currentColor" />
+                            <span className="break-words"><span className="font-bold text-emerald-700">Origem:</span> {os.origin}</span>
                           </p>
                         )}
                         {os.destination && (
-                          <p className="text-[9px] text-neutral-500 flex items-start gap-0.5 leading-tight">
-                            <ChevronRight className="w-2.5 h-2.5 flex-shrink-0 mt-0.5" />
-                            <span className="break-words">{os.destination}</span>
+                          <p className="text-[9px] text-neutral-600 mt-0.5 flex items-start gap-1 leading-tight">
+                            <MapPin className="w-3 h-3 flex-shrink-0 text-red-600 mt-0.5" fill="currentColor" />
+                            <span className="break-words"><span className="font-bold text-red-700">Destino:</span> {os.destination}</span>
                           </p>
                         )}
                       </a>
