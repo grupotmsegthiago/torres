@@ -6049,7 +6049,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                           </p>
                           <p className="text-[10px] text-neutral-500 font-medium">
-                            {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                            {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}
                           </p>
                         </div>
                       )}
@@ -6163,7 +6163,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
                       </p>
                       <p className="text-xs text-blue-600 font-medium">
-                        {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                        {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}
                       </p>
                       {timeUntil && (
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${timeUntil === "Já passou" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
