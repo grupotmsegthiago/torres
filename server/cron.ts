@@ -883,10 +883,16 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     const todayStart = todayBRT + "T00:00:00";
     const todayEnd = todayBRT + "T23:59:59";
 
-    const [billingsRes, transactionsRes, clientsRes] = await Promise.all([
+    const histStart = new Date(new Date(todayBRT + "T00:00:00").getTime() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10) + "T00:00:00";
+    const histEnd = new Date(new Date(todayBRT + "T00:00:00").getTime() - 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10) + "T23:59:59";
+
+    const [billingsRes, transactionsRes, clientsRes, histBillingsRes] = await Promise.all([
       supabaseAdmin.from("escort_billings").select("*").gte("data_missao", todayStart).lte("data_missao", todayEnd),
       supabaseAdmin.from("financial_transactions").select("*"),
       supabaseAdmin.from("clients").select("id, name, company_name"),
+      supabaseAdmin.from("escort_billings").select("km_total,pag_total,pag_vrp,pag_periculosidade,pag_adicional_noturno,pag_reembolsos,desp_total,desp_pedagio,despesas_pedagio,desp_combustivel,despesas_combustivel,desp_outras,despesas_outras").gte("data_missao", histStart).lte("data_missao", histEnd),
     ]);
 
     const allOrders = await storage.getServiceOrders();
@@ -974,6 +980,33 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     const custoTotal = custoEscolta + despesas;
     const resultado = fatTotal + receitas - custoTotal;
     const margem = fatTotal > 0 ? (resultado / (fatTotal + receitas)) * 100 : 0;
+
+    let histKmTotal = 0;
+    let histCustoTotal = 0;
+    for (const b of (histBillingsRes.data || [])) {
+      const km = Number(b.km_total) || 0;
+      if (km <= 0) continue;
+      const pag = Number(b.pag_total) || (Number(b.pag_vrp) || 0) + (Number(b.pag_periculosidade) || 0) + (Number(b.pag_adicional_noturno) || 0) + (Number(b.pag_reembolsos) || 0);
+      const desp = Number(b.desp_total) || (Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0) + (Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0) + (Number(b.desp_outras) || Number(b.despesas_outras) || 0);
+      histKmTotal += km;
+      histCustoTotal += pag + desp;
+    }
+    const custoPorKmHist = histKmTotal > 0 ? histCustoTotal / histKmTotal : 0;
+    const custoPorKmHoje = kmTotal > 0 ? custoEscolta / kmTotal : 0;
+    const variacaoPct = custoPorKmHist > 0 && custoPorKmHoje > 0
+      ? ((custoPorKmHoje - custoPorKmHist) / custoPorKmHist) * 100
+      : 0;
+
+    let custoKmStatus: { color: string; bg: string; label: string; msg: string };
+    if (kmTotal <= 0 || custoPorKmHist <= 0) {
+      custoKmStatus = { color: "#475569", bg: "#f1f5f9", label: "Sem base de comparação", msg: "Ainda não há histórico suficiente para avaliar." };
+    } else if (variacaoPct <= 10) {
+      custoKmStatus = { color: "#15803d", bg: "#dcfce7", label: "Dentro do esperado", msg: "Custo por km está alinhado com a média dos últimos 30 dias." };
+    } else if (variacaoPct <= 25) {
+      custoKmStatus = { color: "#a16207", bg: "#fef3c7", label: "Atenção", msg: `Custo por km ${variacaoPct.toFixed(1)}% acima da média histórica. Revisar combustível, pedágio e horas extras.` };
+    } else {
+      custoKmStatus = { color: "#b91c1c", bg: "#fee2e2", label: "Acima do padrão", msg: `Custo por km ${variacaoPct.toFixed(1)}% acima da média histórica. Operação cara — investigar despesas e roteirização.` };
+    }
 
     const activeEmps = employees.filter(e => e.status === "ativo");
 
@@ -1108,6 +1141,26 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
           <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despesas)}</td>
         </tr>` : ""}
       </table>
+
+      <div style="background:${custoKmStatus.bg};border-radius:8px;padding:14px 16px;margin-bottom:20px;border-left:4px solid ${custoKmStatus.color};">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#475569;font-weight:600;">Análise de Custo por KM</div>
+        <div style="font-size:16px;font-weight:700;color:${custoKmStatus.color};margin-top:4px;">${custoKmStatus.label}</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
+          <tr>
+            <td style="font-size:12px;color:#64748b;padding:4px 0;">Hoje (custo/km)</td>
+            <td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmt(custoPorKmHoje)}/km</td>
+          </tr>
+          <tr>
+            <td style="font-size:12px;color:#64748b;padding:4px 0;">Média 30 dias</td>
+            <td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmt(custoPorKmHist)}/km</td>
+          </tr>
+          ${custoPorKmHist > 0 && custoPorKmHoje > 0 ? `<tr>
+            <td style="font-size:12px;color:#64748b;padding:4px 0;">Variação</td>
+            <td style="font-size:13px;font-weight:700;text-align:right;color:${custoKmStatus.color};padding:4px 0;">${variacaoPct >= 0 ? "+" : ""}${variacaoPct.toFixed(1)}%</td>
+          </tr>` : ""}
+        </table>
+        <div style="font-size:12px;color:#475569;margin-top:8px;line-height:1.4;">${custoKmStatus.msg}</div>
+      </div>
 
       <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px;">
         <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#334155;">Operações do Dia</div>
