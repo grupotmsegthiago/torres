@@ -976,9 +976,11 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
       const createdDate = extractDateBRT(t.created_at);
       return dueDate === todayBRT || payDate === todayBRT || createdDate === todayBRT;
     });
+    const AUTO_ORIGINS = new Set(["mission_cost", "payroll", "fueling", "escort_billing"]);
     let despesas = 0;
     let receitas = 0;
     for (const t of todayTx) {
+      if (AUTO_ORIGINS.has(String(t.origin_type || ""))) continue;
       const amt = Math.abs(Number(t.amount) || 0);
       if (t.type === "EXPENSE" || t.type === "despesa") despesas += amt;
       else if (t.type === "INCOME" || t.type === "receita") receitas += amt;
