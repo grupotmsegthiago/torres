@@ -1280,7 +1280,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Cliente *</FieldLabel>
                 <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value), escortContractId: "" })} className={selectClass} required data-testid="select-os-client">
                   <option value={0}>Selecione...</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{titleCase(c.name)}</option>)}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
                 </select>
               </div>
               {form.clientId > 0 && clientContracts.length > 0 && (

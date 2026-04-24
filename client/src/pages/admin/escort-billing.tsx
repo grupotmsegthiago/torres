@@ -594,7 +594,7 @@ export default function EscortBillingPage() {
                   <Card key={c.id} onClick={() => setSelectedClient(c)} data-testid={`card-client-${c.id}`}
                     className="p-5 border-neutral-200 shadow-sm hover:shadow-lg transition-all cursor-pointer group hover:border-neutral-400">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-black text-neutral-800 uppercase group-hover:text-black transition-colors">{c.name}</h3>
+                      <h3 className="text-sm font-black text-neutral-800 uppercase group-hover:text-black transition-colors">{(c as any).nomeFantasia || (c as any).nome_fantasia || c.name}</h3>
                       <ChevronRight size={16} className="text-neutral-300 group-hover:text-neutral-600 transition-colors" />
                     </div>
                     <p className="text-[10px] font-mono text-neutral-500 mb-3">{c.cnpj || "CNPJ não cadastrado"}</p>

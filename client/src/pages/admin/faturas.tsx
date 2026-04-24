@@ -694,7 +694,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
               </SelectTrigger>
               <SelectContent>
                 {clients.map((c: any) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  <SelectItem key={c.id} value={String(c.id)}>{c.nomeFantasia || c.nome_fantasia || c.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
