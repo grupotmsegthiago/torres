@@ -846,12 +846,17 @@ export function initCronJobs() {
     }
   });
 
-  cron.schedule("59 23 * * *", () => {
-    log("CRON ResumoDiario: Gerando resumo financeiro do dia (23:59 BRT)", "cron");
-    sendDailySummaryEmail().catch(err => log(`CRON ResumoDiario: Erro: ${err.message}`, "cron"));
-  }, { timezone: "America/Sao_Paulo" });
+  const RESUMO_INTERVAL_MS = 3.5 * 60 * 60 * 1000;
+  setInterval(() => {
+    log("CRON ResumoFinanceiro: Disparando resumo da diretoria (a cada 3h30)", "cron");
+    sendDailySummaryEmail().catch(err => log(`CRON ResumoFinanceiro: Erro: ${err.message}`, "cron"));
+  }, RESUMO_INTERVAL_MS);
+  setTimeout(() => {
+    log("CRON ResumoFinanceiro: Primeiro disparo (5min após boot)", "cron");
+    sendDailySummaryEmail().catch(err => log(`CRON ResumoFinanceiro: Erro: ${err.message}`, "cron"));
+  }, 5 * 60 * 1000);
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoDiario (diário 23:59 BRT)", "cron");
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (a cada 3h30 — diretoria)", "cron");
 }
 
 function getCronMailTransporter() {
@@ -868,7 +873,7 @@ function getCronMailTransporter() {
   });
 }
 
-const DIRETORIA_EMAIL_DEFAULT = "diretoria@torresseguranca.com.br,thiago@grupotmseg.com.br";
+const DIRETORIA_EMAIL_DEFAULT = "diretoria@torresseguranca.com.br";
 function getDiretoriaRecipients(): string[] {
   const raw = process.env.DIRETORIA_EMAIL || DIRETORIA_EMAIL_DEFAULT;
   return raw.split(/[,;]+/).map(s => s.trim()).filter(s => /.+@.+\..+/.test(s));

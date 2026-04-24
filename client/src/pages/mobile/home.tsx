@@ -2,7 +2,7 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign, TrendingUp } from "lucide-react";
+import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign } from "lucide-react";
 
 export default function MobileHomePage() {
   const { user } = useAuth();
@@ -91,26 +91,6 @@ export default function MobileHomePage() {
             <p className="text-sm font-bold text-neutral-700">Nenhuma missão ativa</p>
             <p className="text-xs text-neutral-400 mt-1">Aguarde a atribuição de uma nova OS</p>
           </div>
-        )}
-
-        {(user?.role === "diretoria" || user?.role === "admin") && (
-          <Link href="/mobile/resumo-financeiro">
-            <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-2xl p-4 text-white active:from-emerald-700 active:to-emerald-900 transition-colors" data-testid="link-resumo-financeiro">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[2px] opacity-70">Diretoria</p>
-                    <p className="text-sm font-black uppercase tracking-wider">Resumo Financeiro</p>
-                    <p className="text-[10px] text-white/70 mt-0.5">Saldo, faturamento, metas e gastos</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-white/60" />
-              </div>
-            </div>
-          </Link>
         )}
 
         <div className="grid grid-cols-2 gap-3">
