@@ -99,9 +99,10 @@ export default function MobileResumoFinanceiroPage() {
     }
   }, [user, setLocation]);
 
-  const { data, isLoading, refetch, isFetching, dataUpdatedAt } = useQuery<ResumoDiretoria>({
+  const { data, isLoading, refetch, isFetching } = useQuery<ResumoDiretoria>({
     queryKey: ["/api/financeiro/resumo-diretoria"],
     refetchInterval: 3 * 60 * 60 * 1000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     enabled: !!user && (user.role === "diretoria" || user.role === "admin"),
   });
@@ -133,7 +134,9 @@ export default function MobileResumoFinanceiroPage() {
     );
   }
 
-  const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
+  const lastUpdate = data?.generatedAt
+    ? new Date(data.generatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "—";
 
   return (
     <MobileLayout>
@@ -154,7 +157,7 @@ export default function MobileResumoFinanceiroPage() {
               <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
             </button>
           </div>
-          <p className="text-[10px] text-white/50 mt-3">Atualizado às {lastUpdate} · Auto a cada 3h</p>
+          <p className="text-[10px] text-white/50 mt-3">Gerado em {lastUpdate} (BRT) · Auto a cada 3h</p>
         </div>
 
         <div className={`rounded-2xl p-4 border-l-4 ${data.asaas.connected ? "bg-emerald-50 border-emerald-500" : "bg-amber-50 border-amber-500"}`} data-testid="card-asaas-balance">

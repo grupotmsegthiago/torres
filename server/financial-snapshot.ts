@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase";
 import { storage } from "./storage";
 import { getAsaasBalance } from "./asaas";
+import { calcularFaturamentoLive, calcHorasElapsedLocal, extractKmFromText, haversineDistanceKm } from "./billing-calc";
 
 const META_DIARIA_VIATURA = 1800;
 const isActiveVehicle = (v: any) => v.status !== "inativo" && !!(v.trackerId || v.truckscontrolIdentifier);
@@ -157,6 +158,7 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     transactionsRes,
     clientsRes,
     vehiclesRes,
+    contractsRes,
     asaasBalance,
   ] = await Promise.all([
     supabaseAdmin.from("escort_billings").select("*").gte("data_missao", todayStart).lte("data_missao", todayEnd),
@@ -166,8 +168,17 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     supabaseAdmin.from("financial_transactions").select("*").gte("created_at", monthStartYmd + "T00:00:00").lte("created_at", monthEndYmd + "T23:59:59"),
     supabaseAdmin.from("clients").select("id, name, company_name"),
     supabaseAdmin.from("vehicles").select("*"),
+    supabaseAdmin.from("escort_contracts").select("*"),
     getAsaasBalance(),
   ]);
+
+  const contractById = new Map<number, any>();
+  const contractByClient = new Map<number, any>();
+  for (const c of (contractsRes.data || [])) {
+    contractById.set(c.id, c);
+    if (c.status === "Ativo" && c.client_id) contractByClient.set(c.client_id, c);
+  }
+  const defaultContrato = { valor_km_carregado: 2.80, valor_km_vazio: 1.40, valor_km_extra: 2.40, franquia_minima_km: 50, franquia_km: 50, franquia_horas: 3, valor_hora_estadia: 50, valor_hora_extra: 110, valor_acionamento: 0 };
 
   const allOrders = await storage.getServiceOrders();
   const employees = await storage.getEmployees();
@@ -221,7 +232,6 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     kmTotal += Number((so as any).km_total_calculado) || 0;
   }
 
-  const nowMs = Date.now();
   let fatExtraLive = 0;
   const ordensOut: ResumoDiretoria["ordens"] = [];
 
@@ -239,15 +249,31 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     let horasMissao = 0;
     let fatLive = fat;
     let isLive = false;
-    if (!isCancelledStatus(so.status) && (so as any).missionStartedAt && so.status !== "concluida" && so.status !== "concluída") {
-      const startMs = new Date((so as any).missionStartedAt).getTime();
-      if (!isNaN(startMs) && startMs <= nowMs) {
-        horasMissao = (nowMs - startMs) / 3600000;
-        const franquiaHoras = Number(billing?.franquia_horas) || 3;
-        const valorHE = Number(billing?.valor_hora_extra) || 110;
-        const heLive = Math.max(0, horasMissao - franquiaHoras) * valorHE;
-        const heExisting = Number(billing?.fat_hora_extra) || 0;
-        const delta = Math.max(0, heLive - heExisting);
+    const isFinalized = so.status === "concluida" || so.status === "concluída" || so.missionStatus === "encerrada";
+    if (!isCancelledStatus(so.status) && !isFinalized && (so as any).missionStartedAt) {
+      horasMissao = calcHorasElapsedLocal((so as any).missionStartedAt, undefined);
+      if (horasMissao > 0) {
+        const contrato = (so as any).escortContractId && contractById.has((so as any).escortContractId)
+          ? contractById.get((so as any).escortContractId)
+          : ((so as any).clientId && contractByClient.has((so as any).clientId)
+            ? contractByClient.get((so as any).clientId)
+            : defaultContrato);
+
+        const kmInicial = Number(billing?.km_inicial) || 0;
+        const kmFinal = Number(billing?.km_final) || kmInicial;
+        let kmRota: number | undefined = extractKmFromText((so as any).destination) || extractKmFromText((so as any).route) || undefined;
+        if (!kmRota && (so as any).originLat && (so as any).originLng && (so as any).destinationLat && (so as any).destinationLng) {
+          const haversineKm = haversineDistanceKm(
+            Number((so as any).originLat), Number((so as any).originLng),
+            Number((so as any).destinationLat), Number((so as any).destinationLng),
+          );
+          kmRota = Math.round(haversineKm * 1.4);
+          if ((so as any).pedagioIdaVolta) kmRota *= 2;
+        }
+
+        const liveCalc = calcularFaturamentoLive({ horasMissao, kmInicial, kmFinal, contrato, kmRota });
+        const baseFat = billing ? billingFat(billing) : 0;
+        const delta = Math.max(0, liveCalc.fat_total - baseFat);
         if (delta > 0) {
           fatLive = fat + delta;
           fatExtraLive += delta;

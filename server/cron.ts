@@ -875,8 +875,8 @@ function fmtBR(v: number): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function fmtPct(v: number): string {
-  return `${v >= 0 ? "" : ""}${v.toFixed(1)}%`;
+function fmtBRTDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function pctBarColor(pct: number): string {
@@ -1010,6 +1010,7 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;">Torres Vigilância Patrimonial</div>
           <div class="hero-title" style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Financeiro — Diretoria</div>
           <div style="font-size:14px;opacity:0.85;margin-top:4px;">${snap.diaSemana}, ${snap.dataLabel}</div>
+          <div style="font-size:11px;opacity:0.6;margin-top:6px;">Gerado em ${fmtBRTDateTime(snap.generatedAt)} (BRT)</div>
         </td></tr>
 
         <tr><td class="pad" style="padding:20px 24px;">
@@ -1119,8 +1120,7 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
         </td></tr>
 
         <tr><td class="pad" style="background:#f8fafc;padding:16px 24px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
-          Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89<br>
-          Relatório gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+          Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89
         </td></tr>
 
       </table>
