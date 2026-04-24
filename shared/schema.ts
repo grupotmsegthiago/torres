@@ -37,6 +37,7 @@ export type PerfilAcesso = typeof perfisAcesso.$inferSelect;
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  razaoSocial: text("razao_social"),
   cnpj: text("cnpj"),
   cpf: text("cpf"),
   email: text("email"),

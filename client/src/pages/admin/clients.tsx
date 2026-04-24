@@ -257,6 +257,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
 
   const [form, setForm] = useState({
     name: client?.name || "",
+    razaoSocial: (client as any)?.razaoSocial || (client as any)?.razao_social || "",
     cnpj: client?.cnpj || "",
     cpf: client?.cpf || "",
     email: client?.email || "",
@@ -289,7 +290,8 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       const phone = data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : form.phone;
       setForm((prev) => ({
         ...prev,
-        name: data.razao_social || prev.name,
+        razaoSocial: data.razao_social || prev.razaoSocial,
+        name: data.nome_fantasia || data.razao_social || prev.name,
         email: data.email && data.email !== "" ? data.email : prev.email,
         phone,
         address: [data.logradouro, data.numero, data.complemento].filter(Boolean).join(", ") || prev.address,
@@ -297,7 +299,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         state: data.uf || prev.state,
         zip: data.cep ? data.cep.replace(/(\d{5})(\d{3})/, "$1-$2") : prev.zip,
       }));
-      toast({ title: "CNPJ encontrado", description: data.razao_social });
+      toast({ title: "CNPJ encontrado", description: data.nome_fantasia || data.razao_social });
     } catch {
       toast({ title: "CNPJ não encontrado", description: "Verifique o número e tente novamente", variant: "destructive" });
     } finally {
@@ -374,8 +376,14 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <p className="text-xs text-neutral-500 mt-1.5">Digite o CNPJ para preencher automaticamente</p>
         </div>
         <div>
-          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome / Razão Social *</label>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome do Tomador de Serviço *</label>
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="input-client-name" />
+          <p className="text-xs text-neutral-500 mt-1">Nome usado na NF, boletim, fatura e relatórios</p>
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Razão Social</label>
+          <Input value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} data-testid="input-client-razao-social" />
+          <p className="text-xs text-neutral-500 mt-1">Nome legal completo (usado em contratos)</p>
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CPF</label>
