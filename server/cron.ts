@@ -846,10 +846,10 @@ export function initCronJobs() {
     }
   });
 
-  cron.schedule("59 2 * * *", () => {
+  cron.schedule("59 23 * * *", () => {
     log("CRON ResumoDiario: Gerando resumo financeiro do dia (23:59 BRT)", "cron");
     sendDailySummaryEmail().catch(err => log(`CRON ResumoDiario: Erro: ${err.message}`, "cron"));
-  });
+  }, { timezone: "America/Sao_Paulo" });
 
   log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoDiario (diário 23:59 BRT)", "cron");
 }
@@ -868,7 +868,11 @@ function getCronMailTransporter() {
   });
 }
 
-const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br";
+const DIRETORIA_EMAIL_DEFAULT = "diretoria@torresseguranca.com.br,thiago@grupotmseg.com.br";
+function getDiretoriaRecipients(): string[] {
+  const raw = process.env.DIRETORIA_EMAIL || DIRETORIA_EMAIL_DEFAULT;
+  return raw.split(/[,;]+/).map(s => s.trim()).filter(s => /.+@.+\..+/.test(s));
+}
 
 
 function fmtBR(v: number): string {
@@ -1135,15 +1139,26 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
     const from = `"Torres Vigilância - Sistema" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
 
-    await transporter.sendMail({
-      from,
-      to: DIRETORIA_EMAIL,
-      subject: `📊 Resumo Diretoria — ${snap.dataLabel} | Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`,
-      html,
-    });
+    const recipients = getDiretoriaRecipients();
+    if (recipients.length === 0) {
+      const msg = "Nenhum destinatário válido configurado (defina DIRETORIA_EMAIL com lista separada por vírgula)";
+      log(`CRON ResumoDiario: ${msg}`, "cron");
+      return { success: false, message: msg };
+    }
 
-    log(`CRON ResumoDiario: E-mail enviado para ${DIRETORIA_EMAIL} — Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`, "cron");
-    return { success: true, message: `E-mail enviado para ${DIRETORIA_EMAIL}` };
+    try {
+      const info = await transporter.sendMail({
+        from,
+        to: recipients.join(", "),
+        subject: `📊 Resumo Diretoria — ${snap.dataLabel} | Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`,
+        html,
+      });
+      log(`CRON ResumoDiario: E-mail enviado para [${recipients.join(", ")}] (msgId=${info.messageId}, accepted=${(info.accepted||[]).length}, rejected=${(info.rejected||[]).length}) — Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`, "cron");
+      return { success: true, message: `E-mail enviado para ${recipients.join(", ")}` };
+    } catch (sendErr: any) {
+      log(`CRON ResumoDiario: Falha SMTP ao enviar para [${recipients.join(", ")}]: ${sendErr.message} (code=${sendErr.code || "?"}, response=${sendErr.response || "?"})`, "cron");
+      return { success: false, message: `Falha SMTP: ${sendErr.message}` };
+    }
   } catch (err: any) {
     log(`CRON ResumoDiario: Erro: ${err.message}`, "cron");
     return { success: false, message: err.message };
