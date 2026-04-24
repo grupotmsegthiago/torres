@@ -50,6 +50,10 @@ export default function RelatorioAbastecimentoPage() {
   });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"] });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const { data: dashboard } = useQuery<{ byMission: { data: string; km_total: number; status?: string }[] }>({
+    queryKey: ["/api/financial/dashboard"],
+    staleTime: 60_000,
+  });
 
   const vMap = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles]);
   const eMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
@@ -100,6 +104,24 @@ export default function RelatorioAbastecimentoPage() {
     return { total, gastoTotal, litrosTotal, gasCount, ethCount };
   }, [sorted]);
 
+  const eficienciaGeral = useMemo(() => {
+    const litrosPeriodo = fuelings.reduce((s, f) => {
+      if (dateFrom && f.date < dateFrom) return s;
+      if (dateTo && f.date > dateTo) return s;
+      return s + (Number(f.liters) || 0);
+    }, 0);
+    const kmPeriodo = (dashboard?.byMission || []).reduce((s, m) => {
+      if (!m.data) return s;
+      if ((m.status || "").toLowerCase() === "recusada") return s;
+      const d = String(m.data).slice(0, 10);
+      if (dateFrom && d < dateFrom) return s;
+      if (dateTo && d > dateTo) return s;
+      return s + (Number(m.km_total) || 0);
+    }, 0);
+    const mediaKmL = kmPeriodo > 0 && litrosPeriodo > 0 ? kmPeriodo / litrosPeriodo : 0;
+    return { kmPeriodo, litrosPeriodo, mediaKmL };
+  }, [fuelings, dashboard, dateFrom, dateTo]);
+
   const detailFueling = detailId ? fuelings.find(f => f.id === detailId) : null;
 
   const exportCSV = () => {
@@ -134,7 +156,7 @@ export default function RelatorioAbastecimentoPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <Card className="p-3 bg-blue-50 border-blue-200">
             <p className="text-xs text-blue-600 font-medium">Abastecimentos</p>
             <p className="text-2xl font-bold text-blue-900" data-testid="text-total-count">{stats.total}</p>
@@ -154,6 +176,15 @@ export default function RelatorioAbastecimentoPage() {
           <Card className="p-3 bg-purple-50 border-purple-200">
             <p className="text-xs text-purple-600 font-medium">Etanol</p>
             <p className="text-2xl font-bold text-purple-900" data-testid="text-eth-count">{stats.ethCount}</p>
+          </Card>
+          <Card className="p-3 bg-teal-50 border-teal-200" data-testid="card-eficiencia-geral">
+            <p className="text-xs text-teal-600 font-medium">Eficiência Geral</p>
+            <p className="text-2xl font-bold text-teal-900" data-testid="text-eficiencia-geral">
+              {eficienciaGeral.mediaKmL > 0 ? `${eficienciaGeral.mediaKmL.toFixed(1)} km/L` : "--"}
+            </p>
+            <p className="text-[10px] text-teal-700 mt-0.5" data-testid="text-eficiencia-geral-base">
+              {eficienciaGeral.kmPeriodo.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} km / {eficienciaGeral.litrosPeriodo.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} L
+            </p>
           </Card>
         </div>
 
