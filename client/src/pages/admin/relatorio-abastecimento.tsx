@@ -104,23 +104,47 @@ export default function RelatorioAbastecimentoPage() {
     return { total, gastoTotal, litrosTotal, gasCount, ethCount };
   }, [sorted]);
 
+  // Eficiência REAL (tanque-a-tanque, baseada no hodômetro):
+  // Para cada viatura, soma o km rodado entre dois abastecimentos cuja
+  // recarga (segundo abastecimento) caiu dentro do período, e divide
+  // pelos litros desse abastecimento. Esse é o único método que casa
+  // litros consumidos com km efetivamente rodados, eliminando o ruído
+  // de "abasteci hoje, mas o combustível vai durar mais 3 dias".
   const eficienciaGeral = useMemo(() => {
-    const litrosPeriodo = fuelings.reduce((s, f) => {
-      if (dateFrom && f.date < dateFrom) return s;
-      if (dateTo && f.date > dateTo) return s;
-      return s + (Number(f.liters) || 0);
-    }, 0);
-    const kmPeriodo = (dashboard?.byMission || []).reduce((s, m) => {
-      if (!m.data) return s;
-      if ((m.status || "").toLowerCase() === "recusada") return s;
-      const d = String(m.data).slice(0, 10);
-      if (dateFrom && d < dateFrom) return s;
-      if (dateTo && d > dateTo) return s;
-      return s + (Number(m.km_total) || 0);
-    }, 0);
+    const byVehicle = new Map<number, { date: string; km: number; liters: number }[]>();
+    fuelings.forEach((f) => {
+      if (!f.vehicleId) return;
+      if (!byVehicle.has(f.vehicleId)) byVehicle.set(f.vehicleId, []);
+      byVehicle.get(f.vehicleId)!.push({
+        date: String(f.date).slice(0, 10),
+        km: Number(f.km) || 0,
+        liters: Number(f.liters) || 0,
+      });
+    });
+
+    let kmPeriodo = 0;
+    let litrosPeriodo = 0;
+    byVehicle.forEach((list) => {
+      const sorted = [...list].sort((a, b) => {
+        if (a.km !== b.km) return a.km - b.km;
+        return a.date.localeCompare(b.date);
+      });
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const cur = sorted[i];
+        if (dateFrom && cur.date < dateFrom) continue;
+        if (dateTo && cur.date > dateTo) continue;
+        const kmGap = cur.km - prev.km;
+        if (kmGap <= 0 || kmGap > 3000) continue;
+        if (cur.liters <= 0) continue;
+        kmPeriodo += kmGap;
+        litrosPeriodo += cur.liters;
+      }
+    });
+
     const mediaKmL = kmPeriodo > 0 && litrosPeriodo > 0 ? kmPeriodo / litrosPeriodo : 0;
     return { kmPeriodo, litrosPeriodo, mediaKmL };
-  }, [fuelings, dashboard, dateFrom, dateTo]);
+  }, [fuelings, dateFrom, dateTo]);
 
   const detailFueling = detailId ? fuelings.find(f => f.id === detailId) : null;
 

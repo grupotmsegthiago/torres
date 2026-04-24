@@ -139,6 +139,7 @@ interface FuelingEntry {
   totalCost: number;
   liters: number;
   vehicleId: number;
+  km: number;
 }
 
 interface MissionCostEntry {
@@ -368,41 +369,60 @@ export default function BalancoGerencialPage() {
       }
     });
 
-    const litersByPlate: Record<string, number> = {};
+    // Agrupa TODOS os abastecimentos (sem filtro de data) por viatura.
+    // O abastecimento ANTERIOR ao período é necessário para calcular
+    // o km rodado entre tanques cuja recarga caiu dentro do período.
+    const byVehicle = new Map<number, { date: string; km: number; liters: number }[]>();
     (data.fuelingByAgent || []).forEach((f) => {
-      if (!f.date) return;
-      const fDate = String(f.date).slice(0, 10);
-      if (fDate < startStr || fDate > endStr) return;
-      const plate = idToPlate[f.vehicleId];
-      if (!plate) return;
-      litersByPlate[plate] = (litersByPlate[plate] || 0) + (f.liters || 0);
-    });
-
-    const kmByPlate: Record<string, number> = {};
-    filtered.missions.forEach((m) => {
-      const plate = m.placa_viatura;
-      if (!plate) return;
-      kmByPlate[plate] = (kmByPlate[plate] || 0) + (m.km_total || 0);
+      if (!f.vehicleId || !f.date) return;
+      if (!byVehicle.has(f.vehicleId)) byVehicle.set(f.vehicleId, []);
+      byVehicle.get(f.vehicleId)!.push({
+        date: String(f.date).slice(0, 10),
+        km: Number(f.km) || 0,
+        liters: Number(f.liters) || 0,
+      });
     });
 
     const perVehicle: { plate: string; model: string; km: number; liters: number; kmL: number }[] = [];
-    const allPlates = new Set<string>([...Object.keys(litersByPlate), ...Object.keys(kmByPlate)]);
-    allPlates.forEach((plate) => {
-      const km = kmByPlate[plate] || 0;
-      const liters = litersByPlate[plate] || 0;
-      if (km > 0 && liters > 0) {
-        perVehicle.push({ plate, model: plateToModel[plate] || "", km, liters, kmL: km / liters });
+    let totalKm = 0;
+    let totalLiters = 0;
+
+    byVehicle.forEach((list, vehicleId) => {
+      const plate = idToPlate[vehicleId];
+      if (!plate) return;
+      // Ordena por km ascendente (hodômetro). Em empate de km, usa data.
+      const sorted = [...list].sort((a, b) => {
+        if (a.km !== b.km) return a.km - b.km;
+        return a.date.localeCompare(b.date);
+      });
+      let vKm = 0;
+      let vLiters = 0;
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const cur = sorted[i];
+        // Considera só intervalos cuja recarga (cur) caiu no período.
+        if (cur.date < startStr || cur.date > endStr) continue;
+        const kmGap = cur.km - prev.km;
+        // Sanidade: km deve ser positivo e razoável; descarta hodômetro
+        // zerado, troca de viatura ou erro de digitação (>3000 km).
+        if (kmGap <= 0 || kmGap > 3000) continue;
+        if (cur.liters <= 0) continue;
+        vKm += kmGap;
+        vLiters += cur.liters;
+      }
+      if (vKm > 0 && vLiters > 0) {
+        perVehicle.push({ plate, model: plateToModel[plate] || "", km: vKm, liters: vLiters, kmL: vKm / vLiters });
+        totalKm += vKm;
+        totalLiters += vLiters;
       }
     });
 
     perVehicle.sort((a, b) => a.kmL - b.kmL);
-    const totalKm = Object.values(kmByPlate).reduce((a, v) => a + v, 0);
-    const totalLiters = Object.values(litersByPlate).reduce((a, v) => a + v, 0);
     const mediaKmL = totalKm > 0 && totalLiters > 0 ? totalKm / totalLiters : 0;
     const abaixo = perVehicle.filter((v) => v.kmL < 14);
 
     return { mediaKmL, totalKm, totalLiters, perVehicle, abaixo };
-  }, [data, filtered.missions, allVehicles, range]);
+  }, [data, allVehicles, range]);
 
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
     { id: "BALANCO", label: "Balanço", icon: BarChart3 },
