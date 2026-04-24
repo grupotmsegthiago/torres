@@ -370,7 +370,9 @@ export default function BalancoGerencialPage() {
 
     const litersByPlate: Record<string, number> = {};
     (data.fuelingByAgent || []).forEach((f) => {
-      if (!f.date || f.date < startStr || f.date > endStr) return;
+      if (!f.date) return;
+      const fDate = String(f.date).slice(0, 10);
+      if (fDate < startStr || fDate > endStr) return;
       const plate = idToPlate[f.vehicleId];
       if (!plate) return;
       litersByPlate[plate] = (litersByPlate[plate] || 0) + (f.liters || 0);
@@ -642,7 +644,7 @@ export default function BalancoGerencialPage() {
           })()}
         </div>
 
-        <Dialog open={showEficienciaModal} onOpenChange={setShowEficienciaModal}>
+        {isDiretoria && <Dialog open={showEficienciaModal} onOpenChange={setShowEficienciaModal}>
           <DialogContent className="max-w-2xl" data-testid="modal-eficiencia">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -687,7 +689,7 @@ export default function BalancoGerencialPage() {
               </div>
             )}
           </DialogContent>
-        </Dialog>
+        </Dialog>}
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
           <div className="flex overflow-x-auto gap-1">
