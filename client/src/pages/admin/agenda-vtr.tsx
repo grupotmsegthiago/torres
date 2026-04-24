@@ -22,6 +22,8 @@ type GridOs = {
   employee1?: { name: string } | null;
   employee2?: { name: string } | null;
   type?: string | null;
+  vehicleDayTotal?: number | null;
+  vehicleDayIndex?: number | null;
   liveCost?: {
     horas_missao?: number;
     horas_excedentes?: number;
@@ -245,6 +247,21 @@ export default function AgendaVtrPage() {
                         <div>
                           <p className="text-sm font-black text-neutral-900 font-mono uppercase tracking-wider">{vehicle.plate}</p>
                           <p className="text-[10px] text-neutral-500 font-semibold uppercase">{vehicle.brand || ""} {vehicle.model}</p>
+                          {(() => {
+                            const dayTotal = Math.max(
+                              ...[...active, ...scheduled, ...overdue].map(o => Number(o.vehicleDayTotal) || 0),
+                              0
+                            );
+                            if (dayTotal >= 2) {
+                              return (
+                                <p className="text-[10px] text-amber-700 font-bold mt-0.5 flex items-center gap-1" data-testid={`text-day-total-${vehicle.id}`}>
+                                  <Calendar className="w-2.5 h-2.5" />
+                                  {dayTotal} missões hoje (custos rateados)
+                                </p>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
                       {overdue.length > 0 ? (

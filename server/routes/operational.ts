@@ -707,6 +707,16 @@ import type { Express } from "express";
           } : null,
           tracker: trackerData,
           liveCost,
+          ...(() => {
+            const d = osDateOf(o);
+            if (!d || !o.vehicleId) return { vehicleDayTotal: null, vehicleDayIndex: null };
+            const ids = osByVehicleDay.get(`${o.vehicleId}:${d}`) || [];
+            const idx = ids.indexOf(o.id);
+            return {
+              vehicleDayTotal: ids.length || null,
+              vehicleDayIndex: idx >= 0 ? idx + 1 : null,
+            };
+          })(),
         };
       })
     );
