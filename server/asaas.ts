@@ -8,9 +8,9 @@ const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3
 
 const CNAE_PRINCIPAL = "7870";
 const CODIGO_SERVICO_MUNICIPAL = "25";
-const CODIGO_SERVICO_MUNICIPAL_CODE = "01481";
+const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
 const ISS_ALIQUOTA = 0;
-const DESCRICAO_SERVICO_FIXA = "Ref. a Serviço de Escolta Armada Caracterizada";
+const DESCRICAO_SERVICO_FIXA = "Vigilância, segurança ou monitoramento de bens, pessoas e semoventes";
 
 function getApiKey(): string {
   const key = process.env.ASAAS_API_KEY;
