@@ -38,6 +38,7 @@ export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   razaoSocial: text("razao_social"),
+  nomeFantasia: text("nome_fantasia"),
   cnpj: text("cnpj"),
   cpf: text("cpf"),
   email: text("email"),

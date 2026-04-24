@@ -291,6 +291,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       setForm((prev) => ({
         ...prev,
         razaoSocial: data.razao_social || prev.razaoSocial,
+        nomeFantasia: data.nome_fantasia || (prev as any).nomeFantasia || "",
         name: data.nome_fantasia || data.razao_social || prev.name,
         email: data.email && data.email !== "" ? data.email : prev.email,
         phone,
@@ -384,6 +385,11 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Razão Social</label>
           <Input value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} data-testid="input-client-razao-social" />
           <p className="text-xs text-neutral-500 mt-1">Nome legal completo (usado em contratos)</p>
+        </div>
+        <div>
+          <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Nome Fantasia</label>
+          <Input value={(form as any).nomeFantasia || ""} onChange={(e) => setForm({ ...form, nomeFantasia: e.target.value } as any)} data-testid="input-client-nome-fantasia" />
+          <p className="text-xs text-neutral-500 mt-1">Nome usado no grid operacional e cards</p>
         </div>
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">CPF</label>
