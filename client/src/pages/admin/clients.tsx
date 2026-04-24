@@ -159,9 +159,26 @@ function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       addEmail();
+    }
+  };
+
+  const handleBlur = () => {
+    if (inputVal.trim()) addEmail();
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+    const parts = text.split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    const valid = parts.filter(p => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p) && !emails.includes(p));
+    if (valid.length > 1) {
+      e.preventDefault();
+      const updated = Array.from(new Set([...emails, ...valid]));
+      onChange(updated.join("; "));
+      setInputVal("");
     }
   };
 
@@ -175,6 +192,8 @@ function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+            onPaste={handlePaste}
             placeholder={placeholder}
             className={`w-full rounded-md border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 ${colors.ring} focus:border-transparent`}
             data-testid={testId ? `${testId}-input` : undefined}
