@@ -26,7 +26,19 @@ import {
   type MissionCost, type InsertMissionCost,
   type ClientForward, type InsertClientForward,
 } from "@shared/schema";
-import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables, enqueueWrite } from "./pg-fallback";
+import { localQuery, localQuerySingle, cacheTableIfOnline, isSupabaseHealthy, syncAllTables, enqueueWrite, applyViaDirectSql } from "./pg-fallback";
+import pg from "pg";
+
+let _directPool: pg.Pool | null = null;
+function getDirectPool(): pg.Pool {
+  if (!_directPool) {
+    _directPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3, idleTimeoutMillis: 20_000, connectionTimeoutMillis: 5_000 });
+  }
+  return _directPool;
+}
+function isSchemaCacheError(msg: string): boolean {
+  return /schema cache/i.test(msg) && /Could not find/i.test(msg);
+}
 
 const LOCAL_CACHE_TTL_MS = 45_000;
 const localCacheAge = new Map<string, number>();
@@ -144,6 +156,16 @@ async function resilientUpdate<T>(
     if (error) throw new Error(error.message);
     return data ? toCamelObj<T>(data) : undefined;
   } catch (err: any) {
+    if (isSchemaCacheError(err.message || "")) {
+      try {
+        await applyViaDirectSql(getDirectPool(), "update", table, snakePayload, filters);
+        console.log(`[resilient] ${table} update aplicado via SQL direto (cache do PostgREST desatualizado)`);
+        try { await supabaseAdmin.rpc("pg_notify", { channel: "pgrst", payload: "reload schema" }); } catch (_e) {}
+        return toCamelObj<T>({ ...snakePayload, ...filters } as any);
+      } catch (sqlErr: any) {
+        console.error(`[resilient] ${table} SQL direto também falhou: ${sqlErr.message}`);
+      }
+    }
     console.warn(`[resilient] ${table} update fallback to queue: ${err.message}`);
     await enqueueWrite(table, "update", snakePayload, filters);
     return toCamelObj<T>({ ...snakePayload, ...filters } as any);

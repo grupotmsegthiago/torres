@@ -416,6 +416,42 @@ export async function getQueueStats(): Promise<{ pending: number; failed: number
 const MAX_QUEUE_ATTEMPTS = 10;
 let flushInProgress = false;
 
+function quoteIdent(name: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) throw new Error(`Invalid identifier: ${name}`);
+  return `"${name}"`;
+}
+
+export async function applyViaDirectSql(
+  p: pg.Pool,
+  operation: string,
+  tableName: string,
+  payload: Record<string, any>,
+  filters: Record<string, any> | null,
+): Promise<void> {
+  const t = quoteIdent(tableName);
+  if (operation === "insert") {
+    const cols = Object.keys(payload);
+    if (cols.length === 0) return;
+    const colsSql = cols.map(quoteIdent).join(", ");
+    const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+    const values = cols.map((c) => payload[c]);
+    await p.query(`INSERT INTO ${t} (${colsSql}) VALUES (${placeholders})`, values);
+  } else if (operation === "update" && filters) {
+    const cols = Object.keys(payload);
+    if (cols.length === 0) return;
+    const setSql = cols.map((c, i) => `${quoteIdent(c)} = $${i + 1}`).join(", ");
+    const fcols = Object.keys(filters);
+    const whereSql = fcols.map((c, i) => `${quoteIdent(c)} = $${cols.length + i + 1}`).join(" AND ");
+    const values = [...cols.map((c) => payload[c]), ...fcols.map((c) => filters[c])];
+    await p.query(`UPDATE ${t} SET ${setSql} WHERE ${whereSql}`, values);
+  } else if (operation === "delete" && filters) {
+    const fcols = Object.keys(filters);
+    const whereSql = fcols.map((c, i) => `${quoteIdent(c)} = $${i + 1}`).join(" AND ");
+    const values = fcols.map((c) => filters[c]);
+    await p.query(`DELETE FROM ${t} WHERE ${whereSql}`, values);
+  }
+}
+
 export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: number; failed: number }> {
   if (flushInProgress || !supabaseHealthy) return { processed: 0, failed: 0 };
   flushInProgress = true;
@@ -458,7 +494,17 @@ export async function flushWriteQueue(supabaseAdmin: any): Promise<{ processed: 
           result = await query;
         }
 
-        if (result.error) throw new Error(result.error.message);
+        if (result.error) {
+          const msg = String(result.error.message || "");
+          const isSchemaCacheErr = /schema cache/i.test(msg) && /Could not find/i.test(msg);
+          if (isSchemaCacheErr) {
+            await applyViaDirectSql(p, item.operation, item.table_name, payload, filters);
+            console.log(`[write-queue] Queue #${item.id}: cache do schema desatualizado — aplicado via SQL direto`);
+            try { await supabaseAdmin.rpc("pg_notify", { channel: "pgrst", payload: "reload schema" }); } catch (_e) {}
+          } else {
+            throw new Error(result.error.message);
+          }
+        }
 
         await p.query(
           `UPDATE fallback_write_queue SET status = 'processed', processed_at = NOW() WHERE id = $1`,
