@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { parseBRL, formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, authFetch } from "@/lib/queryClient";
@@ -129,13 +129,17 @@ const TAG_COLORS = {
   },
 } as const;
 
-function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
+export type EmailTagInputHandle = { flush: () => string };
+
+type EmailTagInputProps = {
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
   colorScheme: keyof typeof TAG_COLORS;
   testId?: string;
-}) {
+};
+
+const EmailTagInput = forwardRef<EmailTagInputHandle, EmailTagInputProps>(function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }, ref) {
   const [inputVal, setInputVal] = useState("");
   const colors = TAG_COLORS[colorScheme];
 
@@ -152,6 +156,20 @@ function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
     onChange(updated.join("; "));
     setInputVal("");
   };
+
+  useImperativeHandle(ref, () => ({
+    flush: () => {
+      const cleaned = inputVal.trim().toLowerCase();
+      if (cleaned && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned) && !emails.includes(cleaned)) {
+        const updated = [...emails, cleaned];
+        const next = updated.join("; ");
+        onChange(next);
+        setInputVal("");
+        return next;
+      }
+      return value;
+    },
+  }), [inputVal, emails, value, onChange]);
 
   const removeEmail = (index: number) => {
     const updated = emails.filter((_, i) => i !== index);
@@ -232,12 +250,16 @@ function EmailTagInput({ value, onChange, placeholder, colorScheme, testId }: {
       )}
     </div>
   );
-}
+});
 
 function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
   const { toast } = useToast();
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
+  const emailContratualRef = useRef<EmailTagInputHandle>(null);
+  const emailOperacionalRef = useRef<EmailTagInputHandle>(null);
+  const emailMedicaoRef = useRef<EmailTagInputHandle>(null);
+  const emailFinanceiroRef = useRef<EmailTagInputHandle>(null);
 
   const parseEmails = (raw: string): string[] => {
     return raw
@@ -338,8 +360,16 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
 
   const mutation = useMutation({
     mutationFn: async (data: typeof form) => {
+      const emailContratualFinal = emailContratualRef.current?.flush() ?? data.emailContratual;
+      const emailOperacionalFinal = emailOperacionalRef.current?.flush() ?? data.emailOperacional;
+      const emailMedicaoFinal = emailMedicaoRef.current?.flush() ?? data.emailMedicao;
+      const emailFinanceiroFinal = emailFinanceiroRef.current?.flush() ?? data.emailFinanceiro;
       const payload = {
         ...data,
+        emailContratual: emailContratualFinal,
+        emailOperacional: emailOperacionalFinal,
+        emailMedicao: emailMedicaoFinal,
+        emailFinanceiro: emailFinanceiroFinal,
         prazoAprovacaoDias: data.prazoAprovacaoDias ? Number(data.prazoAprovacaoDias) : null,
         paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : null,
         billingCutoffDay: data.billingCutoffDay ? Number(data.billingCutoffDay) : null,
@@ -423,6 +453,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Contratual</label>
               <EmailTagInput
+                ref={emailContratualRef}
                 value={form.emailContratual}
                 onChange={(val) => setForm({ ...form, emailContratual: val })}
                 placeholder="Digite o e-mail..."
@@ -433,6 +464,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Operacional (OS)</label>
               <EmailTagInput
+                ref={emailOperacionalRef}
                 value={form.emailOperacional}
                 onChange={(val) => setForm({ ...form, emailOperacional: val })}
                 placeholder="Digite o e-mail..."
@@ -446,6 +478,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Medição</label>
               <EmailTagInput
+                ref={emailMedicaoRef}
                 value={form.emailMedicao}
                 onChange={(val) => setForm({ ...form, emailMedicao: val })}
                 placeholder="Digite o e-mail..."
@@ -495,6 +528,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             <div>
               <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">E-mail Financeiro</label>
               <EmailTagInput
+                ref={emailFinanceiroRef}
                 value={form.emailFinanceiro}
                 onChange={(val) => setForm({ ...form, emailFinanceiro: val })}
                 placeholder="Digite o e-mail..."
