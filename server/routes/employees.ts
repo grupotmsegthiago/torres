@@ -55,13 +55,19 @@ import type { Express } from "express";
   app.post("/api/employees", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
+    console.log("[emp-debug POST] rg recebido:", JSON.stringify(body.rg), "| keys:", Object.keys(body).join(","));
     const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     const matricula = await storage.getNextMatricula();
     body.matricula = matricula;
     const parsed = insertEmployeeSchema.safeParse(body);
-    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (!parsed.success) {
+      console.log("[emp-debug POST] schema FAIL:", JSON.stringify(parsed.error.errors));
+      return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    }
+    console.log("[emp-debug POST] parsed.rg:", JSON.stringify(parsed.data.rg));
     const data = await storage.createEmployee(parsed.data);
+    console.log("[emp-debug POST] saved.rg:", JSON.stringify((data as any).rg));
     if (data.cpf) {
       apibrasil.autoConsultaFuncionario(data.cpf, req.user!.id).catch(() => {});
     }
@@ -114,13 +120,19 @@ import type { Express } from "express";
   app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
+    console.log(`[emp-debug PATCH ${req.params.id}] rg recebido:`, JSON.stringify(body.rg), "| hasRg:", "rg" in body);
     const dateFields = ["birthDate", "hireDate", "vacationExpiry", "cnhExpiry", "cnvExpiry"];
     for (const f of dateFields) { if (body[f] === "") body[f] = null; }
     delete body.matricula;
     const parsed = insertEmployeeSchema.partial().safeParse(body);
-    if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    if (!parsed.success) {
+      console.log(`[emp-debug PATCH ${req.params.id}] schema FAIL:`, JSON.stringify(parsed.error.errors));
+      return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    }
+    console.log(`[emp-debug PATCH ${req.params.id}] parsed.rg:`, JSON.stringify(parsed.data.rg));
     const data = await storage.updateEmployee(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
+    console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
     res.json(data);
   });
 
