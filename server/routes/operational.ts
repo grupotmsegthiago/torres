@@ -611,6 +611,7 @@ import type { Express } from "express";
               fat_acionamento: billing.fat_acionamento,
               fat_hora_extra: billing.fat_hora_extra,
               fat_km_extra: billing.fat_km,
+              receitas_extras: Math.round(receitasOsGrid * 100) / 100,
               horas_excedentes: billing.horas_excedentes,
               pagamento: useFrozen ? (Number((o as any).custo_pagamento_alocado) || frozenPag) : frozenPag,
               custo_combustivel: combFinal,

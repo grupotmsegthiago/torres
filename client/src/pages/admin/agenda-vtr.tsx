@@ -25,7 +25,10 @@ type GridOs = {
   liveCost?: {
     horas_missao?: number;
     horas_excedentes?: number;
+    fat_acionamento?: number;
     fat_hora_extra?: number;
+    fat_km_extra?: number;
+    receitas_extras?: number;
     faturamento?: number;
     km_total?: number;
   } | null;
@@ -353,11 +356,27 @@ export default function AgendaVtrPage() {
                                     {fmtDuration(os.liveCost.horas_missao)}
                                   </span>
                                 </div>
+                                {Number(os.liveCost.fat_acionamento) > 0 && (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold">Acionamento</span>
+                                    <span className="text-[10px] font-black text-neutral-800 font-mono" data-testid={`text-acionamento-${os.id}`}>
+                                      R$ {fmtBRL(os.liveCost.fat_acionamento)}
+                                    </span>
+                                  </div>
+                                )}
                                 {Number(os.liveCost.horas_excedentes) > 0 && (
                                   <div className="flex items-center justify-between gap-2 bg-amber-50 -mx-1 px-1.5 py-0.5 rounded">
                                     <span className="text-[9px] uppercase tracking-wider text-amber-700 font-bold">Hora extra</span>
                                     <span className="text-[10px] font-black text-amber-800 font-mono" data-testid={`text-he-${os.id}`}>
                                       {fmtDuration(os.liveCost.horas_excedentes)} · R$ {fmtBRL(os.liveCost.fat_hora_extra)}
+                                    </span>
+                                  </div>
+                                )}
+                                {Number(os.liveCost.receitas_extras) > 0 && (
+                                  <div className="flex items-center justify-between gap-2 bg-blue-50 -mx-1 px-1.5 py-0.5 rounded">
+                                    <span className="text-[9px] uppercase tracking-wider text-blue-700 font-bold">Receita extra</span>
+                                    <span className="text-[10px] font-black text-blue-800 font-mono" data-testid={`text-receita-extra-${os.id}`}>
+                                      R$ {fmtBRL(os.liveCost.receitas_extras)}
                                     </span>
                                   </div>
                                 )}
