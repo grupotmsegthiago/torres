@@ -64,6 +64,7 @@ const MobileOcorrenciaPage = lazy(() => import("@/pages/mobile/ocorrencia"));
 const MobilePontoOperacionalPage = lazy(() => import("@/pages/mobile/ponto-operacional"));
 const MobileChatPage = lazy(() => import("@/pages/mobile/chat"));
 const MobileControleCondutorPage = lazy(() => import("@/pages/mobile/controle-condutor"));
+const MobileResumoFinanceiroPage = lazy(() => import("@/pages/mobile/resumo-financeiro"));
 
 function LazyFallback() {
   return (
@@ -226,6 +227,7 @@ function Router() {
         <Route path="/mobile/chat">{() => <MobileProtectedRoute component={MobileChatPage} />}</Route>
         <Route path="/mobile/ponto-operacional">{() => <MobileProtectedRoute component={MobilePontoOperacionalPage} />}</Route>
         <Route path="/mobile/controle-condutor">{() => <MobileProtectedRoute component={MobileControleCondutorPage} />}</Route>
+        <Route path="/mobile/resumo-financeiro">{() => <MobileProtectedRoute component={MobileResumoFinanceiroPage} skipSelfieCheck />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
         <Route path="/aprovacao/:token" component={AprovacaoPage} />

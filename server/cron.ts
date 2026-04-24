@@ -6,6 +6,7 @@ import { log } from "./index";
 import { getVehicleCache, sendCommand } from "./truckscontrol";
 import { supabaseAdmin } from "./supabase";
 import { getHorasElapsedFromDB, calcularFaturamentoLive } from "./billing-calc";
+import { getDiretoriaSnapshot } from "./financial-snapshot";
 
 const RODIZIO_MAP: Record<number, number[]> = {
   1: [1, 2],
@@ -869,210 +870,120 @@ function getCronMailTransporter() {
 
 const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br";
 
+
+function fmtBR(v: number): string {
+  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtPct(v: number): string {
+  return `${v >= 0 ? "" : ""}${v.toFixed(1)}%`;
+}
+
+function pctBarColor(pct: number): string {
+  if (pct >= 100) return "#16a34a";
+  if (pct >= 70) return "#2563eb";
+  if (pct >= 40) return "#a16207";
+  return "#dc2626";
+}
+
+function statusBadgeHtml(status: string): string {
+  const map: Record<string, { bg: string; color: string; label: string }> = {
+    em_andamento: { bg: "#dbeafe", color: "#1d4ed8", label: "Em Andamento" },
+    concluida: { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
+    "concluída": { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
+    agendada: { bg: "#fef3c7", color: "#a16207", label: "Agendada" },
+    aberta: { bg: "#e0e7ff", color: "#4338ca", label: "Aberta" },
+    cancelada: { bg: "#fee2e2", color: "#b91c1c", label: "Cancelada" },
+    recusada: { bg: "#fee2e2", color: "#b91c1c", label: "Recusada" },
+  };
+  const s = map[status] || { bg: "#f1f5f9", color: "#475569", label: status };
+  return `<span style="display:inline-block;background:${s.bg};color:${s.color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;">${s.label}</span>`;
+}
+
+function metaBlockHtml(label: string, periodo: string, fat: number, meta: number, pct: number): string {
+  const color = pctBarColor(pct);
+  const barPct = Math.max(2, Math.min(100, pct));
+  return `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:10px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="font-size:12px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">${label}</td>
+          <td style="text-align:right;font-size:12px;color:#64748b;">${periodo}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding-top:6px;">
+            <span style="font-size:18px;font-weight:700;color:#1e293b;">R$ ${fmtBR(fat)}</span>
+            <span style="font-size:12px;color:#64748b;"> / R$ ${fmtBR(meta)}</span>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding-top:8px;">
+            <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden;">
+              <div style="background:${color};height:8px;width:${barPct}%;"></div>
+            </div>
+            <div style="text-align:right;font-size:12px;font-weight:700;color:${color};margin-top:4px;">${pct.toFixed(1)}% da meta</div>
+          </td>
+        </tr>
+      </table>
+    </div>`;
+}
+
 export async function sendDailySummaryEmail(targetDate?: string): Promise<{ success: boolean; message: string }> {
   const transporter = getCronMailTransporter();
   if (!transporter) {
     return { success: false, message: "SMTP não configurado" };
   }
 
-  const todayBRT = targetDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  const todayLabel = new Date(todayBRT + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
-  const diaSemana = new Date(todayBRT + "T12:00:00").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" });
-
   try {
-    const todayStart = todayBRT + "T00:00:00";
-    const todayEnd = todayBRT + "T23:59:59";
+    const snap = await getDiretoriaSnapshot(targetDate);
 
-    const histStart = new Date(new Date(todayBRT + "T00:00:00").getTime() - 30 * 24 * 60 * 60 * 1000)
-      .toISOString().slice(0, 10) + "T00:00:00";
-    const histEnd = new Date(new Date(todayBRT + "T00:00:00").getTime() - 24 * 60 * 60 * 1000)
-      .toISOString().slice(0, 10) + "T23:59:59";
-
-    const [billingsRes, transactionsRes, clientsRes, histBillingsRes] = await Promise.all([
-      supabaseAdmin.from("escort_billings").select("*").gte("data_missao", todayStart).lte("data_missao", todayEnd),
-      supabaseAdmin.from("financial_transactions").select("*"),
-      supabaseAdmin.from("clients").select("id, name, company_name"),
-      supabaseAdmin.from("escort_billings").select("km_total,pag_total,pag_vrp,pag_periculosidade,pag_adicional_noturno,pag_reembolsos,desp_total,desp_pedagio,despesas_pedagio,desp_combustivel,despesas_combustivel,desp_outras,despesas_outras").gte("data_missao", histStart).lte("data_missao", histEnd),
-    ]);
-
-    const allOrders = await storage.getServiceOrders();
-    const employees = await storage.getEmployees();
-
-    const clientMap = new Map<number, string>();
-    for (const c of (clientsRes.data || [])) {
-      clientMap.set(c.id, c.company_name || c.name || `Cliente #${c.id}`);
-    }
-
-    const extractDateBRT = (v: any): string | null => {
-      if (!v) return null;
-      const s = String(v);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-      try { return new Date(s).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
-      catch { return null; }
-    };
-
-    const todayOrders = allOrders.filter((so: any) => {
-      const sd = extractDateBRT(so.scheduledDate);
-      const cd = extractDateBRT(so.completedDate);
-      const ms = so.missionStartedAt ? extractDateBRT(so.missionStartedAt) : null;
-      return sd === todayBRT || cd === todayBRT || ms === todayBRT;
-    });
-
-    const escoltaOrders = todayOrders.filter((so: any) => so.type === "escolta");
-    const concluidas = todayOrders.filter((so: any) => so.status === "concluida" || so.status === "concluída" || so.missionStatus === "encerrada");
-    const emAndamento = todayOrders.filter((so: any) => so.status === "em_andamento");
-    const canceladas = todayOrders.filter((so: any) => so.status === "cancelada" || so.status === "recusada");
-
-    const todayBillings = billingsRes.data || [];
-    const billingBySO = new Map<number, any>();
-    for (const b of todayBillings) {
-      const soId = Number(b.service_order_id);
-      if (!soId) continue;
-      const existing = billingBySO.get(soId);
-      if (!existing || new Date(b.created_at || 0) > new Date(existing.created_at || 0)) {
-        billingBySO.set(soId, b);
-      }
-    }
-    const dedupedBillings = Array.from(billingBySO.values());
-
-    let fatTotal = 0;
-    let custoEscolta = 0;
-    let kmTotal = 0;
-    let despPedagio = 0;
-    let despCombustivel = 0;
-
-    const isCancelledStatus = (s: any) => s === "recusada" || s === "cancelada";
-    const orderById = new Map<number, any>();
-    for (const so of todayOrders) orderById.set(so.id, so);
-
-    for (const b of dedupedBillings) {
-      const so = orderById.get(Number(b.service_order_id));
-      if (so && isCancelledStatus(so.status)) continue;
-      fatTotal += Number(b.fat_total) || 0;
-      const pagTotal = Number(b.pag_total) || (Number(b.pag_vrp) || 0) + (Number(b.pag_periculosidade) || 0) + (Number(b.pag_adicional_noturno) || 0) + (Number(b.pag_reembolsos) || 0);
-      const despTotal = Number(b.desp_total) || (Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0) + (Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0) + (Number(b.desp_outras) || Number(b.despesas_outras) || 0);
-      custoEscolta += pagTotal + despTotal;
-      kmTotal += Number(b.km_total) || 0;
-      despPedagio += Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0;
-      despCombustivel += Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0;
-    }
-
-    for (const so of todayOrders) {
-      if (billingBySO.has(so.id)) continue;
-      if (isCancelledStatus(so.status)) continue;
-      const soFat = Number((so as any).fat_calculado) || 0;
-      const soCusto = Number((so as any).custo_total_alocado) || 0;
-      if (soFat > 0 && !dedupedBillings.some((b: any) => b.service_order_id === so.id)) {
-        fatTotal += soFat;
-      }
-      custoEscolta += soCusto;
-      kmTotal += Number((so as any).km_total_calculado) || 0;
-    }
-
-    const allTx = transactionsRes.data || [];
-    const todayTx = allTx.filter((t: any) => {
-      const dueDate = t.due_date ? String(t.due_date) : null;
-      const payDate = t.payment_date ? String(t.payment_date) : null;
-      const createdDate = extractDateBRT(t.created_at);
-      return dueDate === todayBRT || payDate === todayBRT || createdDate === todayBRT;
-    });
-    const AUTO_ORIGINS = new Set(["mission_cost", "payroll", "fueling", "escort_billing"]);
-    let despesas = 0;
-    let receitas = 0;
-    for (const t of todayTx) {
-      if (AUTO_ORIGINS.has(String(t.origin_type || ""))) continue;
-      const amt = Math.abs(Number(t.amount) || 0);
-      if (t.type === "EXPENSE" || t.type === "despesa") despesas += amt;
-      else if (t.type === "INCOME" || t.type === "receita") receitas += amt;
-    }
-
-    const custoTotal = custoEscolta + despesas;
-    const resultado = fatTotal + receitas - custoTotal;
-    const margem = fatTotal > 0 ? (resultado / (fatTotal + receitas)) * 100 : 0;
-
-    let histKmTotal = 0;
-    let histCustoTotal = 0;
-    for (const b of (histBillingsRes.data || [])) {
-      const km = Number(b.km_total) || 0;
-      if (km <= 0) continue;
-      const pag = Number(b.pag_total) || (Number(b.pag_vrp) || 0) + (Number(b.pag_periculosidade) || 0) + (Number(b.pag_adicional_noturno) || 0) + (Number(b.pag_reembolsos) || 0);
-      const desp = Number(b.desp_total) || (Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0) + (Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0) + (Number(b.desp_outras) || Number(b.despesas_outras) || 0);
-      histKmTotal += km;
-      histCustoTotal += pag + desp;
-    }
-    const custoPorKmHist = histKmTotal > 0 ? histCustoTotal / histKmTotal : 0;
-    const custoPorKmHoje = kmTotal > 0 ? custoEscolta / kmTotal : 0;
-    const variacaoPct = custoPorKmHist > 0 && custoPorKmHoje > 0
-      ? ((custoPorKmHoje - custoPorKmHist) / custoPorKmHist) * 100
-      : 0;
-
-    let custoKmStatus: { color: string; bg: string; label: string; msg: string };
-    if (kmTotal <= 0 || custoPorKmHist <= 0) {
-      custoKmStatus = { color: "#475569", bg: "#f1f5f9", label: "Sem base de comparação", msg: "Ainda não há histórico suficiente para avaliar." };
-    } else if (variacaoPct <= 10) {
-      custoKmStatus = { color: "#15803d", bg: "#dcfce7", label: "Dentro do esperado", msg: "Custo por km está alinhado com a média dos últimos 30 dias." };
-    } else if (variacaoPct <= 25) {
-      custoKmStatus = { color: "#a16207", bg: "#fef3c7", label: "Atenção", msg: `Custo por km ${variacaoPct.toFixed(1)}% acima da média histórica. Revisar combustível, pedágio e horas extras.` };
-    } else {
-      custoKmStatus = { color: "#b91c1c", bg: "#fee2e2", label: "Acima do padrão", msg: `Custo por km ${variacaoPct.toFixed(1)}% acima da média histórica. Operação cara — investigar despesas e roteirização.` };
-    }
-
-    const activeEmps = employees.filter(e => e.status === "ativo");
-
-    const fmt = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-    const statusBadge = (status: string) => {
-      const map: Record<string, { bg: string; color: string; label: string }> = {
-        em_andamento: { bg: "#dbeafe", color: "#1d4ed8", label: "Em Andamento" },
-        concluida: { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
-        "concluída": { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
-        agendada: { bg: "#fef3c7", color: "#a16207", label: "Agendada" },
-        aberta: { bg: "#e0e7ff", color: "#4338ca", label: "Aberta" },
-        cancelada: { bg: "#fee2e2", color: "#b91c1c", label: "Cancelada" },
-        recusada: { bg: "#fee2e2", color: "#b91c1c", label: "Recusada" },
-      };
-      const s = map[status] || { bg: "#f1f5f9", color: "#475569", label: status };
-      return `<span style="display:inline-block;background:${s.bg};color:${s.color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;">${s.label}</span>`;
-    };
-
-    const isRecusadaOuCancelada = (s: any) => s === "recusada" || s === "cancelada";
-
-    const osCards = todayOrders.slice(0, 30).map((so: any) => {
-      const billing = billingBySO.get(so.id);
-      let fat = billing ? (Number(billing.fat_total) || 0) : (Number((so as any).fat_calculado) || 0);
-      let custo = Number((so as any).custo_total_alocado) || 0;
-      if (billing) {
-        const bPag = Number(billing.pag_total) || (Number(billing.pag_vrp) || 0) + (Number(billing.pag_periculosidade) || 0) + (Number(billing.pag_adicional_noturno) || 0) + (Number(billing.pag_reembolsos) || 0);
-        const bDesp = Number(billing.desp_total) || (Number(billing.desp_pedagio) || Number(billing.despesas_pedagio) || 0) + (Number(billing.desp_combustivel) || Number(billing.despesas_combustivel) || 0) + (Number(billing.desp_outras) || Number(billing.despesas_outras) || 0);
-        if (bPag + bDesp > 0) custo = bPag + bDesp;
-      }
-      if (isRecusadaOuCancelada(so.status)) { fat = 0; custo = 0; }
-
-      const clientName = billing?.client_name || clientMap.get(so.clientId) || "-";
-
+    const osCards = snap.ordens.slice(0, 30).map(o => {
+      const fatDisplay = o.isLive ? `R$ ${fmtBR(o.fatLive)} <span style="font-size:10px;color:#2563eb;font-weight:600;">(ao vivo)</span>` : `R$ ${fmtBR(o.fat)}`;
       return `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
-        <tr>
-          <td style="padding:10px 12px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="font-size:13px;font-weight:700;color:#1e293b;">${so.osNumber || "-"}</td>
-                <td style="text-align:right;">${statusBadge(so.status)}</td>
-              </tr>
-              <tr>
-                <td colspan="2" style="padding-top:6px;font-size:13px;color:#475569;line-height:1.35;">${clientName}</td>
-              </tr>
-              <tr>
-                <td style="padding-top:8px;font-size:12px;color:#64748b;">Faturamento<br><span style="font-size:14px;font-weight:700;color:#16a34a;">R$ ${fmt(fat)}</span></td>
-                <td style="padding-top:8px;text-align:right;font-size:12px;color:#64748b;">Custo<br><span style="font-size:14px;font-weight:700;color:#dc2626;">R$ ${fmt(custo)}</span></td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+        <tr><td style="padding:10px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size:13px;font-weight:700;color:#1e293b;">${o.osNumber}</td>
+              <td style="text-align:right;">${statusBadgeHtml(o.status)}</td>
+            </tr>
+            <tr><td colspan="2" style="padding-top:6px;font-size:13px;color:#475569;line-height:1.35;">${o.clientName}</td></tr>
+            <tr>
+              <td style="padding-top:8px;font-size:12px;color:#64748b;">Faturamento<br><span style="font-size:14px;font-weight:700;color:#16a34a;">${fatDisplay}</span></td>
+              <td style="padding-top:8px;text-align:right;font-size:12px;color:#64748b;">Custo<br><span style="font-size:14px;font-weight:700;color:#dc2626;">R$ ${fmtBR(o.custo)}</span></td>
+            </tr>
+          </table>
+        </td></tr>
       </table>`;
     }).join("");
 
-    const margemColor = margem >= 30 ? "#16a34a" : margem >= 15 ? "#ca8a04" : "#dc2626";
+    const margemColor = snap.dia.margem >= 30 ? "#16a34a" : snap.dia.margem >= 15 ? "#ca8a04" : "#dc2626";
+
+    const asaasHtml = snap.asaas.connected
+      ? `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-left:4px solid #059669;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#047857;font-weight:600;">Saldo em Conta — Asaas</div>
+          <div style="font-size:24px;font-weight:700;color:#059669;margin-top:4px;">R$ ${fmtBR(Number(snap.asaas.balance) || 0)}</div>
+        </div>`
+      : `<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #ca8a04;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#92400e;font-weight:600;">Saldo Asaas</div>
+          <div style="font-size:13px;color:#92400e;margin-top:4px;">${snap.asaas.message || "Indisponível"}</div>
+        </div>`;
+
+    const fmtPeriodo = (a: string, b: string) => {
+      const f = (s: string) => new Date(s + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      return `${f(a)} → ${f(b)}`;
+    };
+
+    const fatLiveBadge = snap.dia.fatExtraLive > 0
+      ? `<div style="font-size:11px;color:#2563eb;margin-top:4px;font-weight:600;">+ R$ ${fmtBR(snap.dia.fatExtraLive)} ao vivo (HE em andamento)</div>`
+      : "";
+
+    const gastosCatRows = snap.gastosMes.porCategoria.slice(0, 8).map(g => `
+      <tr>
+        <td style="padding:8px 0;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;">${g.categoria}</td>
+        <td style="padding:8px 0;font-size:13px;font-weight:700;text-align:right;color:#dc2626;border-bottom:1px solid #f1f5f9;white-space:nowrap;">R$ ${fmtBR(g.valor)}</td>
+        <td style="padding:8px 0 8px 8px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #f1f5f9;white-space:nowrap;">${g.pct.toFixed(1)}%</td>
+      </tr>`).join("");
 
     const html = `
 <!DOCTYPE html>
@@ -1087,7 +998,6 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
       .kpi-cell{display:block !important;width:100% !important;margin-bottom:10px !important;}
       .kpi-value{font-size:26px !important;}
       .hero-title{font-size:20px !important;}
-      .os-table th,.os-table td{font-size:12px !important;padding:6px 6px !important;}
     }
   </style>
 </head>
@@ -1098,118 +1008,113 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
         <tr><td class="pad" style="background:linear-gradient(135deg,#1e293b,#334155);padding:24px 30px;color:#fff;">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;">Torres Vigilância Patrimonial</div>
-          <div class="hero-title" style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Diário — Balanço Geral</div>
-          <div style="font-size:14px;opacity:0.85;margin-top:4px;">${diaSemana}, ${todayLabel}</div>
+          <div class="hero-title" style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Financeiro — Diretoria</div>
+          <div style="font-size:14px;opacity:0.85;margin-top:4px;">${snap.diaSemana}, ${snap.dataLabel}</div>
         </td></tr>
 
         <tr><td class="pad" style="padding:20px 24px;">
 
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+          ${asaasHtml}
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
             <tr>
               <td class="kpi-cell" valign="top" width="33%" style="padding-right:6px;">
                 <div style="background:#f0fdf4;border-radius:8px;padding:14px;border-left:4px solid #16a34a;">
-                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Faturamento</div>
-                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#16a34a;margin-top:4px;">R$ ${fmt(fatTotal)}</div>
+                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Faturamento Hoje</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#16a34a;margin-top:4px;">R$ ${fmtBR(snap.dia.fatLive)}</div>
+                  ${fatLiveBadge}
                 </div>
               </td>
               <td class="kpi-cell" valign="top" width="33%" style="padding:0 3px;">
                 <div style="background:#fef2f2;border-radius:8px;padding:14px;border-left:4px solid #dc2626;">
-                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Custos</div>
-                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#dc2626;margin-top:4px;">R$ ${fmt(custoTotal)}</div>
+                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Custos Hoje</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#dc2626;margin-top:4px;">R$ ${fmtBR(snap.dia.custoTotal)}</div>
                 </div>
               </td>
               <td class="kpi-cell" valign="top" width="33%" style="padding-left:6px;">
                 <div style="background:#eff6ff;border-radius:8px;padding:14px;border-left:4px solid #2563eb;">
                   <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Resultado</div>
-                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:${resultado >= 0 ? "#2563eb" : "#dc2626"};margin-top:4px;">R$ ${fmt(resultado)}</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:${snap.dia.resultado >= 0 ? "#2563eb" : "#dc2626"};margin-top:4px;">R$ ${fmtBR(snap.dia.resultado)}</div>
                 </div>
               </td>
             </tr>
           </table>
 
-      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
-        <tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Margem de Lucro</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:${margemColor};">${fmt(margem)}%</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">KM Total Rodados</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;">${fmt(kmTotal)} km</td>
-        </tr>
-        ${despPedagio > 0 ? `<tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Pedágio (Escoltas)</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despPedagio)}</td>
-        </tr>` : ""}
-        ${despCombustivel > 0 ? `<tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Combustível (Escoltas)</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despCombustivel)}</td>
-        </tr>` : ""}
-        ${receitas > 0 ? `<tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Receitas Avulsas</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#16a34a;">R$ ${fmt(receitas)}</td>
-        </tr>` : ""}
-        ${despesas > 0 ? `<tr>
-          <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Despesas Avulsas</td>
-          <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmt(despesas)}</td>
-        </tr>` : ""}
-      </table>
+          <div style="font-size:14px;font-weight:700;color:#1e293b;margin:8px 0 10px;text-transform:uppercase;letter-spacing:0.5px;">Faturamento × Meta</div>
+          ${metaBlockHtml("Hoje", snap.dataLabel, snap.dia.fatLive, snap.meta.diaria, snap.dia.pctMeta)}
+          ${metaBlockHtml("Semana", fmtPeriodo(snap.semana.inicio, snap.semana.fim), snap.semana.fat, snap.semana.meta, snap.semana.pct)}
+          ${metaBlockHtml("Mês", fmtPeriodo(snap.mes.inicio, snap.mes.fim), snap.mes.fat, snap.mes.meta, snap.mes.pct)}
+          <div style="font-size:11px;color:#64748b;margin:-4px 0 16px;">Meta: R$ ${fmtBR(snap.meta.diariaPorViatura)} por viatura/dia × ${snap.meta.viaturasAtivas} ativa(s)</div>
 
-      <div style="background:${custoKmStatus.bg};border-radius:8px;padding:14px 16px;margin-bottom:20px;border-left:4px solid ${custoKmStatus.color};">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#475569;font-weight:600;">Análise de Custo por KM</div>
-        <div style="font-size:16px;font-weight:700;color:${custoKmStatus.color};margin-top:4px;">${custoKmStatus.label}</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
-          <tr>
-            <td style="font-size:12px;color:#64748b;padding:4px 0;">Hoje (custo/km)</td>
-            <td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmt(custoPorKmHoje)}/km</td>
-          </tr>
-          <tr>
-            <td style="font-size:12px;color:#64748b;padding:4px 0;">Média 30 dias</td>
-            <td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmt(custoPorKmHist)}/km</td>
-          </tr>
-          ${custoPorKmHist > 0 && custoPorKmHoje > 0 ? `<tr>
-            <td style="font-size:12px;color:#64748b;padding:4px 0;">Variação</td>
-            <td style="font-size:13px;font-weight:700;text-align:right;color:${custoKmStatus.color};padding:4px 0;">${variacaoPct >= 0 ? "+" : ""}${variacaoPct.toFixed(1)}%</td>
-          </tr>` : ""}
-        </table>
-        <div style="font-size:12px;color:#475569;margin-top:8px;line-height:1.4;">${custoKmStatus.msg}</div>
-      </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+            <tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Margem de Lucro</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:${margemColor};">${fmtBR(snap.dia.margem)}%</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">KM Total Rodados</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;">${fmtBR(snap.dia.kmTotal)} km</td>
+            </tr>
+            ${snap.dia.despPedagio > 0 ? `<tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Pedágio (Escoltas)</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmtBR(snap.dia.despPedagio)}</td>
+            </tr>` : ""}
+            ${snap.dia.despCombustivel > 0 ? `<tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Combustível (Escoltas)</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmtBR(snap.dia.despCombustivel)}</td>
+            </tr>` : ""}
+            ${snap.dia.receitasAvulsas > 0 ? `<tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Receitas Avulsas</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#16a34a;">R$ ${fmtBR(snap.dia.receitasAvulsas)}</td>
+            </tr>` : ""}
+            ${snap.dia.despesasAvulsas > 0 ? `<tr>
+              <td style="padding:8px 0;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;">Despesas Avulsas</td>
+              <td style="padding:8px 0;font-size:15px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0;color:#dc2626;">R$ ${fmtBR(snap.dia.despesasAvulsas)}</td>
+            </tr>` : ""}
+          </table>
 
-      <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px;">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:#334155;">Operações do Dia</div>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Total de OS</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${todayOrders.length}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Escoltas</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${escoltaOrders.length}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Concluídas</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#16a34a;">${concluidas.length}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Em Andamento</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#2563eb;">${emAndamento.length}</td>
-          </tr>
-          ${canceladas.length > 0 ? `<tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Canceladas/Recusadas</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#dc2626;">${canceladas.length}</td>
-          </tr>` : ""}
-          <tr>
-            <td style="padding:6px 0;font-size:13px;color:#666;">Efetivo Ativo</td>
-            <td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${activeEmps.length} agentes</td>
-          </tr>
-        </table>
-      </div>
+          <div style="background:${snap.analiseCustoKm.status.bg};border-radius:8px;padding:14px 16px;margin-bottom:20px;border-left:4px solid ${snap.analiseCustoKm.status.color};">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#475569;font-weight:600;">Análise de Custo por KM</div>
+            <div style="font-size:16px;font-weight:700;color:${snap.analiseCustoKm.status.color};margin-top:4px;">${snap.analiseCustoKm.status.label}</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
+              <tr><td style="font-size:12px;color:#64748b;padding:4px 0;">Hoje (custo/km)</td><td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmtBR(snap.analiseCustoKm.custoPorKmHoje)}/km</td></tr>
+              <tr><td style="font-size:12px;color:#64748b;padding:4px 0;">Média 30 dias</td><td style="font-size:13px;font-weight:700;text-align:right;color:#1e293b;padding:4px 0;">R$ ${fmtBR(snap.analiseCustoKm.custoPorKmHist)}/km</td></tr>
+              ${snap.analiseCustoKm.custoPorKmHist > 0 && snap.analiseCustoKm.custoPorKmHoje > 0 ? `<tr><td style="font-size:12px;color:#64748b;padding:4px 0;">Variação</td><td style="font-size:13px;font-weight:700;text-align:right;color:${snap.analiseCustoKm.status.color};padding:4px 0;">${snap.analiseCustoKm.variacaoPct >= 0 ? "+" : ""}${snap.analiseCustoKm.variacaoPct.toFixed(1)}%</td></tr>` : ""}
+            </table>
+            <div style="font-size:12px;color:#475569;margin-top:8px;line-height:1.4;">${snap.analiseCustoKm.status.msg}</div>
+          </div>
 
-      ${todayOrders.length > 0 ? `
-      <div style="margin-bottom:20px;">
-        <div style="font-size:14px;font-weight:600;margin-bottom:10px;color:#334155;">Detalhamento por OS</div>
-        ${osCards}
-      </div>
-      ` : ""}
+          ${snap.gastosMes.total > 0 ? `
+          <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+              <div style="font-size:14px;font-weight:700;color:#334155;">Gastos do Mês por Categoria</div>
+              <div style="font-size:13px;font-weight:700;color:#dc2626;">R$ ${fmtBR(snap.gastosMes.total)}</div>
+            </div>
+            <table style="width:100%;border-collapse:collapse;">
+              ${gastosCatRows}
+            </table>
+          </div>
+          ` : ""}
+
+          <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:20px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#334155;">Operações do Dia</div>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Total de OS</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${snap.ops.totalOS}</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Escoltas</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${snap.ops.escoltas}</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Concluídas</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#16a34a;">${snap.ops.concluidas}</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Em Andamento</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#2563eb;">${snap.ops.emAndamento}</td></tr>
+              ${snap.ops.canceladas > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#666;">Canceladas/Recusadas</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;color:#dc2626;">${snap.ops.canceladas}</td></tr>` : ""}
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Efetivo Ativo</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${snap.ops.agentesAtivos} agentes</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#666;">Viaturas Ativas</td><td style="padding:6px 0;font-size:15px;font-weight:600;text-align:right;">${snap.meta.viaturasAtivas}</td></tr>
+            </table>
+          </div>
+
+          ${snap.ordens.length > 0 ? `
+          <div style="margin-bottom:20px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#334155;">Detalhamento por OS</div>
+            ${osCards}
+          </div>
+          ` : ""}
 
         </td></tr>
 
@@ -1229,11 +1134,11 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     await transporter.sendMail({
       from,
       to: DIRETORIA_EMAIL,
-      subject: `📊 Resumo Diário — ${todayLabel} | Fat. R$ ${fmt(fatTotal)} | Resultado R$ ${fmt(resultado)}`,
+      subject: `📊 Resumo Diretoria — ${snap.dataLabel} | Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`,
       html,
     });
 
-    log(`CRON ResumoDiario: E-mail enviado para ${DIRETORIA_EMAIL} — Fat. R$ ${fmt(fatTotal)} | Resultado R$ ${fmt(resultado)}`, "cron");
+    log(`CRON ResumoDiario: E-mail enviado para ${DIRETORIA_EMAIL} — Fat. R$ ${fmtBR(snap.dia.fatLive)} | Resultado R$ ${fmtBR(snap.dia.resultado)}`, "cron");
     return { success: true, message: `E-mail enviado para ${DIRETORIA_EMAIL}` };
   } catch (err: any) {
     log(`CRON ResumoDiario: Erro: ${err.message}`, "cron");

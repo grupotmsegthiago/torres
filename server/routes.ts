@@ -370,6 +370,19 @@ async function ensureSystemSettingsTable() {
       }
     });
 
+    app.get("/api/financeiro/resumo-diretoria", requireAuth, requireAdminRole, async (req, res) => {
+      try {
+        const { getDiretoriaSnapshot } = await import("./financial-snapshot");
+        const targetDate = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+          ? req.query.date
+          : undefined;
+        const snap = await getDiretoriaSnapshot(targetDate);
+        res.json(snap);
+      } catch (err: any) {
+        res.status(500).json({ message: err?.message || "Erro ao gerar resumo" });
+      }
+    });
+
     app.get("/api/health/slow-routes", requireAuth, requireAdminRole, (_req, res) => {
       const routes = getSlowRoutes();
       const summary: Record<string, { count: number; avgMs: number; maxMs: number }> = {};
