@@ -867,7 +867,7 @@ function getCronMailTransporter() {
   });
 }
 
-const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br, thiago@grupotmseg.com.br";
+const DIRETORIA_EMAIL = "diretoria@torresseguranca.com.br";
 
 export async function sendDailySummaryEmail(targetDate?: string): Promise<{ success: boolean; message: string }> {
   const transporter = getCronMailTransporter();
@@ -1016,32 +1016,55 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
-<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f3f4f6;margin:0;padding:20px;">
-  <div style="max-width:650px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-    
-    <div style="background:linear-gradient(135deg,#1e293b,#334155);padding:24px 30px;color:#fff;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;">Torres Vigilância Patrimonial</div>
-      <div style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Diário — Balanço Geral</div>
-      <div style="font-size:14px;opacity:0.8;margin-top:4px;">${diaSemana}, ${todayLabel}</div>
-    </div>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @media only screen and (max-width:600px){
+      .container{width:100% !important;border-radius:0 !important;}
+      .pad{padding:16px !important;}
+      .kpi-cell{display:block !important;width:100% !important;margin-bottom:10px !important;}
+      .kpi-value{font-size:26px !important;}
+      .hero-title{font-size:20px !important;}
+      .os-table th,.os-table td{font-size:12px !important;padding:6px 6px !important;}
+    }
+  </style>
+</head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#f3f4f6;margin:0;padding:0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:12px 0;">
+    <tr><td align="center">
+      <table role="presentation" class="container" width="650" cellpadding="0" cellspacing="0" style="max-width:650px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
-    <div style="padding:24px 30px;">
+        <tr><td class="pad" style="background:linear-gradient(135deg,#1e293b,#334155);padding:24px 30px;color:#fff;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;">Torres Vigilância Patrimonial</div>
+          <div class="hero-title" style="font-size:24px;font-weight:700;margin-top:4px;">Resumo Diário — Balanço Geral</div>
+          <div style="font-size:14px;opacity:0.85;margin-top:4px;">${diaSemana}, ${todayLabel}</div>
+        </td></tr>
 
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">
-        <div style="flex:1;min-width:140px;background:#f0fdf4;border-radius:8px;padding:16px;border-left:4px solid #16a34a;">
-          <div style="font-size:11px;color:#666;text-transform:uppercase;">Faturamento</div>
-          <div style="font-size:22px;font-weight:700;color:#16a34a;">R$ ${fmt(fatTotal)}</div>
-        </div>
-        <div style="flex:1;min-width:140px;background:#fef2f2;border-radius:8px;padding:16px;border-left:4px solid #dc2626;">
-          <div style="font-size:11px;color:#666;text-transform:uppercase;">Custos</div>
-          <div style="font-size:22px;font-weight:700;color:#dc2626;">R$ ${fmt(custoTotal)}</div>
-        </div>
-        <div style="flex:1;min-width:140px;background:#eff6ff;border-radius:8px;padding:16px;border-left:4px solid #2563eb;">
-          <div style="font-size:11px;color:#666;text-transform:uppercase;">Resultado</div>
-          <div style="font-size:22px;font-weight:700;color:${resultado >= 0 ? "#2563eb" : "#dc2626"};">R$ ${fmt(resultado)}</div>
-        </div>
-      </div>
+        <tr><td class="pad" style="padding:20px 24px;">
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td class="kpi-cell" valign="top" width="33%" style="padding-right:6px;">
+                <div style="background:#f0fdf4;border-radius:8px;padding:14px;border-left:4px solid #16a34a;">
+                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Faturamento</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#16a34a;margin-top:4px;">R$ ${fmt(fatTotal)}</div>
+                </div>
+              </td>
+              <td class="kpi-cell" valign="top" width="33%" style="padding:0 3px;">
+                <div style="background:#fef2f2;border-radius:8px;padding:14px;border-left:4px solid #dc2626;">
+                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Custos</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:#dc2626;margin-top:4px;">R$ ${fmt(custoTotal)}</div>
+                </div>
+              </td>
+              <td class="kpi-cell" valign="top" width="33%" style="padding-left:6px;">
+                <div style="background:#eff6ff;border-radius:8px;padding:14px;border-left:4px solid #2563eb;">
+                  <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;">Resultado</div>
+                  <div class="kpi-value" style="font-size:20px;font-weight:700;color:${resultado >= 0 ? "#2563eb" : "#dc2626"};margin-top:4px;">R$ ${fmt(resultado)}</div>
+                </div>
+              </td>
+            </tr>
+          </table>
 
       <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
         <tr>
@@ -1118,14 +1141,16 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
       </div>
       ` : ""}
 
-    </div>
+        </td></tr>
 
-    <div style="background:#f8fafc;padding:16px 30px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
-      Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89<br>
-      Relatório gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-    </div>
+        <tr><td class="pad" style="background:#f8fafc;padding:16px 24px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+          Torres Vigilância Patrimonial — CNPJ 36.982.392/0001-89<br>
+          Relatório gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+        </td></tr>
 
-  </div>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`;
 
