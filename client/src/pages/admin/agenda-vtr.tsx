@@ -22,6 +22,13 @@ type GridOs = {
   employee1?: { name: string } | null;
   employee2?: { name: string } | null;
   type?: string | null;
+  liveCost?: {
+    horas_missao?: number;
+    horas_excedentes?: number;
+    fat_hora_extra?: number;
+    faturamento?: number;
+    km_total?: number;
+  } | null;
 };
 
 type Vehicle = {
@@ -95,6 +102,21 @@ const effectiveStartTime = (o: GridOs): string | null => {
     return started < sched ? o.missionStartedAt : o.scheduledDate;
   }
   return o.scheduledDate || o.missionStartedAt || null;
+};
+
+const fmtDuration = (hours?: number | null): string => {
+  if (!hours || hours <= 0) return "0min";
+  const totalMin = Math.floor(hours * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h${String(m).padStart(2, "0")}`;
+};
+
+const fmtBRL = (v?: number | null): string => {
+  const n = Number(v) || 0;
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 const fmtOverdue = (iso?: string | null, nowMs?: number) => {
@@ -323,6 +345,30 @@ export default function AgendaVtrPage() {
                               <Clock className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                               <span className="font-bold text-emerald-700">Iniciada {fmtTime(effectiveStartTime(os))}</span>
                             </div>
+                            {os.liveCost && (
+                              <div className="mt-1.5 pt-1.5 border-t border-emerald-200/60 space-y-1" data-testid={`live-info-${os.id}`}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold">Tempo</span>
+                                  <span className="text-[10px] font-black text-neutral-800 font-mono" data-testid={`text-duration-${os.id}`}>
+                                    {fmtDuration(os.liveCost.horas_missao)}
+                                  </span>
+                                </div>
+                                {Number(os.liveCost.horas_excedentes) > 0 && (
+                                  <div className="flex items-center justify-between gap-2 bg-amber-50 -mx-1 px-1.5 py-0.5 rounded">
+                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-bold">Hora extra</span>
+                                    <span className="text-[10px] font-black text-amber-800 font-mono" data-testid={`text-he-${os.id}`}>
+                                      {fmtDuration(os.liveCost.horas_excedentes)} · R$ {fmtBRL(os.liveCost.fat_hora_extra)}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between gap-2 bg-emerald-100/60 -mx-1 px-1.5 py-0.5 rounded">
+                                  <span className="text-[9px] uppercase tracking-wider text-emerald-800 font-bold">Faturamento</span>
+                                  <span className="text-[11px] font-black text-emerald-900 font-mono" data-testid={`text-fat-${os.id}`}>
+                                    R$ {fmtBRL(os.liveCost.faturamento)}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </a>
                       </Link>
