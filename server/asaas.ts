@@ -55,7 +55,6 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
-    municipalServiceId: parseInt(CODIGO_SERVICO_MUNICIPAL),
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     municipalServiceName: DESCRICAO_SERVICO_FIXA,
     taxes: {
@@ -64,8 +63,17 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
       cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
     },
   };
+  const overrideMunicipalServiceId = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
+  if (overrideMunicipalServiceId) {
+    payload.municipalServiceId = parseInt(overrideMunicipalServiceId);
+  }
   if (opts.paymentId) payload.payment = opts.paymentId;
   if (opts.customerId) payload.customer = opts.customerId;
+  console.log("[asaas] NFS-e payload:", JSON.stringify({
+    municipalServiceCode: payload.municipalServiceCode,
+    municipalServiceName: payload.municipalServiceName,
+    municipalServiceId: payload.municipalServiceId ?? "(omitido)",
+  }));
   return payload;
 }
 
