@@ -87,9 +87,15 @@ export default function RelatorioNFPage() {
     staleTime: 30000,
   });
 
+  const isCancelledStatus = (st: string) => {
+    const s = (st || "").toUpperCase();
+    return s === "CANCELED" || s === "CANCELLED" || s.includes("CANCELLATION") || s.includes("CANCELAMENTO");
+  };
+
   const filtered = useMemo(() => {
     return invoices
       .filter(i => i.nfse_status)
+      .filter(i => !isCancelledStatus(i.nfse_status || ""))
       .filter(i => {
         const d = (i.created_at || "").slice(0, 10);
         if (from && d < from) return false;
@@ -100,7 +106,6 @@ export default function RelatorioNFPage() {
         if (statusFilter === "all") return true;
         const st = (i.nfse_status || "").toUpperCase();
         if (statusFilter === "AUTHORIZED") return st === "AUTHORIZED" || st === "SYNCHRONIZED";
-        if (statusFilter === "CANCELED") return st === "CANCELED" || st === "CANCELLED";
         return st === statusFilter;
       })
       .filter(i => {
@@ -116,20 +121,21 @@ export default function RelatorioNFPage() {
 
   const totals = useMemo(() => {
     const sum = (arr: Invoice[]) => arr.reduce((s, i) => s + parseFloat(i.value || "0"), 0);
-    const inRange = invoices.filter(i => i.nfse_status).filter(i => {
-      const d = (i.created_at || "").slice(0, 10);
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-      return true;
-    });
+    const inRange = invoices
+      .filter(i => i.nfse_status)
+      .filter(i => !isCancelledStatus(i.nfse_status || ""))
+      .filter(i => {
+        const d = (i.created_at || "").slice(0, 10);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
     const auth = inRange.filter(i => ["AUTHORIZED", "SYNCHRONIZED"].includes((i.nfse_status || "").toUpperCase()));
-    const canc = inRange.filter(i => ["CANCELED", "CANCELLED"].includes((i.nfse_status || "").toUpperCase()));
     const proc = inRange.filter(i => ["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED"].includes((i.nfse_status || "").toUpperCase()));
     const err = inRange.filter(i => (i.nfse_status || "").toUpperCase() === "ERROR");
     return {
       total: inRange.length, totalValue: sum(inRange),
       authCount: auth.length, authValue: sum(auth),
-      cancCount: canc.length, cancValue: sum(canc),
       procCount: proc.length, procValue: sum(proc),
       errCount: err.length, errValue: sum(err),
     };
@@ -160,7 +166,6 @@ export default function RelatorioNFPage() {
     { key: "all", label: "Total NFs", value: totals.totalValue, count: totals.total, color: "from-indigo-600 to-indigo-700", text: "text-white", iconColor: "text-white", icon: Receipt, dark: true },
     { key: "AUTHORIZED", label: "Autorizadas", value: totals.authValue, count: totals.authCount, color: "border-l-emerald-400", text: "text-emerald-700", iconColor: "text-emerald-600", icon: CheckCircle2 },
     { key: "PROCESSING", label: "Processando", value: totals.procValue, count: totals.procCount, color: "border-l-blue-400", text: "text-blue-700", iconColor: "text-blue-600", icon: Loader2 },
-    { key: "CANCELED", label: "Canceladas", value: totals.cancValue, count: totals.cancCount, color: "border-l-neutral-300", text: "text-neutral-600", iconColor: "text-neutral-400", icon: XCircle },
     { key: "ERROR", label: "Com Erro", value: totals.errValue, count: totals.errCount, color: "border-l-red-400", text: "text-red-700", iconColor: "text-red-500", icon: AlertTriangle },
   ];
 
@@ -239,7 +244,6 @@ export default function RelatorioNFPage() {
               <SelectItem value="AUTHORIZED">Autorizadas</SelectItem>
               <SelectItem value="PROCESSING">Em Processamento</SelectItem>
               <SelectItem value="SCHEDULED">Agendadas</SelectItem>
-              <SelectItem value="CANCELED">Canceladas</SelectItem>
               <SelectItem value="ERROR">Com Erro</SelectItem>
             </SelectContent>
           </Select>
