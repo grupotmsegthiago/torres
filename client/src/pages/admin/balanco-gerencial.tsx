@@ -176,7 +176,7 @@ interface DashboardData {
 type ActiveTab = "BALANCO" | "VEICULOS" | "AGENTES" | "MISSOES" | "METAS" | "ESTATISTICAS";
 
 export default function BalancoGerencialPage() {
-  const [period, setPeriod] = useState<Period>("MONTH");
+  const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
   const { toast } = useToast();
