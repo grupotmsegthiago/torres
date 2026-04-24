@@ -602,7 +602,12 @@ export default function BalancoGerencialPage() {
             const kmTotal = totals.km || 0;
             const kmDia = daysInPeriod > 0 ? kmTotal / daysInPeriod : 0;
             const kmMissao = totals.total > 0 ? kmTotal / totals.total : 0;
+            const combTotal = totals.desp_combustivel || 0;
+            const combDia = daysInPeriod > 0 ? combTotal / daysInPeriod : 0;
+            const custoPorKm = kmTotal > 0 ? combTotal / kmTotal : 0;
             const fmtKm = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+            const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+            const fmtBRL2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
             return (
               <Card className="p-4 border-neutral-200" data-testid="card-km">
                 <div className="flex items-center gap-2 mb-2">
@@ -620,6 +625,15 @@ export default function BalancoGerencialPage() {
                   </p>
                   <p className="text-neutral-600" data-testid="text-km-missao">
                     Média/missão: <span className="font-mono text-neutral-800">{fmtKm(kmMissao)} km</span>
+                  </p>
+                </div>
+                <div className="text-xs font-bold mt-2 pt-2 border-t border-neutral-100 space-y-0.5">
+                  <p className="text-[10px] font-black text-neutral-400 uppercase tracking-wider mb-0.5">Combustível</p>
+                  <p className="text-neutral-600" data-testid="text-combustivel-dia">
+                    Média/dia: <span className="font-mono text-neutral-800">{fmtBRL(combDia)}</span>
+                  </p>
+                  <p className="text-neutral-600" data-testid="text-combustivel-km">
+                    Custo/km: <span className="font-mono text-neutral-800">{fmtBRL2(custoPorKm)}</span>
                   </p>
                 </div>
               </Card>
