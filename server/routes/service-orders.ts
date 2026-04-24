@@ -1136,7 +1136,7 @@ import type { Express } from "express";
 
       try {
         await supabaseAdmin.from("escort_billings")
-          .update({ status: "CANCELADA" })
+          .update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 })
           .eq("service_order_id", Number(req.params.id))
           .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
       } catch (_e) {}

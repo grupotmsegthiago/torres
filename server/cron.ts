@@ -941,7 +941,13 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
     let despPedagio = 0;
     let despCombustivel = 0;
 
+    const isCancelledStatus = (s: any) => s === "recusada" || s === "cancelada";
+    const orderById = new Map<number, any>();
+    for (const so of todayOrders) orderById.set(so.id, so);
+
     for (const b of dedupedBillings) {
+      const so = orderById.get(Number(b.service_order_id));
+      if (so && isCancelledStatus(so.status)) continue;
       fatTotal += Number(b.fat_total) || 0;
       const pagTotal = Number(b.pag_total) || (Number(b.pag_vrp) || 0) + (Number(b.pag_periculosidade) || 0) + (Number(b.pag_adicional_noturno) || 0) + (Number(b.pag_reembolsos) || 0);
       const despTotal = Number(b.desp_total) || (Number(b.desp_pedagio) || Number(b.despesas_pedagio) || 0) + (Number(b.desp_combustivel) || Number(b.despesas_combustivel) || 0) + (Number(b.desp_outras) || Number(b.despesas_outras) || 0);
@@ -953,6 +959,7 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
     for (const so of todayOrders) {
       if (billingBySO.has(so.id)) continue;
+      if (isCancelledStatus(so.status)) continue;
       const soFat = Number((so as any).fat_calculado) || 0;
       const soCusto = Number((so as any).custo_total_alocado) || 0;
       if (soFat > 0 && !dedupedBillings.some((b: any) => b.service_order_id === so.id)) {
@@ -1026,15 +1033,18 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
       return `<span style="display:inline-block;background:${s.bg};color:${s.color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;">${s.label}</span>`;
     };
 
+    const isRecusadaOuCancelada = (s: any) => s === "recusada" || s === "cancelada";
+
     const osCards = todayOrders.slice(0, 30).map((so: any) => {
       const billing = billingBySO.get(so.id);
-      const fat = billing ? (Number(billing.fat_total) || 0) : (Number((so as any).fat_calculado) || 0);
+      let fat = billing ? (Number(billing.fat_total) || 0) : (Number((so as any).fat_calculado) || 0);
       let custo = Number((so as any).custo_total_alocado) || 0;
       if (billing) {
         const bPag = Number(billing.pag_total) || (Number(billing.pag_vrp) || 0) + (Number(billing.pag_periculosidade) || 0) + (Number(billing.pag_adicional_noturno) || 0) + (Number(billing.pag_reembolsos) || 0);
         const bDesp = Number(billing.desp_total) || (Number(billing.desp_pedagio) || Number(billing.despesas_pedagio) || 0) + (Number(billing.desp_combustivel) || Number(billing.despesas_combustivel) || 0) + (Number(billing.desp_outras) || Number(billing.despesas_outras) || 0);
         if (bPag + bDesp > 0) custo = bPag + bDesp;
       }
+      if (isRecusadaOuCancelada(so.status)) { fat = 0; custo = 0; }
 
       const clientName = billing?.client_name || clientMap.get(so.clientId) || "-";
 
