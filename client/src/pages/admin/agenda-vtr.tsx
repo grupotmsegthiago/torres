@@ -88,6 +88,15 @@ const isOverdue = (o: GridOs, nowMs: number) => {
   return new Date(o.scheduledDate).getTime() < nowMs - 5 * 60 * 1000;
 };
 
+const effectiveStartTime = (o: GridOs): string | null => {
+  if (o.missionStartedAt && o.scheduledDate) {
+    const started = new Date(o.missionStartedAt).getTime();
+    const sched = new Date(o.scheduledDate).getTime();
+    return started < sched ? o.missionStartedAt : o.scheduledDate;
+  }
+  return o.scheduledDate || o.missionStartedAt || null;
+};
+
 const fmtOverdue = (iso?: string | null, nowMs?: number) => {
   if (!iso || !nowMs) return "";
   const diffMin = Math.floor((nowMs - new Date(iso).getTime()) / 60000);
@@ -312,7 +321,7 @@ export default function AgendaVtrPage() {
                             )}
                             <div className="flex items-center gap-1 pt-0.5">
                               <Clock className="w-3 h-3 text-emerald-600 flex-shrink-0" />
-                              <span className="font-bold text-emerald-700">Iniciada {fmtTime(os.missionStartedAt)}</span>
+                              <span className="font-bold text-emerald-700">Iniciada {fmtTime(effectiveStartTime(os))}</span>
                             </div>
                           </div>
                         </a>
