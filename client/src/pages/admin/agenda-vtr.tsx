@@ -31,6 +31,17 @@ type GridOs = {
     receitas_extras?: number;
     faturamento?: number;
     km_total?: number;
+    pagamento?: number;
+    custo_combustivel?: number;
+    custo_pedagio?: number;
+    custo_outros?: number;
+    custo_salario?: number;
+    custo_diaria?: number;
+    custo_manutencao?: number;
+    custo_multa?: number;
+    custo_total?: number;
+    resultado?: number;
+    margem_pct?: number;
   } | null;
 };
 
@@ -348,46 +359,108 @@ export default function AgendaVtrPage() {
                               <Clock className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                               <span className="font-bold text-emerald-700">Iniciada {fmtTime(effectiveStartTime(os))}</span>
                             </div>
-                            {os.liveCost && (
+                            {os.liveCost && (() => {
+                              const lc = os.liveCost;
+                              const rateioRH = (Number(lc.custo_salario) || 0) + (Number(lc.custo_diaria) || 0);
+                              const outrosVeic = (Number(lc.custo_manutencao) || 0) + (Number(lc.custo_multa) || 0);
+                              const resultado = Number(lc.resultado) || 0;
+                              const margem = Number(lc.margem_pct) || 0;
+                              const resultColor = resultado >= 0 ? "text-emerald-700" : "text-red-700";
+                              const resultBg = resultado >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200";
+                              return (
                               <div className="mt-1.5 pt-1.5 border-t border-emerald-200/60 space-y-1" data-testid={`live-info-${os.id}`}>
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold">Tempo</span>
                                   <span className="text-[10px] font-black text-neutral-800 font-mono" data-testid={`text-duration-${os.id}`}>
-                                    {fmtDuration(os.liveCost.horas_missao)}
+                                    {fmtDuration(lc.horas_missao)}{Number(lc.km_total) > 0 ? ` · ${lc.km_total} km` : ""}
                                   </span>
                                 </div>
-                                {Number(os.liveCost.fat_acionamento) > 0 && (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold">Acionamento</span>
-                                    <span className="text-[10px] font-black text-neutral-800 font-mono" data-testid={`text-acionamento-${os.id}`}>
-                                      R$ {fmtBRL(os.liveCost.fat_acionamento)}
-                                    </span>
+
+                                <div className="pt-1">
+                                  <p className="text-[9px] uppercase tracking-wider text-emerald-700 font-bold mb-0.5">Receitas</p>
+                                  {Number(lc.fat_acionamento) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Acionamento</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-acionamento-${os.id}`}>R$ {fmtBRL(lc.fat_acionamento)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.fat_km_extra) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">KM</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-fat-km-${os.id}`}>R$ {fmtBRL(lc.fat_km_extra)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.horas_excedentes) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-amber-700">Hora extra ({fmtDuration(lc.horas_excedentes)})</span>
+                                      <span className="text-[10px] font-bold text-amber-800 font-mono" data-testid={`text-he-${os.id}`}>R$ {fmtBRL(lc.fat_hora_extra)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.receitas_extras) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-blue-700">Receita extra</span>
+                                      <span className="text-[10px] font-bold text-blue-800 font-mono" data-testid={`text-receita-extra-${os.id}`}>R$ {fmtBRL(lc.receitas_extras)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-between gap-2 bg-emerald-100/60 -mx-1 px-1.5 py-0.5 rounded mt-0.5">
+                                    <span className="text-[9px] uppercase tracking-wider text-emerald-800 font-bold">Faturamento</span>
+                                    <span className="text-[11px] font-black text-emerald-900 font-mono" data-testid={`text-fat-${os.id}`}>R$ {fmtBRL(lc.faturamento)}</span>
                                   </div>
-                                )}
-                                {Number(os.liveCost.horas_excedentes) > 0 && (
-                                  <div className="flex items-center justify-between gap-2 bg-amber-50 -mx-1 px-1.5 py-0.5 rounded">
-                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-bold">Hora extra</span>
-                                    <span className="text-[10px] font-black text-amber-800 font-mono" data-testid={`text-he-${os.id}`}>
-                                      {fmtDuration(os.liveCost.horas_excedentes)} · R$ {fmtBRL(os.liveCost.fat_hora_extra)}
-                                    </span>
+                                </div>
+
+                                <div className="pt-1">
+                                  <p className="text-[9px] uppercase tracking-wider text-red-700 font-bold mb-0.5">Despesas</p>
+                                  {Number(lc.pagamento) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Pagamento equipe</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-pagamento-${os.id}`}>R$ {fmtBRL(lc.pagamento)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.custo_combustivel) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Combustível</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-comb-${os.id}`}>R$ {fmtBRL(lc.custo_combustivel)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.custo_pedagio) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Pedágio</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-pedagio-${os.id}`}>R$ {fmtBRL(lc.custo_pedagio)}</span>
+                                    </div>
+                                  )}
+                                  {Number(lc.custo_outros) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Outros (avulsos)</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-outros-${os.id}`}>R$ {fmtBRL(lc.custo_outros)}</span>
+                                    </div>
+                                  )}
+                                  {rateioRH > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Salário/Diária (rateio)</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-rateio-rh-${os.id}`}>R$ {fmtBRL(rateioRH)}</span>
+                                    </div>
+                                  )}
+                                  {outrosVeic > 0 && (
+                                    <div className="flex items-center justify-between gap-2 pl-1.5">
+                                      <span className="text-[10px] text-neutral-600">Manutenção/Multas (rateio)</span>
+                                      <span className="text-[10px] font-bold text-neutral-800 font-mono" data-testid={`text-rateio-veic-${os.id}`}>R$ {fmtBRL(outrosVeic)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-between gap-2 bg-red-100/60 -mx-1 px-1.5 py-0.5 rounded mt-0.5">
+                                    <span className="text-[9px] uppercase tracking-wider text-red-800 font-bold">Total despesas</span>
+                                    <span className="text-[11px] font-black text-red-900 font-mono" data-testid={`text-despesas-${os.id}`}>R$ {fmtBRL(lc.custo_total)}</span>
                                   </div>
-                                )}
-                                {Number(os.liveCost.receitas_extras) > 0 && (
-                                  <div className="flex items-center justify-between gap-2 bg-blue-50 -mx-1 px-1.5 py-0.5 rounded">
-                                    <span className="text-[9px] uppercase tracking-wider text-blue-700 font-bold">Receita extra</span>
-                                    <span className="text-[10px] font-black text-blue-800 font-mono" data-testid={`text-receita-extra-${os.id}`}>
-                                      R$ {fmtBRL(os.liveCost.receitas_extras)}
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="flex items-center justify-between gap-2 bg-emerald-100/60 -mx-1 px-1.5 py-0.5 rounded">
-                                  <span className="text-[9px] uppercase tracking-wider text-emerald-800 font-bold">Faturamento</span>
-                                  <span className="text-[11px] font-black text-emerald-900 font-mono" data-testid={`text-fat-${os.id}`}>
-                                    R$ {fmtBRL(os.liveCost.faturamento)}
+                                </div>
+
+                                <div className={`flex items-center justify-between gap-2 -mx-1 px-1.5 py-1 mt-1 rounded border ${resultBg}`}>
+                                  <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">Resultado</span>
+                                  <span className={`text-[11px] font-black font-mono ${resultColor}`} data-testid={`text-resultado-${os.id}`}>
+                                    R$ {fmtBRL(resultado)} <span className="text-[9px]">({margem >= 0 ? "+" : ""}{margem.toFixed(1)}%)</span>
                                   </span>
                                 </div>
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         </a>
                       </Link>
