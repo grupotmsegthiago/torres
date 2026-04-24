@@ -12,6 +12,7 @@ import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
 
 const app = express();
+app.set("etag", false);
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -33,6 +34,13 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.text({ type: "text/plain" }));
+
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
 
 setupAuth(app);
 
