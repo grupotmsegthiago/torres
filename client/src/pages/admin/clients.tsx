@@ -177,9 +177,11 @@ const EmailTagInput = forwardRef<EmailTagInputHandle, EmailTagInputProps>(functi
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      addEmail();
+    if (e.key === "Enter" || e.key === "," || e.key === ";" || e.key === " " || e.key === "Tab") {
+      if (inputVal.trim()) {
+        if (e.key !== "Tab") e.preventDefault();
+        addEmail();
+      }
     }
   };
 
