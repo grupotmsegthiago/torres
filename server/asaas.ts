@@ -220,14 +220,22 @@ async function asaasRequest(method: string, path: string, body?: any): Promise<a
   return data;
 }
 
-export async function getAsaasBalance(): Promise<{ connected: boolean; balance?: number; totalBalance?: number; message?: string }> {
+export async function getAsaasBalance(): Promise<{ connected: boolean; balance?: number; saldoAtual?: number; saldoAReceber?: number; message?: string }> {
   try {
     if (!process.env.ASAAS_API_KEY) {
       return { connected: false, message: "ASAAS_API_KEY não configurada" };
     }
     const result = await asaasRequest("GET", "/finance/balance");
-    const balance = Number(result?.balance ?? result?.totalBalance ?? 0);
-    return { connected: true, balance, totalBalance: balance };
+    const saldoAtual = Number(result?.balance ?? result?.currentBalance ?? 0);
+    let saldoAReceber = 0;
+    try {
+      const stats = await asaasRequest("GET", "/finance/payment/statistics");
+      saldoAReceber = Number(stats?.value ?? stats?.totalValue ?? stats?.netValue ?? 0);
+    } catch {
+      saldoAReceber = Number(result?.receivableBalance ?? result?.totalReceivable ?? 0);
+    }
+    const balance = saldoAtual + saldoAReceber;
+    return { connected: true, balance, saldoAtual, saldoAReceber };
   } catch (err: any) {
     return { connected: false, message: err?.message || "Erro ao consultar saldo Asaas" };
   }

@@ -10,7 +10,7 @@ interface ResumoDiretoria {
   diaSemana: string;
   dataLabel: string;
   generatedAt: string;
-  asaas: { connected: boolean; balance?: number; message?: string };
+  asaas: { connected: boolean; balance?: number; saldoAtual?: number; saldoAReceber?: number; message?: string };
   meta: { diariaPorViatura: number; viaturasAtivas: number; diaria: number; semanal: number; mensal: number; diasNoMes: number };
   dia: {
     fatBilling: number; fatLive: number; fatExtraLive: number;
@@ -164,9 +164,21 @@ export default function MobileResumoFinanceiroPage() {
           <div className="flex items-start gap-3">
             <Wallet className={`w-5 h-5 mt-0.5 ${data.asaas.connected ? "text-emerald-600" : "text-amber-600"}`} />
             <div className="flex-1 min-w-0">
-              <p className={`text-[10px] font-bold uppercase tracking-wider ${data.asaas.connected ? "text-emerald-700" : "text-amber-700"}`}>Saldo em Conta — Asaas</p>
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${data.asaas.connected ? "text-emerald-700" : "text-amber-700"}`}>Saldo Total — Asaas</p>
               {data.asaas.connected ? (
-                <p className="text-2xl font-black text-emerald-700 mt-0.5" data-testid="text-asaas-balance">R$ {fmtBR(Number(data.asaas.balance) || 0)}</p>
+                <>
+                  <p className="text-2xl font-black text-emerald-700 mt-0.5" data-testid="text-asaas-balance">R$ {fmtBR(Number(data.asaas.balance) || 0)}</p>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="bg-white/50 rounded-lg p-2">
+                      <p className="text-[9px] text-emerald-700 uppercase tracking-wider">Saldo atual</p>
+                      <p className="text-sm font-bold text-emerald-800" data-testid="text-asaas-saldo-atual">R$ {fmtBR(Number(data.asaas.saldoAtual) || 0)}</p>
+                    </div>
+                    <div className="bg-white/50 rounded-lg p-2">
+                      <p className="text-[9px] text-emerald-700 uppercase tracking-wider">A receber</p>
+                      <p className="text-sm font-bold text-emerald-800" data-testid="text-asaas-a-receber">R$ {fmtBR(Number(data.asaas.saldoAReceber) || 0)}</p>
+                    </div>
+                  </div>
+                </>
               ) : (
                 <p className="text-xs text-amber-700 mt-1">{data.asaas.message || "Indisponível"}</p>
               )}

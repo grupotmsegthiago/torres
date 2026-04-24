@@ -961,8 +961,12 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
     const asaasHtml = snap.asaas.connected
       ? `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-left:4px solid #059669;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#047857;font-weight:600;">Saldo em Conta — Asaas</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#047857;font-weight:600;">Saldo Total — Asaas</div>
           <div style="font-size:24px;font-weight:700;color:#059669;margin-top:4px;">R$ ${fmtBR(Number(snap.asaas.balance) || 0)}</div>
+          <div style="font-size:11px;color:#047857;margin-top:6px;line-height:1.5;">
+            Saldo atual: <strong>R$ ${fmtBR(Number(snap.asaas.saldoAtual) || 0)}</strong>
+            &nbsp;·&nbsp; A receber: <strong>R$ ${fmtBR(Number(snap.asaas.saldoAReceber) || 0)}</strong>
+          </div>
         </div>`
       : `<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #ca8a04;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#92400e;font-weight:600;">Saldo Asaas</div>
