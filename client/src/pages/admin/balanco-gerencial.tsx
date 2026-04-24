@@ -353,7 +353,7 @@ export default function BalancoGerencialPage() {
   }, [filtered, provisaoRH]);
 
   const eficiencia = useMemo(() => {
-    if (!data) return { mediaKmL: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
+    if (!data) return { mediaKmL: 0, totalKm: 0, totalLiters: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
 
     const pad = (n: number) => String(n).padStart(2, "0");
     const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
@@ -396,10 +396,12 @@ export default function BalancoGerencialPage() {
     });
 
     perVehicle.sort((a, b) => a.kmL - b.kmL);
-    const mediaKmL = perVehicle.length > 0 ? perVehicle.reduce((a, v) => a + v.kmL, 0) / perVehicle.length : 0;
+    const totalKm = Object.values(kmByPlate).reduce((a, v) => a + v, 0);
+    const totalLiters = Object.values(litersByPlate).reduce((a, v) => a + v, 0);
+    const mediaKmL = totalKm > 0 && totalLiters > 0 ? totalKm / totalLiters : 0;
     const abaixo = perVehicle.filter((v) => v.kmL < 14);
 
-    return { mediaKmL, perVehicle, abaixo };
+    return { mediaKmL, totalKm, totalLiters, perVehicle, abaixo };
   }, [data, filtered.missions, allVehicles, range]);
 
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
@@ -605,7 +607,7 @@ export default function BalancoGerencialPage() {
           })()}
           {isDiretoria && (() => {
             const media = eficiencia.mediaKmL;
-            const hasData = eficiencia.perVehicle.length > 0;
+            const hasData = eficiencia.totalKm > 0 && eficiencia.totalLiters > 0;
             const status = !hasData ? "sem_dados" : media >= 15 ? "excelente" : media >= 14 ? "otimo" : "atencao";
             const statusCfg = {
               excelente: { label: "Excelente", cardBg: "border-green-300 bg-green-50", iconBg: "bg-green-100", iconColor: "text-green-700", textColor: "text-green-700", subColor: "text-green-700" },
@@ -626,7 +628,7 @@ export default function BalancoGerencialPage() {
                   {hasData ? media.toFixed(1) : "--"} <span className="text-sm">km/L</span>
                 </p>
                 <p className={`text-xs font-bold mt-1 ${statusCfg.subColor}`}>
-                  {statusCfg.label}{hasData ? ` · ${eficiencia.perVehicle.length} viat.` : ""}
+                  {statusCfg.label}{hasData ? ` · ${eficiencia.totalKm.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} km / ${eficiencia.totalLiters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} L` : ""}
                 </p>
                 {abaixoCount > 0 && (
                   <button
