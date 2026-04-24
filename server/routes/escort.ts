@@ -1963,9 +1963,16 @@ import type { Express } from "express";
         })(),
       }));
 
-      const { data: allFueling } = await supabaseAdmin.from("fueling_records").select("id, vehicle_id, driver_id, date, liters, total_cost");
+      const { data: allFueling, error: fuelingErr } = await supabaseAdmin
+        .from("vehicle_fueling")
+        .select("id, vehicle_id, driver_id, date, liters, total_cost");
+      if (fuelingErr) console.error("[dashboard] vehicle_fueling query error:", fuelingErr.message);
       const fuelingByAgent: { driverId: number; date: string; totalCost: number; liters: number; vehicleId: number }[] = (allFueling || []).map((f: any) => ({
-        driverId: f.driver_id, date: f.date, totalCost: Number(f.total_cost || 0), liters: Number(f.liters || 0), vehicleId: f.vehicle_id,
+        driverId: f.driver_id || 0,
+        date: typeof f.date === "string" ? f.date.slice(0, 10) : "",
+        totalCost: Number(f.total_cost || 0),
+        liters: Number(f.liters || 0),
+        vehicleId: f.vehicle_id,
       }));
 
       const { data: missionCostsRaw } = await supabaseAdmin.from("mission_costs").select("*");
