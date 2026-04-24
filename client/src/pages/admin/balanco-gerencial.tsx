@@ -5,11 +5,12 @@ import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   TrendingUp, TrendingDown, DollarSign, Car, Users, Target,
   Calendar, ChevronLeft, ChevronRight, ChevronDown, BarChart3, ArrowUpRight,
   ArrowDownRight, Loader2, RefreshCw, Crosshair, Truck, Clock,
-  Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert,
+  Trophy, Fuel, MapPin, Activity, Award, Gauge, FileText, ShieldAlert, AlertTriangle,
 } from "lucide-react";
 import { queryClient, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -179,6 +180,7 @@ export default function BalancoGerencialPage() {
   const [period, setPeriod] = useState<Period>("WEEK");
   const [refDate, setRefDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<ActiveTab>("BALANCO");
+  const [showEficienciaModal, setShowEficienciaModal] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
@@ -350,6 +352,54 @@ export default function BalancoGerencialPage() {
     };
   }, [filtered, provisaoRH]);
 
+  const eficiencia = useMemo(() => {
+    if (!data) return { mediaKmL: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const startStr = `${range.start.getFullYear()}-${pad(range.start.getMonth() + 1)}-${pad(range.start.getDate())}`;
+    const endStr = `${range.end.getFullYear()}-${pad(range.end.getMonth() + 1)}-${pad(range.end.getDate())}`;
+
+    const idToPlate: Record<number, string> = {};
+    const plateToModel: Record<string, string> = {};
+    (allVehicles || []).forEach((v: any) => {
+      if (v.id != null && v.plate) {
+        idToPlate[v.id] = v.plate;
+        plateToModel[v.plate] = v.model || "";
+      }
+    });
+
+    const litersByPlate: Record<string, number> = {};
+    (data.fuelingByAgent || []).forEach((f) => {
+      if (!f.date || f.date < startStr || f.date > endStr) return;
+      const plate = idToPlate[f.vehicleId];
+      if (!plate) return;
+      litersByPlate[plate] = (litersByPlate[plate] || 0) + (f.liters || 0);
+    });
+
+    const kmByPlate: Record<string, number> = {};
+    filtered.missions.forEach((m) => {
+      const plate = m.placa_viatura;
+      if (!plate) return;
+      kmByPlate[plate] = (kmByPlate[plate] || 0) + (m.km_total || 0);
+    });
+
+    const perVehicle: { plate: string; model: string; km: number; liters: number; kmL: number }[] = [];
+    const allPlates = new Set<string>([...Object.keys(litersByPlate), ...Object.keys(kmByPlate)]);
+    allPlates.forEach((plate) => {
+      const km = kmByPlate[plate] || 0;
+      const liters = litersByPlate[plate] || 0;
+      if (km > 0 && liters > 0) {
+        perVehicle.push({ plate, model: plateToModel[plate] || "", km, liters, kmL: km / liters });
+      }
+    });
+
+    perVehicle.sort((a, b) => a.kmL - b.kmL);
+    const mediaKmL = perVehicle.length > 0 ? perVehicle.reduce((a, v) => a + v.kmL, 0) / perVehicle.length : 0;
+    const abaixo = perVehicle.filter((v) => v.kmL < 14);
+
+    return { mediaKmL, perVehicle, abaixo };
+  }, [data, filtered.missions, allVehicles, range]);
+
   const TABS: { id: ActiveTab; label: string; icon: typeof BarChart3 }[] = [
     { id: "BALANCO", label: "Balanço", icon: BarChart3 },
     { id: "ESTATISTICAS", label: "Estatísticas", icon: TrendingUp },
@@ -413,7 +463,7 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        <div className={`grid grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-4"}`}>
+        <div className={`grid grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-4"}`}>
           {(() => {
             const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
             const totalViaturas = activeVehicles.length;
@@ -551,7 +601,93 @@ export default function BalancoGerencialPage() {
               </Card>
             );
           })()}
+          {isDiretoria && (() => {
+            const media = eficiencia.mediaKmL;
+            const hasData = eficiencia.perVehicle.length > 0;
+            const status = !hasData ? "sem_dados" : media >= 15 ? "excelente" : media >= 14 ? "otimo" : "atencao";
+            const statusCfg = {
+              excelente: { label: "Excelente", cardBg: "border-green-300 bg-green-50", iconBg: "bg-green-100", iconColor: "text-green-700", textColor: "text-green-700", subColor: "text-green-700" },
+              otimo:     { label: "Ótimo",     cardBg: "border-blue-300 bg-blue-50",   iconBg: "bg-blue-100",  iconColor: "text-blue-700",  textColor: "text-blue-700",  subColor: "text-blue-700"  },
+              atencao:   { label: "Atenção",   cardBg: "border-red-300 bg-red-50",     iconBg: "bg-red-100",   iconColor: "text-red-700",   textColor: "text-red-700",   subColor: "text-red-700"   },
+              sem_dados: { label: "Sem dados", cardBg: "border-neutral-200",            iconBg: "bg-neutral-100", iconColor: "text-neutral-500", textColor: "text-neutral-500", subColor: "text-neutral-500" },
+            }[status];
+            const abaixoCount = eficiencia.abaixo.length;
+            return (
+              <Card className={`p-4 ${statusCfg.cardBg}`} data-testid="card-eficiencia">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${statusCfg.iconBg}`}>
+                    <Fuel size={16} className={statusCfg.iconColor} />
+                  </div>
+                  <span className="text-xs font-black text-neutral-400 uppercase">Eficiência</span>
+                </div>
+                <p className={`text-2xl font-black font-mono ${statusCfg.textColor}`} data-testid="text-eficiencia-media">
+                  {hasData ? media.toFixed(1) : "--"} <span className="text-sm">km/L</span>
+                </p>
+                <p className={`text-xs font-bold mt-1 ${statusCfg.subColor}`}>
+                  {statusCfg.label}{hasData ? ` · ${eficiencia.perVehicle.length} viat.` : ""}
+                </p>
+                {abaixoCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowEficienciaModal(true)}
+                    data-testid="button-eficiencia-abaixo"
+                    className="mt-2 w-full flex items-center justify-center gap-1 rounded-md bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase px-2 py-1.5 transition-colors"
+                  >
+                    <AlertTriangle size={12} />
+                    {abaixoCount} {abaixoCount === 1 ? "VTR abaixo" : "VTRs abaixo"} de 14
+                  </button>
+                )}
+              </Card>
+            );
+          })()}
         </div>
+
+        <Dialog open={showEficienciaModal} onOpenChange={setShowEficienciaModal}>
+          <DialogContent className="max-w-2xl" data-testid="modal-eficiencia">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle size={20} className="text-red-600" />
+                Viaturas com baixa eficiência (abaixo de 14 km/L)
+              </DialogTitle>
+              <DialogDescription>
+                Período: {range.label}. Estas viaturas precisam de tratativas e correções para melhorar o consumo de combustível.
+              </DialogDescription>
+            </DialogHeader>
+            {eficiencia.abaixo.length === 0 ? (
+              <p className="text-sm text-neutral-500 py-8 text-center">
+                Nenhuma viatura abaixo de 14 km/L no período selecionado.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                {eficiencia.abaixo.map((v) => (
+                  <div
+                    key={v.plate}
+                    className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50"
+                    data-testid={`row-eficiencia-${v.plate}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+                        <Truck size={18} className="text-red-700" />
+                      </div>
+                      <div>
+                        <p className="font-black text-sm text-neutral-800" data-testid={`text-plate-${v.plate}`}>{v.plate}</p>
+                        {v.model && <p className="text-xs text-neutral-500 font-medium">{v.model}</p>}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-black font-mono text-red-700" data-testid={`text-kml-${v.plate}`}>
+                        {v.kmL.toFixed(1)} <span className="text-xs">km/L</span>
+                      </p>
+                      <p className="text-[10px] font-bold text-neutral-500">
+                        {v.km.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} km · {v.liters.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} L
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
           <div className="flex overflow-x-auto gap-1">
