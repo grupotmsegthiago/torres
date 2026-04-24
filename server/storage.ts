@@ -32,7 +32,20 @@ import pg from "pg";
 let _directPool: pg.Pool | null = null;
 function getDirectPool(): pg.Pool {
   if (!_directPool) {
-    _directPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3, idleTimeoutMillis: 20_000, connectionTimeoutMillis: 5_000 });
+    const supabaseDbUrl = process.env.SUPABASE_DATABASE_URL;
+    if (supabaseDbUrl) {
+      _directPool = new pg.Pool({
+        connectionString: supabaseDbUrl,
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+        idleTimeoutMillis: 20_000,
+        connectionTimeoutMillis: 10_000,
+      });
+      console.log("[storage] getDirectPool usando SUPABASE_DATABASE_URL (banco primário)");
+    } else {
+      _directPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3, idleTimeoutMillis: 20_000, connectionTimeoutMillis: 5_000 });
+      console.warn("[storage] SUPABASE_DATABASE_URL ausente — caindo para DATABASE_URL local (não recomendado)");
+    }
   }
   return _directPool;
 }
