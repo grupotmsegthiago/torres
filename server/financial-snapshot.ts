@@ -42,10 +42,15 @@ function daysInMonth(ymd: string): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-function diffDaysInclusive(startYmd: string, endYmd: string): number {
-  const a = new Date(startYmd + "T12:00:00Z").getTime();
-  const b = new Date(endYmd + "T12:00:00Z").getTime();
-  return Math.round((b - a) / (24 * 3600 * 1000)) + 1;
+function businessDaysInclusive(startYmd: string, endYmd: string): number {
+  const start = new Date(startYmd + "T12:00:00Z");
+  const end = new Date(endYmd + "T12:00:00Z");
+  let count = 0;
+  for (let d = new Date(start); d.getTime() <= end.getTime(); d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay();
+    if (dow >= 1 && dow <= 5) count++;
+  }
+  return count;
 }
 
 function extractDateBRT(v: any): string | null {
@@ -165,7 +170,7 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
     supabaseAdmin.from("escort_billings").select("*").gte("data_missao", weekStartYmd + "T00:00:00").lte("data_missao", weekEndYmd + "T23:59:59"),
     supabaseAdmin.from("escort_billings").select("*").gte("data_missao", monthStartYmd + "T00:00:00").lte("data_missao", monthEndYmd + "T23:59:59"),
     supabaseAdmin.from("escort_billings").select("km_total,pag_total,pag_vrp,pag_periculosidade,pag_adicional_noturno,pag_reembolsos,desp_total,desp_pedagio,despesas_pedagio,desp_combustivel,despesas_combustivel,desp_outras,despesas_outras").gte("data_missao", histStartYmd + "T00:00:00").lte("data_missao", histEndYmd + "T23:59:59"),
-    supabaseAdmin.from("financial_transactions").select("*").gte("created_at", monthStartYmd + "T00:00:00").lte("created_at", monthEndYmd + "T23:59:59"),
+    supabaseAdmin.from("financial_transactions").select("*").or(`and(due_date.gte.${monthStartYmd},due_date.lte.${monthEndYmd}),and(payment_date.gte.${monthStartYmd},payment_date.lte.${monthEndYmd}),and(created_at.gte.${monthStartYmd}T00:00:00,created_at.lte.${monthEndYmd}T23:59:59)`),
     supabaseAdmin.from("clients").select("id, name, company_name"),
     supabaseAdmin.from("vehicles").select("*"),
     supabaseAdmin.from("escort_contracts").select("*"),
@@ -299,12 +304,16 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
   const fatLiveTotal = fatBilling + fatExtraLive;
 
   const allTx = transactionsRes.data || [];
-  const todayTx = allTx.filter((t: any) => {
-    const dueDate = t.due_date ? String(t.due_date).slice(0, 10) : null;
-    const payDate = t.payment_date ? String(t.payment_date).slice(0, 10) : null;
-    const createdDate = extractDateBRT(t.created_at);
-    return dueDate === todayBRT || payDate === todayBRT || createdDate === todayBRT;
+  const effectiveTxDate = (t: any): string | null => {
+    if (t.payment_date) return String(t.payment_date).slice(0, 10);
+    if (t.due_date) return String(t.due_date).slice(0, 10);
+    return extractDateBRT(t.created_at);
+  };
+  const monthTx = allTx.filter((t: any) => {
+    const eff = effectiveTxDate(t);
+    return eff && eff >= monthStartYmd && eff <= monthEndYmd;
   });
+  const todayTx = monthTx.filter((t: any) => effectiveTxDate(t) === todayBRT);
 
   let despesasAvulsas = 0;
   let receitasAvulsas = 0;
@@ -347,18 +356,23 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
   const activeCount = activeVehicles.length;
   const dim = daysInMonth(todayBRT);
   const metaDiaria = META_DIARIA_VIATURA * activeCount;
-  const metaSemanal = metaDiaria * diffDaysInclusive(weekStartYmd, weekEndYmd);
-  const metaMensal = metaDiaria * dim;
+  const metaSemanal = metaDiaria * businessDaysInclusive(weekStartYmd, weekEndYmd);
+  const metaMensal = metaDiaria * businessDaysInclusive(monthStartYmd, monthEndYmd);
 
-  const fatSemana = sumBillingsFat(dedupBillingsBySO(weekBillingsRes.data || []), orderById);
-  const fatMes = sumBillingsFat(dedupBillingsBySO(monthBillingsRes.data || []), orderById);
+  const todayInWeek = todayBRT >= weekStartYmd && todayBRT <= weekEndYmd;
+  const todayInMonth = todayBRT >= monthStartYmd && todayBRT <= monthEndYmd;
+
+  const weekDeduped = dedupBillingsBySO(weekBillingsRes.data || []);
+  const monthDeduped = dedupBillingsBySO(monthBillingsRes.data || []);
+  const fatSemana = sumBillingsFat(weekDeduped, orderById) + (todayInWeek ? fatExtraLive : 0);
+  const fatMes = sumBillingsFat(monthDeduped, orderById) + (todayInMonth ? fatExtraLive : 0);
 
   const pctMeta = metaDiaria > 0 ? (fatLiveTotal / metaDiaria) * 100 : 0;
   const pctSemana = metaSemanal > 0 ? (fatSemana / metaSemanal) * 100 : 0;
   const pctMes = metaMensal > 0 ? (fatMes / metaMensal) * 100 : 0;
 
   const catMap = new Map<string, number>();
-  for (const t of allTx) {
+  for (const t of monthTx) {
     if (t.type !== "EXPENSE" && t.type !== "despesa") continue;
     const amt = Math.abs(Number(t.amount) || 0);
     if (amt <= 0) continue;
