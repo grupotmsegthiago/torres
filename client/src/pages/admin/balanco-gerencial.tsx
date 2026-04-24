@@ -413,7 +413,7 @@ export default function BalancoGerencialPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-2 gap-3 ${isDiretoria ? "md:grid-cols-3 lg:grid-cols-5" : "md:grid-cols-4"}`}>
           {(() => {
             const activeVehicles = (allVehicles || []).filter(isActiveVehicle);
             const totalViaturas = activeVehicles.length;
@@ -506,7 +506,7 @@ export default function BalancoGerencialPage() {
               <span className="text-xs font-black text-neutral-400 uppercase">Lucro Bruto</span>
             </div>
             <p className={`text-2xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">{totals.km.toLocaleString("pt-BR")} km | c/ provisão RH</p>
+            <p className="text-xs text-neutral-500 font-bold mt-1">c/ provisão RH</p>
           </Card>
           <Card className="p-4 border-neutral-200" data-testid="card-margem">
             <div className="flex items-center gap-2 mb-2">
@@ -524,6 +524,33 @@ export default function BalancoGerencialPage() {
               {totals.margem >= 30 ? "Saudável" : totals.margem >= 15 ? "Atenção" : "Crítico"}
             </p>
           </Card>
+          {isDiretoria && (() => {
+            const kmTotal = totals.km || 0;
+            const kmDia = daysInPeriod > 0 ? kmTotal / daysInPeriod : 0;
+            const kmMissao = totals.total > 0 ? kmTotal / totals.total : 0;
+            const fmtKm = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+            return (
+              <Card className="p-4 border-neutral-200" data-testid="card-km">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                    <Gauge size={16} className="text-indigo-700" />
+                  </div>
+                  <span className="text-xs font-black text-neutral-400 uppercase">KM Rodado</span>
+                </div>
+                <p className="text-2xl font-black text-indigo-700 font-mono" data-testid="text-km-total">
+                  {fmtKm(kmTotal)} <span className="text-sm">km</span>
+                </p>
+                <div className="text-xs font-bold mt-1 space-y-0.5">
+                  <p className="text-neutral-600" data-testid="text-km-dia">
+                    Média/dia: <span className="font-mono text-neutral-800">{fmtKm(kmDia)} km</span>
+                  </p>
+                  <p className="text-neutral-600" data-testid="text-km-missao">
+                    Média/missão: <span className="font-mono text-neutral-800">{fmtKm(kmMissao)} km</span>
+                  </p>
+                </div>
+              </Card>
+            );
+          })()}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-1">
