@@ -979,18 +979,21 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
     const fmt = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    const osDetails = todayOrders.slice(0, 30).map((so: any) => {
-      const statusMap: Record<string, string> = {
-        em_andamento: "&#128994; Em Andamento",
-        concluida: "&#9989; Concluída",
-        "concluída": "&#9989; Concluída",
-        agendada: "&#128197; Agendada",
-        aberta: "&#128203; Aberta",
-        cancelada: "&#10060; Cancelada",
-        recusada: "&#128683; Recusada",
+    const statusBadge = (status: string) => {
+      const map: Record<string, { bg: string; color: string; label: string }> = {
+        em_andamento: { bg: "#dbeafe", color: "#1d4ed8", label: "Em Andamento" },
+        concluida: { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
+        "concluída": { bg: "#dcfce7", color: "#15803d", label: "Concluída" },
+        agendada: { bg: "#fef3c7", color: "#a16207", label: "Agendada" },
+        aberta: { bg: "#e0e7ff", color: "#4338ca", label: "Aberta" },
+        cancelada: { bg: "#fee2e2", color: "#b91c1c", label: "Cancelada" },
+        recusada: { bg: "#fee2e2", color: "#b91c1c", label: "Recusada" },
       };
-      const statusLabel = statusMap[so.status] || so.status;
+      const s = map[status] || { bg: "#f1f5f9", color: "#475569", label: status };
+      return `<span style="display:inline-block;background:${s.bg};color:${s.color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;">${s.label}</span>`;
+    };
 
+    const osCards = todayOrders.slice(0, 30).map((so: any) => {
       const billing = billingBySO.get(so.id);
       const fat = billing ? (Number(billing.fat_total) || 0) : (Number((so as any).fat_calculado) || 0);
       let custo = Number((so as any).custo_total_alocado) || 0;
@@ -1002,13 +1005,26 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
 
       const clientName = billing?.client_name || clientMap.get(so.clientId) || "-";
 
-      return `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${so.osNumber || "-"}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${clientName}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;">${statusLabel}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;text-align:right;">R$ ${fmt(fat)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;text-align:right;color:#dc2626;">R$ ${fmt(custo)}</td>
-      </tr>`;
+      return `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
+        <tr>
+          <td style="padding:10px 12px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="font-size:13px;font-weight:700;color:#1e293b;">${so.osNumber || "-"}</td>
+                <td style="text-align:right;">${statusBadge(so.status)}</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding-top:6px;font-size:13px;color:#475569;line-height:1.35;">${clientName}</td>
+              </tr>
+              <tr>
+                <td style="padding-top:8px;font-size:12px;color:#64748b;">Faturamento<br><span style="font-size:14px;font-weight:700;color:#16a34a;">R$ ${fmt(fat)}</span></td>
+                <td style="padding-top:8px;text-align:right;font-size:12px;color:#64748b;">Custo<br><span style="font-size:14px;font-weight:700;color:#dc2626;">R$ ${fmt(custo)}</span></td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>`;
     }).join("");
 
     const margemColor = margem >= 30 ? "#16a34a" : margem >= 15 ? "#ca8a04" : "#dc2626";
@@ -1124,20 +1140,9 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
       </div>
 
       ${todayOrders.length > 0 ? `
-      <div style="margin-bottom:24px;">
-        <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#334155;">Detalhamento por OS</div>
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">OS</th>
-              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Cliente</th>
-              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#666;font-weight:600;">Status</th>
-              <th style="padding:8px 10px;text-align:right;font-size:12px;color:#666;font-weight:600;">Faturamento</th>
-              <th style="padding:8px 10px;text-align:right;font-size:12px;color:#666;font-weight:600;">Custo</th>
-            </tr>
-          </thead>
-          <tbody>${osDetails}</tbody>
-        </table>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:10px;color:#334155;">Detalhamento por OS</div>
+        ${osCards}
       </div>
       ` : ""}
 
