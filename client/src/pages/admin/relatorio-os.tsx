@@ -437,17 +437,17 @@ export default function RelatorioOSPage() {
     staleTime: 30000,
   });
 
-  const { data: financialDash } = useQuery<{ items?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
+  const { data: financialDash } = useQuery<{ byMission?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
   const billingByOsId = useMemo(() => {
     const map = new Map<number, { fat: number; km: number; pedagio: number }>();
-    const items = financialDash?.items || [];
-    for (const b of items) {
-      const sid = Number(b.service_order_id);
+    const missions = financialDash?.byMission || [];
+    for (const m of missions) {
+      const sid = Number(m.service_order_id);
       if (!sid) continue;
       map.set(sid, {
-        fat: Number(b.fat_total) || 0,
-        km: Number(b.km_total) || 0,
-        pedagio: Number(b.despesas_pedagio) || 0,
+        fat: Number(m.fat_total) || 0,
+        km: Number(m.km_total) || 0,
+        pedagio: Number(m.despesas_pedagio) || 0,
       });
     }
     return map;

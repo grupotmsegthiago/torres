@@ -1894,6 +1894,7 @@ import type { Express } from "express";
 
         return {
         id: b.id,
+        service_order_id: b.service_order_id || so?.id || null,
         os_number: so?.osNumber || b.os_number || null,
         data: toBRTDate(b.data_missao || b.created_at || new Date().toISOString()),
         created_at_date: b.created_at_date || createdDateBRT,
