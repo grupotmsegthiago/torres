@@ -356,8 +356,13 @@ export async function getDiretoriaSnapshot(targetDate?: string): Promise<ResumoD
   const activeCount = activeVehicles.length;
   const dim = daysInMonth(todayBRT);
   const metaDiaria = META_DIARIA_VIATURA * activeCount;
-  const metaSemanal = metaDiaria * businessDaysInclusive(weekStartYmd, weekEndYmd);
-  const metaMensal = metaDiaria * businessDaysInclusive(monthStartYmd, monthEndYmd);
+  const calendarDaysInclusive = (startYmd: string, endYmd: string): number => {
+    const s = new Date(startYmd + "T12:00:00Z").getTime();
+    const e = new Date(endYmd + "T12:00:00Z").getTime();
+    return Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1);
+  };
+  const metaSemanal = metaDiaria * calendarDaysInclusive(weekStartYmd, weekEndYmd);
+  const metaMensal = metaDiaria * calendarDaysInclusive(monthStartYmd, monthEndYmd);
 
   const todayInWeek = todayBRT >= weekStartYmd && todayBRT <= weekEndYmd;
   const todayInMonth = todayBRT >= monthStartYmd && todayBRT <= monthEndYmd;
