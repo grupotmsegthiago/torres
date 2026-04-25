@@ -437,6 +437,47 @@ export default function RelatorioOSPage() {
     staleTime: 30000,
   });
 
+  const { data: financialDash } = useQuery<{ items?: any[] }>({ queryKey: ["/api/financial/dashboard"], staleTime: 60000 });
+  const billingByOsId = useMemo(() => {
+    const map = new Map<number, { fat: number; km: number; pedagio: number }>();
+    const items = financialDash?.items || [];
+    for (const b of items) {
+      const sid = Number(b.service_order_id);
+      if (!sid) continue;
+      map.set(sid, {
+        fat: Number(b.fat_total) || 0,
+        km: Number(b.km_total) || 0,
+        pedagio: Number(b.despesas_pedagio) || 0,
+      });
+    }
+    return map;
+  }, [financialDash]);
+  const effectiveFat = (o: ReportOS) => {
+    const oficial = billingByOsId.get(o.id);
+    if (oficial && oficial.fat > 0) return oficial.fat;
+    return Number(o.liveCost?.faturamento) || 0;
+  };
+  const effectiveKm = (o: ReportOS) => {
+    const oficial = billingByOsId.get(o.id);
+    if (oficial && oficial.km > 0) return oficial.km;
+    return Number(o.liveCost?.km_total) || 0;
+  };
+  const effectiveResultado = (o: ReportOS) => {
+    const fat = effectiveFat(o);
+    const custo = Number(o.liveCost?.custo_total) || 0;
+    const lcFat = Number(o.liveCost?.faturamento) || 0;
+    if (lcFat > 0 && Math.abs(lcFat - fat) > 0.01) {
+      return fat - custo;
+    }
+    return Number(o.liveCost?.resultado) || (fat - custo);
+  };
+  const effectiveMargem = (o: ReportOS) => {
+    const fat = effectiveFat(o);
+    if (fat <= 0) return 0;
+    return (effectiveResultado(o) / fat) * 100;
+  };
+  const isExcluded = (o: ReportOS) => o.status === "recusada" || o.status === "cancelada";
+
   const { data: invoices = [] } = useQuery<any[]>({ queryKey: ["/api/invoices"], staleTime: 60000 });
   const { data: invoiceMap = {} } = useQuery<Record<string, { invoiceId: number; billingStatus: string }>>({
     queryKey: ["/api/service-orders/invoice-map"],
@@ -491,6 +532,8 @@ export default function RelatorioOSPage() {
         const s = o.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         return s === statusFilter;
       });
+    } else {
+      items = items.filter(o => !isExcluded(o));
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -510,8 +553,8 @@ export default function RelatorioOSPage() {
         case "status": va = a.status; vb = b.status; break;
         case "clientName": va = a.clientName; vb = b.clientName; break;
         case "scheduledDate": va = a.scheduledDate || ""; vb = b.scheduledDate || ""; break;
-        case "faturamento": va = a.liveCost?.faturamento || 0; vb = b.liveCost?.faturamento || 0; break;
-        case "resultado": va = a.liveCost?.resultado || 0; vb = b.liveCost?.resultado || 0; break;
+        case "faturamento": va = effectiveFat(a); vb = effectiveFat(b); break;
+        case "resultado": va = effectiveResultado(a); vb = effectiveResultado(b); break;
       }
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ? 1 : -1;
@@ -538,11 +581,11 @@ export default function RelatorioOSPage() {
     const t = { receita: 0, custo: 0, pedagio: 0, resultado: 0, km: 0, pagamento: 0, salario: 0, diaria: 0, combustivel: 0, manutencao: 0, multa: 0, outros: 0 };
     filtered.forEach(o => {
       const lc = o.liveCost;
-      t.receita += lc?.faturamento || 0;
+      t.receita += effectiveFat(o);
       t.custo += lc?.custo_total || 0;
       t.pedagio += lc?.custo_pedagio || 0;
-      t.resultado += lc?.resultado || 0;
-      t.km += lc?.km_total || 0;
+      t.resultado += effectiveResultado(o);
+      t.km += effectiveKm(o);
       t.pagamento += lc?.pagamento || 0;
       t.salario += lc?.custo_salario || 0;
       t.diaria += lc?.custo_diaria || 0;
@@ -552,7 +595,7 @@ export default function RelatorioOSPage() {
       t.outros += lc?.custo_outros || 0;
     });
     return t;
-  }, [filtered]);
+  }, [filtered, billingByOsId]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -581,18 +624,18 @@ export default function RelatorioOSPage() {
       fmtTime(o.missionStartedAt || o.scheduledDate),
       fmtDateShort(o.completedDate),
       fmtTime(o.completedDate),
-      Number((o.liveCost?.faturamento || 0).toFixed(2)),
+      Number((effectiveFat(o)).toFixed(2)),
       Number((o.liveCost?.custo_total || 0).toFixed(2)),
       Number((o.liveCost?.custo_pedagio || 0).toFixed(2)),
-      Number((o.liveCost?.resultado || 0).toFixed(2)),
-      ((o.liveCost?.margem_pct || 0)).toFixed(1) + "%",
-      Number((o.liveCost?.km_total || 0).toFixed(0)),
+      Number((effectiveResultado(o)).toFixed(2)),
+      ((effectiveMargem(o))).toFixed(1) + "%",
+      Number((effectiveKm(o)).toFixed(0)),
     ]);
-    const totFat = filtered.reduce((s, o) => s + (o.liveCost?.faturamento || 0), 0);
+    const totFat = filtered.reduce((s, o) => s + effectiveFat(o), 0);
     const totCusto = filtered.reduce((s, o) => s + (o.liveCost?.custo_total || 0), 0);
     const totPed = filtered.reduce((s, o) => s + (o.liveCost?.custo_pedagio || 0), 0);
-    const totRes = filtered.reduce((s, o) => s + (o.liveCost?.resultado || 0), 0);
-    const totKm = filtered.reduce((s, o) => s + (o.liveCost?.km_total || 0), 0);
+    const totRes = filtered.reduce((s, o) => s + effectiveResultado(o), 0);
+    const totKm = filtered.reduce((s, o) => s + effectiveKm(o), 0);
     const totalsRow: (string | number)[] = Array(20).fill("");
     totalsRow[0] = "TOTAL";
     totalsRow[13] = `${filtered.length} OS`;
