@@ -846,16 +846,16 @@ export function initCronJobs() {
     }
   });
 
-  cron.schedule("0 0,6,12,18 * * *", async () => {
+  cron.schedule("0 6,9,12,15,18 * * 1-5", async () => {
     try {
-      log("CRON ResumoFinanceiro: Disparando resumo da diretoria (00h/06h/12h/18h BRT)", "cron");
+      log("CRON ResumoFinanceiro: Disparando resumo da diretoria (seg-sex 06h/09h/12h/15h/18h BRT)", "cron");
       await sendDailySummaryEmail();
     } catch (err: any) {
       log(`CRON ResumoFinanceiro: Erro: ${err.message}`, "cron");
     }
   }, { timezone: "America/Sao_Paulo" });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (a cada 6h: 00h/06h/12h/18h BRT — diretoria)", "cron");
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria)", "cron");
 }
 
 function getCronMailTransporter() {
