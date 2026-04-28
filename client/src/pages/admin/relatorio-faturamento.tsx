@@ -260,6 +260,7 @@ export default function RelatorioFaturamentoPage() {
             if (!b.placa_escoltado && so.escortedVehiclePlate) b.placa_escoltado = so.escortedVehiclePlate;
             if (!b.os_number && so.osNumber) b.os_number = so.osNumber;
             if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
+            if (!b.completed_date && so.completedDate) b.completed_date = so.completedDate;
             b._so_status = so.status;
           }
           return b;
@@ -424,6 +425,7 @@ export default function RelatorioFaturamentoPage() {
       const escoltado = b.placa_escoltado || b.escorted_vehicle_plate || "—";
 
       const dataMissao = b.data_missao || b.created_at;
+      const dataFimMissao = b.completed_date || dataMissao;
 
       return {
         id: osNum,
@@ -438,8 +440,8 @@ export default function RelatorioFaturamentoPage() {
         startTime: b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(dataMissao),
         viatura,
         cargoPlate: escoltado,
-        endDate: fmtDate(dataMissao),
-        endTime: b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
+        endDate: fmtDate(dataFimMissao),
+        endTime: b.horario_fim ? b.horario_fim.substring(0, 5) : fmtTime(dataFimMissao),
         kmStart: n(b.km_inicial),
         kmEnd: n(b.km_final),
         kmTotal,

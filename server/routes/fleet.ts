@@ -187,8 +187,16 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.createVehicleMaintenance(parsed.data);
 
+    const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
+
+    if (vehicle && parsed.data.km && parsed.data.km > 0) {
+      const currentBase = (vehicle as any).lastOilChangeKm || 0;
+      if (parsed.data.km >= currentBase) {
+        await storage.updateVehicle(vehicle.id, { lastOilChangeKm: parsed.data.km } as any);
+      }
+    }
+
     if (data && Number(parsed.data.cost) > 0) {
-      const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
       const plateStr = vehicle?.plate || "";
       await createAutoTransaction({
         description: `MANUTENÇÃO ${plateStr} - ${parsed.data.type} ${parsed.data.description || ""}`.toUpperCase().trim(),
@@ -211,6 +219,16 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const data = await storage.updateVehicleMaintenance(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Manutenção não encontrada" });
+
+    if (data.vehicleId && data.km && data.km > 0) {
+      const vehicle = await storage.getVehicle(data.vehicleId);
+      if (vehicle) {
+        const currentBase = (vehicle as any).lastOilChangeKm || 0;
+        if (data.km >= currentBase) {
+          await storage.updateVehicle(vehicle.id, { lastOilChangeKm: data.km } as any);
+        }
+      }
+    }
 
     const newCost = Number(data.cost || 0);
     if (newCost > 0) {
