@@ -40,6 +40,7 @@ const BalancoGerencialPage = lazy(() => import("@/pages/admin/balanco-gerencial"
 const SimuladorMissaoPage = lazy(() => import("@/pages/admin/simulador-missao"));
 const RelatorioOSPage = lazy(() => import("@/pages/admin/relatorio-os"));
 const CotacaoGastoPage = lazy(() => import("@/pages/admin/cotacao-gasto"));
+const ConciliacaoTicketlogPage = lazy(() => import("@/pages/admin/conciliacao-ticketlog"));
 const FaturasPage = lazy(() => import("@/pages/admin/faturas"));
 const HoleritesPage = lazy(() => import("@/pages/admin/holerites"));
 const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
@@ -203,6 +204,7 @@ function Router() {
         <Route path="/admin/simulador-missao">{() => <ProtectedRoute component={SimuladorMissaoPage} />}</Route>
         <Route path="/admin/relatorio-os">{() => <ProtectedRoute component={RelatorioOSPage} />}</Route>
         <Route path="/admin/cotacao-gasto">{() => <ProtectedRoute component={CotacaoGastoPage} />}</Route>
+        <Route path="/admin/conciliacao-ticketlog">{() => <ProtectedRoute component={ConciliacaoTicketlogPage} />}</Route>
         <Route path="/admin/armamento">{() => <ProtectedRoute component={WeaponsPage} />}</Route>
         <Route path="/admin/usuarios">{() => <ProtectedRoute component={UsersPage} />}</Route>
         <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>

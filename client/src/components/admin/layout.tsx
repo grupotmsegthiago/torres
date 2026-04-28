@@ -124,6 +124,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel, iconColor: "text-amber-500" },
+          { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: FileText, iconColor: "text-amber-600" },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
       },
