@@ -233,3 +233,12 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
   - Anexa ao **assunto do e-mail** (`— Processo X` ou `— Processos X, Y`).
   - Insere headers SMTP `X-Omega-Processo` e `References` com identificadores de processo.
   - Inclui no cabeçalho do XLSX (linha "REFERENTE AO SERVIÇO ...") como `— PROCESSO N` / `— PROCESSOS N, M`.
+
+### Retenção de INSS na NF (IN RFB nº 2.110/2022)
+- **Por que existe:** A atividade de vigilância/escolta armada se enquadra no Anexo IV da LC 123 e envolve cessão de mão-de-obra. Conforme o art. 111, II da IN RFB nº 2.110/2022, a contratante deve reter 11% sobre o valor do serviço e recolher diretamente à Previdência. O valor retido é abatido no DAS pela contratada (Torres). Quando o cliente está dispensado da retenção, a NF deve trazer a observação do art. 115 da mesma IN.
+- **Configuração por cliente:** colunas `retem_inss` (BOOLEAN, default false) e `inss_aliquota` (NUMERIC(5,2), default 11.00) em `clients`. Editáveis em **Admin → Clientes** (toggle "Reter INSS na NF" + campo de alíquota), logo abaixo do toggle "Emite NF".
+- **Persistência da retenção na fatura:** colunas `valor_inss_retido` e `inss_aliquota` em `invoices` guardam o valor calculado no momento da emissão (auditoria/histórico).
+- **Emissão da NFS-e via Asaas (`server/asaas.ts`):**
+  - `buildNfseInvoicePayload` e `buildFiscalPayload` aceitam `retemInss` + `inssAliquota` e populam `taxes.inss = aliquota` (Asaas trata como percentual).
+  - As **observações da NF** trazem o texto legal: `Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022. Alíquota: X%. Valor retido: R$ Y,YY.` Quando `retem_inss=false`, é incluída a observação de dispensa do art. 115.
+  - Aplicado tanto na emissão **individual** (`POST /api/invoices`) quanto na **consolidada por boletim** (`POST /api/boletim-medicao/gerar-fatura/:clientId`). Em ambos os casos, o `fiscalObservations` da cobrança no Asaas também recebe o texto.

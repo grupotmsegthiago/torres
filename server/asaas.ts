@@ -24,20 +24,32 @@ function buildInvoiceDescription(_clientName: string, periodoInicio: string, per
   return `Ref. a Serviço de Escolta Armada Caracterizada - Período: ${inicio} a ${fim}`;
 }
 
-function buildFiscalPayload(value: number, clientCpfCnpj: string): Record<string, any> {
+const INSS_OBSERVACAO_LEGAL = "Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022.";
+const INSS_DISPENSA_OBSERVACAO = "De acordo com o artigo 115 da IN RFB nº 2.110/2022, a contratante fica dispensada de efetuar a retenção de INSS.";
+
+function buildInssObservation(retemInss: boolean, aliquota: number, valor: number): string {
+  if (!retemInss) return INSS_DISPENSA_OBSERVACAO;
+  return `${INSS_OBSERVACAO_LEGAL} Alíquota: ${aliquota.toFixed(2)}%. Valor retido: R$ ${valor.toFixed(2).replace(".", ",")}.`;
+}
+
+function buildFiscalPayload(value: number, clientCpfCnpj: string, opts?: { retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
+  const retemInss = !!opts?.retemInss;
+  const inssAliquota = retemInss ? Number(opts?.inssAliquota ?? 11) : 0;
+  const inssValor = retemInss ? Number((value * inssAliquota / 100).toFixed(2)) : 0;
+  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
   return {
     serviceListItem: CODIGO_SERVICO_MUNICIPAL,
     municipalServiceCode: CODIGO_SERVICO_MUNICIPAL_CODE,
     deductions: 0,
     effectiveDatePeriod: "MONTHLY",
     receivedOnly: false,
-    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}.`,
+    observations: `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. ${inssObs}`.trim(),
     taxes: {
       retainIss: false,
       iss: ISS_ALIQUOTA,
       cofins: 0,
       csll: 0,
-      inss: 0,
+      inss: inssAliquota,
       ir: 0,
       pis: 0,
     },
@@ -48,10 +60,15 @@ function todayDateStr(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Record<string, any> {
+function buildNfseInvoicePayload(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Record<string, any> {
+  const retemInss = !!opts.retemInss;
+  const inssAliquota = retemInss ? Number(opts.inssAliquota ?? 11) : 0;
+  const inssValor = retemInss ? Number((opts.value * inssAliquota / 100).toFixed(2)) : 0;
+  const inssObs = buildInssObservation(retemInss, inssAliquota, inssValor);
+  const baseObs = opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim();
   const payload: Record<string, any> = {
     serviceDescription: DESCRICAO_SERVICO_FIXA,
-    observations: opts.observations || `CNAE ${CNAE_PRINCIPAL}. ${opts.description || ""}`.trim(),
+    observations: `${baseObs} ${inssObs}`.trim(),
     value: opts.value,
     deductions: 0,
     effectiveDate: todayDateStr(),
@@ -60,7 +77,7 @@ function buildNfseInvoicePayload(opts: { paymentId: string; value: number; descr
     taxes: {
       retainIss: false,
       iss: ISS_ALIQUOTA,
-      cofins: 0, csll: 0, inss: 0, ir: 0, pis: 0,
+      cofins: 0, csll: 0, inss: inssAliquota, ir: 0, pis: 0,
     },
   };
   const overrideMunicipalServiceId = process.env.ASAAS_MUNICIPAL_SERVICE_ID;
@@ -183,7 +200,7 @@ async function sendBillingEmail(invoice: {
   }
 }
 
-async function emitNfseImmediate(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string }): Promise<{ id: string; status: string; number?: string }> {
+async function emitNfseImmediate(opts: { paymentId: string; value: number; description: string; observations?: string; customerId?: string; retemInss?: boolean; inssAliquota?: number }): Promise<{ id: string; status: string; number?: string }> {
   const payload = buildNfseInvoicePayload(opts);
   const result = await asaasRequest("POST", "/invoices", payload);
   const nfId = result.id;
@@ -500,9 +517,13 @@ export function registerAsaasRoutes(app: Express) {
         asaasCustomerId = await findOrCreateAsaasCustomer(clientName, clientCpfCnpj || "", clientEmail, clientPhone, clientAddress, clientCity, clientState, clientZip);
 
         let emiteNf = false;
+        let retemInss = false;
+        let inssAliquota = 11;
         if (clientId) {
-          const { data: cliData } = await supabaseAdmin.from("clients").select("emite_nf").eq("id", clientId).single();
+          const { data: cliData } = await supabaseAdmin.from("clients").select("emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
           emiteNf = cliData?.emite_nf === true;
+          retemInss = cliData?.retem_inss === true;
+          inssAliquota = Number(cliData?.inss_aliquota ?? 11);
         }
 
         const parsedValue = parseFloat(value);
@@ -545,6 +566,8 @@ export function registerAsaasRoutes(app: Express) {
                 paymentId: asaasPaymentId,
                 value: parsedValue,
                 description: description || DESCRICAO_SERVICO_FIXA,
+                retemInss,
+                inssAliquota,
               });
               console.log(`[asaas] NFS-e emitida imediatamente para payment ${asaasPaymentId}: id=${nfResult.id}, status=${nfResult.status}`);
             } catch (nfErr: any) {
@@ -573,6 +596,16 @@ export function registerAsaasRoutes(app: Express) {
 
       const userId = (req as any).user?.id;
 
+      let inssAliquotaPersist: number | null = null;
+      let inssValorPersist: number | null = null;
+      if (clientId) {
+        const { data: cliInss } = await supabaseAdmin.from("clients").select("retem_inss, inss_aliquota").eq("id", clientId).single();
+        if (cliInss?.retem_inss === true) {
+          inssAliquotaPersist = Number(cliInss.inss_aliquota ?? 11);
+          inssValorPersist = Number((parseFloat(value) * inssAliquotaPersist / 100).toFixed(2));
+        }
+      }
+
       const { data, error } = await supabaseAdmin.from("invoices").insert({
         client_id: clientId || null,
         client_name: clientName,
@@ -591,6 +624,8 @@ export function registerAsaasRoutes(app: Express) {
         pix_copia_e_cola: pixCopiaECola,
         notes: notes || null,
         external_reference: serviceOrderId ? `OS-${serviceOrderId}` : null,
+        valor_inss_retido: inssValorPersist,
+        inss_aliquota: inssAliquotaPersist,
         created_by: userId,
       }).select().single();
 
@@ -1507,9 +1542,12 @@ export function registerAsaasRoutes(app: Express) {
       const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
-      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, billing_cycle, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
+      const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, city, state, zip, email, email_financeiro, phone").eq("id", clientId).single();
       const cpfCnpj = clientData?.cnpj || clientData?.cpf || "";
       const emiteNfConsolidado = clientData?.emite_nf === true;
+      const retemInssConsolidado = clientData?.retem_inss === true;
+      const inssAliquotaConsolidado = Number(clientData?.inss_aliquota ?? 11);
+      const inssValorConsolidado = retemInssConsolidado ? Number((totalValue * inssAliquotaConsolidado / 100).toFixed(2)) : 0;
 
       if (clientData?.billing_cycle === "quinzenal") {
         const { data: allInPeriod } = await supabaseAdmin
@@ -1569,7 +1607,10 @@ export function registerAsaasRoutes(app: Express) {
           };
           if (emiteNfConsolidado) {
             consolidadoPayload.postalService = false;
-            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.`;
+            const inssObsPayment = retemInssConsolidado
+              ? ` ${INSS_OBSERVACAO_LEGAL} Alíquota: ${inssAliquotaConsolidado.toFixed(2)}%. Valor retido: R$ ${inssValorConsolidado.toFixed(2).replace(".", ",")}.`
+              : "";
+            consolidadoPayload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.${inssObsPayment}`;
           }
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
           const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
@@ -1592,6 +1633,8 @@ export function registerAsaasRoutes(app: Express) {
                 value: totalValue,
                 description: descricaoFiscal.substring(0, 500),
                 observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões).`,
+                retemInss: retemInssConsolidado,
+                inssAliquota: inssAliquotaConsolidado,
               });
               nfseStatus = nfResult.status || "AUTHORIZED";
               if (nfResult.number) nfseNumber = String(nfResult.number);
@@ -1639,6 +1682,8 @@ export function registerAsaasRoutes(app: Express) {
         nfse_number: nfseNumber,
         notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
+        valor_inss_retido: retemInssConsolidado ? inssValorConsolidado : null,
+        inss_aliquota: retemInssConsolidado ? inssAliquotaConsolidado : null,
         created_by: user?.id,
       }).select().single();
 

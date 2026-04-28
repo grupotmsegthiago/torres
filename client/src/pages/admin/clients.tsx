@@ -320,6 +320,8 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     paymentTermsDays: String((client as any)?.paymentTermsDays || (client as any)?.payment_terms_days || ""),
     billingCutoffDay: String((client as any)?.billingCutoffDay || (client as any)?.billing_cutoff_day || ""),
     emiteNf: (client as any)?.emiteNf ?? (client as any)?.emite_nf ?? false,
+    retemInss: (client as any)?.retemInss ?? (client as any)?.retem_inss ?? false,
+    inssAliquota: String((client as any)?.inssAliquota ?? (client as any)?.inss_aliquota ?? "11.00"),
   });
 
   const fetchCnpj = useCallback(async (cnpj: string) => {
@@ -553,6 +555,43 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
                   {form.emiteNf ? "Emitir NF" : "Isento de NF — apenas boleto"}
                 </span>
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-3 rounded-md border border-amber-200 bg-amber-50/40">
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Retenção de INSS (11%)</label>
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, retemInss: !form.retemInss })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.retemInss ? "bg-amber-600" : "bg-neutral-300"}`}
+                  data-testid="toggle-retem-inss"
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.retemInss ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+                <span className={`text-sm font-medium ${form.retemInss ? "text-amber-700" : "text-neutral-500"}`}>
+                  {form.retemInss ? "Reter INSS na NF (cessão de mão-de-obra)" : "Sem retenção (Art. 115 IN RFB 2.110/2022)"}
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">
+                Quando ativo, a NF emitida pelo Asaas terá <b>{form.inssAliquota}% de INSS retido</b> sobre o valor do serviço, com observação legal (IN RFB nº 2.110/2022, Art. 111, II). O valor retido pode ser abatido no DAS.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-neutral-500 mb-1.5 block uppercase tracking-wider">Alíquota INSS (%)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                max="20"
+                value={form.inssAliquota}
+                disabled={!form.retemInss}
+                onChange={(e) => setForm({ ...form, inssAliquota: e.target.value })}
+                placeholder="11.00"
+                data-testid="input-inss-aliquota"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">Padrão: 11,00% (IN RFB 2.110/2022)</p>
             </div>
           </div>
 
