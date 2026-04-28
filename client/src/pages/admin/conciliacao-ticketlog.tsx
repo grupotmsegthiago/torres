@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, createContext, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,10 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, XCircle, Loader2,
-  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle, ExternalLink,
+  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle, Eye,
 } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { DetailModal } from "./relatorio-abastecimento";
+import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
+
+const DetailCtx = createContext<((id: number) => void) | null>(null);
 
 interface TicketLogTx {
   code: string; date: string | null; time: string | null; plate: string;
@@ -57,6 +62,27 @@ export default function ConciliacaoTicketlogPage() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<Report | null>(null);
   const [tab, setTab] = useState("matched");
+
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+
+  const { data: fuelings = [] } = useQuery<VehicleFueling[]>({
+    queryKey: ["/api/fueling"],
+    enabled: detailId !== null,
+    staleTime: 30_000,
+  });
+  const { data: vehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: ["/api/vehicles"],
+    enabled: detailId !== null,
+  });
+  const { data: employees = [] } = useQuery<Employee[]>({
+    queryKey: ["/api/employees"],
+    enabled: detailId !== null,
+  });
+
+  const detailFueling = detailId ? fuelings.find(f => f.id === detailId) : null;
+  const detailVehicle = detailFueling ? vehicles.find(v => v.id === detailFueling.vehicleId) : undefined;
+  const detailDriver = detailFueling?.driverId ? employees.find(e => e.id === detailFueling.driverId)?.name : null;
 
   const handleUpload = async () => {
     if (!file) return;
@@ -107,6 +133,7 @@ export default function ConciliacaoTicketlogPage() {
 
   return (
     <AdminLayout>
+      <DetailCtx.Provider value={setDetailId}>
       <div className="space-y-6 p-4 md:p-6">
         {/* Upload card */}
         <Card className="p-5">
@@ -242,11 +269,25 @@ export default function ConciliacaoTicketlogPage() {
           </Card>
         )}
       </div>
+      </DetailCtx.Provider>
+
+      {detailFueling && (
+        <DetailModal
+          fueling={detailFueling}
+          vehicle={detailVehicle}
+          driverName={detailDriver}
+          fuelings={fuelings}
+          onClose={() => setDetailId(null)}
+          zoomedPhoto={zoomedPhoto}
+          setZoomedPhoto={setZoomedPhoto}
+        />
+      )}
     </AdminLayout>
   );
 }
 
 function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "mismatch" }) {
+  const openDetail = useContext(DetailCtx);
   if (!rows.length) {
     return (
       <Card className="p-8 text-center text-neutral-500">
@@ -302,17 +343,16 @@ function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "
                 <td className="px-3 py-2 text-xs">{tl.driver}</td>
                 <td className="px-3 py-2 text-xs">{tl.station}</td>
                 <td className="px-3 py-2 font-mono text-xs">
-                  <a
-                    href={`/admin/relatorio-abastecimento?detail=${sys.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openDetail?.(sys.id)}
                     className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
-                    title="Abrir detalhe do abastecimento (NF, foto da placa, hodômetro)"
-                    data-testid={`link-detail-${sys.id}`}
+                    title="Ver detalhes do abastecimento (NF, foto da placa, hodômetro)"
+                    data-testid={`button-detail-${sys.id}`}
                   >
                     {tl.code}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                    <Eye className="h-3 w-3" />
+                  </button>
                 </td>
               </tr>
             );
@@ -380,6 +420,7 @@ function TicketLogOnlyTable({ rows, title, warn }: { rows: { ticketlog: TicketLo
 }
 
 function SystemOnlyTable({ rows }: { rows: { system: SystemTx }[] }) {
+  const openDetail = useContext(DetailCtx);
   if (!rows.length) {
     return (
       <Card className="p-8 text-center text-neutral-500">
@@ -424,17 +465,16 @@ function SystemOnlyTable({ rows }: { rows: { system: SystemTx }[] }) {
                 <td className="px-3 py-2 text-xs">{s.driver}</td>
                 <td className="px-3 py-2 text-xs">{s.station}</td>
                 <td className="px-3 py-2 font-mono text-xs">
-                  <a
-                    href={`/admin/relatorio-abastecimento?detail=${s.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openDetail?.(s.id)}
                     className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
-                    title="Abrir detalhe do abastecimento (NF, foto da placa, hodômetro)"
-                    data-testid={`link-detail-sys-${s.id}`}
+                    title="Ver detalhes do abastecimento (NF, foto da placa, hodômetro)"
+                    data-testid={`button-detail-sys-${s.id}`}
                   >
                     {s.ticketlog_autorizacao || "ver detalhes"}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                    <Eye className="h-3 w-3" />
+                  </button>
                 </td>
               </tr>
             );

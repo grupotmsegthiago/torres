@@ -386,7 +386,7 @@ export default function RelatorioAbastecimentoPage() {
   );
 }
 
-function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, zoomedPhoto, setZoomedPhoto }: {
+export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, zoomedPhoto, setZoomedPhoto }: {
   fueling: VehicleFueling;
   vehicle?: Vehicle;
   driverName?: string | null;
