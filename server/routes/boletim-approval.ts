@@ -471,11 +471,46 @@ async function sendApprovalEmailWithExcel(
 export function registerBoletimApprovalRoutes(app: Express) {
   app.post("/api/boletim/enviar-aprovacao", requireAdminRole, async (req: Request, res: Response) => {
     try {
-      const { clientId, clientName, clientEmail, periodStart, periodEnd, billingIds, totalValue, osCount, force } = req.body;
+      const { clientId, clientName, clientEmail, billingIds, totalValue, osCount, force } = req.body;
+      let { periodStart, periodEnd } = req.body;
       const user = req.user as any;
 
       if (!clientId || !clientEmail || !billingIds?.length) {
         return res.status(400).json({ message: "Dados incompletos. Informe cliente, e-mail e IDs dos boletins." });
+      }
+
+      // ============================================================
+      // Regra unificada: período do boletim é derivado da data_missao
+      // (data de agendamento/início) das escort_billings selecionadas.
+      // Garante que toda a aplicação use a mesma referência temporal.
+      // ============================================================
+      const { data: billingsForPeriod } = await supabaseAdmin
+        .from("escort_billings")
+        .select("id, data_missao, created_at")
+        .in("id", billingIds);
+
+      const missionDates = (billingsForPeriod || [])
+        .map((b: any) => (b.data_missao || b.created_at || "").split("T")[0])
+        .filter(Boolean)
+        .sort();
+
+      if (missionDates.length > 0) {
+        const computedStart = missionDates[0];
+        const computedEnd = missionDates[missionDates.length - 1];
+
+        // Bloqueia quando as missões cruzam quinzenas diferentes do mesmo mês
+        // (ex.: misturar dia 15 e dia 16). Cada quinzena precisa de boletim próprio.
+        const startQuinz = Number(computedStart.split("-")[2]) <= 15 ? 1 : 2;
+        const endQuinz = Number(computedEnd.split("-")[2]) <= 15 ? 1 : 2;
+        const sameMonth = computedStart.slice(0, 7) === computedEnd.slice(0, 7);
+        if (sameMonth && startQuinz !== endQuinz) {
+          return res.status(400).json({
+            message: `As OS selecionadas pertencem a quinzenas diferentes (${computedStart} a ${computedEnd}). Gere um boletim para cada quinzena separadamente.`,
+          });
+        }
+
+        periodStart = computedStart;
+        periodEnd = computedEnd;
       }
 
         // Bloqueia reenvio se já existir aprovação ativa (PENDENTE/APROVADO) cobrindo qualquer um dos billings

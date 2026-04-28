@@ -2481,8 +2481,8 @@ import type { Express } from "express";
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
       const { data: billings, error } = await supabaseAdmin.from("escort_billings").select("*")
-        .eq("client_id", clientId).gte("created_at", startOfMonth).lte("created_at", endOfMonth)
-        .order("created_at", { ascending: true });
+        .eq("client_id", clientId).gte("data_missao", startOfMonth).lte("data_missao", endOfMonth)
+        .order("data_missao", { ascending: true });
       if (error) throw error;
 
       const items = billings || [];
