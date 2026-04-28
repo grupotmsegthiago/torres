@@ -196,6 +196,31 @@ export async function createAutoTransaction(params: {
   created_by?: string;
 }) {
   try {
+    if (params.origin_type && params.origin_id) {
+      const { data: existing } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("id")
+        .eq("origin_type", params.origin_type)
+        .eq("origin_id", params.origin_id)
+        .limit(1);
+      if (existing && existing.length > 0) {
+        const { data: updated, error: upErr } = await supabaseAdmin
+          .from("financial_transactions")
+          .update({
+            description: params.description,
+            amount: params.amount,
+            type: params.type,
+            due_date: params.due_date,
+            category_name: params.category_name || null,
+            entity_name: params.entity_name || null,
+          })
+          .eq("id", existing[0].id)
+          .select()
+          .single();
+        if (upErr) console.error("[AutoTransaction] update error:", upErr.message);
+        return updated;
+      }
+    }
     const { data, error } = await supabaseAdmin.from("financial_transactions").insert({
       description: params.description,
       amount: params.amount,
