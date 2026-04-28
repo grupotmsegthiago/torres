@@ -17,7 +17,7 @@ import type { Express } from "express";
     const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit as string) || 1000));
     const offset = (page - 1) * limit;
 
-    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints";
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,valor_estimado,pedagio_estimado,pedagio_ida_volta,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints";
 
     let data: any[];
     try {

@@ -208,6 +208,7 @@ export const serviceOrders = pgTable("service_orders", {
   escortedDriverName: text("escorted_driver_name"),
   escortedDriverPhone: text("escorted_driver_phone"),
   escortedVehiclePlate: text("escorted_vehicle_plate"),
+  extraDrivers: jsonb("extra_drivers").$type<Array<{ name: string; phone?: string | null; plate?: string | null }>>().default([]),
   missionStartedAt: timestamp("mission_started_at"),
   route: text("route"),
   origin: text("origin"),

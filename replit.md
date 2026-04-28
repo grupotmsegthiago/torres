@@ -242,3 +242,8 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
   - `buildNfseInvoicePayload` e `buildFiscalPayload` aceitam `retemInss` + `inssAliquota` e populam `taxes.inss = aliquota` (Asaas trata como percentual).
   - As **observações da NF** trazem o texto legal: `Retenção de INSS sobre cessão de mão-de-obra (Anexo IV) — Art. 111, II da IN RFB nº 2.110/2022. Alíquota: X%. Valor retido: R$ Y,YY.` Quando `retem_inss=false`, é incluída a observação de dispensa do art. 115.
   - Aplicado tanto na emissão **individual** (`POST /api/invoices`) quanto na **consolidada por boletim** (`POST /api/boletim-medicao/gerar-fatura/:clientId`). Em ambos os casos, o `fiscalObservations` da cobrança no Asaas também recebe o texto.
+
+### Comboio — Múltiplos Motoristas Escoltados (mobile)
+- **Coluna `extra_drivers` (JSONB, default `[]`)** em `service_orders` armazena motoristas adicionais quando a OS é um comboio (formato: `[{name, phone, plate}]`). O motorista principal continua nas colunas `escorted_driver_name/phone/vehicle_plate` para preservar compatibilidade com relatórios, NFS-e e laudo.
+- **App do agente — etapa `checkin_dados_motorista`** (`client/src/pages/mobile/missao.tsx`): card "Motorista 1 (principal)" + botão tracejado "Adicionar Motorista (Comboio)" cria slots adicionais com Nome/Telefone/Placa e botão "Remover". Validação: nome+placa obrigatórios em cada slot extra.
+- **Endpoint `POST /api/mission/escort-data`** (`server/routes/mission.ts`): aceita `extraDrivers: [{name, phone, plate}]`, sanitiza (trim, placa em UPPERCASE, ignora entradas sem nome) e salva via `storage.updateServiceOrder`. SO_LIST_COLS atualizado em `server/routes/service-orders.ts` para retornar `extra_drivers` na listagem.

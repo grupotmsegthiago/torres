@@ -14,7 +14,7 @@ import {
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
   WifiOff, History, ChevronRight, Calendar, Clock, MessageSquare,
-  CircleDollarSign, Receipt, RefreshCw,
+  CircleDollarSign, Receipt, RefreshCw, Plus,
 } from "lucide-react";
 
 const MISSION_STEPS = [
@@ -967,6 +967,7 @@ export default function MobileMissaoPage() {
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [driverPlate, setDriverPlate] = useState("");
+  const [extraDrivers, setExtraDrivers] = useState<Array<{ name: string; phone: string; plate: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [bypassAiRejection, setBypassAiRejection] = useState(false);
   const [cienteConfirmed, setCienteConfirmed] = useState(false);
@@ -1019,6 +1020,13 @@ export default function MobileMissaoPage() {
       if (mission.escortedDriverName && !driverName) setDriverName(mission.escortedDriverName);
       if (mission.escortedDriverPhone && !driverPhone) setDriverPhone(mission.escortedDriverPhone);
       if (mission.escortedVehiclePlate && !driverPlate) setDriverPlate(mission.escortedVehiclePlate);
+      if (Array.isArray((mission as any).extraDrivers) && (mission as any).extraDrivers.length > 0 && extraDrivers.length === 0) {
+        setExtraDrivers((mission as any).extraDrivers.map((d: any) => ({
+          name: d?.name || "",
+          phone: d?.phone || "",
+          plate: d?.plate || "",
+        })));
+      }
     }
   }, [mission, currentStep]);
 
@@ -1029,6 +1037,7 @@ export default function MobileMissaoPage() {
     setDriverName("");
     setDriverPhone("");
     setDriverPlate("");
+    setExtraDrivers([]);
     setCienteConfirmed(false);
     setChecklist({});
     setStatusUpdate("");
@@ -1352,6 +1361,18 @@ export default function MobileMissaoPage() {
       toast({ title: "Preencha todos os campos", description: "Nome do motorista e placa são obrigatórios.", variant: "destructive" });
       return;
     }
+    const cleanedExtras = extraDrivers
+      .map(d => ({
+        name: d.name.trim(),
+        phone: d.phone.trim() || null,
+        plate: d.plate.trim().toUpperCase() || null,
+      }))
+      .filter(d => d.name.length > 0);
+    const incompleteExtra = extraDrivers.some(d => d.name.trim() && !d.plate.trim());
+    if (incompleteExtra) {
+      toast({ title: "Comboio incompleto", description: "Informe a placa de cada motorista adicional ou remova-o.", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
       await apiRequest("POST", "/api/mission/escort-data", {
@@ -1359,6 +1380,7 @@ export default function MobileMissaoPage() {
         driverName: driverName.trim(),
         driverPhone: driverPhone.trim() || null,
         vehiclePlate: driverPlate.trim().toUpperCase(),
+        extraDrivers: cleanedExtras,
       });
       await advanceMission();
       toast({ title: "Dados salvos!" });
@@ -2312,6 +2334,9 @@ export default function MobileMissaoPage() {
         {currentStep === "checkin_dados_motorista" && (
           <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Motorista 1 (principal)</span>
+              </div>
               <div>
                 <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Nome do Motorista</label>
                 <input
@@ -2348,6 +2373,68 @@ export default function MobileMissaoPage() {
                 />
               </div>
             </div>
+
+            {extraDrivers.map((d, idx) => (
+              <div key={idx} className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-4" data-testid={`card-extra-driver-${idx}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Motorista {idx + 2} (comboio)</span>
+                  <button
+                    type="button"
+                    onClick={() => setExtraDrivers(prev => prev.filter((_, i) => i !== idx))}
+                    className="text-[11px] font-bold text-red-600 hover:text-red-700 active:scale-95"
+                    data-testid={`button-remove-extra-driver-${idx}`}
+                  >
+                    Remover
+                  </button>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Nome do Motorista</label>
+                  <input
+                    type="text"
+                    value={d.name}
+                    onChange={(e) => setExtraDrivers(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                    placeholder="Nome completo"
+                    className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-medium text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400"
+                    data-testid={`input-extra-driver-name-${idx}`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Telefone do Motorista</label>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={d.phone}
+                    onChange={(e) => setExtraDrivers(prev => prev.map((x, i) => i === idx ? { ...x, phone: e.target.value } : x))}
+                    placeholder="(11) 99999-9999"
+                    className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-medium text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-400"
+                    data-testid={`input-extra-driver-phone-${idx}`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-2">Placa do Veículo Escoltado</label>
+                  <input
+                    type="text"
+                    value={d.plate}
+                    onChange={(e) => setExtraDrivers(prev => prev.map((x, i) => i === idx ? { ...x, plate: e.target.value.toUpperCase() } : x))}
+                    placeholder="ABC1D23"
+                    maxLength={7}
+                    className="w-full h-14 bg-neutral-50 border border-neutral-200 rounded-xl text-center text-lg font-mono font-bold text-neutral-900 placeholder:text-neutral-300 uppercase focus:outline-none focus:border-neutral-400"
+                    data-testid={`input-extra-driver-plate-${idx}`}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setExtraDrivers(prev => [...prev, { name: "", phone: "", plate: "" }])}
+              className="w-full h-12 bg-white border-2 border-dashed border-neutral-300 text-neutral-700 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] hover:border-neutral-400"
+              data-testid="button-add-extra-driver"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar Motorista (Comboio)
+            </button>
+
             <button
               onClick={handleEscortData}
               disabled={submitting}

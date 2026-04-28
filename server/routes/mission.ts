@@ -1687,7 +1687,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const user = req.user!;
     if (!user.employeeId) return res.status(403).json({ message: "Usuário não é funcionário" });
 
-    const { serviceOrderId, driverName, vehiclePlate, driverPhone } = req.body;
+    const { serviceOrderId, driverName, vehiclePlate, driverPhone, extraDrivers } = req.body;
     if (!serviceOrderId || !driverName || !vehiclePlate) {
       return res.status(400).json({ message: "Campos obrigatórios: serviceOrderId, driverName, vehiclePlate" });
     }
@@ -1700,10 +1700,21 @@ Responda APENAS com JSON: {"km_lido": number}`;
       so.assignedEmployee2Id === user.employeeId;
     if (!isAssigned) return res.status(403).json({ message: "Você não está atribuído a esta OS" });
 
+    const cleanExtras = Array.isArray(extraDrivers)
+      ? extraDrivers
+          .map((d: any) => ({
+            name: String(d?.name || "").trim(),
+            phone: d?.phone ? String(d.phone).trim() : null,
+            plate: d?.plate ? String(d.plate).trim().toUpperCase() : null,
+          }))
+          .filter((d: any) => d.name.length > 0)
+      : [];
+
     const updated = await storage.updateServiceOrder(serviceOrderId, {
       escortedDriverName: driverName,
       escortedDriverPhone: driverPhone || null,
       escortedVehiclePlate: vehiclePlate,
+      extraDrivers: cleanExtras as any,
     });
 
     if (vehiclePlate && so.clientId) {
