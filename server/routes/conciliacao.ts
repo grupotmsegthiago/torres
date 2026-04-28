@@ -248,7 +248,7 @@ export function registerConciliacaoRoutes(app: Express) {
         }
         usedSysIds.add(sys.id);
         const enriched = enrich(sys);
-        if (enriched.diffs.valor < 0.01 && enriched.diffs.liters < 0.05) {
+        if (enriched.diffs.valor < 1.0) {
           matched.push(enriched);
         } else {
           valueMismatch.push(enriched);
