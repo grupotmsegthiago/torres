@@ -191,8 +191,17 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
 
     if (vehicle && parsed.data.km && parsed.data.km > 0) {
       const currentBase = (vehicle as any).lastOilChangeKm || 0;
+      const updates: any = {};
       if (parsed.data.km >= currentBase) {
-        await storage.updateVehicle(vehicle.id, { lastOilChangeKm: parsed.data.km } as any);
+        updates.lastOilChangeKm = parsed.data.km;
+      }
+      // Manutenção registrada como realizada (padrão) devolve o veículo para "em_uso"
+      const maintStatus = String((parsed.data as any).status || "realizada").toLowerCase();
+      if (maintStatus === "realizada" && (vehicle as any).status === "manutenção") {
+        updates.status = "em_uso";
+      }
+      if (Object.keys(updates).length > 0) {
+        await storage.updateVehicle(vehicle.id, updates);
       }
     }
 
@@ -224,8 +233,16 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
       const vehicle = await storage.getVehicle(data.vehicleId);
       if (vehicle) {
         const currentBase = (vehicle as any).lastOilChangeKm || 0;
+        const updates: any = {};
         if (data.km >= currentBase) {
-          await storage.updateVehicle(vehicle.id, { lastOilChangeKm: data.km } as any);
+          updates.lastOilChangeKm = data.km;
+        }
+        const maintStatus = String((data as any).status || "realizada").toLowerCase();
+        if (maintStatus === "realizada" && (vehicle as any).status === "manutenção") {
+          updates.status = "em_uso";
+        }
+        if (Object.keys(updates).length > 0) {
+          await storage.updateVehicle(vehicle.id, updates);
         }
       }
     }
