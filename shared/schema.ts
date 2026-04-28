@@ -930,6 +930,7 @@ export const invoices = pgTable("invoices", {
   paymentDate: text("payment_date"),
   externalReference: text("external_reference"),
   notes: text("notes"),
+  providerCnpj: text("provider_cnpj"),
   createdBy: integer("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

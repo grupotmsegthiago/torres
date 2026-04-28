@@ -785,6 +785,8 @@ export async function ensureDbSchema() {
       )
     `);
 
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS provider_cnpj TEXT`).catch(() => {});
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_invoices_provider_cnpj ON invoices (provider_cnpj)`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS pontos_gps INTEGER`).catch(() => {});
     await execSql(`CREATE INDEX IF NOT EXISTS idx_so_status_fat ON service_orders (status, fat_calculado)`).catch(() => {});

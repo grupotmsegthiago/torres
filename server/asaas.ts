@@ -6,6 +6,12 @@ import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./routes/_help
 
 const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
 
+// CNPJ da Torres Vigilância Patrimonial — emitente único de todas as NFs do sistema.
+// Usado para filtrar/marcar invoices e impedir que registros legados/teste de outros
+// emitentes apareçam no Relatório de NFs.
+const TORRES_CNPJ = "36982392000189";
+const cleanCnpj = (v: string | null | undefined): string => String(v || "").replace(/\D/g, "");
+
 const CNAE_PRINCIPAL = "7870";
 const CODIGO_SERVICO_MUNICIPAL = "25";
 const CODIGO_SERVICO_MUNICIPAL_CODE = "07870";
@@ -785,6 +791,7 @@ export function registerAsaasRoutes(app: Express) {
         external_reference: serviceOrderId ? `OS-${serviceOrderId}` : null,
         valor_inss_retido: inssValorPersist,
         inss_aliquota: inssAliquotaPersist,
+        provider_cnpj: TORRES_CNPJ,
         created_by: userId,
       }).select().single();
 
@@ -1841,6 +1848,7 @@ export function registerAsaasRoutes(app: Express) {
         nfse_number: nfseNumber,
         notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões) aprovada(s).`,
         external_reference: `BOLETIM-${clientId}-${billingIds.length}OS`,
+        provider_cnpj: TORRES_CNPJ,
         valor_inss_retido: retemInssConsolidado ? inssValorConsolidado : null,
         inss_aliquota: retemInssConsolidado ? inssAliquotaConsolidado : null,
         created_by: user?.id,
@@ -1948,8 +1956,21 @@ export function registerAsaasRoutes(app: Express) {
         let invQuery = supabaseAdmin.from("invoices").select("*").order("created_at", { ascending: false }).limit(1000);
         if (from) invQuery = invQuery.gte("created_at", `${from}T00:00:00`);
         if (to) invQuery = invQuery.lte("created_at", `${to}T23:59:59.999`);
-        const { data: invoices, error: invErr } = await invQuery;
+        const { data: invoicesRaw, error: invErr } = await invQuery;
         if (invErr) throw invErr;
+
+        // Filtra apenas NFs emitidas pela Torres (CNPJ 36982392000189). Registros
+        // legados sem provider_cnpj cadastrado são presumidos como Torres (única
+        // chave Asaas em uso). Registros marcados com OUTRO emitente são ocultados.
+        const invoices = (invoicesRaw || []).filter((inv: any) => {
+          const pc = cleanCnpj(inv.provider_cnpj);
+          if (!pc) return true;
+          return pc === TORRES_CNPJ;
+        });
+        const hiddenCount = (invoicesRaw || []).length - invoices.length;
+        if (hiddenCount > 0) {
+          console.log(`[relatorio-nf] ${hiddenCount} NFs ocultadas (emitente diferente de ${TORRES_CNPJ})`);
+        }
 
         let appQuery = supabaseAdmin.from("boletim_approvals").select("*").order("created_at", { ascending: false }).limit(1000);
         if (from) appQuery = appQuery.gte("created_at", `${from}T00:00:00`);

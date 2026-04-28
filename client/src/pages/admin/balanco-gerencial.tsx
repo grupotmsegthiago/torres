@@ -336,7 +336,14 @@ export default function BalancoGerencialPage() {
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
-    const custoTotal = pag + despReais + provisaoRH;
+    // Folha já lançada no financeiro (origin_type=payroll) está dentro de despReais
+    // (despFin.total). A provisão RH (CCT) é uma ESTIMATIVA. Para evitar contar
+    // a folha duas vezes, removemos a folha realizada de despReais e somamos
+    // o MAIOR entre a folha realizada e a provisão CCT (proteção: se a folha
+    // ainda não foi totalmente lançada, a provisão segue cobrindo o gap).
+    const folhaConsiderada = Math.max(provisaoRH, despFin.payroll);
+    const despReaisExFolha = despReais - despFin.payroll;
+    const custoTotal = pag + despReaisExFolha + folhaConsiderada;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -349,6 +356,7 @@ export default function BalancoGerencialPage() {
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
       provisaoRH,
+      folhaConsiderada,
       custoTotal,
     };
   }, [filtered, provisaoRH]);
@@ -560,13 +568,20 @@ export default function BalancoGerencialPage() {
                   {totals.desp_combustivel > 0 && <p className="text-neutral-600">Combustível: {fmt(totals.desp_combustivel)}</p>}
                   {totals.desp_pedagio > 0 && <p className="text-neutral-600">Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
                   {totals.desp_manutencao > 0 && <p className="text-neutral-600">Manutenção: {fmt(totals.desp_manutencao)}</p>}
+                  {totals.desp_folha > 0 && <p className="text-neutral-600" title="Folha lançada no Financeiro (origin_type=payroll)">Folha realizada: {fmt(totals.desp_folha)}</p>}
                   {totals.desp_outras > 0 && <p className="text-neutral-600">Outras: {fmt(totals.desp_outras)}</p>}
                 </div>
               )}
               {totals.provisaoRH > 0 && (
                 <div className="space-y-0.5 border-t border-neutral-100 pt-1">
-                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Provisão RH</p>
-                  <p className="text-amber-700">Folha ({activeAgentCount} ag. × {daysInPeriod}d): {fmt(totals.provisaoRH)}</p>
+                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Provisão RH (CCT)</p>
+                  <p className="text-amber-700" title="Estimativa baseada na CCT vigente — usada quando a folha realizada está abaixo">
+                    Estimada ({activeAgentCount} ag. × {daysInPeriod}d): {fmt(totals.provisaoRH)}
+                  </p>
+                  <p className="text-[10px] text-neutral-500" title="O Custo Total considera o MAIOR entre folha realizada e provisão CCT, evitando contar duas vezes">
+                    RH considerado: <span className="font-mono">{fmt(totals.folhaConsiderada)}</span>
+                    {totals.desp_folha > 0 && totals.provisaoRH > 0 ? ` (max realizada × provisão)` : ""}
+                  </p>
                 </div>
               )}
               {totals.custoTotal === 0 && <p className="text-neutral-500">Sem despesas no período</p>}
@@ -604,7 +619,13 @@ export default function BalancoGerencialPage() {
             const kmMissao = totals.total > 0 ? kmTotal / totals.total : 0;
             const combTotal = totals.desp_combustivel || 0;
             const combDia = daysInPeriod > 0 ? combTotal / daysInPeriod : 0;
-            const custoPorKm = kmTotal > 0 ? combTotal / kmTotal : 0;
+            // Combustível é gasto rodando o TOTAL de quilômetros do hodômetro,
+            // não apenas o KM faturado em missões. Usamos a leitura de hodômetro
+            // (eficiencia.totalKm) quando disponível para um custo/km realista.
+            const kmHodometro = eficiencia.totalKm || 0;
+            const kmParaCusto = kmHodometro > 0 ? kmHodometro : kmTotal;
+            const custoPorKm = kmParaCusto > 0 ? combTotal / kmParaCusto : 0;
+            const usaHodometro = kmHodometro > 0;
             const fmtKm = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
             const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
             const fmtBRL2 = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -614,7 +635,12 @@ export default function BalancoGerencialPage() {
                   <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                     <Gauge size={16} className="text-indigo-700" />
                   </div>
-                  <span className="text-xs font-black text-neutral-400 uppercase">KM Rodado</span>
+                  <span
+                    className="text-xs font-black text-neutral-400 uppercase cursor-help"
+                    title="KM declarado nas missões (faturado). Para o KM total rodado pelas viaturas (hodômetro), veja o card Eficiência."
+                  >
+                    KM Rodado (missões)
+                  </span>
                 </div>
                 <p className="text-2xl font-black text-indigo-700 font-mono" data-testid="text-km-total">
                   {fmtKm(kmTotal)} <span className="text-sm">km</span>
@@ -632,8 +658,17 @@ export default function BalancoGerencialPage() {
                   <p className="text-neutral-600" data-testid="text-combustivel-dia">
                     Média/dia: <span className="font-mono text-neutral-800">{fmtBRL(combDia)}</span>
                   </p>
-                  <p className="text-neutral-600" data-testid="text-combustivel-km">
+                  <p
+                    className="text-neutral-600"
+                    data-testid="text-combustivel-km"
+                    title={
+                      usaHodometro
+                        ? `Calculado sobre ${fmtKm(kmHodometro)} km de hodômetro (todos os km rodados pelas viaturas no período).`
+                        : `Sem leituras de hodômetro no período — usando ${fmtKm(kmTotal)} km de missões.`
+                    }
+                  >
                     Custo/km: <span className="font-mono text-neutral-800">{fmtBRL2(custoPorKm)}</span>
+                    <span className="text-[10px] text-neutral-400 ml-1">{usaHodometro ? "(hodômetro)" : "(missões)"}</span>
                   </p>
                 </div>
               </Card>

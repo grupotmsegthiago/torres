@@ -269,3 +269,15 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Regra de operação:** O agente avança para a próxima etapa assim que confirma "Declaro ciência desta missão", independentemente do horário agendado e sem necessidade de aprovação da central.
 - **Frontend (`client/src/pages/mobile/missao.tsx`):** Removidos os blocos "Aguarde o Horário" / "Início Antecipado" da etapa `aguardando` e o estado/effect `earlyBlocked`. O botão "Iniciar Missão" fica habilitado quando `cienteConfirmed === true`.
 - **Backend (`server/routes/mission.ts`):** Removidos os bloqueios `EARLY_START_BLOCKED` (POST `/api/mission/advance` e a variante simulada). O cálculo `diffMin > 30 && !earlyStartApproved` foi substituído por comentário explicando a regra. A coluna `early_start_approved` permanece (ainda usada por OperationalGrid e endpoint de autorização) caso a regra mude no futuro.
+
+### Relatório de NF — Filtro por CNPJ Emitente (Torres)
+- **Constante `TORRES_CNPJ = "36982392000189"`** em `server/asaas.ts` representa o emitente único de NFs do sistema (Torres Vigilância Patrimonial).
+- **Coluna `provider_cnpj TEXT`** em `invoices` (`shared/schema.ts` + ALTER idempotente em `server/db-init.ts`, com índice `idx_invoices_provider_cnpj`) marca cada fatura com o CNPJ do emitente no momento da criação.
+- **Inserts em `server/asaas.ts`** (POST `/api/invoices` individual e POST `/api/boletim-medicao/gerar-fatura/:clientId` consolidado) gravam `provider_cnpj: TORRES_CNPJ`.
+- **GET `/api/relatorio-nf` (`server/asaas.ts`):** após buscar `invoicesRaw`, filtra `cleanCnpj(provider_cnpj) === TORRES_CNPJ`. Registros legados sem `provider_cnpj` (NULL) são presumidos como Torres (mantém compatibilidade). Linhas BOL (boletim_approvals) sempre são da Torres. Loga quantidade ocultada.
+
+### Balanço Gerencial — Correções de Cálculo (`client/src/pages/admin/balanco-gerencial.tsx`)
+- **Folha contada em DOBRO eliminada:** transações `origin_type=payroll` já entram em `expenseSums.total`. A `provisaoRH` (estimativa CCT) era somada por cima → custo inflado. Novo cálculo: `folhaConsiderada = max(provisaoRH, desp_folha)` e `custoTotal = pag + (despReais − desp_folha) + folhaConsiderada` (cobre o gap quando a folha real ainda não foi totalmente lançada).
+- **Breakdown do card Custos Totais:** adicionada linha "Folha realizada" (de `desp_folha` quando > 0). Provisão RH renomeada para "Provisão RH (CCT) — Estimada", com nota "RH considerado: max(realizada × provisão)".
+- **Custo/km usa hodômetro:** combustível é gasto rodando TODOS os quilômetros da viatura, não só o km faturado em missões. Quando `eficiencia.totalKm > 0` (leitura de hodômetro), `custoPorKm = combTotal / eficiencia.totalKm`. Fallback para `kmTotal` (missões) quando não há hodômetro. Indicador `(hodômetro)` / `(missões)` ao lado do valor + tooltip explicativo.
+- **Tooltips de fonte de dados:** título do card mudou para "KM Rodado (missões)" com tooltip explicando que o KM total real (hodômetro) está no card Eficiência.
