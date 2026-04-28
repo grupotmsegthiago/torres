@@ -358,10 +358,18 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
         try {
           if (!force) {
             const payTerminal = ["RECEIVED", "CONFIRMED"].includes(String(inv.status || "").toUpperCase());
-            const nfTerminal = ["AUTHORIZED", "SYNCHRONIZED", "CANCELED", "CANCELLED"].includes(String(inv.nfse_status || "").toUpperCase());
+            const nfStatusUp = String(inv.nfse_status || "").toUpperCase();
+            const numIsFinal = inv.nfse_number && !String(inv.nfse_number).startsWith("inv_");
+            const isCanceled = ["CANCELED", "CANCELLED"].includes(nfStatusUp);
+            // NF é considerada "completa" quando está AUTHORIZED/SYNCHRONIZED com
+            // número final (não inv_*) e URL do PDF, OU quando foi cancelada.
+            // Caso contrário continua reconciliando para baixar nº/URL pendentes.
+            const nfTerminal = isCanceled || (
+              ["AUTHORIZED", "SYNCHRONIZED"].includes(nfStatusUp) && numIsFinal && !!inv.nfse_url
+            );
             const recentlyUpdated = inv.updated_at && (Date.now() - new Date(inv.updated_at).getTime() < 8 * 60 * 1000);
             if (payTerminal && nfTerminal) continue;
-            if (recentlyUpdated) continue;
+            if (recentlyUpdated && nfTerminal) continue;
           }
           const r = await reconcileInvoiceFromAsaas(inv);
           nfReconcileState.processed += 1;
