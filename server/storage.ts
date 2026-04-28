@@ -86,6 +86,8 @@ export function memInvalidateAll(): void {
   memCache.clear();
 }
 
+const DISABLE_LOCAL_FALLBACK = (process.env.DISABLE_LOCAL_FALLBACK ?? "true").toLowerCase() !== "false";
+
 async function resilientList<T>(
   table: string,
   supaFn: () => Promise<{ data: any[] | null; error: any }>,
@@ -93,7 +95,7 @@ async function resilientList<T>(
   orderAsc?: boolean,
   filters?: { column: string; op: string; value: any }[],
 ): Promise<T[]> {
-  if (!isSupabaseHealthy() && isLocalFresh(table)) {
+  if (!DISABLE_LOCAL_FALLBACK && !isSupabaseHealthy() && isLocalFresh(table)) {
     const local = await localQuery(
       table,
       filters,
@@ -108,6 +110,10 @@ async function resilientList<T>(
     markLocalFresh(table);
     return toCamelArray<T>(data || []);
   } catch (err: any) {
+    if (DISABLE_LOCAL_FALLBACK) {
+      console.error(`[resilient] ${table} list erro Supabase (fallback local desativado):`, err.message || err);
+      throw err;
+    }
     console.warn(`[resilient] ${table} list fallback: ${err.message || err}`);
     const local = await localQuery(
       table,
@@ -123,7 +129,7 @@ async function resilientGet<T>(
   filters: { column: string; op: string; value: any }[],
   supaFn: () => Promise<{ data: any | null; error: any }>,
 ): Promise<T | undefined> {
-  if (!isSupabaseHealthy() && isLocalFresh(table)) {
+  if (!DISABLE_LOCAL_FALLBACK && !isSupabaseHealthy() && isLocalFresh(table)) {
     const rows = await localQuery(table, filters, undefined, 1);
     if (rows.length > 0) return toCamelObj<T>(rows[0]);
   }
@@ -134,6 +140,10 @@ async function resilientGet<T>(
     markLocalFresh(table);
     return data ? toCamelObj<T>(data) : undefined;
   } catch (err: any) {
+    if (DISABLE_LOCAL_FALLBACK) {
+      console.error(`[resilient] ${table} get erro Supabase (fallback local desativado):`, err.message || err);
+      throw err;
+    }
     console.warn(`[resilient] ${table} get fallback: ${err.message || err}`);
     const rows = await localQuery(table, filters, undefined, 1);
     return rows.length > 0 ? toCamelObj<T>(rows[0]) : undefined;
@@ -149,6 +159,21 @@ async function resilientInsert<T>(
     if (error) throw new Error(error.message);
     return toCamelObj<T>(data);
   } catch (err: any) {
+    if (isSchemaCacheError(err.message || "")) {
+      try {
+        await applyViaDirectSql(getDirectPool(), "insert", table, snakePayload, null);
+        console.log(`[resilient] ${table} insert aplicado via SQL direto (cache do PostgREST desatualizado)`);
+        try { await supabaseAdmin.rpc("pg_notify", { channel: "pgrst", payload: "reload schema" }); } catch (_e) {}
+        return toCamelObj<T>(snakePayload as any);
+      } catch (sqlErr: any) {
+        console.error(`[resilient] ${table} SQL direto também falhou: ${sqlErr.message}`);
+        throw sqlErr;
+      }
+    }
+    if (DISABLE_LOCAL_FALLBACK) {
+      console.error(`[resilient] ${table} insert erro Supabase (queue local desativada):`, err.message);
+      throw err;
+    }
     console.warn(`[resilient] ${table} insert fallback to queue: ${err.message}`);
     const { queueId } = await enqueueWrite(table, "insert", snakePayload);
     return { ...toCamelObj<T>(snakePayload as any), _queued: true, _queueId: queueId } as any;
@@ -177,7 +202,12 @@ async function resilientUpdate<T>(
         return toCamelObj<T>({ ...snakePayload, ...filters } as any);
       } catch (sqlErr: any) {
         console.error(`[resilient] ${table} SQL direto também falhou: ${sqlErr.message}`);
+        throw sqlErr;
       }
+    }
+    if (DISABLE_LOCAL_FALLBACK) {
+      console.error(`[resilient] ${table} update erro Supabase (queue local desativada):`, err.message);
+      throw err;
     }
     console.warn(`[resilient] ${table} update fallback to queue: ${err.message}`);
     await enqueueWrite(table, "update", snakePayload, filters);
@@ -197,6 +227,10 @@ async function resilientDelete(
     const { error } = await query;
     if (error) throw new Error(error.message);
   } catch (err: any) {
+    if (DISABLE_LOCAL_FALLBACK) {
+      console.error(`[resilient] ${table} delete erro Supabase (queue local desativada):`, err.message);
+      throw err;
+    }
     console.warn(`[resilient] ${table} delete fallback to queue: ${err.message}`);
     await enqueueWrite(table, "delete", {}, filters);
   }

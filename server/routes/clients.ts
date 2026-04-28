@@ -63,9 +63,14 @@ import type { Express } from "express";
   app.patch("/api/clients/:id", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = insertClientSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
-    const data = await storage.updateClient(Number(req.params.id), parsed.data);
-    if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
-    res.json(data);
+    try {
+      const data = await storage.updateClient(Number(req.params.id), parsed.data);
+      if (!data) return res.status(404).json({ message: "Cliente não encontrado" });
+      res.json(data);
+    } catch (err: any) {
+      console.error(`[clients PATCH ${req.params.id}] erro ao salvar:`, err.message);
+      res.status(500).json({ message: err.message || "Erro ao salvar cliente" });
+    }
   });
 
   app.delete("/api/clients/:id", requireAuth, requireDiretoria, async (req, res) => {
