@@ -622,24 +622,36 @@ export function registerBoletimApprovalRoutes(app: Express) {
       let orders: any[] = [];
       const soIds = billings.map((b: any) => b.service_order_id).filter(Boolean);
       if (soIds.length > 0) {
-        const { data: sos } = await supabaseAdmin
+        const { data: sos, error: soErr } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date")
+          .select("id, os_number, origin, destination, scheduled_date, completed_date, escorted_vehicle_plate, vehicle_id")
           .in("id", soIds);
+        if (soErr) console.error("[boletim/aprovacao] erro carregando service_orders:", soErr.message);
         orders = sos || [];
+      }
+
+      // Carregar placa da viatura via vehicles (vehicle_id -> plate)
+      const vehicleIds = orders.map((o: any) => o.vehicle_id).filter(Boolean);
+      let vehiclesMap: Record<string, string> = {};
+      if (vehicleIds.length > 0) {
+        const { data: vs } = await supabaseAdmin.from("vehicles").select("id, plate").in("id", vehicleIds);
+        for (const v of vs || []) vehiclesMap[String(v.id)] = v.plate;
       }
 
       const enriched = billings.map((b: any) => {
         const so = orders.find((o: any) => o.id === b.service_order_id);
+        // Fallback de data: service_order > escort_billing.data_missao
+        const scheduled = so?.scheduled_date || b.data_missao || null;
+        const completed = so?.completed_date || null;
         return {
           ...b,
           osNumber: so?.os_number || `OS-${b.service_order_id}`,
-          origin: so?.origin || "",
-          destination: so?.destination || "",
-          scheduledDate: so?.scheduled_date,
-          completedDate: so?.completed_date,
-          vehiclePlate: so?.vehicle_plate || "",
-          escortedPlate: so?.escorted_vehicle_plate || "",
+          origin: so?.origin || b.origem || "",
+          destination: so?.destination || b.destino || "",
+          scheduledDate: scheduled,
+          completedDate: completed,
+          vehiclePlate: so?.vehicle_id ? (vehiclesMap[String(so.vehicle_id)] || "") : (b.placa_viatura || ""),
+          escortedPlate: so?.escorted_vehicle_plate || b.placa_escoltado || "",
         };
       });
 
