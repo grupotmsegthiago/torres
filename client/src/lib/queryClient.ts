@@ -32,11 +32,16 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const authHeaders = await getAuthHeaders();
+  // Auto-set Content-Type: application/json se há body string e o caller não definiu o header
+  const callerHeaders = (init?.headers || {}) as Record<string, string>;
+  const hasContentType = Object.keys(callerHeaders).some(h => h.toLowerCase() === "content-type");
+  const autoJsonHeader: Record<string, string> = (!hasContentType && typeof init?.body === "string") ? { "Content-Type": "application/json" } : {};
   const res = await fetch(url, {
     ...init,
     headers: {
       ...authHeaders,
-      ...(init?.headers || {}),
+      ...autoJsonHeader,
+      ...callerHeaders,
     },
   });
   if (res.status === 401) {
@@ -46,7 +51,8 @@ export async function authFetch(url: string, init?: RequestInit): Promise<Respon
         ...init,
         headers: {
           "Authorization": `Bearer ${data.session.access_token}`,
-          ...(init?.headers || {}),
+          ...autoJsonHeader,
+          ...callerHeaders,
         },
       });
     }
