@@ -709,6 +709,15 @@ import type { Express } from "express";
           tracker: trackerData,
           liveCost,
           ...(() => {
+            const photos = photosByOS.get(o.id) || [];
+            const kmCheg = photos.find((p: any) => p.step === "km_chegada");
+            const kmFin = photos.find((p: any) => p.step === "km_final");
+            return {
+              kmInicial: kmCheg?.kmValue ?? null,
+              kmFinal: kmFin?.kmValue ?? null,
+            };
+          })(),
+          ...(() => {
             const d = osDateOf(o);
             if (!d || !o.vehicleId) return { vehicleDayTotal: null, vehicleDayIndex: null };
             const ids = osByVehicleDay.get(`${o.vehicleId}:${d}`) || [];

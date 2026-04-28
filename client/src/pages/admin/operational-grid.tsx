@@ -289,6 +289,9 @@ interface GridItem {
   osNumber: string;
   scheduledDate: string | null;
   missionStartedAt?: string | null;
+  completedDate?: string | null;
+  kmInicial?: number | null;
+  kmFinal?: number | null;
   status: string;
   priority: string;
   missionStatus: string;
@@ -906,6 +909,44 @@ const FALLBACK_REPORT_TEMPLATE = `*TORRES VIGILÂNCIA PATRIMONIAL*
 📈 *PROGRESSO DA MISSÃO:* {{progress}}%
 🔲 *ATUALIZAÇÃO:* {{etapaAvancada}}
 🏙️ *LOCALIZAÇÃO:* {{locationAddr}}{{etaLine}}{{mapsBlock}}`;
+
+function buildClosingReportText(gi: GridItem | null | undefined, osNumber: string): string {
+  const headerOs = gi?.osNumber || osNumber || "—";
+  const opLabel = gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—";
+
+  const fmtDateTime = (iso: string | null | undefined): string => {
+    if (!iso) return "—";
+    try {
+      const s = String(iso);
+      const d = new Date(s.includes("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+      if (isNaN(d.getTime())) return "—";
+      const date = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+      const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      return `${date} ${time}`;
+    } catch { return "—"; }
+  };
+
+  const fmtKm = (v: number | null | undefined): string =>
+    v && v > 0 ? `${Number(v).toLocaleString("pt-BR")} km` : "—";
+
+  const startStr = fmtDateTime(gi?.missionStartedAt);
+  const endStr = fmtDateTime(gi?.completedDate);
+  const kmIni = fmtKm(gi?.kmInicial);
+  const kmFim = fmtKm(gi?.kmFinal);
+
+  const lat = gi?.lastAgentUpdate?.latitude;
+  const lng = gi?.lastAgentUpdate?.longitude;
+  const mapsLink = lat && lng ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR` : null;
+  const locBlock = mapsLink ? `\n\n📍 *LOCALIZAÇÃO:*\n${mapsLink}` : "";
+
+  return `*TORRES VIGILÂNCIA PATRIMONIAL*
+*OS ${headerOs}*
+
+🛡 *OPERAÇÃO:* ${opLabel}
+
+🟢 *INÍCIO:* ${startStr}    *KM INÍCIO:* ${kmIni}
+🔴 *FIM:* ${endStr}    *KM FIM:* ${kmFim}${locBlock}`;
+}
 
 let _cachedReportTemplate: string | null = null;
 let _templateFetchedAt = 0;
@@ -7008,7 +7049,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                             onClick={async () => {
                               const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                               const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                              let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}`;
+                              let reportText = mv ? await generateReportAsync(mv, gi || null) : buildClosingReportText(gi, u.osNumber);
                               let sharePhoto = u.photoUrl;
                               if (sharePhoto === "[has_photo]" && typeof u.id === "number") {
                                 try { const r = await authFetch(`/api/mission/updates/${u.id}/photo`); const d = await r.json(); sharePhoto = d.photoUrl || null; } catch { sharePhoto = null; }
@@ -7047,7 +7088,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                                 onClick={async () => {
                                   const mv = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
                                   const gi = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
-                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS ${u.osNumber}*\n\n🛡 *OPERAÇÃO:* ${gi?.missionStatus ? getMissionLabel(gi.missionStatus) : "—"}`;
+                                  let reportText = mv ? await generateReportAsync(mv, gi || null) : buildClosingReportText(gi, u.osNumber);
                                   const ok = await copyTextToClipboard(reportText);
                                   toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
                                   fireCopyAudit(u.id);
