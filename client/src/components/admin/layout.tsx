@@ -430,8 +430,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {isDiretoria && <SystemStatusBadge compact />}
         </header>
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
-          {children}
+        <main className="flex-1 p-3 md:p-4 overflow-auto">
+          <div className="max-w-screen-2xl mx-auto w-full">
+            {children}
+          </div>
         </main>
       </div>
       <ChatWidget />

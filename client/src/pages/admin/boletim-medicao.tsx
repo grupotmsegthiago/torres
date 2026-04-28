@@ -464,11 +464,11 @@ export default function BoletimMedicaoPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6" data-testid="page-boletim-medicao">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-3" data-testid="page-boletim-medicao">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
-            <p className="text-xs text-neutral-400 font-semibold mt-1">Verificação e aprovação de faturamento das ordens de serviço</p>
+            <h1 className="text-xl font-black text-neutral-900 uppercase tracking-wider" data-testid="heading-boletim">Boletim de Medição</h1>
+            <p className="text-[11px] text-neutral-400 font-semibold mt-0.5">Verificação e aprovação de faturamento das ordens de serviço</p>
           </div>
           <Button size="sm" onClick={exportBoletimExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-export-boletim-excel">
             <Download className="w-4 h-4" />
@@ -477,37 +477,37 @@ export default function BoletimMedicaoPage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <button onClick={() => setStatusFilter("ALL")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ALL" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-total">
+          <button onClick={() => setStatusFilter("ALL")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ALL" ? "ring-2 ring-neutral-900 border-neutral-900" : "border-neutral-200"}`} data-testid="stat-total">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center"><FileText size={14} className="text-neutral-500" /></div>
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total OS</span>
             </div>
-            <p className="text-2xl font-black text-neutral-900 mt-1">{totalOs}</p>
+            <p className="text-xl font-black text-neutral-900 mt-1">{totalOs}</p>
           </button>
-          <button onClick={() => setStatusFilter("PENDENTE")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "PENDENTE" ? "ring-2 ring-amber-500 border-amber-500" : "border-amber-200"}`} data-testid="stat-pendentes">
+          <button onClick={() => setStatusFilter("PENDENTE")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "PENDENTE" ? "ring-2 ring-amber-500 border-amber-500" : "border-amber-200"}`} data-testid="stat-pendentes">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><AlertTriangle size={14} className="text-amber-600" /></div>
               <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Pendentes</span>
             </div>
-            <p className="text-2xl font-black text-amber-700 mt-1">{pendingCount}</p>
+            <p className="text-xl font-black text-amber-700 mt-1">{pendingCount}</p>
           </button>
-          <button onClick={() => setStatusFilter("ENVIADA_APROVACAO")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ENVIADA_APROVACAO" ? "ring-2 ring-blue-500 border-blue-500" : "border-blue-200"}`} data-testid="stat-enviadas">
+          <button onClick={() => setStatusFilter("ENVIADA_APROVACAO")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "ENVIADA_APROVACAO" ? "ring-2 ring-blue-500 border-blue-500" : "border-blue-200"}`} data-testid="stat-enviadas">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Send size={14} className="text-blue-600" /></div>
               <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Enviadas</span>
             </div>
-            <p className="text-2xl font-black text-blue-700 mt-1">{sentForApprovalCount}</p>
+            <p className="text-xl font-black text-blue-700 mt-1">{sentForApprovalCount}</p>
             <p className="text-[9px] text-blue-400 font-semibold mt-0.5">p/ aprovação cliente</p>
           </button>
-          <button onClick={() => setStatusFilter("APROVADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "APROVADA" ? "ring-2 ring-emerald-500 border-emerald-500" : "border-emerald-200"}`} data-testid="stat-aprovadas">
+          <button onClick={() => setStatusFilter("APROVADA")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "APROVADA" ? "ring-2 ring-emerald-500 border-emerald-500" : "border-emerald-200"}`} data-testid="stat-aprovadas">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><CheckCircle2 size={14} className="text-emerald-600" /></div>
               <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Aprovadas</span>
             </div>
-            <p className="text-2xl font-black text-emerald-700 mt-1">{approvedCount}</p>
+            <p className="text-xl font-black text-emerald-700 mt-1">{approvedCount}</p>
             <p className="text-[9px] text-emerald-400 font-semibold mt-0.5">pelo cliente</p>
           </button>
-          <button onClick={() => setStatusFilter("A_FATURAR")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "A_FATURAR" ? "ring-2 ring-orange-500 border-orange-500" : "border-orange-200"}`} data-testid="stat-a-faturar">
+          <button onClick={() => setStatusFilter("A_FATURAR")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "A_FATURAR" ? "ring-2 ring-orange-500 border-orange-500" : "border-orange-200"}`} data-testid="stat-a-faturar">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center"><Clock size={14} className="text-orange-600" /></div>
               <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">A Faturar</span>
@@ -515,7 +515,7 @@ export default function BoletimMedicaoPage() {
             <p className="text-lg font-black text-orange-700 mt-1">{fmt(totalAFaturar)}</p>
             <p className="text-[9px] text-orange-400 font-semibold mt-0.5">{aFaturarCount} OS</p>
           </button>
-          <button onClick={() => setStatusFilter("FATURADA")} className={`text-left bg-white border rounded-xl p-4 transition-all cursor-pointer hover:shadow-md ${statusFilter === "FATURADA" ? "ring-2 ring-indigo-500 border-indigo-500" : "border-indigo-200"}`} data-testid="stat-faturado">
+          <button onClick={() => setStatusFilter("FATURADA")} className={`text-left bg-white border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${statusFilter === "FATURADA" ? "ring-2 ring-indigo-500 border-indigo-500" : "border-indigo-200"}`} data-testid="stat-faturado">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center"><DollarSign size={14} className="text-indigo-600" /></div>
               <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Faturado</span>

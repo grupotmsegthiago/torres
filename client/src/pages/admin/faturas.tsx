@@ -256,12 +256,12 @@ export default function FaturasPage() {
 
   return (
     <AdminLayout>
-      <div className="p-4 lg:p-6" data-testid="faturas-page">
-        <div className="max-w-7xl mx-auto space-y-6">
+      <div data-testid="faturas-page">
+        <div className="space-y-3">
 
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-neutral-900 flex items-center gap-2" data-testid="text-page-title">
+              <h1 className="text-xl font-bold text-neutral-900 flex items-center gap-2" data-testid="text-page-title">
                 <Receipt className="w-7 h-7 text-indigo-600" />
                 Controle de Faturas / NF
               </h1>

@@ -13,14 +13,14 @@ import type { Client, Employee, Vehicle, ServiceOrder, Trip, VehicleFueling, Veh
 
 function StatCard({ title, value, icon: Icon, color }: { title: string; value: number | string; icon: any; color: string }) {
   return (
-    <Card className="p-5 bg-white border-neutral-200" data-testid={`card-stat-${title.toLowerCase().replace(/\s/g, '-')}`}>
-      <div className="flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center`}>
-          <Icon className="w-5 h-5 text-white" />
+    <Card className="p-3 bg-white border-neutral-200" data-testid={`card-stat-${title.toLowerCase().replace(/\s/g, '-')}`}>
+      <div className="flex items-center gap-3">
+        <div className={`w-9 h-9 rounded-lg ${color} flex items-center justify-center`}>
+          <Icon className="w-4 h-4 text-white" />
         </div>
         <div>
-          <p className="text-2xl font-bold text-neutral-900">{value}</p>
-          <p className="text-xs text-neutral-500">{title}</p>
+          <p className="text-xl font-bold text-neutral-900 leading-tight">{value}</p>
+          <p className="text-[11px] text-neutral-500">{title}</p>
         </div>
       </div>
     </Card>
@@ -67,9 +67,9 @@ export default function DashboardPage() {
 
   return (
     <AdminLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-dashboard-title">Painel de Controle</h1>
-        <p className="text-sm text-neutral-500 mt-1">Visão geral do sistema</p>
+      <div className="mb-4">
+        <h1 className="text-xl font-bold text-neutral-900" data-testid="text-dashboard-title">Painel de Controle</h1>
+        <p className="text-xs text-neutral-500 mt-0.5">Visão geral do sistema</p>
       </div>
 
       <AlertasDashboard />
@@ -98,7 +98,7 @@ export default function DashboardPage() {
 
       {user?.role === "admin" && (
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-5 bg-white border-neutral-200" data-testid="card-multas-dia">
+          <Card className="p-3 bg-white border-neutral-200" data-testid="card-multas-dia">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center"><ShieldAlert className="w-4 h-4 text-red-600" /></div>
               <h3 className="text-sm font-semibold text-neutral-900">Multas do Dia</h3>
@@ -118,7 +118,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card className="p-5 bg-white border-neutral-200" data-testid="card-nf-status">
+          <Card className="p-3 bg-white border-neutral-200" data-testid="card-nf-status">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center"><Receipt className="w-4 h-4 text-green-600" /></div>
               <h3 className="text-sm font-semibold text-neutral-900">Status Notas Fiscais</h3>
@@ -138,7 +138,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card className="p-5 bg-white border-neutral-200" data-testid="card-processos-alertas">
+          <Card className="p-3 bg-white border-neutral-200" data-testid="card-processos-alertas">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center"><Gavel className="w-4 h-4 text-amber-600" /></div>
               <h3 className="text-sm font-semibold text-neutral-900">Alertas Processos</h3>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
 
       {user?.role === "admin" && apiStats && (
         <div className="mt-4">
-          <Card className="p-5 bg-white border-neutral-200" data-testid="card-consumo-api">
+          <Card className="p-3 bg-white border-neutral-200" data-testid="card-consumo-api">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center"><Activity className="w-4 h-4 text-white" /></div>
               <h3 className="text-sm font-semibold text-neutral-900">Consumo API Brasil</h3>

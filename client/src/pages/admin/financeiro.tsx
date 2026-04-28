@@ -1043,7 +1043,7 @@ export default function FinanceiroPage() {
       <div className="space-y-6" data-testid="panel-boletim">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <div className="space-y-4">
-            <Card className="p-5 border-neutral-200 shadow-sm">
+            <Card className="p-3 border-neutral-200 shadow-sm">
               <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><Calculator size={16} /> Calculadora de Escolta</h4>
               <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
@@ -1118,7 +1118,7 @@ export default function FinanceiroPage() {
 
           <div className="space-y-4">
             {calcResult && (
-              <Card className="p-5 border-green-200 shadow-md bg-gradient-to-br from-green-50 to-white" data-testid="card-calc-result">
+              <Card className="p-3 border-green-200 shadow-md bg-gradient-to-br from-green-50 to-white" data-testid="card-calc-result">
                 <h4 className="text-sm font-black text-green-800 uppercase mb-4 flex items-center gap-2"><CheckCircle2 size={16} /> Resultado do Cálculo</h4>
                 <div className="space-y-4">
                   {calcResult.horario_inicio_considerado && (
@@ -1194,7 +1194,7 @@ export default function FinanceiroPage() {
               const pendentes = escortBillings.filter((b: any) => b.status === "A_VERIFICAR");
               if (pendentes.length === 0) return null;
               return (
-                <Card className="p-5 border-amber-200 shadow-md bg-gradient-to-br from-amber-50 to-white" data-testid="panel-os-pendentes">
+                <Card className="p-3 border-amber-200 shadow-md bg-gradient-to-br from-amber-50 to-white" data-testid="panel-os-pendentes">
                   <h4 className="text-sm font-black text-amber-800 uppercase mb-4 flex items-center gap-2"><AlertTriangle size={16} /> OS Pendentes de Revisão ({pendentes.length})</h4>
                   <div className="space-y-3 max-h-[500px] overflow-y-auto">
                     {pendentes.map((b: any) => (
@@ -1265,7 +1265,7 @@ export default function FinanceiroPage() {
               );
             })()}
 
-            <Card className="p-5 border-neutral-200 shadow-sm">
+            <Card className="p-3 border-neutral-200 shadow-sm">
               <h4 className="text-sm font-black text-neutral-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} /> Histórico de Boletins</h4>
               {sortedBillings.length === 0 ? (
                 <div className="p-8 text-center"><Calculator size={32} className="mx-auto text-neutral-300 mb-2" /><p className="text-xs font-bold text-neutral-400 uppercase">Nenhum boletim gerado</p></div>
@@ -1341,11 +1341,11 @@ export default function FinanceiroPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6" data-testid="page-financeiro">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="space-y-3" data-testid="page-financeiro">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-black text-neutral-900 tracking-tight uppercase" data-testid="text-page-title">Financeiro</h1>
-            <p className="text-sm text-neutral-500">Contas a Pagar e Receber — Torres Vigilância</p>
+            <h1 className="text-xl font-black text-neutral-900 tracking-tight uppercase" data-testid="text-page-title">Financeiro</h1>
+            <p className="text-xs text-neutral-500">Contas a Pagar e Receber — Torres Vigilância</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv" className="text-xs font-bold uppercase">

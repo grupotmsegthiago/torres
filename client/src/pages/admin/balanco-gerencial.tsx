@@ -524,7 +524,7 @@ export default function BalancoGerencialPage() {
                   <span className="text-xs font-black text-neutral-400 uppercase">Faturamento</span>
                   {mc.icon && <Badge className="bg-green-600 text-white text-[10px] font-black px-1.5 py-0 border-0">META BATIDA</Badge>}
                 </div>
-                <p className="text-2xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
+                <p className="text-xl font-black text-green-700 font-mono">{fmt(totals.fat)}</p>
                 <p className="text-xs text-neutral-500 font-bold mt-1">{totals.total} missões | {totalViaturas} viat. ativas</p>
                 {metaPeriodo > 0 && (
                   <div className="mt-2">
@@ -559,7 +559,7 @@ export default function BalancoGerencialPage() {
               </div>
               <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
             </div>
-            <p className="text-2xl font-black text-red-700 font-mono">{fmt(totals.custoTotal)}</p>
+            <p className="text-xl font-black text-red-700 font-mono">{fmt(totals.custoTotal)}</p>
             <div className="text-xs font-bold mt-1 space-y-1">
               {(totals.pag > 0 || totals.desp > 0) && (
                 <div className="space-y-0.5">
@@ -594,7 +594,7 @@ export default function BalancoGerencialPage() {
               </div>
               <span className="text-xs font-black text-neutral-400 uppercase">Lucro Bruto</span>
             </div>
-            <p className={`text-2xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
+            <p className={`text-xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
             <p className="text-xs text-neutral-500 font-bold mt-1">c/ provisão RH</p>
           </Card>
           <Card className="p-4 border-neutral-200" data-testid="card-margem">
@@ -606,7 +606,7 @@ export default function BalancoGerencialPage() {
               </div>
               <span className="text-xs font-black text-neutral-400 uppercase">Margem</span>
             </div>
-            <p className={`text-2xl font-black font-mono ${totals.margem >= 30 ? "text-green-700" : totals.margem >= 15 ? "text-amber-700" : "text-red-700"}`}>
+            <p className={`text-xl font-black font-mono ${totals.margem >= 30 ? "text-green-700" : totals.margem >= 15 ? "text-amber-700" : "text-red-700"}`}>
               {fmtPct(totals.margem)}
             </p>
             <p className="text-xs text-neutral-500 font-bold mt-1">
@@ -642,7 +642,7 @@ export default function BalancoGerencialPage() {
                     KM Rodado (missões)
                   </span>
                 </div>
-                <p className="text-2xl font-black text-indigo-700 font-mono" data-testid="text-km-total">
+                <p className="text-xl font-black text-indigo-700 font-mono" data-testid="text-km-total">
                   {fmtKm(kmTotal)} <span className="text-sm">km</span>
                 </p>
                 <div className="text-xs font-bold mt-1 space-y-0.5">
@@ -693,7 +693,7 @@ export default function BalancoGerencialPage() {
                   </div>
                   <span className="text-xs font-black text-neutral-400 uppercase">Eficiência</span>
                 </div>
-                <p className={`text-2xl font-black font-mono ${statusCfg.textColor}`} data-testid="text-eficiencia-media">
+                <p className={`text-xl font-black font-mono ${statusCfg.textColor}`} data-testid="text-eficiencia-media">
                   {hasData ? media.toFixed(1) : "--"} <span className="text-sm">km/L</span>
                 </p>
                 <p className={`text-xs font-bold mt-1 ${statusCfg.subColor}`}>
