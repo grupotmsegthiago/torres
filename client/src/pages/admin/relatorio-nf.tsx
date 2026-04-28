@@ -41,6 +41,7 @@ type RelatorioRow = {
   nfseUrl: string | null;
   nfseNumber: string | null;
   osCount: number;
+  osList: Array<{ id: number; osNumber: string }>;
   rawStatus: string | null;
   rawNfseStatus: string | null;
   rawBoletimStatus: string | null;
@@ -457,7 +458,27 @@ export default function RelatorioNFPage() {
                         <div className="text-xs text-slate-600 max-w-[260px] truncate" title={r.description || ""}>
                           {r.description || "—"}
                         </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">{r.osCount} OS</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-x-1 gap-y-0.5 items-center" data-testid={`os-list-${r.id}`}>
+                          {r.osList && r.osList.length > 0 ? (
+                            <>
+                              {r.osList.map((o, idx) => (
+                                <span key={o.id} className="inline-flex items-center">
+                                  <Link
+                                    href={`/admin/service-orders?os=${o.id}`}
+                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                    data-testid={`link-os-${o.id}`}
+                                    title={`Abrir ${o.osNumber}`}
+                                  >
+                                    {o.osNumber}
+                                  </Link>
+                                  {idx < r.osList.length - 1 && <span className="text-slate-300 mx-0.5">·</span>}
+                                </span>
+                              ))}
+                            </>
+                          ) : (
+                            <span className="text-slate-400">{r.osCount} OS</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums" data-testid={`text-value-${r.id}`}>
                         {fmtBRL(r.value)}

@@ -2029,6 +2029,54 @@ export function registerAsaasRoutes(app: Express) {
           }
         }
 
+        // ============================================================
+        // Mapas de OS para preencher osList em cada row
+        // (1) por invoice_id  → service_orders[]
+        // (2) por billing_id  → service_order
+        // ============================================================
+        const invoiceIdsAll = (invoices || []).map((i: any) => i.id);
+        const osByInvoice = new Map<number, Array<{ id: number; osNumber: string }>>();
+        const osByBilling = new Map<string, { id: number; osNumber: string }>();
+        if (invoiceIdsAll.length > 0 || allBillingIds.length > 0) {
+          const billingIdsForLookup = Array.from(new Set([...allBillingIds]));
+          // pega billings ligadas aos invoices da listagem
+          const { data: invBillings } = invoiceIdsAll.length > 0
+            ? await supabaseAdmin
+                .from("escort_billings")
+                .select("id, invoice_id, service_order_id")
+                .in("invoice_id", invoiceIdsAll)
+            : { data: [] as any[] };
+          // pega billings dos boletins (para resolver service_order_id)
+          const { data: bolBillings } = billingIdsForLookup.length > 0
+            ? await supabaseAdmin
+                .from("escort_billings")
+                .select("id, invoice_id, service_order_id")
+                .in("id", billingIdsForLookup)
+            : { data: [] as any[] };
+          const allBs = [...(invBillings || []), ...(bolBillings || [])];
+          const soIdsAll = Array.from(new Set(allBs.map(b => b.service_order_id).filter(Boolean)));
+          const osNumMap = new Map<number, string>();
+          if (soIdsAll.length > 0) {
+            const { data: sosAll } = await supabaseAdmin
+              .from("service_orders")
+              .select("id, os_number")
+              .in("id", soIdsAll);
+            for (const so of (sosAll || [])) osNumMap.set(so.id, so.os_number);
+          }
+          for (const b of (invBillings || [])) {
+            if (!b.invoice_id || !b.service_order_id) continue;
+            const num = osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
+            const arr = osByInvoice.get(b.invoice_id) || [];
+            if (!arr.some(x => x.id === b.service_order_id)) arr.push({ id: b.service_order_id, osNumber: num });
+            osByInvoice.set(b.invoice_id, arr);
+          }
+          for (const b of (bolBillings || [])) {
+            if (!b.service_order_id) continue;
+            const num = osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
+            osByBilling.set(String(b.id), { id: b.service_order_id, osNumber: num });
+          }
+        }
+
         const rows: any[] = [];
 
         for (const inv of (invoices || [])) {
@@ -2051,7 +2099,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceUrl: inv.invoice_url,
             nfseUrl: inv.nfse_url,
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
-            osCount: 1,
+            osCount: (osByInvoice.get(inv.id) || []).length || 1,
+            osList: osByInvoice.get(inv.id) || [],
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             rawBoletimStatus: null,
@@ -2113,6 +2162,7 @@ export function registerAsaasRoutes(app: Express) {
             nfseUrl: null,
             nfseNumber: null,
             osCount: ap.os_count || billingIds.length,
+            osList: billingIds.map(bid => osByBilling.get(bid)).filter(Boolean) as Array<{id:number;osNumber:string}>,
             rawStatus: null,
             rawNfseStatus: null,
             rawBoletimStatus: ap.status,
@@ -2203,6 +2253,7 @@ export function registerAsaasRoutes(app: Express) {
               nfseUrl: null,
               nfseNumber: null,
               osCount: 1,
+              osList: b.service_order_id ? [{ id: b.service_order_id, osNumber: osLabel }] : [],
               rawStatus: b.status,
               rawNfseStatus: null,
               rawBoletimStatus: null,
