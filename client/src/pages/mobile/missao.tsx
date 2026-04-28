@@ -598,46 +598,63 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const targetLng = isGoingToOrigin ? mission.originLng : mission.destinationLng;
   const targetLabel = isGoingToOrigin ? "origem" : "destino";
 
-  const GEOFENCE_RADIUS_KM = 2;
+  const GEOFENCE_RADIUS_KM = 15;
+  const [refreshingGps, setRefreshingGps] = useState(false);
 
   useEffect(() => {
     setNearOrigin(false);
     setDistanceInfo(null);
   }, [currentStep]);
 
+  const checkProximity = useCallback(async (forceFresh = false) => {
+    if (!targetLat || !targetLng) return;
+    let pos: { lat: string; lng: string } | null = null;
+    if (isReadOnly && mission.agentLocation && !forceFresh) {
+      pos = mission.agentLocation;
+    } else {
+      pos = await getPosition();
+    }
+    if (!pos) return;
+
+    const lat1 = parseFloat(pos.lat);
+    const lng1 = parseFloat(pos.lng);
+    const lat2 = parseFloat(targetLat);
+    const lng2 = parseFloat(targetLng);
+
+    if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) return;
+
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    setDistanceInfo(dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`);
+    setNearOrigin(dist <= GEOFENCE_RADIUS_KM);
+    return dist;
+  }, [targetLat, targetLng, getPosition, isReadOnly, mission.agentLocation]);
+
   useEffect(() => {
     if (!targetLat || !targetLng) return;
-
-    const checkProximity = async () => {
-      let pos: { lat: string; lng: string } | null = null;
-      if (isReadOnly && mission.agentLocation) {
-        pos = mission.agentLocation;
-      } else {
-        pos = await getPosition();
-      }
-      if (!pos) return;
-
-      const lat1 = parseFloat(pos.lat);
-      const lng1 = parseFloat(pos.lng);
-      const lat2 = parseFloat(targetLat);
-      const lng2 = parseFloat(targetLng);
-
-      if (!Number.isFinite(lat1) || !Number.isFinite(lng1) || !Number.isFinite(lat2) || !Number.isFinite(lng2)) return;
-
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-      const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-      setDistanceInfo(dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`);
-      setNearOrigin(dist <= GEOFENCE_RADIUS_KM);
-    };
-
     checkProximity();
-    const interval = setInterval(checkProximity, 30000);
+    const interval = setInterval(() => checkProximity(), 30000);
     return () => clearInterval(interval);
-  }, [targetLat, targetLng, getPosition, currentStep, isReadOnly, mission.agentLocation]);
+  }, [targetLat, targetLng, checkProximity]);
+
+  const handleForceGpsRefresh = async () => {
+    setRefreshingGps(true);
+    try {
+      const dist = await checkProximity(true);
+      if (dist === undefined) {
+        toast({ title: "GPS indisponível", description: "Não foi possível obter a posição. Verifique se a localização está habilitada.", variant: "destructive" });
+      } else {
+        const distStr = dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
+        toast({ title: "GPS atualizado", description: `Distância até a ${targetLabel}: ${distStr}` });
+      }
+    } finally {
+      setRefreshingGps(false);
+    }
+  };
 
   const getSuggestions = () => {
     const suggestions: string[] = [];
@@ -699,6 +716,18 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
           <p className="text-xs text-neutral-400 mt-1">
             Distância até {targetLabel}{isReadOnly ? " (agente)" : ""}: <span className="font-bold text-neutral-700">{distanceInfo}</span>
           </p>
+        )}
+        {!isReadOnly && targetLat && targetLng && (
+          <button
+            type="button"
+            onClick={handleForceGpsRefresh}
+            disabled={refreshingGps}
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-bold text-neutral-700 hover:bg-neutral-50 active:scale-[0.98] disabled:opacity-60"
+            data-testid="button-refresh-gps"
+          >
+            {refreshingGps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {refreshingGps ? "Atualizando GPS..." : "Atualizar GPS"}
+          </button>
         )}
       </div>
       )}
