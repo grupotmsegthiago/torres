@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, authFetch } from "@/lib/queryClient";
+import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
@@ -165,7 +165,7 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura sincronizada com Asaas" });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -188,7 +188,7 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura excluída" });
       setShowDetail(null);
     },
@@ -206,7 +206,7 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura marcada como paga — baixa automática realizada" });
       setShowDetail(null);
     },
@@ -224,7 +224,7 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura cancelada" });
       setShowDetail(null);
     },
@@ -242,7 +242,7 @@ export default function FaturasPage() {
       return r.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura emitida com sucesso!", description: data.message || "Boleto e NF-e gerados." });
       setShowDetail(null);
     },
@@ -657,7 +657,7 @@ function CreateInvoiceDialog({ clients, asaasConnected, onClose }: { clients: an
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "Fatura criada com sucesso" });
       onClose();
     },
@@ -955,7 +955,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
       const r = await authFetch(`/api/invoices/${invoice.id}/cancel-nfse`, { method: "POST" });
       const body = await r.json();
       if (!r.ok) throw new Error(body.message || "Erro ao cancelar NFS-e");
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "NFS-e cancelada", description: body.message });
     } catch (err: any) {
       toast({ title: "Erro ao cancelar NFS-e", description: err.message, variant: "destructive" });
@@ -969,7 +969,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
     try {
       const r = await authFetch(`/api/invoices/${invoice.id}/emit-nfse`, { method: "POST" });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
       toast({ title: "NFS-e solicitada com sucesso", description: "A nota será processada pelo Asaas e emitida automaticamente." });
     } catch (err: any) {
       toast({ title: "Erro ao emitir NFS-e", description: err.message, variant: "destructive" });
@@ -1171,7 +1171,7 @@ function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, o
       const result = await r.json();
       toast({ title: "E-mail enviado!", description: result.message });
       setResendSuccess(result.message);
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      invalidateRelatedQueries("invoice");
     } catch (err: any) {
       toast({ title: "Erro ao enviar e-mail", description: err.message, variant: "destructive" });
     } finally {

@@ -2166,9 +2166,8 @@ export function registerAsaasRoutes(app: Express) {
         const source = String(req.body?.source || "").toUpperCase();
         const rawId = req.body?.sourceId;
         const reason = String(req.body?.reason || "").slice(0, 500);
-        console.log(`[relatorio-nf delete-row] req.body=${JSON.stringify(req.body)} contentType=${req.headers["content-type"]}`);
         if (rawId === undefined || rawId === null || rawId === "" || (source !== "BOLETIM" && source !== "INVOICE")) {
-          return res.status(400).json({ message: "source (BOLETIM|INVOICE) e sourceId obrigatórios", received: { source, sourceId: rawId, body: req.body } });
+          return res.status(400).json({ message: "source (BOLETIM|INVOICE) e sourceId obrigatórios" });
         }
 
         if (source === "BOLETIM") {

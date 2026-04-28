@@ -137,6 +137,9 @@ export const GLOBAL_QUERY_KEYS = {
   missionActive: ["/api/mission/active"],
   missionScheduled: ["/api/mission/scheduled"],
   agentLocations: ["/api/agent/locations"],
+  relatorioNf: ["/api/relatorio-nf"],
+  relatorioFaturamento: ["/api/relatorio-faturamento"],
+  boletimApprovalsActive: ["/api/boletim-approval/active-summary"],
 };
 
 type InvalidationScope = "vehicle" | "employee" | "billing" | "financial" | "service-order" | "mission-cost" | "mission-update" | "client" | "invoice" | "hr" | "jornada-diretoria" | "position-tracking" | "mission-acceptance";
@@ -209,12 +212,18 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.financialTx);
     inv(keys.financialResumo);
     inv(keys.financialDashboard);
+    inv(keys.relatorioNf);
+    inv(keys.relatorioFaturamento);
+    inv(keys.boletimApprovalsActive);
+    inv(keys.invoices);
   }
   if (scope === "financial") {
     inv(keys.financialTx);
     inv(keys.financialResumo);
     inv(keys.financialDashboard);
     inv(keys.escortBillings);
+    inv(keys.relatorioNf);
+    inv(keys.relatorioFaturamento);
   }
   if (scope === "service-order") {
     inv(keys.serviceOrders);
@@ -257,6 +266,9 @@ function _applyInvalidation(scope: InvalidationScope, inv: (k: string[]) => void
     inv(keys.financialTx);
     inv(keys.financialResumo);
     inv(keys.financialDashboard);
+    inv(keys.relatorioNf);
+    inv(keys.relatorioFaturamento);
+    inv(keys.boletimApprovalsActive);
   }
   if (scope === "hr") {
     inv(keys.employees);

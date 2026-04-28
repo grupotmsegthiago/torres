@@ -11,7 +11,7 @@ import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
   Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2,
 } from "lucide-react";
-import { authFetch, queryClient } from "@/lib/queryClient";
+import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -115,6 +115,8 @@ export default function RelatorioNFPage() {
       return r.json();
     },
     staleTime: 15000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const reconcileMutation = useMutation({
@@ -152,9 +154,7 @@ export default function RelatorioNFPage() {
     onSuccess: (data) => {
       toast({ title: "NF cancelada", description: data?.message || "Nota fiscal marcada como cancelada." });
       setCancelModal(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+      invalidateRelatedQueries("invoice");
     },
     onError: (e: any) => toast({ title: "Erro ao cancelar NF", description: e?.message, variant: "destructive" }),
   });
@@ -172,9 +172,8 @@ export default function RelatorioNFPage() {
     onSuccess: () => {
       toast({ title: "Registro excluído", description: "O registro foi removido do relatório." });
       setDeleteModal(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+      invalidateRelatedQueries("invoice");
+      invalidateRelatedQueries("billing");
     },
     onError: (e: any) => toast({ title: "Erro ao excluir", description: e?.message, variant: "destructive" }),
   });
@@ -192,9 +191,7 @@ export default function RelatorioNFPage() {
     onSuccess: () => {
       toast({ title: "NF marcada como emitida", description: "A fatura foi marcada como NF emitida." });
       setEmitModal(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+      invalidateRelatedQueries("invoice");
     },
     onError: (e: any) => toast({ title: "Erro ao marcar como emitida", description: e?.message, variant: "destructive" }),
   });
