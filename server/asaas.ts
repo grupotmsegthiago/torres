@@ -229,6 +229,7 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
   // Normalização de status para o Relatório de NFs
   // ============================================================
   export type NormalizedNfStatus =
+    | "AGUARDANDO_BOLETIM"
     | "PENDENTE_APROVACAO"
     | "AUTORIZADO"
     | "NF_PROCESSANDO"
@@ -2114,7 +2115,98 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        const STATUSES: string[] = ["PENDENTE_APROVACAO", "AUTORIZADO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
+        // ============================================================
+        // OS avulsas: escort_billings com data_missao no período que ainda
+        // não foram incluídas em nenhum boletim. Aparecem como
+        // "AGUARDANDO_BOLETIM" para o operador ter visibilidade total.
+        // ============================================================
+        if (from || to) {
+          const fromIso = from ? `${from}T00:00:00` : "1900-01-01";
+          const toIso = to ? `${to}T23:59:59.999` : "2999-12-31";
+          const { data: billingsInRange } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, client_id, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, status, service_order_id, created_at")
+            .gte("data_missao", fromIso)
+            .lte("data_missao", toIso);
+
+          // billings já vinculados a algum boletim_approval (qualquer status)
+          const { data: allApps } = await supabaseAdmin
+            .from("boletim_approvals")
+            .select("billing_ids");
+          const inBoletim = new Set<string>();
+          for (const a of (allApps || [])) {
+            for (const bid of ((a.billing_ids as any[]) || [])) inBoletim.add(String(bid));
+          }
+
+          const orfaos = (billingsInRange || []).filter((b: any) => {
+            if (inBoletim.has(String(b.id))) return false;
+            const st = String(b.status || "").toUpperCase();
+            // Ignora OS canceladas/recusadas (não geram receita)
+            if (st === "CANCELADO" || st === "CANCELADA" || st === "REJEITADA" || st === "REJEITADO") return false;
+            return true;
+          });
+
+          // Buscar nomes dos clientes destas OS órfãs
+          const orfaoClientIds = Array.from(new Set(orfaos.map((b: any) => b.client_id).filter(Boolean)));
+          const orfaoClientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
+          if (orfaoClientIds.length > 0) {
+            const { data: clientsData } = await supabaseAdmin
+              .from("clients")
+              .select("id, name, cnpj, cpf")
+              .in("id", orfaoClientIds);
+            for (const c of (clientsData || [])) {
+              orfaoClientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null });
+            }
+          }
+
+          // Buscar números de OS para descrição
+          const orfaoSoIds = Array.from(new Set(orfaos.map((b: any) => b.service_order_id).filter(Boolean)));
+          const osNumberMap = new Map<number, string>();
+          if (orfaoSoIds.length > 0) {
+            const { data: sosData } = await supabaseAdmin
+              .from("service_orders")
+              .select("id, os_number")
+              .in("id", orfaoSoIds);
+            for (const so of (sosData || [])) osNumberMap.set(so.id, so.os_number);
+          }
+
+          for (const b of orfaos) {
+            const valor = Number(b.fat_total || 0) ||
+              (Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0));
+            const client = orfaoClientMap.get(b.client_id);
+            const osLabel = osNumberMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
+            const dataFmt = (b.data_missao || "").split("T")[0];
+            rows.push({
+              id: `BIL-${b.id}`,
+              source: "BILLING_AVULSO",
+              sourceId: b.id,
+              clientId: b.client_id,
+              clientName: client?.name || "—",
+              clientCpfCnpj: client?.cpfCnpj || null,
+              description: `${osLabel} — missão de ${dataFmt} (sem boletim)`,
+              value: valor,
+              netValue: null,
+              dueDate: null,
+              paymentDate: null,
+              createdAt: b.created_at,
+              updatedAt: b.created_at,
+              asaasPaymentId: null,
+              invoiceUrl: null,
+              nfseUrl: null,
+              nfseNumber: null,
+              osCount: 1,
+              rawStatus: b.status,
+              rawNfseStatus: null,
+              rawBoletimStatus: null,
+              normalizedStatus: "AGUARDANDO_BOLETIM" as const,
+              invoiceId: null,
+              approvalToken: null,
+              approvalUrl: null,
+            });
+          }
+        }
+
+        const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
         const totals: Record<string, { count: number; value: number }> = {};
         for (const st of STATUSES) {
           const subset = rows.filter(r => r.normalizedStatus === st);

@@ -18,12 +18,13 @@ import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
+  | "AGUARDANDO_BOLETIM"
   | "PENDENTE_APROVACAO" | "AUTORIZADO" | "NF_PROCESSANDO" | "NF_EMITIDA"
   | "NF_ERRO" | "NF_CANCELADA" | "PAGO" | "VENCIDO" | "OUTRO";
 
 type RelatorioRow = {
   id: string;
-  source: "INVOICE" | "BOLETIM";
+  source: "INVOICE" | "BOLETIM" | "BILLING_AVULSO";
   sourceId: number;
   clientId: number | null;
   clientName: string;
@@ -67,6 +68,7 @@ type RelatorioResponse = {
 };
 
 const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: string; icon: any }> = {
+  AGUARDANDO_BOLETIM: { label: "Sem boletim",       cls: "text-sky-700",     bg: "bg-sky-50 border-sky-200",           icon: Hourglass },
   PENDENTE_APROVACAO: { label: "Aguard. cliente",   cls: "text-amber-700",   bg: "bg-amber-50 border-amber-200",       icon: MailQuestion },
   AUTORIZADO:         { label: "Autorizado",        cls: "text-violet-700",  bg: "bg-violet-50 border-violet-200",     icon: CheckCircle2 },
   NF_PROCESSANDO:     { label: "NF processando",    cls: "text-blue-700",    bg: "bg-blue-50 border-blue-200",         icon: Hourglass },
@@ -235,7 +237,7 @@ export default function RelatorioNFPage() {
       "Nº NF", "Vencimento", "Pagamento", "Criado em", "Asaas ID",
     ];
     const dataExp = filtered.map(r => [
-      r.source === "INVOICE" ? "Fatura" : "Boletim",
+      r.source === "INVOICE" ? "Fatura" : r.source === "BILLING_AVULSO" ? "OS sem boletim" : "Boletim",
       r.clientName,
       r.clientCpfCnpj || "",
       r.description || "",
@@ -268,6 +270,7 @@ export default function RelatorioNFPage() {
   // Cards de resumo
   const cards: Array<{ key: NormalizedStatus | "TOTAL"; label: string; icon: any; cls: string; }> = [
     { key: "TOTAL",              label: "Total no período",  icon: Receipt,        cls: "from-slate-700 to-slate-900 text-white" },
+    { key: "AGUARDANDO_BOLETIM", label: "Sem boletim",       icon: Hourglass,      cls: "from-sky-500 to-sky-700 text-white" },
     { key: "PENDENTE_APROVACAO", label: "Aguard. aprov.",    icon: MailQuestion,   cls: "from-amber-500 to-amber-700 text-white" },
     { key: "AUTORIZADO",         label: "Autorizado",        icon: CheckCircle2,   cls: "from-violet-500 to-violet-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
@@ -343,6 +346,7 @@ export default function RelatorioNFPage() {
                 <SelectTrigger className="h-9" data-testid="select-status"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="AGUARDANDO_BOLETIM">Sem boletim</SelectItem>
                   <SelectItem value="PENDENTE_APROVACAO">Aguardando aprovação</SelectItem>
                   <SelectItem value="AUTORIZADO">Autorizado</SelectItem>
                   <SelectItem value="NF_PROCESSANDO">NF processando</SelectItem>
@@ -430,9 +434,17 @@ export default function RelatorioNFPage() {
                     <tr key={r.id} className="hover:bg-slate-50/60" data-testid={`row-${r.id}`}>
                       <td className="px-3 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                          r.source === "INVOICE" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                          r.source === "INVOICE"
+                            ? "bg-blue-100 text-blue-700"
+                            : r.source === "BILLING_AVULSO"
+                              ? "bg-sky-100 text-sky-700"
+                              : "bg-amber-100 text-amber-700"
                         }`}>
-                          {r.source === "INVOICE" ? `FAT #${r.sourceId}` : `BOL #${r.sourceId}`}
+                          {r.source === "INVOICE"
+                            ? `FAT #${r.sourceId}`
+                            : r.source === "BILLING_AVULSO"
+                              ? `OS #${r.sourceId}`
+                              : `BOL #${r.sourceId}`}
                         </span>
                       </td>
                       <td className="px-3 py-2">
