@@ -2154,6 +2154,90 @@ export function registerAsaasRoutes(app: Express) {
       res.json(nfReconcileState);
     });
 
+    // ============================================================
+    // Excluir registro do relatório-nf (boletim ou fatura) — diretoria
+    // ============================================================
+    app.post("/api/relatorio-nf/delete-row", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        if (user?.role !== "diretoria") {
+          return res.status(403).json({ message: "Somente a diretoria pode excluir registros." });
+        }
+        const source = String(req.body?.source || "").toUpperCase();
+        const sourceId = Number(req.body?.sourceId);
+        const reason = String(req.body?.reason || "").slice(0, 500);
+        if (!sourceId || (source !== "BOLETIM" && source !== "INVOICE")) {
+          return res.status(400).json({ message: "source (BOLETIM|INVOICE) e sourceId obrigatórios" });
+        }
+
+        if (source === "BOLETIM") {
+          const { data: ap } = await supabaseAdmin.from("boletim_approvals").select("*").eq("id", sourceId).maybeSingle();
+          if (!ap) return res.status(404).json({ message: "Boletim não encontrado" });
+          const { error } = await supabaseAdmin.from("boletim_approvals").delete().eq("id", sourceId);
+          if (error) throw error;
+          console.log(`[relatorio-nf] Boletim ${sourceId} (${ap.client_name}, R$${ap.total_value}) EXCLUÍDO por ${user.email}. Motivo: ${reason || "—"}`);
+          return res.json({ success: true, removed: { source, sourceId, clientName: ap.client_name, value: Number(ap.total_value || 0) } });
+        }
+
+        // INVOICE
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", sourceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        // Tentativa best-effort de excluir cobrança no Asaas
+        if (invoice.asaas_payment_id && process.env.ASAAS_API_KEY) {
+          try { await asaasRequest("DELETE", `/payments/${invoice.asaas_payment_id}`); }
+          catch (e: any) { console.log("[asaas] delete payment err:", e.message); }
+        }
+
+        // Desvincula billings/escort_billings que apontam pra essa fatura
+        try { await supabaseAdmin.from("billings").update({ invoice_id: null } as any).eq("invoice_id", sourceId); } catch {}
+        try { await supabaseAdmin.from("escort_billings").update({ invoice_id: null } as any).eq("invoice_id", sourceId); } catch {}
+
+        const { error } = await supabaseAdmin.from("invoices").delete().eq("id", sourceId);
+        if (error) throw error;
+        console.log(`[relatorio-nf] Invoice ${sourceId} (cliente=${invoice.client_id}, R$${invoice.value}) EXCLUÍDA por ${user.email}. Motivo: ${reason || "—"}`);
+        return res.json({ success: true, removed: { source, sourceId, value: Number(invoice.value || 0) } });
+      } catch (err: any) {
+        console.error("[relatorio-nf delete-row] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
+    // Marcar fatura como NF emitida manualmente — diretoria
+    // ============================================================
+    app.post("/api/relatorio-nf/mark-emitted", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const user = (req as any).user;
+        if (user?.role !== "diretoria") {
+          return res.status(403).json({ message: "Somente a diretoria pode marcar NF como emitida." });
+        }
+        const invoiceId = Number(req.body?.invoiceId);
+        const nfNumber = String(req.body?.nfNumber || "").trim().slice(0, 60) || null;
+        const note = String(req.body?.note || "").slice(0, 500);
+        if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
+
+        const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+        if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
+
+        const updates: any = {
+          nfse_status: "AUTHORIZED",
+          nfse_observations: `[Marcada manualmente como emitida por ${user.email} em ${new Date().toISOString()}]${note ? ` ${note}` : ""}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 1000),
+        };
+        if (nfNumber) updates.nfse_number = nfNumber;
+        if (!invoice.nfse_authorized_at) updates.nfse_authorized_at = new Date().toISOString();
+
+        const { error } = await supabaseAdmin.from("invoices").update(updates).eq("id", invoiceId);
+        if (error) throw error;
+
+        console.log(`[relatorio-nf] Invoice ${invoiceId} marcada como NF EMITIDA por ${user.email}. NF=${nfNumber || "—"}`);
+        res.json({ success: true });
+      } catch (err: any) {
+        console.error("[relatorio-nf mark-emitted] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 

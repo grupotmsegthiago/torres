@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2,
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
@@ -94,6 +94,8 @@ export default function RelatorioNFPage() {
   const isDiretoria = user?.role === "diretoria";
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; loading: boolean; error: string | null } | null>(null);
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE"; sourceId: number; clientName: string; value: number; description: string; reason: string } | null>(null);
+  const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -155,6 +157,46 @@ export default function RelatorioNFPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
     },
     onError: (e: any) => toast({ title: "Erro ao cancelar NF", description: e?.message, variant: "destructive" }),
+  });
+
+  const deleteRowMutation = useMutation({
+    mutationFn: async (payload: { source: "BOLETIM" | "INVOICE"; sourceId: number; reason: string }) => {
+      const r = await authFetch(`/api/relatorio-nf/delete-row`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Registro excluído", description: "O registro foi removido do relatório." });
+      setDeleteModal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao excluir", description: e?.message, variant: "destructive" }),
+  });
+
+  const markEmittedMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; nfNumber: string; note: string }) => {
+      const r = await authFetch(`/api/relatorio-nf/mark-emitted`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "NF marcada como emitida", description: "A fatura foi marcada como NF emitida." });
+      setEmitModal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao marcar como emitida", description: e?.message, variant: "destructive" }),
   });
 
   const openNfMirror = async (id: number) => {
@@ -456,6 +498,37 @@ export default function RelatorioNFPage() {
                               <Ban className="h-3 w-3 mr-1" /> Cancelar
                             </Button>
                           )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "NF_EMITIDA" && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px] text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                              onClick={() => setEmitModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), nfNumber: r.nfseNumber || "", note: "" })}
+                              data-testid={`button-mark-emitted-${r.id}`}
+                              title="Marcar como NF emitida"
+                            >
+                              <FileCheck2 className="h-3 w-3 mr-1" /> Emitida
+                            </Button>
+                          )}
+                          {isDiretoria && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px] text-slate-600 border-slate-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+                              onClick={() => setDeleteModal({
+                                source: r.source as any,
+                                sourceId: r.source === "INVOICE" ? (r.invoiceId || r.sourceId) : r.sourceId,
+                                clientName: r.clientName,
+                                value: Number(r.value || 0),
+                                description: r.description || "",
+                                reason: "",
+                              })}
+                              data-testid={`button-delete-row-${r.id}`}
+                              title="Excluir registro"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -556,6 +629,115 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-cancel"
             >
               {cancelMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Cancelando…</> : <>Confirmar cancelamento</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal excluir registro */}
+      <Dialog open={!!deleteModal} onOpenChange={open => { if (!open && !deleteRowMutation.isPending) setDeleteModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Trash2 className="h-4 w-4" /> Excluir registro
+            </DialogTitle>
+            <DialogDescription>
+              {deleteModal?.source === "BOLETIM"
+                ? "O boletim será removido permanentemente do sistema. As ordens de serviço associadas voltam a ficar pendentes de aprovação."
+                : "A fatura será removida permanentemente. As ordens de serviço vinculadas serão desvinculadas e poderão ser refaturadas."}
+              {" "}Apenas a diretoria pode realizar esta exclusão.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteModal && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-1">
+                <div><span className="text-slate-500">Tipo:</span> <strong>{deleteModal.source === "BOLETIM" ? "Boletim de medição" : "Fatura"}</strong></div>
+                <div><span className="text-slate-500">Cliente:</span> <strong>{deleteModal.clientName}</strong></div>
+                <div className="text-xs text-slate-600 truncate" title={deleteModal.description}>{deleteModal.description || "—"}</div>
+                <div><span className="text-slate-500">Valor:</span> <strong>{fmtBRL(deleteModal.value)}</strong></div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo (registrado no log)</label>
+                <Textarea
+                  value={deleteModal.reason}
+                  onChange={e => setDeleteModal({ ...deleteModal, reason: e.target.value })}
+                  placeholder="Ex.: boletim duplicado, gerado por engano"
+                  className="min-h-[60px] text-xs"
+                  maxLength={500}
+                  data-testid="input-delete-reason"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteModal(null)} disabled={deleteRowMutation.isPending} data-testid="button-cancel-delete">
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteModal && deleteRowMutation.mutate({ source: deleteModal.source, sourceId: deleteModal.sourceId, reason: deleteModal.reason })}
+              disabled={deleteRowMutation.isPending || !deleteModal}
+              data-testid="button-confirm-delete"
+            >
+              {deleteRowMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Excluindo…</> : <><Trash2 className="h-4 w-4 mr-1" /> Excluir definitivamente</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal marcar como NF emitida */}
+      <Dialog open={!!emitModal} onOpenChange={open => { if (!open && !markEmittedMutation.isPending) setEmitModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+              <FileCheck2 className="h-4 w-4" /> Marcar como NF emitida
+            </DialogTitle>
+            <DialogDescription>
+              Use quando a NF foi emitida manualmente (fora do sistema, na prefeitura ou outro emissor) e precisa ser refletida aqui.
+              A fatura passa a contar como NF EMITIDA no relatório e nos faturamentos. Apenas a diretoria pode fazer esta operação.
+            </DialogDescription>
+          </DialogHeader>
+          {emitModal && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-1">
+                <div><span className="text-slate-500">Cliente:</span> <strong>{emitModal.clientName}</strong></div>
+                <div><span className="text-slate-500">Valor:</span> <strong>{fmtBRL(emitModal.value)}</strong></div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Número da NF (opcional)</label>
+                <Input
+                  value={emitModal.nfNumber}
+                  onChange={e => setEmitModal({ ...emitModal, nfNumber: e.target.value })}
+                  placeholder="Ex.: 245"
+                  className="text-xs"
+                  maxLength={60}
+                  data-testid="input-emit-nf-number"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Observação (opcional)</label>
+                <Textarea
+                  value={emitModal.note}
+                  onChange={e => setEmitModal({ ...emitModal, note: e.target.value })}
+                  placeholder="Ex.: NF emitida diretamente no portal da prefeitura em 28/04"
+                  className="min-h-[60px] text-xs"
+                  maxLength={500}
+                  data-testid="input-emit-note"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmitModal(null)} disabled={markEmittedMutation.isPending} data-testid="button-cancel-emit">
+              Voltar
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => emitModal && markEmittedMutation.mutate({ invoiceId: emitModal.invoiceId, nfNumber: emitModal.nfNumber, note: emitModal.note })}
+              disabled={markEmittedMutation.isPending || !emitModal}
+              data-testid="button-confirm-emit"
+            >
+              {markEmittedMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Marcando…</> : <><FileCheck2 className="h-4 w-4 mr-1" /> Confirmar como emitida</>}
             </Button>
           </DialogFooter>
         </DialogContent>
