@@ -1971,136 +1971,159 @@ export function registerAsaasRoutes(app: Express) {
         const from = (req.query.from as string) || "";
         const to = (req.query.to as string) || "";
 
-        let invQuery = supabaseAdmin.from("invoices").select("*").order("created_at", { ascending: false }).limit(1000);
-        if (from) invQuery = invQuery.gte("created_at", `${from}T00:00:00`);
-        if (to) invQuery = invQuery.lte("created_at", `${to}T23:59:59.999`);
-        const { data: invoicesRaw, error: invErr } = await invQuery;
-        if (invErr) throw invErr;
+        // ============================================================
+        // BASE UNIFICADA: escort_billings filtradas por data_missao.
+        // Cada billing aparece em UMA única linha (FAT, BOL ou BIL),
+        // garantindo que o total da tela = faturamento operacional do
+        // período (mesma base do Relatório de Faturamento).
+        // ============================================================
+        const fromIso = from ? `${from}T00:00:00` : "1900-01-01";
+        const toIso = to ? `${to}T23:59:59.999` : "2999-12-31";
 
-        // Filtra apenas NFs emitidas pela Torres (CNPJ 36982392000189). Registros
-        // legados sem provider_cnpj cadastrado são presumidos como Torres (única
-        // chave Asaas em uso). Registros marcados com OUTRO emitente são ocultados.
-        const invoices = (invoicesRaw || []).filter((inv: any) => {
+        const { data: billingsBase, error: bbErr } = await supabaseAdmin
+          .from("escort_billings")
+          .select("id, client_id, client_name, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, valor_franquia, valor_km_extra, status, service_order_id, invoice_id, boletim_numero, created_at")
+          .gte("data_missao", fromIso)
+          .lte("data_missao", toIso);
+        if (bbErr) throw bbErr;
+
+        // Filtra billings improdutivas
+        const validBillings = (billingsBase || []).filter((b: any) => {
+          const st = String(b.status || "").toUpperCase();
+          return !(st === "CANCELADO" || st === "CANCELADA" || st === "REJEITADA" || st === "REJEITADO");
+        });
+
+        const billingValor = (b: any) => {
+          const v = Number(b.fat_total || 0);
+          if (v > 0) return v;
+          return Number(b.fat_acionamento || b.valor_franquia || 0)
+               + Number(b.fat_hora_extra || 0)
+               + Number(b.fat_km || b.valor_km_extra || 0)
+               + Number(b.despesas_pedagio || 0)
+               + Number(b.receitas_os || 0);
+        };
+
+        // Coletar invoice_ids e billing_ids para lookups
+        const invIdsFromBills = Array.from(new Set(validBillings.map((b: any) => b.invoice_id).filter(Boolean))) as number[];
+        const billingIdsAll = validBillings.map((b: any) => String(b.id));
+
+        // Buscar invoices reais (resolve órfãs apontando pra invoice deletada)
+        const { data: invoicesRaw } = invIdsFromBills.length > 0
+          ? await supabaseAdmin.from("invoices").select("*").in("id", invIdsFromBills)
+          : { data: [] as any[] };
+        const invErr = null as any;
+        const invoiceMap = new Map<number, any>();
+        for (const inv of (invoicesRaw || [])) invoiceMap.set(inv.id, inv);
+
+        // Filtra invoices da Torres (oculta quando provider_cnpj é outro CNPJ)
+        const invoiceIsTorres = (inv: any) => {
+          if (!inv) return false;
           const pc = cleanCnpj(inv.provider_cnpj);
           if (!pc) return true;
           return pc === TORRES_CNPJ;
-        });
-        const hiddenCount = (invoicesRaw || []).length - invoices.length;
-        if (hiddenCount > 0) {
-          console.log(`[relatorio-nf] ${hiddenCount} NFs ocultadas (emitente diferente de ${TORRES_CNPJ})`);
-        }
+        };
 
-        // Boletins: filtra por sobreposição com o período (period_start/period_end),
-        // não pela data de criação. Ex.: filtro 01/04-15/04 captura boletim abr/26
-        // mesmo se ele foi criado em 20/04 (após o fim do período).
-        let appQuery = supabaseAdmin.from("boletim_approvals").select("*").order("created_at", { ascending: false }).limit(1000);
-        if (from) appQuery = appQuery.gte("period_end", from);
-        if (to) appQuery = appQuery.lte("period_start", to);
-        const { data: approvals, error: appErr } = await appQuery;
-        if (appErr) throw appErr;
-
-        // Para boletins: descobrir quais já têm fatura gerada (via escort_billings.invoice_id)
-        const allBillingIds: string[] = [];
-        for (const a of (approvals || [])) {
-          const ids = (a.billing_ids as any[]) || [];
-          for (const id of ids) allBillingIds.push(String(id));
-        }
-        const invoiceByBilling = new Map<string, number | null>();
-        if (allBillingIds.length > 0) {
-          const { data: billingsData } = await supabaseAdmin
-            .from("escort_billings")
-            .select("id, invoice_id")
-            .in("id", Array.from(new Set(allBillingIds)));
-          for (const b of (billingsData || [])) {
-            invoiceByBilling.set(String(b.id), b.invoice_id);
+        // Buscar boletim_approvals que contenham qualquer billing válida
+        // (mapeamento reverso billing_id → boletim_approval)
+        const { data: allApprovals } = await supabaseAdmin
+          .from("boletim_approvals")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(2000);
+        const billingToApproval = new Map<string, any>();
+        for (const ap of (allApprovals || [])) {
+          for (const bid of ((ap.billing_ids as any[]) || [])) {
+            const key = String(bid);
+            const cur = billingToApproval.get(key);
+            // Se houver duplicidade, prioriza APROVADO sobre PENDENTE; depois mais recente
+            if (!cur) { billingToApproval.set(key, ap); continue; }
+            const curApr = String(cur.status || "").toUpperCase() === "APROVADO" ? 1 : 0;
+            const newApr = String(ap.status || "").toUpperCase() === "APROVADO" ? 1 : 0;
+            if (newApr > curApr) { billingToApproval.set(key, ap); continue; }
+            if (newApr === curApr && String(ap.created_at || "") > String(cur.created_at || "")) {
+              billingToApproval.set(key, ap);
+            }
           }
         }
 
-        // Para clientes (CPF/CNPJ) dos boletins
-        const clientIds = Array.from(new Set((approvals || []).map((a: any) => a.client_id).filter(Boolean)));
-        const clientCpfMap = new Map<number, string | null>();
-        if (clientIds.length > 0) {
+        // Buscar clientes (nome atual + CPF/CNPJ)
+        const allClientIds = Array.from(new Set(validBillings.map((b: any) => b.client_id).filter(Boolean))) as number[];
+        const clientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
+        if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, cnpj, cpf")
-            .in("id", clientIds);
+            .select("id, name, cnpj, cpf")
+            .in("id", allClientIds);
           for (const c of (clientsData || [])) {
-            clientCpfMap.set(c.id, c.cnpj || c.cpf || null);
+            clientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null });
           }
         }
 
+        // Buscar números de OS
+        const allSoIds = Array.from(new Set(validBillings.map((b: any) => b.service_order_id).filter(Boolean))) as number[];
+        const osNumMap = new Map<number, string>();
+        if (allSoIds.length > 0) {
+          const { data: sosAll } = await supabaseAdmin
+            .from("service_orders")
+            .select("id, os_number")
+            .in("id", allSoIds);
+          for (const so of (sosAll || [])) osNumMap.set(so.id, so.os_number);
+        }
+        const osLabel = (b: any) => osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
+
         // ============================================================
-        // Mapas de OS para preencher osList em cada row
-        // (1) por invoice_id  → service_orders[]
-        // (2) por billing_id  → service_order
+        // Agrupar billings por destino: FAT (invoice válida da Torres),
+        // BOL (boletim) ou BIL (avulso). Cada billing aparece em UMA linha.
         // ============================================================
-        const invoiceIdsAll = (invoices || []).map((i: any) => i.id);
-        const osByInvoice = new Map<number, Array<{ id: number; osNumber: string }>>();
-        const osByBilling = new Map<string, { id: number; osNumber: string }>();
-        if (invoiceIdsAll.length > 0 || allBillingIds.length > 0) {
-          const billingIdsForLookup = Array.from(new Set([...allBillingIds]));
-          // pega billings ligadas aos invoices da listagem
-          const { data: invBillings } = invoiceIdsAll.length > 0
-            ? await supabaseAdmin
-                .from("escort_billings")
-                .select("id, invoice_id, service_order_id")
-                .in("invoice_id", invoiceIdsAll)
-            : { data: [] as any[] };
-          // pega billings dos boletins (para resolver service_order_id)
-          const { data: bolBillings } = billingIdsForLookup.length > 0
-            ? await supabaseAdmin
-                .from("escort_billings")
-                .select("id, invoice_id, service_order_id")
-                .in("id", billingIdsForLookup)
-            : { data: [] as any[] };
-          const allBs = [...(invBillings || []), ...(bolBillings || [])];
-          const soIdsAll = Array.from(new Set(allBs.map(b => b.service_order_id).filter(Boolean)));
-          const osNumMap = new Map<number, string>();
-          if (soIdsAll.length > 0) {
-            const { data: sosAll } = await supabaseAdmin
-              .from("service_orders")
-              .select("id, os_number")
-              .in("id", soIdsAll);
-            for (const so of (sosAll || [])) osNumMap.set(so.id, so.os_number);
+        const fatGroups = new Map<number, { inv: any; bills: any[] }>();
+        const bolGroups = new Map<number, { ap: any; bills: any[] }>();
+        const avulsos: any[] = [];
+
+        for (const b of validBillings) {
+          const inv = b.invoice_id ? invoiceMap.get(b.invoice_id) : null;
+          if (inv && invoiceIsTorres(inv)) {
+            const g = fatGroups.get(inv.id) || { inv, bills: [] };
+            g.bills.push(b);
+            fatGroups.set(inv.id, g);
+            continue;
           }
-          for (const b of (invBillings || [])) {
-            if (!b.invoice_id || !b.service_order_id) continue;
-            const num = osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
-            const arr = osByInvoice.get(b.invoice_id) || [];
-            if (!arr.some(x => x.id === b.service_order_id)) arr.push({ id: b.service_order_id, osNumber: num });
-            osByInvoice.set(b.invoice_id, arr);
+          const ap = billingToApproval.get(String(b.id));
+          if (ap) {
+            const g = bolGroups.get(ap.id) || { ap, bills: [] };
+            g.bills.push(b);
+            bolGroups.set(ap.id, g);
+            continue;
           }
-          for (const b of (bolBillings || [])) {
-            if (!b.service_order_id) continue;
-            const num = osNumMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
-            osByBilling.set(String(b.id), { id: b.service_order_id, osNumber: num });
-          }
+          avulsos.push(b);
         }
 
         const rows: any[] = [];
 
-        for (const inv of (invoices || [])) {
+        // FAT — uma linha por invoice (valor = invoice.value real cobrado)
+        for (const { inv, bills } of fatGroups.values()) {
           const ns = normalizeInvoiceStatus(inv);
+          const cli = clientMap.get(inv.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
+          const earliest = bills.map(b => b.data_missao).sort()[0];
           rows.push({
             id: `INV-${inv.id}`,
             source: "INVOICE",
             sourceId: inv.id,
             clientId: inv.client_id,
-            clientName: inv.client_name,
-            clientCpfCnpj: inv.client_cpf_cnpj,
+            clientName: cli?.name || inv.client_name,
+            clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             description: inv.description,
             value: Number(inv.value || 0),
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
             dueDate: inv.due_date,
             paymentDate: inv.payment_date,
-            createdAt: inv.created_at,
+            createdAt: earliest || inv.created_at,
             updatedAt: inv.updated_at,
             asaasPaymentId: inv.asaas_payment_id,
             invoiceUrl: inv.invoice_url,
             nfseUrl: inv.nfse_url,
             nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
-            osCount: (osByInvoice.get(inv.id) || []).length || 1,
-            osList: osByInvoice.get(inv.id) || [],
+            osCount: bills.length,
+            osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
             rawStatus: inv.status,
             rawNfseStatus: inv.nfse_status,
             rawBoletimStatus: null,
@@ -2111,58 +2134,34 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        // Dedup boletins por (cliente + período): quando o mesmo boletim é
-        // reenviado/regenerado, vários approvals ficam pendentes e duplicam o
-        // valor no relatório. Mantemos apenas o "vencedor" por chave:
-        // 1) APROVADO ganha de PENDENTE (boletim aprovado define o valor real)
-        // 2) Em empate, mais recente (created_at desc).
-        const apList = (approvals || []).slice().sort((a: any, b: any) => {
-          const sa = String(a.status || "").toUpperCase();
-          const sb = String(b.status || "").toUpperCase();
-          const aprA = sa === "APROVADO" ? 1 : 0;
-          const aprB = sb === "APROVADO" ? 1 : 0;
-          if (aprA !== aprB) return aprB - aprA;
-          return String(b.created_at || "").localeCompare(String(a.created_at || ""));
-        });
-        const dedupKey = (ap: any) => `${ap.client_id}|${ap.period_start}|${ap.period_end}`;
-        const winners = new Map<string, any>();
-        for (const ap of apList) {
-          const k = dedupKey(ap);
-          if (!winners.has(k)) winners.set(k, ap);
-        }
-        const dedupedApprovals = Array.from(winners.values());
-        const hiddenDup = (approvals || []).length - dedupedApprovals.length;
-        if (hiddenDup > 0) {
-          console.log(`[relatorio-nf] ${hiddenDup} boletim(s) duplicado(s) ocultado(s) (mesmo cliente+período)`);
-        }
-
-        for (const ap of dedupedApprovals) {
-          const billingIds = ((ap.billing_ids as any[]) || []).map(String);
-          const allCovered = billingIds.length > 0 && billingIds.every(bid => invoiceByBilling.get(bid) != null);
-          if (allCovered) continue;
+        // BOL — uma linha por boletim (valor = soma das billings DO PERÍODO)
+        for (const { ap, bills } of bolGroups.values()) {
           const apStatus = String(ap.status || "").toUpperCase();
           if (apStatus === "RECUSADO" || apStatus === "REJEITADO") continue;
           const ns = normalizeBoletimStatus(ap);
+          const valorPeriodo = bills.reduce((s, b) => s + billingValor(b), 0);
+          const cli = clientMap.get(ap.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
+          const earliest = bills.map(b => b.data_missao).sort()[0];
           rows.push({
             id: `BOL-${ap.id}`,
             source: "BOLETIM",
             sourceId: ap.id,
             clientId: ap.client_id,
-            clientName: ap.client_name,
-            clientCpfCnpj: clientCpfMap.get(ap.client_id) || null,
+            clientName: cli?.name || ap.client_name,
+            clientCpfCnpj: cli?.cpfCnpj || null,
             description: `Boletim de medição — período ${ap.period_start} a ${ap.period_end}`,
-            value: Number(ap.total_value || 0),
+            value: valorPeriodo,
             netValue: null,
             dueDate: null,
             paymentDate: null,
-            createdAt: ap.created_at,
+            createdAt: earliest || ap.created_at,
             updatedAt: ap.approved_at || ap.sent_at || ap.created_at,
             asaasPaymentId: null,
             invoiceUrl: null,
             nfseUrl: null,
             nfseNumber: null,
-            osCount: ap.os_count || billingIds.length,
-            osList: billingIds.map(bid => osByBilling.get(bid)).filter(Boolean) as Array<{id:number;osNumber:string}>,
+            osCount: bills.length,
+            osList: Array.from(new Map(bills.filter(b => b.service_order_id).map(b => [b.service_order_id, { id: b.service_order_id, osNumber: osLabel(b) }])).values()),
             rawStatus: null,
             rawNfseStatus: null,
             rawBoletimStatus: ap.status,
@@ -2173,96 +2172,39 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        // ============================================================
-        // OS avulsas: escort_billings com data_missao no período que ainda
-        // não foram incluídas em nenhum boletim. Aparecem como
-        // "AGUARDANDO_BOLETIM" para o operador ter visibilidade total.
-        // ============================================================
-        if (from || to) {
-          const fromIso = from ? `${from}T00:00:00` : "1900-01-01";
-          const toIso = to ? `${to}T23:59:59.999` : "2999-12-31";
-          const { data: billingsInRange } = await supabaseAdmin
-            .from("escort_billings")
-            .select("id, client_id, data_missao, fat_total, fat_acionamento, fat_hora_extra, fat_km, despesas_pedagio, receitas_os, status, service_order_id, created_at")
-            .gte("data_missao", fromIso)
-            .lte("data_missao", toIso);
-
-          // billings já vinculados a algum boletim_approval (qualquer status)
-          const { data: allApps } = await supabaseAdmin
-            .from("boletim_approvals")
-            .select("billing_ids");
-          const inBoletim = new Set<string>();
-          for (const a of (allApps || [])) {
-            for (const bid of ((a.billing_ids as any[]) || [])) inBoletim.add(String(bid));
-          }
-
-          const orfaos = (billingsInRange || []).filter((b: any) => {
-            if (inBoletim.has(String(b.id))) return false;
-            const st = String(b.status || "").toUpperCase();
-            // Ignora OS canceladas/recusadas (não geram receita)
-            if (st === "CANCELADO" || st === "CANCELADA" || st === "REJEITADA" || st === "REJEITADO") return false;
-            return true;
+        // BIL avulso — uma linha por billing sem boletim/invoice
+        for (const b of avulsos) {
+          const cli = clientMap.get(b.client_id);
+          const lbl = osLabel(b);
+          const dataFmt = (b.data_missao || "").split("T")[0];
+          rows.push({
+            id: `BIL-${b.id}`,
+            source: "BILLING_AVULSO",
+            sourceId: b.id,
+            clientId: b.client_id,
+            clientName: cli?.name || b.client_name || "—",
+            clientCpfCnpj: cli?.cpfCnpj || null,
+            description: `${lbl} — missão de ${dataFmt} (sem boletim)`,
+            value: billingValor(b),
+            netValue: null,
+            dueDate: null,
+            paymentDate: null,
+            createdAt: b.data_missao || b.created_at,
+            updatedAt: b.created_at,
+            asaasPaymentId: null,
+            invoiceUrl: null,
+            nfseUrl: null,
+            nfseNumber: null,
+            osCount: 1,
+            osList: b.service_order_id ? [{ id: b.service_order_id, osNumber: lbl }] : [],
+            rawStatus: b.status,
+            rawNfseStatus: null,
+            rawBoletimStatus: null,
+            normalizedStatus: "AGUARDANDO_BOLETIM" as const,
+            invoiceId: null,
+            approvalToken: null,
+            approvalUrl: null,
           });
-
-          // Buscar nomes dos clientes destas OS órfãs
-          const orfaoClientIds = Array.from(new Set(orfaos.map((b: any) => b.client_id).filter(Boolean)));
-          const orfaoClientMap = new Map<number, { name: string; cpfCnpj: string | null }>();
-          if (orfaoClientIds.length > 0) {
-            const { data: clientsData } = await supabaseAdmin
-              .from("clients")
-              .select("id, name, cnpj, cpf")
-              .in("id", orfaoClientIds);
-            for (const c of (clientsData || [])) {
-              orfaoClientMap.set(c.id, { name: c.name, cpfCnpj: c.cnpj || c.cpf || null });
-            }
-          }
-
-          // Buscar números de OS para descrição
-          const orfaoSoIds = Array.from(new Set(orfaos.map((b: any) => b.service_order_id).filter(Boolean)));
-          const osNumberMap = new Map<number, string>();
-          if (orfaoSoIds.length > 0) {
-            const { data: sosData } = await supabaseAdmin
-              .from("service_orders")
-              .select("id, os_number")
-              .in("id", orfaoSoIds);
-            for (const so of (sosData || [])) osNumberMap.set(so.id, so.os_number);
-          }
-
-          for (const b of orfaos) {
-            const valor = Number(b.fat_total || 0) ||
-              (Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0));
-            const client = orfaoClientMap.get(b.client_id);
-            const osLabel = osNumberMap.get(b.service_order_id) || `OS-${b.service_order_id}`;
-            const dataFmt = (b.data_missao || "").split("T")[0];
-            rows.push({
-              id: `BIL-${b.id}`,
-              source: "BILLING_AVULSO",
-              sourceId: b.id,
-              clientId: b.client_id,
-              clientName: client?.name || "—",
-              clientCpfCnpj: client?.cpfCnpj || null,
-              description: `${osLabel} — missão de ${dataFmt} (sem boletim)`,
-              value: valor,
-              netValue: null,
-              dueDate: null,
-              paymentDate: null,
-              createdAt: b.created_at,
-              updatedAt: b.created_at,
-              asaasPaymentId: null,
-              invoiceUrl: null,
-              nfseUrl: null,
-              nfseNumber: null,
-              osCount: 1,
-              osList: b.service_order_id ? [{ id: b.service_order_id, osNumber: osLabel }] : [],
-              rawStatus: b.status,
-              rawNfseStatus: null,
-              rawBoletimStatus: null,
-              normalizedStatus: "AGUARDANDO_BOLETIM" as const,
-              invoiceId: null,
-              approvalToken: null,
-              approvalUrl: null,
-            });
-          }
         }
 
         const STATUSES: string[] = ["AGUARDANDO_BOLETIM", "PENDENTE_APROVACAO", "AUTORIZADO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
