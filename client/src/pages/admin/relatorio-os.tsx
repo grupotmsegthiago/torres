@@ -111,6 +111,18 @@ function fmtDateShort(dateStr: string | null | undefined): string {
   } catch { return "—"; }
 }
 
+function effectiveStart(o: { scheduledDate?: string | null; missionStartedAt?: string | null }): string | null {
+  const sd = o.scheduledDate || null;
+  const ms = o.missionStartedAt || null;
+  if (!sd) return ms;
+  if (!ms) return sd;
+  try {
+    return new Date(ms).getTime() < new Date(sd).getTime() ? ms : sd;
+  } catch {
+    return sd;
+  }
+}
+
 function truncRoute(str: string | null | undefined, max = 25): string {
   if (!str) return "—";
   return str.length > max ? str.slice(0, max) + "…" : str;
@@ -553,7 +565,7 @@ export default function RelatorioOSPage() {
         case "osNumber": va = a.osNumber; vb = b.osNumber; break;
         case "status": va = a.status; vb = b.status; break;
         case "clientName": va = a.clientName; vb = b.clientName; break;
-        case "scheduledDate": va = a.scheduledDate || ""; vb = b.scheduledDate || ""; break;
+        case "scheduledDate": va = effectiveStart(a) || ""; vb = effectiveStart(b) || ""; break;
         case "faturamento": va = effectiveFat(a); vb = effectiveFat(b); break;
         case "resultado": va = effectiveResultado(a); vb = effectiveResultado(b); break;
       }
@@ -621,8 +633,8 @@ export default function RelatorioOSPage() {
       o.employee2?.name || "",
       o.origin || "",
       o.destination || "",
-      fmtDateShort(o.scheduledDate),
-      fmtTime(o.missionStartedAt || o.scheduledDate),
+      fmtDateShort(effectiveStart(o)),
+      fmtTime(effectiveStart(o)),
       fmtDateShort(o.completedDate),
       fmtTime(o.completedDate),
       Number((effectiveFat(o)).toFixed(2)),
@@ -852,11 +864,11 @@ export default function RelatorioOSPage() {
                     <th className="px-2 py-2.5 text-left">Viatura</th>
                     <th className="px-2 py-2.5 text-left">Agentes</th>
                     <th className="px-2 py-2.5 text-left">Rota</th>
-                    <th className="px-2 py-2.5 text-center cursor-pointer select-none" onClick={() => handleSort("scheduledDate")}>
-                      <span className="flex items-center gap-1 justify-center">Data/Hora Inicial <SortIcon field="scheduledDate" /></span>
+                    <th className="px-2 py-2.5 text-center cursor-pointer select-none" onClick={() => handleSort("scheduledDate")} title="Início real: o mais cedo entre Agendamento e Início da Missão">
+                      <span className="flex items-center gap-1 justify-center">Início Real <SortIcon field="scheduledDate" /></span>
                     </th>
-                    <th className="px-2 py-2.5 text-center">Data Final</th>
-                    <th className="px-2 py-2.5 text-center">Hora Final</th>
+                    <th className="px-2 py-2.5 text-center" title="Quando a equipe encerrou a missão (Término)">Data Final</th>
+                    <th className="px-2 py-2.5 text-center" title="Quando a equipe encerrou a missão (Término)">Hora Final</th>
                     <th className="px-2 py-2.5 text-right cursor-pointer select-none" onClick={() => handleSort("faturamento")}>
                       <span className="flex items-center gap-1 justify-end">Faturamento <SortIcon field="faturamento" /></span>
                     </th>
@@ -902,8 +914,12 @@ export default function RelatorioOSPage() {
                         <td className="px-2 py-2 text-neutral-600 max-w-[150px] truncate">{agents}</td>
                         <td className="px-2 py-2 text-neutral-500 max-w-[180px] truncate" title={`${o.origin || ""} → ${o.destination || ""}`}>{route}</td>
                         <td className="px-2 py-2 text-center whitespace-nowrap">
-                          <span className="text-neutral-800 font-semibold">{fmtDateShort(o.scheduledDate)}</span>
-                          <span className="text-neutral-400 ml-1">{fmtTime(o.missionStartedAt || o.scheduledDate)}</span>
+                          {(() => { const eff = effectiveStart(o); return (
+                            <>
+                              <span className="text-neutral-800 font-semibold">{fmtDateShort(eff)}</span>
+                              <span className="text-neutral-400 ml-1">{fmtTime(eff)}</span>
+                            </>
+                          ); })()}
                         </td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtDateShort(o.completedDate)}</td>
                         <td className="px-2 py-2 text-center text-neutral-600 whitespace-nowrap">{fmtTime(o.completedDate)}</td>
