@@ -2094,25 +2094,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
     const currentStep = MISSION_STEPS[currentIdx];
 
 
-    const isAdminOrDiretoria = user.role === "admin" || user.role === "diretoria";
-    if (currentStep === "aguardando" && so.scheduledDate && !isAdminOrDiretoria) {
-      const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
-      const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
-      if (diffMin > 30 && !so.earlyStartApproved) {
-        let withinOriginRadius = false;
-        if (latitude && longitude && so.originLat && so.originLng) {
-          const distM = haversineDist(Number(latitude), Number(longitude), Number(so.originLat), Number(so.originLng));
-          const ORIGIN_RADIUS_M = 1000;
-          withinOriginRadius = distM <= ORIGIN_RADIUS_M;
-          if (withinOriginRadius) {
-            console.log(`[early-start] OS ${so.osNumber}: Agent within ${Math.round(distM)}m of origin (limit ${ORIGIN_RADIUS_M}m) — early start allowed`);
-          }
-        }
-        if (!withinOriginRadius) {
-          return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde. Aguarde autorização da central.", code: "EARLY_START" });
-        }
-      }
-    }
+    // Início antecipado liberado: agente pode avançar assim que confirmar ciência da missão,
+    // independente do horário agendado ou de aprovação da central (pedido da operação).
 
     if (currentStep === "aguardando" && so.vehicleId) {
       const { data: activeDriver } = await supabaseAdmin
@@ -2490,23 +2473,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         return res.status(400).json({ message: "Missao ja finalizada ou status invalido" });
       }
 
-      const simUser = req.user!;
-      const simIsAdminOrDir = simUser.role === "admin" || simUser.role === "diretoria";
-      if (currentStep === "aguardando" && so.scheduledDate && !simIsAdminOrDir) {
-        const scheduled = new Date(String(so.scheduledDate).includes("Z") || /[+-]\d{2}:\d{2}$/.test(String(so.scheduledDate)) ? so.scheduledDate : so.scheduledDate + "Z");
-        const diffMin = (scheduled.getTime() - Date.now()) / (1000 * 60);
-        if (diffMin > 30 && !so.earlyStartApproved) {
-          let withinOriginSim = false;
-          const { latitude: simLat, longitude: simLng } = req.body;
-          if (simLat && simLng && so.originLat && so.originLng) {
-            const distM = haversineDist(Number(simLat), Number(simLng), Number(so.originLat), Number(so.originLng));
-            withinOriginSim = distM <= 1000;
-          }
-          if (!withinOriginSim) {
-            return res.status(403).json({ message: "EARLY_START_BLOCKED: Início antecipado bloqueado. Missão agendada para mais tarde.", code: "EARLY_START" });
-          }
-        }
-      }
+      // Início antecipado liberado: agente pode avançar assim que confirmar ciência,
+      // independente do horário agendado ou de aprovação da central (pedido da operação).
 
       if (so.status === "agendada" && currentStep === "aguardando") {
         await storage.updateServiceOrder(serviceOrderId, { status: "em_andamento" });

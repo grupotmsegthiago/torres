@@ -972,7 +972,6 @@ export default function MobileMissaoPage() {
   const [bypassAiRejection, setBypassAiRejection] = useState(false);
   const [cienteConfirmed, setCienteConfirmed] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
-  const [earlyBlocked, setEarlyBlocked] = useState(false);
   const [baseCleanStatus, setBaseCleanStatus] = useState<"limpa" | "suja" | "">("");
   const [baseCleanNotes, setBaseCleanNotes] = useState("");
   const [baseReturnKm, setBaseReturnKm] = useState("");
@@ -1003,17 +1002,6 @@ export default function MobileMissaoPage() {
   const currentStep = (mission?.missionStatus as MissionStep) || "aguardando";
   const config = stepConfig[currentStep] || stepConfig.aguardando;
   const Icon = config.icon;
-
-  useEffect(() => {
-    if (mission && currentStep === "aguardando" && mission.scheduledDate) {
-      const now = new Date();
-      const scheduled = new Date(parseUTCTimestamp(mission.scheduledDate));
-      const diffMin = (scheduled.getTime() - now.getTime()) / (1000 * 60);
-      setEarlyBlocked(diffMin > 30 && !mission.earlyStartApproved);
-    } else {
-      setEarlyBlocked(false);
-    }
-  }, [mission, currentStep]);
 
   useEffect(() => {
     if (mission && currentStep === "checkin_dados_motorista") {
@@ -1490,12 +1478,7 @@ export default function MobileMissaoPage() {
       await advanceMission();
       toast({ title: "Etapa avançada!" });
     } catch (err: any) {
-      if (err.message?.includes("EARLY_START")) {
-        setEarlyBlocked(true);
-        toast({ title: "Início antecipado bloqueado", description: "Aguarde o horário agendado ou solicite autorização.", variant: "destructive" });
-      } else {
-        toast({ title: "Erro", description: err.message, variant: "destructive" });
-      }
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -1967,41 +1950,25 @@ export default function MobileMissaoPage() {
               )}
             </div>
 
-            {earlyBlocked ? (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-center space-y-2">
-                <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
-                  <Lock className="w-7 h-7 text-amber-600" />
-                </div>
-                <p className="text-sm font-black text-amber-800 uppercase tracking-wider">Início Antecipado</p>
-                <p className="text-xs text-amber-600">Esta missão está agendada para mais tarde. O início antecipado requer autorização do admin/central.</p>
-                <p className="text-xs text-amber-500 font-bold">Aguarde a liberação ou entre em contato com a base.</p>
-              </div>
-            ) : (
-              <button
-                onClick={async () => {
-                  setSubmitting(true);
-                  try {
-                    await advanceMission();
-                    toast({ title: "Check-in iniciado!" });
-                  } catch (err: any) {
-                    if (err.message?.includes("antecipado") || err.message?.includes("EARLY_START")) {
-                      setEarlyBlocked(true);
-                      toast({ title: "Início antecipado bloqueado", description: "Aguarde autorização do admin.", variant: "destructive" });
-                    } else {
-                      toast({ title: "Erro", description: err.message, variant: "destructive" });
-                    }
-                  } finally {
-                    setSubmitting(false);
-                  }
-                }}
-                disabled={submitting}
-                className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 shadow-lg"
-                data-testid="button-iniciar-checkin"
-              >
-                {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowRight className="w-6 h-6" />}
-                Iniciar Check-in
-              </button>
-            )}
+            <button
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  await advanceMission();
+                  toast({ title: "Check-in iniciado!" });
+                } catch (err: any) {
+                  toast({ title: "Erro", description: err.message, variant: "destructive" });
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              disabled={submitting}
+              className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 shadow-lg"
+              data-testid="button-iniciar-checkin"
+            >
+              {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowRight className="w-6 h-6" />}
+              Iniciar Check-in
+            </button>
           </div>
         )}
 
@@ -2057,29 +2024,15 @@ export default function MobileMissaoPage() {
               </label>
             </div>
 
-            {earlyBlocked ? (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-center space-y-2">
-                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
-                  <Lock className="w-6 h-6 text-amber-600" />
-                </div>
-                <p className="text-sm font-black text-amber-800 uppercase tracking-wider">Aguarde o Horário</p>
-                <p className="text-xs text-amber-600">
-                  Esta missão está agendada para{" "}
-                  <strong>{mission.scheduledDate ? new Date(parseUTCTimestamp(mission.scheduledDate)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—"}</strong>.
-                  O início antecipado requer autorização da central.
-                </p>
-              </div>
-            ) : (
-              <button
-                onClick={handleTransitAdvance}
-                disabled={submitting || !cienteConfirmed}
-                className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                data-testid="button-start-checkout"
-              >
-                {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-                Iniciar Missão
-              </button>
-            )}
+            <button
+              onClick={handleTransitAdvance}
+              disabled={submitting || !cienteConfirmed}
+              className="w-full h-14 bg-neutral-900 text-white rounded-2xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              data-testid="button-start-checkout"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+              Iniciar Missão
+            </button>
           </div>
         )}
 
