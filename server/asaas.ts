@@ -219,7 +219,166 @@ async function emitNfseImmediate(opts: { paymentId: string; value: number; descr
   return { id: nfId, status: result.status || "SCHEDULED", number: result.number ? String(result.number) : undefined };
 }
 
-async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
+// ============================================================
+  // Normalização de status para o Relatório de NFs
+  // ============================================================
+  export type NormalizedNfStatus =
+    | "PENDENTE_APROVACAO"
+    | "AUTORIZADO"
+    | "NF_PROCESSANDO"
+    | "NF_EMITIDA"
+    | "NF_ERRO"
+    | "NF_CANCELADA"
+    | "PAGO"
+    | "VENCIDO"
+    | "OUTRO";
+
+  export function normalizeInvoiceStatus(invoice: any): NormalizedNfStatus {
+    const payStatus = String(invoice?.status || "").toUpperCase();
+    const nfStatus = String(invoice?.nfse_status || "").toUpperCase();
+
+    if (["RECEIVED", "CONFIRMED", "PAGO", "RECEIVED_IN_CASH"].includes(payStatus)) return "PAGO";
+    if (nfStatus.includes("CANCEL")) return "NF_CANCELADA";
+    if (["ERROR", "ERRO", "REJECTED", "DENIED", "FAILED", "FALHA"].includes(nfStatus)) return "NF_ERRO";
+    if (["AUTHORIZED", "SYNCHRONIZED", "ISSUED"].includes(nfStatus)) return "NF_EMITIDA";
+    if (["PROCESSING", "WAITING_MUNICIPAL_PROCESSING", "SCHEDULED", "PENDING"].includes(nfStatus)) return "NF_PROCESSANDO";
+    if (["CANCELLED", "CANCELED"].includes(payStatus)) return "NF_CANCELADA";
+    if (payStatus === "OVERDUE") return "VENCIDO";
+    return "AUTORIZADO";
+  }
+
+  export function normalizeBoletimStatus(approval: any): NormalizedNfStatus {
+    const st = String(approval?.status || "").toUpperCase();
+    if (st === "PENDENTE") return "PENDENTE_APROVACAO";
+    if (st === "APROVADO") return "AUTORIZADO";
+    return "OUTRO";
+  }
+
+  // ============================================================
+  // Reconciliação de status com o Asaas (payment + NFS-e)
+  // ============================================================
+  export async function reconcileInvoiceFromAsaas(invoice: any): Promise<{ updated: boolean; changes?: Record<string, any> }> {
+    if (!invoice?.asaas_payment_id || !process.env.ASAAS_API_KEY) return { updated: false };
+
+    const updates: Record<string, any> = {};
+    let changed = false;
+
+    try {
+      const payment = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+      if (payment?.status && payment.status !== invoice.status) { updates.status = payment.status; changed = true; }
+      if (payment?.netValue && Number(payment.netValue) !== Number(invoice.net_value || 0)) { updates.net_value = payment.netValue; changed = true; }
+      if (payment?.invoiceUrl && payment.invoiceUrl !== invoice.invoice_url) { updates.invoice_url = payment.invoiceUrl; changed = true; }
+      const bsUrl = payment?.bankSlip?.url || payment?.bankSlipUrl;
+      if (bsUrl && bsUrl !== invoice.bank_slip_url) { updates.bank_slip_url = bsUrl; changed = true; }
+      if (payment?.paymentDate && payment.paymentDate !== invoice.payment_date) { updates.payment_date = payment.paymentDate; changed = true; }
+    } catch (e: any) {
+      console.log(`[reconcile] payment fetch invoice #${invoice.id} (${invoice.asaas_payment_id}): ${e.message}`);
+    }
+
+    if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
+      try {
+        const nf = await asaasRequest("GET", `/invoices/${invoice.nfse_number}`);
+        if (nf?.status && nf.status !== invoice.nfse_status) { updates.nfse_status = nf.status; changed = true; }
+        if (nf?.pdfUrl && nf.pdfUrl !== invoice.nfse_url) { updates.nfse_url = nf.pdfUrl; changed = true; }
+        else if (nf?.xmlUrl && !invoice.nfse_url) { updates.nfse_url = nf.xmlUrl; changed = true; }
+        if (nf?.number && String(nf.number) !== invoice.nfse_number) { updates.nfse_number = String(nf.number); changed = true; }
+      } catch (e: any) {
+        console.log(`[reconcile] /invoices fetch invoice #${invoice.id}: ${e.message}`);
+      }
+    } else {
+      try {
+        const fi = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+        if (fi?.status && fi.status !== invoice.nfse_status) { updates.nfse_status = fi.status; changed = true; }
+        if (fi?.externalUrl && fi.externalUrl !== invoice.nfse_url) { updates.nfse_url = fi.externalUrl; changed = true; }
+        if (fi?.number && String(fi.number) !== invoice.nfse_number) { updates.nfse_number = String(fi.number); changed = true; }
+        else if (fi?.rpsNumber && !invoice.nfse_number) { updates.nfse_number = `RPS-${fi.rpsNumber}`; changed = true; }
+      } catch (_e) {
+        // silencioso: nem toda fatura tem fiscalInfo ainda
+      }
+    }
+
+    if (changed) {
+      updates.updated_at = new Date().toISOString();
+      await supabaseAdmin.from("invoices").update(updates).eq("id", invoice.id);
+    }
+    return { updated: changed, changes: changed ? updates : undefined };
+  }
+
+  export const nfReconcileState: {
+    startedAt: string | null;
+    completedAt: string | null;
+    processed: number;
+    updated: number;
+    errors: number;
+    lastError: string | null;
+    running: boolean;
+  } = {
+    startedAt: null,
+    completedAt: null,
+    processed: 0,
+    updated: 0,
+    errors: 0,
+    lastError: null,
+    running: false,
+  };
+
+  export async function reconcileAllInvoicesAsaas(opts?: { force?: boolean; limit?: number }): Promise<typeof nfReconcileState> {
+    if (!process.env.ASAAS_API_KEY) {
+      nfReconcileState.lastError = "ASAAS_API_KEY não configurada";
+      return nfReconcileState;
+    }
+    if (nfReconcileState.running) return nfReconcileState;
+
+    nfReconcileState.running = true;
+    nfReconcileState.startedAt = new Date().toISOString();
+    nfReconcileState.processed = 0;
+    nfReconcileState.updated = 0;
+    nfReconcileState.errors = 0;
+    nfReconcileState.lastError = null;
+
+    const force = opts?.force === true;
+    const limit = opts?.limit ?? 80;
+
+    try {
+      const { data: invoices, error } = await supabaseAdmin.from("invoices")
+        .select("*")
+        .not("asaas_payment_id", "is", null)
+        .order("updated_at", { ascending: true, nullsFirst: true } as any)
+        .limit(limit);
+      if (error) throw error;
+
+      for (const inv of (invoices || [])) {
+        try {
+          if (!force) {
+            const payTerminal = ["RECEIVED", "CONFIRMED"].includes(String(inv.status || "").toUpperCase());
+            const nfTerminal = ["AUTHORIZED", "SYNCHRONIZED", "CANCELED", "CANCELLED"].includes(String(inv.nfse_status || "").toUpperCase());
+            const recentlyUpdated = inv.updated_at && (Date.now() - new Date(inv.updated_at).getTime() < 8 * 60 * 1000);
+            if (payTerminal && nfTerminal) continue;
+            if (recentlyUpdated) continue;
+          }
+          const r = await reconcileInvoiceFromAsaas(inv);
+          nfReconcileState.processed += 1;
+          if (r.updated) {
+            nfReconcileState.updated += 1;
+            console.log(`[reconcile] invoice #${inv.id} atualizada:`, JSON.stringify(r.changes));
+          }
+        } catch (e: any) {
+          nfReconcileState.errors += 1;
+          nfReconcileState.lastError = e?.message || String(e);
+        }
+      }
+    } catch (e: any) {
+      nfReconcileState.errors += 1;
+      nfReconcileState.lastError = e?.message || String(e);
+    } finally {
+      nfReconcileState.completedAt = new Date().toISOString();
+      nfReconcileState.running = false;
+      console.log(`[reconcile] concluído: processadas=${nfReconcileState.processed}, atualizadas=${nfReconcileState.updated}, erros=${nfReconcileState.errors}`);
+    }
+    return nfReconcileState;
+  }
+
+  async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
   const apiKey = getApiKey();
   const url = `${ASAAS_API_URL}${path}`;
   const headers: Record<string, string> = {
@@ -1777,7 +1936,168 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
-  console.log("[asaas] Rotas de faturamento Asaas registradas");
+
+    // ============================================================
+    // GET /api/relatorio-nf — visão unificada (boletins + invoices)
+    // ============================================================
+    app.get("/api/relatorio-nf", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const from = (req.query.from as string) || "";
+        const to = (req.query.to as string) || "";
+
+        let invQuery = supabaseAdmin.from("invoices").select("*").order("created_at", { ascending: false }).limit(1000);
+        if (from) invQuery = invQuery.gte("created_at", `${from}T00:00:00`);
+        if (to) invQuery = invQuery.lte("created_at", `${to}T23:59:59.999`);
+        const { data: invoices, error: invErr } = await invQuery;
+        if (invErr) throw invErr;
+
+        let appQuery = supabaseAdmin.from("boletim_approvals").select("*").order("created_at", { ascending: false }).limit(1000);
+        if (from) appQuery = appQuery.gte("created_at", `${from}T00:00:00`);
+        if (to) appQuery = appQuery.lte("created_at", `${to}T23:59:59.999`);
+        const { data: approvals, error: appErr } = await appQuery;
+        if (appErr) throw appErr;
+
+        // Para boletins: descobrir quais já têm fatura gerada (via escort_billings.invoice_id)
+        const allBillingIds: string[] = [];
+        for (const a of (approvals || [])) {
+          const ids = (a.billing_ids as any[]) || [];
+          for (const id of ids) allBillingIds.push(String(id));
+        }
+        const invoiceByBilling = new Map<string, number | null>();
+        if (allBillingIds.length > 0) {
+          const { data: billingsData } = await supabaseAdmin
+            .from("escort_billings")
+            .select("id, invoice_id")
+            .in("id", Array.from(new Set(allBillingIds)));
+          for (const b of (billingsData || [])) {
+            invoiceByBilling.set(String(b.id), b.invoice_id);
+          }
+        }
+
+        // Para clientes (CPF/CNPJ) dos boletins
+        const clientIds = Array.from(new Set((approvals || []).map((a: any) => a.client_id).filter(Boolean)));
+        const clientCpfMap = new Map<number, string | null>();
+        if (clientIds.length > 0) {
+          const { data: clientsData } = await supabaseAdmin
+            .from("clients")
+            .select("id, cnpj, cpf")
+            .in("id", clientIds);
+          for (const c of (clientsData || [])) {
+            clientCpfMap.set(c.id, c.cnpj || c.cpf || null);
+          }
+        }
+
+        const rows: any[] = [];
+
+        for (const inv of (invoices || [])) {
+          const ns = normalizeInvoiceStatus(inv);
+          rows.push({
+            id: `INV-${inv.id}`,
+            source: "INVOICE",
+            sourceId: inv.id,
+            clientId: inv.client_id,
+            clientName: inv.client_name,
+            clientCpfCnpj: inv.client_cpf_cnpj,
+            description: inv.description,
+            value: Number(inv.value || 0),
+            netValue: inv.net_value != null ? Number(inv.net_value) : null,
+            dueDate: inv.due_date,
+            paymentDate: inv.payment_date,
+            createdAt: inv.created_at,
+            updatedAt: inv.updated_at,
+            asaasPaymentId: inv.asaas_payment_id,
+            invoiceUrl: inv.invoice_url,
+            nfseUrl: inv.nfse_url,
+            nfseNumber: inv.nfse_number && !String(inv.nfse_number).startsWith("inv_") ? inv.nfse_number : null,
+            osCount: 1,
+            rawStatus: inv.status,
+            rawNfseStatus: inv.nfse_status,
+            rawBoletimStatus: null,
+            normalizedStatus: ns,
+            invoiceId: inv.id,
+            approvalToken: null,
+            approvalUrl: null,
+          });
+        }
+
+        for (const ap of (approvals || [])) {
+          const billingIds = ((ap.billing_ids as any[]) || []).map(String);
+          const allCovered = billingIds.length > 0 && billingIds.every(bid => invoiceByBilling.get(bid) != null);
+          if (allCovered) continue;
+          const apStatus = String(ap.status || "").toUpperCase();
+          if (apStatus === "RECUSADO" || apStatus === "REJEITADO") continue;
+          const ns = normalizeBoletimStatus(ap);
+          rows.push({
+            id: `BOL-${ap.id}`,
+            source: "BOLETIM",
+            sourceId: ap.id,
+            clientId: ap.client_id,
+            clientName: ap.client_name,
+            clientCpfCnpj: clientCpfMap.get(ap.client_id) || null,
+            description: `Boletim de medição — período ${ap.period_start} a ${ap.period_end}`,
+            value: Number(ap.total_value || 0),
+            netValue: null,
+            dueDate: null,
+            paymentDate: null,
+            createdAt: ap.created_at,
+            updatedAt: ap.approved_at || ap.sent_at || ap.created_at,
+            asaasPaymentId: null,
+            invoiceUrl: null,
+            nfseUrl: null,
+            nfseNumber: null,
+            osCount: ap.os_count || billingIds.length,
+            rawStatus: null,
+            rawNfseStatus: null,
+            rawBoletimStatus: ap.status,
+            normalizedStatus: ns,
+            invoiceId: null,
+            approvalToken: ap.token,
+            approvalUrl: ap.token ? `/aprovacao/${ap.token}` : null,
+          });
+        }
+
+        const STATUSES: string[] = ["PENDENTE_APROVACAO", "AUTORIZADO", "NF_PROCESSANDO", "NF_EMITIDA", "NF_ERRO", "NF_CANCELADA", "PAGO", "VENCIDO", "OUTRO"];
+        const totals: Record<string, { count: number; value: number }> = {};
+        for (const st of STATUSES) {
+          const subset = rows.filter(r => r.normalizedStatus === st);
+          totals[st] = { count: subset.length, value: subset.reduce((s, r) => s + Number(r.value || 0), 0) };
+        }
+        (totals as any).total = { count: rows.length, value: rows.reduce((s, r) => s + Number(r.value || 0), 0) };
+
+        rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+        res.json({
+          rows,
+          totals,
+          lastSync: nfReconcileState,
+          period: { from, to },
+        });
+      } catch (err: any) {
+        console.error("[relatorio-nf] error:", err.message);
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    // ============================================================
+    // POST /api/asaas/reconcile-all — sync manual com Asaas
+    // ============================================================
+    app.post("/api/asaas/reconcile-all", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const force = req.body?.force === true;
+        const limit = Number(req.body?.limit) || 80;
+        // executa em background para não travar a UI; UI fará polling em /api/relatorio-nf
+        reconcileAllInvoicesAsaas({ force, limit }).catch(e => console.log("[reconcile-all] bg error:", e?.message));
+        res.json({ started: true, state: nfReconcileState });
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    app.get("/api/asaas/reconcile-status", requireAdminRole, async (_req: Request, res: Response) => {
+      res.json(nfReconcileState);
+    });
+
+    console.log("[asaas] Rotas de faturamento Asaas registradas");
 }
 
 function fmt(val: number) {

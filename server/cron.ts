@@ -144,7 +144,21 @@ async function checkMetaAndNotify() {
 }
 
 export function initCronJobs() {
-  cron.schedule("0 2 * * *", async () => {
+  // ============================================================
+    // CRON: Reconciliação de NFs com Asaas — a cada 15 min
+    // ============================================================
+    cron.schedule("*/15 * * * *", async () => {
+      log("CRON NF-Reconcile: Iniciando reconciliação de NFs com Asaas", "cron");
+      try {
+        const { reconcileAllInvoicesAsaas } = await import("./asaas");
+        const result = await reconcileAllInvoicesAsaas({ limit: 80 });
+        log(`CRON NF-Reconcile: ${result.processed} processada(s), ${result.updated} atualizada(s), ${result.errors} erro(s)`, "cron");
+      } catch (e: any) {
+        log(`CRON NF-Reconcile: Erro: ${e.message}`, "cron");
+      }
+    });
+
+    cron.schedule("0 2 * * *", async () => {
     log("CRON: Iniciando monitoramento de frota (multas PRF)", "cron");
     try {
       const vehicles = await storage.getVehicles();
