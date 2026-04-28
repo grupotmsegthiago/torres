@@ -1027,6 +1027,9 @@ export async function ensureCalcMissionRPC() {
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_boletim_approvals_token ON boletim_approvals(token)`);
     await execSql(`ALTER TABLE boletim_approvals ALTER COLUMN billing_ids TYPE TEXT[] USING billing_ids::TEXT[]`);
+    await execSql(`ALTER TABLE boletim_approvals ADD COLUMN IF NOT EXISTS sent_by TEXT`);
+    await execSql(`ALTER TABLE boletim_approvals ADD COLUMN IF NOT EXISTS sent_by_user_id INTEGER`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_boletim_approvals_client_status ON boletim_approvals(client_id, status)`);
     console.log("[db-init] boletim_approvals table ensured");
   } catch (e: any) {
     console.error("[db-init] boletim_approvals error:", e.message);

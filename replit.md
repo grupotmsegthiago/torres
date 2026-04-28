@@ -213,6 +213,16 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Frontend:** `/admin/faturas` — Painel de criação, visualização, sincronização, cancelamento e confirmação de pagamento de faturas. Indicador visual de e-mail enviado (ícone MailCheck azul) na listagem. Acessível via sidebar Financeiro > Faturas / Cobranças.
 - **Funciona sem Asaas:** Se `ASAAS_API_KEY` não estiver configurada, faturas são registradas apenas localmente sem geração de boleto/PIX.
 
+  ### Boletim — Bloqueio de Reenvio Duplicado ao Cliente
+  - **Tabela `boletim_approvals`** ganhou colunas `sent_by` (TEXT) e `sent_by_user_id` (INTEGER) para registrar quem disparou o "Enviar para Cliente".
+  - **Backend (`server/routes/boletim-approval.ts`):**
+    - `POST /api/boletim/enviar-aprovacao` agora **rejeita com HTTP 409** quando já existe uma aprovação ativa (status `PENDENTE` ou `APROVADO`) cobrindo qualquer um dos billing_ids do mesmo cliente. A resposta inclui `existing` com `sentAt`, `sentBy`, `status`, `clientEmail` e `overlapBillingIds`. Para forçar reenvio basta enviar `force: true` no body.
+    - Insere `sent_by` (= `req.user.name`) e `sent_by_user_id` no registro.
+    - Novo endpoint `GET /api/boletim/approval-status?clientId&billingIds=1,2,3` devolve `{ active, recent[] }`: `active` é a aprovação não-recusada que cobre qualquer billing_id consultado; `recent` são as últimas 5 aprovações relacionadas.
+  - **Frontend (`client/src/pages/admin/relatorio-faturamento.tsx`):**
+    - Consulta `/api/boletim/approval-status` sempre que o relatório é gerado. Se houver envio ativo, exibe banner azul (PENDENTE) ou verde (APROVADO) com **data, hora, usuário e e-mail** do envio.
+    - Botão "Enviar para Cliente" muda para "Aguardando cliente" (cinza) ou "Cliente aprovou" (verde) e exige confirmação dupla para forçar reenvio (envia `force: true` ao backend).
+
   ### Relatório de Notas Fiscais (`/admin/relatorio-nf`)
   - **Endpoint unificado `GET /api/relatorio-nf?from=YYYY-MM-DD&to=YYYY-MM-DD`** (`server/asaas.ts`): junta `invoices` + `boletim_approvals` em uma única lista, deduplicando boletins já transformados em fatura (via `escort_billings.invoice_id`). Cada linha vem com `normalizedStatus` consolidado: `PENDENTE_APROVACAO` (boletim aguardando cliente), `AUTORIZADO` (aprovado/faturado sem NF), `NF_PROCESSANDO`, `NF_EMITIDA`, `NF_ERRO`, `NF_CANCELADA`, `PAGO`, `VENCIDO`. Helpers `normalizeInvoiceStatus`/`normalizeBoletimStatus` cobrem os múltiplos rótulos retornados pelo Asaas (ERROR/ERRO, CANCELED/CANCELLED, PROCESSING_CANCELLATION etc.) — **garantindo que os totais dos cards batam com a soma da tabela**.
   - **Sincronização periódica com Asaas:** cron `*/15 * * * *` em `server/cron.ts` chama `reconcileAllInvoicesAsaas({ limit: 80 })`, que para cada fatura com `asaas_payment_id` consulta `/payments/{id}` (status, paymentDate, invoiceUrl) e `/invoices/{id}` ou `/payments/{id}/fiscalInfo` (status NFS-e, número, URL do PDF). Pula faturas em estado terminal (`RECEIVED + AUTHORIZED/SYNCHRONIZED/CANCELED`) e atualizadas <8min, exceto quando `force=true`. Estado mantido em `nfReconcileState` (startedAt/completedAt/processed/updated/errors).

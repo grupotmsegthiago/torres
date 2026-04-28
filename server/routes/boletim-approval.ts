@@ -471,11 +471,53 @@ async function sendApprovalEmailWithExcel(
 export function registerBoletimApprovalRoutes(app: Express) {
   app.post("/api/boletim/enviar-aprovacao", requireAdminRole, async (req: Request, res: Response) => {
     try {
-      const { clientId, clientName, clientEmail, periodStart, periodEnd, billingIds, totalValue, osCount } = req.body;
+      const { clientId, clientName, clientEmail, periodStart, periodEnd, billingIds, totalValue, osCount, force } = req.body;
+      const user = req.user as any;
 
       if (!clientId || !clientEmail || !billingIds?.length) {
         return res.status(400).json({ message: "Dados incompletos. Informe cliente, e-mail e IDs dos boletins." });
       }
+
+        // Bloqueia reenvio se já existir aprovação ativa (PENDENTE/APROVADO) cobrindo qualquer um dos billings
+        if (!force) {
+          const billingIdsAsStr = billingIds.map((x: any) => String(x));
+          const { data: existing } = await supabaseAdmin
+            .from("boletim_approvals")
+            .select("id, token, status, sent_at, sent_by, client_email, period_start, period_end, billing_ids, total_value")
+            .eq("client_id", clientId)
+            .in("status", ["PENDENTE", "APROVADO"])
+            .order("sent_at", { ascending: false });
+
+          const conflict = (existing || []).find((row: any) => {
+            const ids = (row.billing_ids || []).map((x: any) => String(x));
+            return ids.some((id: string) => billingIdsAsStr.includes(id));
+          });
+
+          if (conflict) {
+            const conflictIds = (conflict.billing_ids || []).map((x: any) => String(x));
+            const overlap = billingIdsAsStr.filter((id: string) => conflictIds.includes(id));
+            const sentAtFmt = conflict.sent_at ? new Date(conflict.sent_at).toLocaleString("pt-BR") : "data anterior";
+            return res.status(409).json({
+              message: conflict.status === "APROVADO"
+                ? `Estas OS já foram aprovadas pelo cliente em ${sentAtFmt}. Para reenviar, libere as OS para refaturamento.`
+                : `Boletim já enviado ao cliente em ${sentAtFmt}${conflict.sent_by ? " por " + conflict.sent_by : ""}. Aguarde a aprovação do cliente ou cancele o envio anterior antes de reenviar.`,
+              existing: {
+                id: conflict.id,
+                token: conflict.token,
+                status: conflict.status,
+                sentAt: conflict.sent_at,
+                sentBy: conflict.sent_by,
+                clientEmail: conflict.client_email,
+                periodStart: conflict.period_start,
+                periodEnd: conflict.period_end,
+                billingIds: conflict.billing_ids,
+                overlapBillingIds: overlap,
+                totalValue: conflict.total_value,
+              },
+            });
+          }
+        }
+  
 
       const { data: billingsData } = await supabaseAdmin
         .from("escort_billings")
@@ -527,6 +569,8 @@ export function registerBoletimApprovalRoutes(app: Express) {
         total_value: totalValue || 0,
         os_count: osCount || billingIds.length,
         status: "PENDENTE",
+        sent_by: user?.name || user?.username || null,
+        sent_by_user_id: user?.id || null,
       }).select().single();
 
       if (error) throw error;
@@ -792,5 +836,42 @@ export function registerBoletimApprovalRoutes(app: Express) {
     }
   });
 
-  console.log("[boletim-approval] Rotas de aprovação de boletim registradas");
+  // Status atual das aprovações para um cliente/período (consulta para a UI saber se já enviou)
+    app.get("/api/boletim/approval-status", requireAdminRole, async (req: Request, res: Response) => {
+      try {
+        const clientId = req.query.clientId ? Number(req.query.clientId) : NaN;
+        const billingIdsRaw = String(req.query.billingIds || "").trim();
+        if (!clientId || !billingIdsRaw) return res.json({ active: null, recent: [] });
+
+        const billingIds = billingIdsRaw.split(",").map((x) => x.trim()).filter(Boolean);
+        if (billingIds.length === 0) return res.json({ active: null, recent: [] });
+
+        const { data, error } = await supabaseAdmin
+          .from("boletim_approvals")
+          .select("id, token, status, sent_at, sent_by, client_email, period_start, period_end, billing_ids, total_value, os_count, approved_at, approved_by_name")
+          .eq("client_id", clientId)
+          .order("sent_at", { ascending: false })
+          .limit(20);
+        if (error) throw error;
+
+        const enriched = (data || []).map((row: any) => {
+          const ids = (row.billing_ids || []).map((x: any) => String(x));
+          const overlap = billingIds.filter((id) => ids.includes(id));
+          return { ...row, overlapCount: overlap.length, overlapBillingIds: overlap };
+        });
+
+        const active = enriched.find(
+          (r: any) => r.overlapCount > 0 && (r.status === "PENDENTE" || r.status === "APROVADO"),
+        ) || null;
+
+        res.json({
+          active,
+          recent: enriched.filter((r: any) => r.overlapCount > 0).slice(0, 5),
+        });
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
+    console.log("[boletim-approval] Rotas de aprovação de boletim registradas");
 }

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
   Calculator, Calendar, Pencil, Save, X, Check, Receipt, Banknote, Send, Mail,
+  Clock, AlertTriangle, User as UserIcon, RefreshCw,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,19 @@ export default function RelatorioFaturamentoPage() {
     queryFn: async () => { const r = await authFetch("/api/escort/contracts"); return r.json(); },
   });
 
+  const billingIdsKey = useMemo(() => billings.map((b: any) => String(b.id)).sort().join(","), [billings]);
+  const { data: approvalStatus, refetch: refetchApprovalStatus, isFetching: isCheckingApproval } = useQuery<{ active: any | null; recent: any[] }>({
+    queryKey: ["/api/boletim/approval-status", selectedClient, billingIdsKey],
+    queryFn: async () => {
+      if (!selectedClient || !billingIdsKey) return { active: null, recent: [] };
+      const r = await authFetch(`/api/boletim/approval-status?clientId=${selectedClient}&billingIds=${encodeURIComponent(billingIdsKey)}`);
+      return r.json();
+    },
+    enabled: Boolean(selectedClient && billingIdsKey && reportGenerated),
+    staleTime: 15000,
+  });
+  const activeApproval = approvalStatus?.active || null;
+
   const approvedBillings = useMemo(() => billings.filter(b => b.status === "APROVADA"), [billings]);
   const faturadoBillings = useMemo(() => billings.filter(b => b.status === "FATURADO" || b.status === "FATURADA"), [billings]);
   const approvedTotal = useMemo(() => approvedBillings.reduce((acc, b) => {
@@ -142,7 +156,7 @@ export default function RelatorioFaturamentoPage() {
     setSendDialog(true);
   };
 
-  const handleSendToClient = async () => {
+  const handleSendToClient = async (force = false) => {
     if (!sendEmail || !sendEmail.includes("@")) {
       toast({ title: "E-mail inválido", description: "Informe um e-mail válido do cliente.", variant: "destructive" });
       return;
@@ -163,9 +177,23 @@ export default function RelatorioFaturamentoPage() {
           billingIds,
           totalValue: grandTotal,
           osCount: billingIds.length,
+          force,
         }),
       });
       const result = await resp.json();
+      if (resp.status === 409 && result?.existing) {
+        const ex = result.existing;
+        const when = ex.sentAt ? new Date(ex.sentAt).toLocaleString("pt-BR") : "data anterior";
+        const who = ex.sentBy ? ` por ${ex.sentBy}` : "";
+        const proceed = window.confirm(`${result.message}\n\nÚltimo envio: ${when}${who}\nStatus: ${ex.status}\n\nDeseja FORÇAR um novo envio mesmo assim?`);
+        if (proceed) {
+          setSendLoading(false);
+          await handleSendToClient(true);
+          return;
+        }
+        toast({ title: "Envio cancelado", description: result.message, variant: "destructive" });
+        return;
+      }
       if (!resp.ok) throw new Error(result.message || "Erro ao enviar");
       if (result.emailError) {
         toast({ title: "Boletim criado, mas e-mail falhou", description: result.emailError, variant: "destructive" });
@@ -173,6 +201,7 @@ export default function RelatorioFaturamentoPage() {
         toast({ title: "Enviado com sucesso!", description: `E-mail com Excel enviado para ${sendEmail}. Aguardando aprovação do cliente.` });
       }
       setSendDialog(false);
+      await refetchApprovalStatus();
     } catch (err: any) {
       toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
     } finally {
@@ -658,9 +687,35 @@ export default function RelatorioFaturamentoPage() {
                   <button onClick={openFaturaDialog} disabled={approvedBillings.length === 0} className={`${approvedBillings.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`} data-testid="btn-gerar-fatura" title={approvedBillings.length === 0 ? "Todas as OS ja foram faturadas" : ""}>
                     <Receipt size={18} /> Gerar Fatura {approvedBillings.length > 0 ? `(${approvedBillings.length})` : faturadoBillings.length > 0 ? "(Faturadas)" : ""}
                   </button>
-                  <button onClick={openSendDialog} disabled={rowsData.length === 0} className={`${rowsData.length === 0 ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`} data-testid="btn-enviar-cliente">
-                    <Send size={18} /> Enviar para Cliente
-                  </button>
+                  {(() => {
+                    const blocked = !!activeApproval;
+                    const blockedByPending = blocked && activeApproval.status === "PENDENTE";
+                    const blockedByApproved = blocked && activeApproval.status === "APROVADO";
+                    const cls = rowsData.length === 0 ? "bg-gray-400 cursor-not-allowed" : blockedByApproved ? "bg-emerald-600 hover:bg-emerald-700" : blockedByPending ? "bg-gray-400 hover:bg-gray-500" : "bg-blue-600 hover:bg-blue-700";
+                    const label = blockedByApproved ? "Cliente aprovou" : blockedByPending ? "Aguardando cliente" : "Enviar para Cliente";
+                    const tip = blocked ? `${blockedByApproved ? "Aprovado" : "Enviado"} em ${activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleString("pt-BR") : "\u2014"}${activeApproval.sent_by ? " por " + activeApproval.sent_by : ""}. Clique para forçar reenvio.` : "";
+                    return (
+                      <button
+                        onClick={() => {
+                          if (rowsData.length === 0) return;
+                          if (blocked) {
+                            const when = activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleString("pt-BR") : "data anterior";
+                            const who = activeApproval.sent_by ? ` por ${activeApproval.sent_by}` : "";
+                            const ok = window.confirm(blockedByApproved ? `Estas OS já foram APROVADAS pelo cliente em ${when}${who}.\n\nReenviar mesmo assim?` : `Boletim já enviado em ${when}${who} e aguardando resposta do cliente.\n\nReenviar (forçando) mesmo assim?`);
+                            if (!ok) return;
+                          }
+                          openSendDialog();
+                        }}
+                        disabled={rowsData.length === 0}
+                        className={`${cls} text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2`}
+                        title={tip}
+                        data-testid="btn-enviar-cliente"
+                      >
+                        {blockedByApproved ? <Check size={18} /> : blockedByPending ? <Clock size={18} /> : <Send size={18} />}
+                        {label}
+                      </button>
+                    );
+                  })()}
                 </>
               )}
             </div>
@@ -668,7 +723,58 @@ export default function RelatorioFaturamentoPage() {
         </div>
       </div>
 
-      {reportGenerated && rowsData.length === 0 && (
+      {reportGenerated && activeApproval && (
+          <div
+            className={`mt-4 no-print rounded-xl p-3 flex items-center gap-3 justify-between border ${
+              activeApproval.status === "APROVADO"
+                ? "bg-emerald-50 border-emerald-300"
+                : "bg-blue-50 border-blue-300"
+            }`}
+            data-testid="banner-aprovacao-status"
+          >
+            <div className="flex items-center gap-3">
+              {activeApproval.status === "APROVADO" ? (
+                <Check size={20} className="text-emerald-600 shrink-0" />
+              ) : (
+                <Clock size={20} className="text-blue-600 shrink-0" />
+              )}
+              <div>
+                <p className={`text-sm font-bold ${activeApproval.status === "APROVADO" ? "text-emerald-900" : "text-blue-900"}`} data-testid="text-aprovacao-status-title">
+                  {activeApproval.status === "APROVADO"
+                    ? `Boletim aprovado pelo cliente${activeApproval.approved_by_name ? " (" + activeApproval.approved_by_name + ")" : ""}`
+                    : "Boletim já enviado para o cliente — aguardando aprovação"}
+                </p>
+                <p className={`text-xs ${activeApproval.status === "APROVADO" ? "text-emerald-700" : "text-blue-700"} flex items-center gap-2 flex-wrap`}>
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar size={12} /> {activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleDateString("pt-BR") : "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock size={12} /> {activeApproval.sent_at ? new Date(activeApproval.sent_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <UserIcon size={12} /> {activeApproval.sent_by || "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Mail size={12} /> {activeApproval.client_email || "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <FileText size={12} /> {activeApproval.os_count || (activeApproval.billing_ids || []).length} OS — {fmt(Number(activeApproval.total_value || 0))}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => refetchApprovalStatus()}
+              disabled={isCheckingApproval}
+              className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase shadow-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+              data-testid="btn-refresh-approval-status"
+            >
+              <RefreshCw size={12} className={isCheckingApproval ? "animate-spin" : ""} /> Atualizar
+            </button>
+          </div>
+        )}
+
+        {reportGenerated && rowsData.length === 0 && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 mt-4 text-center" data-testid="text-no-results">
           <p className="text-gray-400 font-bold">Nenhum boletim aprovado encontrado para o período selecionado.</p>
         </div>
@@ -1140,7 +1246,7 @@ export default function RelatorioFaturamentoPage() {
               Cancelar
             </Button>
             <Button
-              onClick={handleSendToClient}
+              onClick={() => handleSendToClient(false)}
               disabled={sendLoading || !sendEmail}
               className="bg-blue-600 hover:bg-blue-700 text-xs font-black uppercase gap-2 px-6"
               data-testid="button-confirm-send"
