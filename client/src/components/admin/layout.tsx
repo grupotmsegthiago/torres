@@ -360,7 +360,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isDiretoria = user?.role === "diretoria";
 
   return (
-    <div className="min-h-screen bg-neutral-100 flex" data-testid="admin-layout">
+    <div className="h-screen bg-neutral-100 flex overflow-hidden" data-testid="admin-layout">
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static flex flex-col ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -416,7 +416,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         />
       )}
 
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center gap-4 lg:hidden">
           <Button
             variant="ghost"
