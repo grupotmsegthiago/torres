@@ -1106,34 +1106,43 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const id = parseInt(req.params.id);
+      const localOnly = !!(req.body as any)?.localOnly;
+      const reason = (req.body as any)?.reason ? String((req.body as any).reason).slice(0, 500) : null;
+
       const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
       if (!invoice.nfse_status) return res.status(400).json({ message: "Esta fatura não possui NFS-e emitida." });
 
-      let nfId: string | null = null;
-      if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
-        nfId = String(invoice.nfse_number);
-      } else if (invoice.asaas_payment_id) {
-        try {
-          const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
-          nfId = fiscalInfo?.id || null;
-        } catch {}
-      }
-
       let cancelStatus = "CANCELED";
       let cancelMessage = "NFS-e cancelada localmente.";
-      if (nfId) {
-        try {
-          const cancelResult = await asaasRequest("POST", `/invoices/${nfId}/cancel`);
-          cancelStatus = cancelResult?.status || "CANCELED";
-          cancelMessage = `NFS-e ${nfId} cancelada no Asaas (status: ${cancelStatus}).`;
-          console.log(`[asaas] NFS-e ${nfId} cancelada com sucesso. Status: ${cancelStatus}`);
-        } catch (cancelErr: any) {
-          console.error(`[asaas] Erro ao cancelar NFS-e ${nfId}: ${cancelErr.message}`);
-          return res.status(500).json({ message: `Erro ao cancelar NFS-e no Asaas: ${cancelErr.message}` });
+
+      if (!localOnly) {
+        let nfId: string | null = null;
+        if (invoice.nfse_number && String(invoice.nfse_number).startsWith("inv_")) {
+          nfId = String(invoice.nfse_number);
+        } else if (invoice.asaas_payment_id) {
+          try {
+            const fiscalInfo = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}/fiscalInfo`);
+            nfId = fiscalInfo?.id || null;
+          } catch {}
+        }
+
+        if (nfId) {
+          try {
+            const cancelResult = await asaasRequest("POST", `/invoices/${nfId}/cancel`);
+            cancelStatus = cancelResult?.status || "CANCELED";
+            cancelMessage = `NFS-e ${nfId} cancelada no Asaas (status: ${cancelStatus}).`;
+            console.log(`[asaas] NFS-e ${nfId} cancelada com sucesso. Status: ${cancelStatus}`);
+          } catch (cancelErr: any) {
+            console.error(`[asaas] Erro ao cancelar NFS-e ${nfId}: ${cancelErr.message}`);
+            return res.status(500).json({ message: `Erro ao cancelar NFS-e no Asaas: ${cancelErr.message}. Se a NF já foi cancelada na prefeitura, marque como cancelamento local.` });
+          }
+        } else {
+          console.log(`[asaas] NFS-e da fatura #${id} sem ID Asaas. Marcando como cancelada localmente.`);
         }
       } else {
-        console.log(`[asaas] NFS-e da fatura #${id} sem ID Asaas. Apenas marcando como cancelada localmente.`);
+        cancelMessage = `NFS-e marcada como cancelada localmente (já cancelada externamente)${reason ? `: ${reason}` : ""}.`;
+        console.log(`[asaas] NFS-e da fatura #${id} marcada como cancelada localmente. ${reason || ""}`);
       }
 
       const { data: updated, error: updErr } = await supabaseAdmin.from("invoices").update({
@@ -2083,7 +2092,9 @@ export function registerAsaasRoutes(app: Express) {
           const subset = rows.filter(r => r.normalizedStatus === st);
           totals[st] = { count: subset.length, value: subset.reduce((s, r) => s + Number(r.value || 0), 0) };
         }
-        (totals as any).total = { count: rows.length, value: rows.reduce((s, r) => s + Number(r.value || 0), 0) };
+        // "Total no período" exclui NFs canceladas para refletir a receita efetiva
+        const validRows = rows.filter(r => r.normalizedStatus !== "NF_CANCELADA");
+        (totals as any).total = { count: validRows.length, value: validRows.reduce((s, r) => s + Number(r.value || 0), 0) };
 
         rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 

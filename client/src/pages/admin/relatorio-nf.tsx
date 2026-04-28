@@ -4,15 +4,17 @@ import { Link } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban,
 } from "lucide-react";
 import { authFetch, queryClient } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
@@ -88,7 +90,10 @@ const fmtDateTime = (s?: string | null) => {
 
 export default function RelatorioNFPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria";
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; loading: boolean; error: string | null } | null>(null);
+  const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "asaas" | "local"; reason: string } | null>(null);
   useEffect(() => {
     return () => { if (nfModal?.url) URL.revokeObjectURL(nfModal.url); };
   }, [nfModal?.url]);
@@ -130,6 +135,26 @@ export default function RelatorioNFPage() {
       }, 25000);
     },
     onError: (e: any) => toast({ title: "Erro ao sincronizar", description: e?.message, variant: "destructive" }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async ({ invoiceId, localOnly, reason }: { invoiceId: number; localOnly: boolean; reason: string }) => {
+      const r = await authFetch(`/api/invoices/${invoiceId}/cancel-nfse`, {
+        method: "POST",
+        body: JSON.stringify({ localOnly, reason }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data) => {
+      toast({ title: "NF cancelada", description: data?.message || "Nota fiscal marcada como cancelada." });
+      setCancelModal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-faturamento"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao cancelar NF", description: e?.message, variant: "destructive" }),
   });
 
   const openNfMirror = async (id: number) => {
@@ -420,6 +445,17 @@ export default function RelatorioNFPage() {
                               <FileText className="h-3 w-3 mr-1" /> NF
                             </Button>
                           )}
+                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px] text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
+                              onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "asaas", reason: "" })}
+                              data-testid={`button-cancel-nf-${r.id}`}
+                            >
+                              <Ban className="h-3 w-3 mr-1" /> Cancelar
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -442,6 +478,86 @@ export default function RelatorioNFPage() {
             {nfModal?.error && <div className="p-6 text-sm text-red-600">{nfModal.error}</div>}
             {nfModal?.url && <iframe src={nfModal.url} className="w-full h-full border-0" title="Espelho NF" />}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal cancelar NF */}
+      <Dialog open={!!cancelModal} onOpenChange={open => { if (!open && !cancelMutation.isPending) setCancelModal(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Ban className="h-4 w-4" /> Cancelar Nota Fiscal
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação remove a NF dos cálculos de faturamento e balanço. Apenas a diretoria pode realizar este cancelamento.
+            </DialogDescription>
+          </DialogHeader>
+          {cancelModal && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm space-y-1">
+                <div><span className="text-slate-500">Cliente:</span> <strong>{cancelModal.clientName}</strong></div>
+                <div><span className="text-slate-500">Nº NF:</span> <strong>{cancelModal.nfNumber || "—"}</strong></div>
+                <div><span className="text-slate-500">Valor:</span> <strong>{fmtBRL(cancelModal.value)}</strong></div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-700">Tipo de cancelamento</label>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer ${cancelModal.mode === "asaas" ? "border-violet-400 bg-violet-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                    <input
+                      type="radio"
+                      checked={cancelModal.mode === "asaas"}
+                      onChange={() => setCancelModal({ ...cancelModal, mode: "asaas" })}
+                      className="mt-0.5"
+                      data-testid="radio-cancel-asaas"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-slate-800">Cancelar no Asaas + local</div>
+                      <div className="text-slate-600">Tenta cancelar a NF no Asaas e marca como cancelada no sistema. Use quando a NF ainda está ativa no Asaas/prefeitura.</div>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-2 p-3 rounded-md border cursor-pointer ${cancelModal.mode === "local" ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                    <input
+                      type="radio"
+                      checked={cancelModal.mode === "local"}
+                      onChange={() => setCancelModal({ ...cancelModal, mode: "local" })}
+                      className="mt-0.5"
+                      data-testid="radio-cancel-local"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-slate-800">Apenas marcar como cancelada (cancelamento já feito na prefeitura)</div>
+                      <div className="text-slate-600">Não chama o Asaas. Use quando a NF já foi cancelada diretamente no portal da prefeitura e precisa ser refletida aqui.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo (registrado no log)</label>
+                <Textarea
+                  value={cancelModal.reason}
+                  onChange={e => setCancelModal({ ...cancelModal, reason: e.target.value })}
+                  placeholder="Ex.: cancelada na prefeitura por erro de tomador"
+                  className="min-h-[60px] text-xs"
+                  maxLength={500}
+                  data-testid="input-cancel-reason"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelModal(null)} disabled={cancelMutation.isPending} data-testid="button-cancel-cancel">
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelModal && cancelMutation.mutate({ invoiceId: cancelModal.invoiceId, localOnly: cancelModal.mode === "local", reason: cancelModal.reason })}
+              disabled={cancelMutation.isPending || !cancelModal}
+              data-testid="button-confirm-cancel"
+            >
+              {cancelMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Cancelando…</> : <>Confirmar cancelamento</>}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AdminLayout>

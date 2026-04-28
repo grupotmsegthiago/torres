@@ -1764,7 +1764,33 @@ import type { Express } from "express";
         missionsByDay[d].push(b);
       });
 
-      const calcFat = (b: any) => Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+      const { data: invoicesForCancel } = await supabaseAdmin
+        .from("invoices")
+        .select("id, service_order_id, nfse_status, status");
+      const isNfCancelled = (s: string | null | undefined) =>
+        !!s && /CANCEL/i.test(String(s));
+      const cancelledInvoiceIds = new Set<number>();
+      const cancelledNfSoIds = new Set<number>();
+      for (const inv of (invoicesForCancel || [])) {
+        if (!isNfCancelled(inv.nfse_status) && !isNfCancelled(inv.status)) continue;
+        cancelledInvoiceIds.add(Number(inv.id));
+        if (inv.service_order_id) cancelledNfSoIds.add(Number(inv.service_order_id));
+      }
+      // billings vinculados (via invoice_id) a NFs canceladas — também devem zerar
+      if (cancelledInvoiceIds.size > 0) {
+        const { data: billingsLinked } = await supabaseAdmin
+          .from("escort_billings")
+          .select("service_order_id, invoice_id")
+          .in("invoice_id", Array.from(cancelledInvoiceIds));
+        for (const b of (billingsLinked || [])) {
+          if (b.service_order_id) cancelledNfSoIds.add(Number(b.service_order_id));
+        }
+      }
+
+      const calcFat = (b: any) => {
+        if (b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id))) return 0;
+        return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
+      };
 
       const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
 
