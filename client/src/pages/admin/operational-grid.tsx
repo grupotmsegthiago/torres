@@ -973,7 +973,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
 
   const currentMs = os.missionStatus;
   const defaultEtapa = getMissionLabel(currentMs);
-  const etapaAvancada = defaultEtapa;
+  const etapaAvancada = agentMsg && agentMsg.length > 0 ? agentMsg : defaultEtapa;
 
   const destLat = os.destinationLat;
   const destLng = os.destinationLng;
