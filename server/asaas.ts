@@ -2164,13 +2164,15 @@ export function registerAsaasRoutes(app: Express) {
           return res.status(403).json({ message: "Somente a diretoria pode excluir registros." });
         }
         const source = String(req.body?.source || "").toUpperCase();
-        const sourceId = Number(req.body?.sourceId);
+        const rawId = req.body?.sourceId;
         const reason = String(req.body?.reason || "").slice(0, 500);
-        if (!sourceId || (source !== "BOLETIM" && source !== "INVOICE")) {
+        if (rawId === undefined || rawId === null || rawId === "" || (source !== "BOLETIM" && source !== "INVOICE")) {
           return res.status(400).json({ message: "source (BOLETIM|INVOICE) e sourceId obrigatórios" });
         }
 
         if (source === "BOLETIM") {
+          // boletim_approvals.id é UUID (string)
+          const sourceId = String(rawId);
           const { data: ap } = await supabaseAdmin.from("boletim_approvals").select("*").eq("id", sourceId).maybeSingle();
           if (!ap) return res.status(404).json({ message: "Boletim não encontrado" });
           const { error } = await supabaseAdmin.from("boletim_approvals").delete().eq("id", sourceId);
@@ -2179,7 +2181,9 @@ export function registerAsaasRoutes(app: Express) {
           return res.json({ success: true, removed: { source, sourceId, clientName: ap.client_name, value: Number(ap.total_value || 0) } });
         }
 
-        // INVOICE
+        // INVOICE — id é integer
+        const sourceId = Number(rawId);
+        if (!sourceId) return res.status(400).json({ message: "sourceId inválido para INVOICE" });
         const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", sourceId).maybeSingle();
         if (!invoice) return res.status(404).json({ message: "Fatura não encontrada" });
 
