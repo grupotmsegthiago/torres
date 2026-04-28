@@ -1981,9 +1981,12 @@ export function registerAsaasRoutes(app: Express) {
           console.log(`[relatorio-nf] ${hiddenCount} NFs ocultadas (emitente diferente de ${TORRES_CNPJ})`);
         }
 
+        // Boletins: filtra por sobreposição com o período (period_start/period_end),
+        // não pela data de criação. Ex.: filtro 01/04-15/04 captura boletim abr/26
+        // mesmo se ele foi criado em 20/04 (após o fim do período).
         let appQuery = supabaseAdmin.from("boletim_approvals").select("*").order("created_at", { ascending: false }).limit(1000);
-        if (from) appQuery = appQuery.gte("created_at", `${from}T00:00:00`);
-        if (to) appQuery = appQuery.lte("created_at", `${to}T23:59:59.999`);
+        if (from) appQuery = appQuery.gte("period_end", from);
+        if (to) appQuery = appQuery.lte("period_start", to);
         const { data: approvals, error: appErr } = await appQuery;
         if (appErr) throw appErr;
 
