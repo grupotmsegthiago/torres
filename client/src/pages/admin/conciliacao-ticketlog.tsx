@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, XCircle, Loader2,
-  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle,
+  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { authFetch } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -301,7 +301,19 @@ function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "
                 </td>
                 <td className="px-3 py-2 text-xs">{tl.driver}</td>
                 <td className="px-3 py-2 text-xs">{tl.station}</td>
-                <td className="px-3 py-2 font-mono text-xs">{tl.code}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  <a
+                    href={`/admin/relatorio-abastecimento?detail=${sys.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
+                    title="Abrir detalhe do abastecimento (NF, foto da placa, hodômetro)"
+                    data-testid={`link-detail-${sys.id}`}
+                  >
+                    {tl.code}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </td>
               </tr>
             );
           })}
@@ -411,7 +423,19 @@ function SystemOnlyTable({ rows }: { rows: { system: SystemTx }[] }) {
                 <td className="px-3 py-2 text-right font-medium">{brl(s.total_cost)}</td>
                 <td className="px-3 py-2 text-xs">{s.driver}</td>
                 <td className="px-3 py-2 text-xs">{s.station}</td>
-                <td className="px-3 py-2 font-mono text-xs">{s.ticketlog_autorizacao || "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  <a
+                    href={`/admin/relatorio-abastecimento?detail=${s.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
+                    title="Abrir detalhe do abastecimento (NF, foto da placa, hodômetro)"
+                    data-testid={`link-detail-sys-${s.id}`}
+                  >
+                    {s.ticketlog_autorizacao || "ver detalhes"}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </td>
               </tr>
             );
           })}

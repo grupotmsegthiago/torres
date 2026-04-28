@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,14 @@ export default function RelatorioAbastecimentoPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const d = params.get("detail");
+    if (d && /^\d+$/.test(d)) {
+      setDetailId(parseInt(d, 10));
+    }
+  }, []);
 
   const { data: fuelings = [], isLoading } = useQuery<VehicleFueling[]>({
     queryKey: ["/api/fueling"],
