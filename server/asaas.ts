@@ -2050,7 +2050,32 @@ export function registerAsaasRoutes(app: Express) {
           });
         }
 
-        for (const ap of (approvals || [])) {
+        // Dedup boletins por (cliente + período): quando o mesmo boletim é
+        // reenviado/regenerado, vários approvals ficam pendentes e duplicam o
+        // valor no relatório. Mantemos apenas o "vencedor" por chave:
+        // 1) APROVADO ganha de PENDENTE (boletim aprovado define o valor real)
+        // 2) Em empate, mais recente (created_at desc).
+        const apList = (approvals || []).slice().sort((a: any, b: any) => {
+          const sa = String(a.status || "").toUpperCase();
+          const sb = String(b.status || "").toUpperCase();
+          const aprA = sa === "APROVADO" ? 1 : 0;
+          const aprB = sb === "APROVADO" ? 1 : 0;
+          if (aprA !== aprB) return aprB - aprA;
+          return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+        });
+        const dedupKey = (ap: any) => `${ap.client_id}|${ap.period_start}|${ap.period_end}`;
+        const winners = new Map<string, any>();
+        for (const ap of apList) {
+          const k = dedupKey(ap);
+          if (!winners.has(k)) winners.set(k, ap);
+        }
+        const dedupedApprovals = Array.from(winners.values());
+        const hiddenDup = (approvals || []).length - dedupedApprovals.length;
+        if (hiddenDup > 0) {
+          console.log(`[relatorio-nf] ${hiddenDup} boletim(s) duplicado(s) ocultado(s) (mesmo cliente+período)`);
+        }
+
+        for (const ap of dedupedApprovals) {
           const billingIds = ((ap.billing_ids as any[]) || []).map(String);
           const allCovered = billingIds.length > 0 && billingIds.every(bid => invoiceByBilling.get(bid) != null);
           if (allCovered) continue;
