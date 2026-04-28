@@ -91,6 +91,7 @@ async function generateBoletimExcel(
   billings: any[],
   orders: any[],
   contracts: any[],
+  processoNumbers: string[] = [],
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Torres Vigilância Patrimonial";
@@ -167,7 +168,13 @@ async function generateBoletimExcel(
   const rowS = ws.addRow(emptyArr);
   ws.mergeCells(rowS.number, 1, rowS.number, colCount);
   const cs = rowS.getCell(1);
-  cs.value = `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientName.toUpperCase()}`;
+  const isOmegaHeader = isOmegaClient && processoNumbers.length > 0;
+  const omegaSuffix = isOmegaHeader
+    ? (processoNumbers.length === 1
+        ? ` — PROCESSO ${processoNumbers[0]}`
+        : ` — PROCESSOS ${processoNumbers.join(", ")}`)
+    : "";
+  cs.value = `REFERENTE AO SERVIÇO DE ESCOLTA ARMADA — ${clientName.toUpperCase()}${omegaSuffix}`;
   cs.font = { bold: true, italic: true, size: 9, color: { argb: RED_C } };
   cs.alignment = { horizontal: "center", vertical: "middle" };
   applyFill(rowS, accentFill);
@@ -361,7 +368,12 @@ async function generateBoletimExcel(
 async function sendApprovalEmailWithExcel(
   to: string, clientName: string, approvalUrl: string, period: string,
   osCount: number, totalValue: number, excelBuffer: Buffer, fileName: string,
+  processoNumbers: string[] = [],
 ) {
+  const isOmegaSubject = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
+  const processosLabel = processoNumbers.length > 0
+    ? (processoNumbers.length === 1 ? `Processo ${processoNumbers[0]}` : `Processos ${processoNumbers.join(", ")}`)
+    : "";
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const transporter = createSmtpTransporter();
@@ -430,10 +442,21 @@ async function sendApprovalEmailWithExcel(
     </div>
   `;
 
+  const subjectBase = `📋 Boletim de Medição — ${clientName} — ${period} — Aprovação Pendente`;
+  const subject = isOmegaSubject && processosLabel
+    ? `${subjectBase} — ${processosLabel}`
+    : subjectBase;
+
   await transporter.sendMail({
     from: getSmtpFrom(),
     to,
-    subject: `📋 Boletim de Medição — ${clientName} — ${period} — Aprovação Pendente`,
+    subject,
+    headers: isOmegaSubject && processoNumbers.length > 0
+      ? {
+          "X-Omega-Processo": processoNumbers.join(", "),
+          "References": processoNumbers.map(p => `<processo-${p}@torresvp.com.br>`).join(" "),
+        }
+      : undefined,
     html,
     attachments: [
       {
@@ -464,10 +487,14 @@ export function registerBoletimApprovalRoutes(app: Express) {
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega")
           .in("id", soIds);
         ordersData = sos || [];
       }
+      const isOmega = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
+      const processoNumbers = isOmega
+        ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
+        : [];
 
       let contractsData: any[] = [];
       const contractIds = [...new Set((billingsData || []).map((b: any) => b.contract_id).filter(Boolean))];
@@ -509,7 +536,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, totalValue || 0, excelBuffer, fileName);
+        await sendApprovalEmailWithExcel(clientEmail, clientName, approvalUrl, period, osCount || billingIds.length, totalValue || 0, excelBuffer, fileName, processoNumbers);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${clientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);

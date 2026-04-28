@@ -659,6 +659,7 @@ import type { Express } from "express";
           estimatedValue: o.estimatedValue || null,
           description: o.description || null,
           observations: o.observations || null,
+          cancellationReason: (o as any).cancellationReason || (o as any).cancellation_reason || null,
           status: o.status,
           priority: o.priority || "agendada",
           missionStatus: o.missionStatus,

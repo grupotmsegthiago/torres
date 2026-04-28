@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, CheckCircle2, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail } from "lucide-react";
@@ -840,6 +841,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     pedagioEstimado: (order as any)?.pedagioEstimado ? Number((order as any).pedagioEstimado).toFixed(2).replace(".", ",") : "",
     pedagioIdaVolta: !!(order as any)?.pedagioIdaVolta,
     waypoints: ((order as any)?.waypoints || []) as Array<{ address: string; lat: number | null; lng: number | null }>,
+    cancellationReason: (order as any)?.cancellationReason || "",
+    processoOmega: (order as any)?.processoOmega || "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -983,6 +986,15 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
+      const novoStatus = String(data.status || "").toLowerCase();
+      const isCancRec = novoStatus === "cancelada" || novoStatus === "recusada";
+      const statusMudou = order && order.status !== data.status;
+      if (isCancRec && statusMudou) {
+        const motivo = String(data.cancellationReason || "").trim();
+        if (motivo.length < 3) {
+          throw new Error(`Informe o motivo da ${novoStatus === "recusada" ? "recusa" : "cancelamento"} (mínimo 3 caracteres) antes de salvar.`);
+        }
+      }
       if (order && stepAdjHandleRef.current?.hasPendingChanges()) {
         try {
           await stepAdjHandleRef.current.savePending();
@@ -1348,6 +1360,22 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Solicitante</FieldLabel>
                 <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
               </div>
+              {(() => {
+                const cliName = (clients.find((c) => c.id === form.clientId)?.name || "").toUpperCase();
+                if (!cliName.includes("OMEGA")) return null;
+                return (
+                  <div>
+                    <FieldLabel>Nº do Processo (OMEGA) <span className="text-amber-600">★</span></FieldLabel>
+                    <Input
+                      value={form.processoOmega}
+                      onChange={(e) => setForm({ ...form, processoOmega: e.target.value })}
+                      placeholder="Ex.: 123456"
+                      className="text-sm border-amber-300 bg-amber-50/30"
+                      data-testid="input-os-processo-omega"
+                    />
+                  </div>
+                );
+              })()}
               <div>
                 <FieldLabel>Prioridade</FieldLabel>
                 <select value={form.priority} onChange={(e) => handlePriorityChange(e.target.value)} className={selectClass} data-testid="select-os-priority">
@@ -1370,6 +1398,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <option value="cancelada">Cancelada</option>
                     <option value="recusada">Recusada</option>
                   </select>
+                </div>
+              )}
+              {(form.status === "cancelada" || form.status === "recusada") && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>Motivo da {form.status === "recusada" ? "Recusa" : "Cancelamento"} <span className="text-red-600">*</span></FieldLabel>
+                  <textarea
+                    value={form.cancellationReason}
+                    onChange={(e) => setForm({ ...form, cancellationReason: e.target.value })}
+                    placeholder={`Descreva o motivo da ${form.status === "recusada" ? "recusa" : "cancelamento"} (obrigatório, mínimo 3 caracteres)`}
+                    className="w-full text-sm border border-red-300 bg-red-50/50 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-400 min-h-[60px]"
+                    data-testid="textarea-os-cancellation-reason"
+                    required
+                  />
                 </div>
               )}
               {order && (
@@ -2272,23 +2313,26 @@ export default function ServiceOrdersPage() {
                       }`}>{o.priority === "imediata" ? "IMEDIATA" : o.priority === "reaproveitamento" ? "REAPROV." : "AGENDADA"}</span>
                     </td>
                     <td className="p-2">
-                      <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
-                        o.status === "em_andamento" ? "bg-blue-600 text-white" :
-                        o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
-                        o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
-                        o.status === "recusada" ? "bg-orange-50 text-orange-700 border border-orange-200" :
-                        o.status === "agendada" && o.priority === "imediata" ? "bg-blue-600 text-white" :
-                        o.status === "agendada" || o.status === "aberta" ? "bg-amber-50 text-amber-700 border border-amber-200" :
-                        "bg-neutral-100 text-neutral-600 border border-neutral-200"
-                      }`}>{
-                        o.status === "agendada" && o.priority === "imediata" ? "EM ANDAMENTO" :
-                        o.status === "agendada" || o.status === "aberta" ? "PENDENTE" :
-                        o.status === "em_andamento" ? "EM ANDAMENTO" :
-                        o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" :
-                        o.status === "cancelada" ? "CANCELADA" :
-                        o.status === "recusada" ? "RECUSADA" :
-                        o.status?.toUpperCase()
-                      }</span>
+                      <div className="inline-flex items-center gap-1">
+                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
+                          o.status === "em_andamento" ? "bg-blue-600 text-white" :
+                          o.status === "concluída" || o.status === "concluida" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                          o.status === "cancelada" ? "bg-red-50 text-red-700 border border-red-200" :
+                          o.status === "recusada" ? "bg-orange-50 text-orange-700 border border-orange-200" :
+                          o.status === "agendada" && o.priority === "imediata" ? "bg-blue-600 text-white" :
+                          o.status === "agendada" || o.status === "aberta" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                        }`}>{
+                          o.status === "agendada" && o.priority === "imediata" ? "EM ANDAMENTO" :
+                          o.status === "agendada" || o.status === "aberta" ? "PENDENTE" :
+                          o.status === "em_andamento" ? "EM ANDAMENTO" :
+                          o.status === "concluída" || o.status === "concluida" ? "CONCLUÍDA" :
+                          o.status === "cancelada" ? "CANCELADA" :
+                          o.status === "recusada" ? "RECUSADA" :
+                          o.status?.toUpperCase()
+                        }</span>
+                        <CancelReasonBadge status={o.status} reason={(o as any).cancellationReason} />
+                      </div>
                     </td>
                     <td className="p-2">
                       {o.kitId ? (

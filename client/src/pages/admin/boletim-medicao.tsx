@@ -14,6 +14,7 @@ import {
   CircleDot, Timer, Download, Send, Mail, Camera,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
+import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -822,11 +823,12 @@ export default function BoletimMedicaoPage() {
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-mono font-black text-neutral-800 text-[13px]">{os.osNumber}</span>
                                       {isLiveOs(os) && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Em andamento" />}
+                                      <CancelReasonBadge status={os.status} reason={(os as any).cancellationReason} />
                                     </div>
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
                                     {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
-                                    {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{b?.observacoes ? b.observacoes.split("|")[0].trim() : "Cancelada"}</p>}
-                                    {os.status === "recusada" && <p className="text-[9px] text-orange-600 font-bold mt-0.5">Recusada — Faturamento Zerado</p>}
+                                    {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{(os as any).cancellationReason || (b?.observacoes ? b.observacoes.split("|")[0].trim() : "Cancelada")}</p>}
+                                    {os.status === "recusada" && <p className="text-[9px] text-orange-600 font-bold mt-0.5">{(os as any).cancellationReason || "Recusada"} — Faturamento Zerado</p>}
                                   </td>
                                   <td className="px-4 py-3.5">
                                     <span className="font-semibold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</span>

@@ -1121,6 +1121,11 @@ import type { Express } from "express";
       && existing && existing.status !== parsed.data.status;
     if (isRecusadaOuCancelada) {
       const actionLabel = parsed.data.status === "recusada" ? "recusada" : "cancelada";
+      const reason = String((parsed.data as any).cancellationReason || "").trim();
+      if (!reason || reason.length < 3) {
+        return res.status(400).json({ message: `Informe o motivo da ${actionLabel} (mínimo 3 caracteres) no campo cancellationReason.` });
+      }
+      (parsed.data as any).cancellationReason = reason;
       const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const adminName = req.user?.name || req.user?.email || "Sistema";
 

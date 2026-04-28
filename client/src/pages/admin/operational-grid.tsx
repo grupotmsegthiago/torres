@@ -27,6 +27,7 @@ import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT, getNowBRT, forma
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
+import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -3876,6 +3877,7 @@ function UpcomingOrdersModal({ vehicle, open, onClose }: { vehicle: TrackedVehic
                      o.status === "em_andamento" ? "EM ANDAMENTO" :
                      o.priority === "imediata" ? "REAPROVEITAMENTO" : "AGENDADA"}
                   </span>
+                  <CancelReasonBadge status={o.status} reason={(o as any).cancellationReason} />
                 </div>
               </div>
               <p className="text-xs text-neutral-600 font-medium">{o.clientName}</p>

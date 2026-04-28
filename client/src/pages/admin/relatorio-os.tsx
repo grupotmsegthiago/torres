@@ -17,6 +17,7 @@ import { parseUTCDate } from "@/lib/utils";
 import { authFetch } from "@/lib/queryClient";
 import { useLocation, Link } from "wouter";
 import { exportFormattedExcel } from "@/lib/excel-export";
+import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 
 interface ReportOS {
   id: number;
@@ -886,10 +887,13 @@ export default function RelatorioOSPage() {
                         <td className="px-2 py-2 text-center text-neutral-400 font-mono">{idx + 1}</td>
                         <td className="px-2 py-2 font-bold text-neutral-900 whitespace-nowrap" data-testid={`text-os-${o.osNumber}`}>{o.osNumber}</td>
                         <td className="px-2 py-2">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color} ${cfg.bg}`} data-testid={`badge-status-${o.id}`}>
-                            <StatusIcon className="w-3 h-3" />
-                            {cfg.label}
-                          </span>
+                          <div className="inline-flex items-center gap-1">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color} ${cfg.bg}`} data-testid={`badge-status-${o.id}`}>
+                              <StatusIcon className="w-3 h-3" />
+                              {cfg.label}
+                            </span>
+                            <CancelReasonBadge status={o.status} reason={(o as any).cancellationReason} />
+                          </div>
                         </td>
                         <td className="px-2 py-2 font-semibold text-neutral-800 max-w-[120px] truncate">{o.clientName || "—"}</td>
                         <td className="px-2 py-2 text-neutral-600 whitespace-nowrap">{o.escortedVehiclePlate || "—"}</td>

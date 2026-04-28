@@ -3,6 +3,26 @@ import { supabaseAdmin } from "../supabase";
 import { requireAdminRole } from "../auth";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "./_helpers";
 import cron from "node-cron";
+import fs from "fs";
+import path from "path";
+
+const AUTOMATION_FILE = path.resolve(".local/leads-automation.json");
+let automationEnabled = true;
+try {
+  if (fs.existsSync(AUTOMATION_FILE)) {
+    const raw = JSON.parse(fs.readFileSync(AUTOMATION_FILE, "utf-8"));
+    if (typeof raw.enabled === "boolean") automationEnabled = raw.enabled;
+  }
+} catch (_e) {}
+function persistAutomation() {
+  try {
+    fs.mkdirSync(path.dirname(AUTOMATION_FILE), { recursive: true });
+    fs.writeFileSync(AUTOMATION_FILE, JSON.stringify({ enabled: automationEnabled }, null, 2));
+  } catch (e: any) {
+    console.error("[leads-automation] persist err:", e.message);
+  }
+}
+export function isLeadsAutomationEnabled() { return automationEnabled; }
 
 const LEAD_STATUSES = ["novo", "contatado", "qualificado", "proposta_enviada", "negociacao", "ganho", "perdido", "descartado"] as const;
 const SETORES_ALVO = [
@@ -1099,12 +1119,14 @@ export function registerLeadRoutes(app: Express) {
   });
 
   cron.schedule(`*/${BATCH_INTERVAL_MINUTES} * * * *`, () => {
+    if (!automationEnabled) return;
     autoEnqueueLeads()
       .then(() => processEmailQueue())
       .catch(err => console.error("[email-queue-cron]", err.message));
   });
 
   cron.schedule("*/10 * * * *", () => {
+    if (!automationEnabled) return;
     autoProspectGoogle().catch(err => console.error("[auto-prospect-cron]", err.message));
   });
 
@@ -1113,8 +1135,20 @@ export function registerLeadRoutes(app: Express) {
   }, { timezone: "America/Sao_Paulo" });
 
   setTimeout(() => {
+    if (!automationEnabled) return;
     autoProspectGoogle().catch(err => console.error("[auto-prospect-init]", err.message));
   }, 15000);
+
+  app.get("/api/leads/automation", requireAdminRole, (_req: Request, res: Response) => {
+    res.json({ enabled: automationEnabled });
+  });
+  app.post("/api/leads/automation", requireAdminRole, (req: Request, res: Response) => {
+    const enabled = !!req.body?.enabled;
+    automationEnabled = enabled;
+    persistAutomation();
+    console.log(`[leads-automation] ${enabled ? "ATIVADA" : "DESATIVADA"} via API`);
+    res.json({ enabled: automationEnabled });
+  });
 
   console.log(`[email-queue] CRON ativo: ${BATCH_SIZE} e-mails a cada ${BATCH_INTERVAL_MINUTES} minutos (auto-enqueue + disparo)`);
   console.log(`[auto-enqueue] Enfileiramento automático a cada ${BATCH_INTERVAL_MINUTES}min, máx ${MAX_EMAILS_PER_LEAD} e-mails/lead, intervalo ${DAYS_BETWEEN_EMAILS} dias`);

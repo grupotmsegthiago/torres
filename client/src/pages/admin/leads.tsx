@@ -760,6 +760,12 @@ function AutoProspectPanel() {
     refetchInterval: 30000,
   });
 
+  const { data: automation, refetch: refetchAutomation } = useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/leads/automation"],
+    refetchInterval: 30000,
+  });
+  const automationEnabled = automation?.enabled !== false;
+
   const triggerMut = useMutation({
     mutationFn: () => apiRequest("POST", "/api/leads/auto-prospect/trigger"),
     onSuccess: () => {
@@ -767,22 +773,39 @@ function AutoProspectPanel() {
     },
   });
 
+  const toggleMut = useMutation({
+    mutationFn: (enabled: boolean) => apiRequest("POST", "/api/leads/automation", { enabled }),
+    onSuccess: () => refetchAutomation(),
+  });
+
   const ps = prospectStatus || { running: false, totalLeads: 0, autoLeads: 0, leadsWithEmail: 0, totalQueries: 30, currentQuery: "—", hasApiKey: false, state: { query_index: 0, total_found: 0 } };
 
   return (
-    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className={`bg-gradient-to-r ${automationEnabled ? "from-indigo-50 to-purple-50 border-indigo-200" : "from-neutral-100 to-neutral-50 border-neutral-300"} border rounded-xl p-4`}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Globe size={14} className="text-indigo-500" />
-          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Prospecção Automática Google</span>
-          <Badge className={`text-[10px] ${ps.running ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ps.hasApiKey ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-red-100 text-red-700 border-red-200"}`}>
-            {ps.running ? "EXECUTANDO" : ps.hasApiKey ? "ATIVO" : "SEM API KEY"}
+          <Globe size={14} className={automationEnabled ? "text-indigo-500" : "text-neutral-400"} />
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${automationEnabled ? "text-indigo-500" : "text-neutral-500"}`}>Prospecção Automática Google</span>
+          <Badge className={`text-[10px] ${!automationEnabled ? "bg-neutral-200 text-neutral-700 border-neutral-300" : ps.running ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ps.hasApiKey ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-red-100 text-red-700 border-red-200"}`}>
+            {!automationEnabled ? "PAUSADA" : ps.running ? "EXECUTANDO" : ps.hasApiKey ? "ATIVO" : "SEM API KEY"}
           </Badge>
         </div>
-        <Button size="sm" onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending || ps.running || !ps.hasApiKey} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-trigger-prospect">
-          {triggerMut.isPending || ps.running ? <RefreshCw size={12} className="animate-spin" /> : <Crosshair size={12} />}
-          Buscar Agora
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={automationEnabled ? "outline" : "default"}
+            onClick={() => toggleMut.mutate(!automationEnabled)}
+            disabled={toggleMut.isPending}
+            className={`gap-1.5 ${automationEnabled ? "text-red-600 border-red-300 hover:bg-red-50" : "bg-emerald-600 hover:bg-emerald-700 text-white"}`}
+            data-testid="btn-toggle-automation"
+          >
+            {toggleMut.isPending ? <RefreshCw size={12} className="animate-spin" /> : automationEnabled ? "Desativar Leads" : "Ativar Leads"}
+          </Button>
+          <Button size="sm" onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending || ps.running || !ps.hasApiKey || !automationEnabled} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" data-testid="btn-trigger-prospect">
+            {triggerMut.isPending || ps.running ? <RefreshCw size={12} className="animate-spin" /> : <Crosshair size={12} />}
+            Buscar Agora
+          </Button>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <div className="bg-white border border-indigo-100 rounded-lg p-2.5">

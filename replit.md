@@ -220,3 +220,16 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Reply-To:** Todas respostas vão para `escolta@torresseguranca.com.br` e `diretoria@torresseguranca.com.br`.
 - **Rotas API:** `POST /api/leads/enfileirar-todos` (enfileira em lote), `POST /api/leads/disparar-agora` (disparo manual), `GET /api/leads/email-stats` (estatísticas diárias), `GET /api/leads/email-queue` (fila completa), `POST /api/leads/email-queue/:id/marcar-respondido`, `POST /api/leads/email-queue/limpar-fila`.
 - **Frontend:** Aba "E-mail Marketing" na página de Leads com 8 stat cards, gráfico de barras diário (enviados/abertos/respondidos), painel de controle de fila com filtros por status.
+### Cancelamento/Recusa de OS — Motivo Obrigatório
+- **Coluna `cancellation_reason` (TEXT)** em `service_orders` armazena o motivo informado pelo usuário ao mudar status para `cancelada` ou `recusada`.
+- **Validação backend:** `PATCH /api/service-orders/:id` rejeita (HTTP 400) qualquer mudança para esses status sem `cancellationReason` (mín. 3 caracteres).
+- **Validação frontend:** Form de edição da OS (`client/src/pages/admin/service-orders.tsx`) exibe Textarea obrigatório quando o status seleciona cancelada/recusada e bloqueia o salvamento sem motivo.
+- **Componente reutilizável `CancelReasonBadge`** (`client/src/components/cancel-reason-badge.tsx`): ícone Info circular sobreposto aos badges de status, com tooltip mostrando motivo. Usado em Operational Grid, Lista de OS, Relatório de OS e Boletim de Medição.
+- **Helper `promptCancellationReason`** (`client/src/lib/cancel-reason.ts`): pede o motivo via prompt nativo, repete até atender mínimo 3 chars.
+
+### OMEGA — Nº do Processo no Boletim
+- **Coluna `processo_omega` (TEXT)** em `service_orders` (campo opcional, exposto na UI somente quando o cliente possui "OMEGA" no nome).
+- **No envio do boletim** (`POST /api/boletim/enviar-aprovacao`): coleta nº de processo de cada OS do período e:
+  - Anexa ao **assunto do e-mail** (`— Processo X` ou `— Processos X, Y`).
+  - Insere headers SMTP `X-Omega-Processo` e `References` com identificadores de processo.
+  - Inclui no cabeçalho do XLSX (linha "REFERENTE AO SERVIÇO ...") como `— PROCESSO N` / `— PROCESSOS N, M`.
