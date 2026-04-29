@@ -107,9 +107,25 @@ export function getRelatorioStatus(
 }
 
 /**
- * Retorna 1 ou 2 selos para o relatório.
+ * Selo combinado APROVADA / CANCELADA — usado quando uma OS foi aprovada pelo
+ * financeiro (ou operacional) e DEPOIS cancelada pelo cliente. Mantém a cobrança,
+ * mas deixa visualmente claro que houve cancelamento posterior.
+ */
+export const APROVADA_CANCELADA_DESCRIPTOR: StatusDescriptor = {
+  label: "Aprovada / Cancelada",
+  color: "emerald",
+  badgeClass: "bg-gradient-to-r from-emerald-100 to-red-100 text-emerald-800 border border-emerald-400",
+  textClass: "text-emerald-800",
+  dotClass: "bg-emerald-500",
+  appearsInMedicao: true,
+  appearsInFaturamento: true,
+  countsRevenue: true,
+};
+
+/**
+ * Retorna 1 selo para o relatório (pode ser combinado).
  * Se a OS foi APROVADA pelo financeiro (ou operacional) e DEPOIS cancelada pelo cliente,
- * mostra os dois: "Aprovada / Cancelada".
+ * retorna o selo combinado "Aprovada / Cancelada".
  */
 export function getRelatorioBadges(
   osStatus: string | null | undefined,
@@ -119,7 +135,7 @@ export function getRelatorioBadges(
   // Recusada = operacional não atendeu — selo único
   if (osStatus === "recusada") return [OS_STATUS_MAP.recusada];
 
-  // Cancelada pelo cliente: se já tinha sido aprovada antes, mostra os dois selos
+  // Cancelada pelo cliente: se já tinha sido aprovada antes, mostra o selo combinado
   if (osStatus === "cancelada") {
     const wasApproved =
       billingStatus === "APROVADA" ||
@@ -127,7 +143,7 @@ export function getRelatorioBadges(
       billingStatus === "FATURADA" ||
       billingStatus === "PAGO";
     if (wasApproved) {
-      return [BILLING_STATUS_MAP.APROVADA, OS_STATUS_MAP.cancelada];
+      return [APROVADA_CANCELADA_DESCRIPTOR];
     }
     return [OS_STATUS_MAP.cancelada];
   }
