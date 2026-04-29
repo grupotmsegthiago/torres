@@ -214,6 +214,7 @@ import type { Express } from "express";
       if (!so) return res.status(404).json({ message: "OS nao encontrada" });
 
       const isLive = so.status !== "concluida" && so.missionStatus !== "encerrada";
+      const isCanceladaOuRecusada = so.status === "cancelada" || so.status === "recusada";
 
       const { data: existing } = await supabaseAdmin.from("escort_billings")
         .select("id, status").eq("service_order_id", serviceOrderId).limit(1);
@@ -222,6 +223,30 @@ import type { Express } from "express";
       if (!canRecalculate) return res.status(400).json({ message: "Billing já aprovado — não pode ser recalculado" });
       if (existingBilling) {
         await supabaseAdmin.from("escort_billings").delete().eq("service_order_id", serviceOrderId);
+      }
+
+      if (isCanceladaOuRecusada) {
+        const client = so.clientId ? await storage.getClient(so.clientId) : null;
+        const user = req.user!;
+        const { data: zeroBilling, error: zeroErr } = await supabaseAdmin.from("escort_billings").insert({
+          service_order_id: serviceOrderId,
+          client_id: so.clientId, client_name: client?.name || "--",
+          os_number: so.osNumber || null,
+          origem: so.origin || null, destino: so.destination || null,
+          data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
+          km_inicial: 0, km_final: 0, km_vazio: 0, km_carregado: 0, km_total: 0,
+          km_faturado: 0, km_franquia: 0, km_excedente: 0,
+          horas_missao: 0, horas_trabalhadas: 0, horas_estadia: 0, teve_pernoite: false, is_noturno: false,
+          fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0, fat_km_carregado: 0, fat_km_vazio: 0,
+          fat_estadia: 0, fat_pernoite: 0, fat_diaria: 0, fat_adicional_noturno: 0,
+          fat_total: 0, receitas_os: 0, valor_franquia: 0, valor_km_extra: 0,
+          pag_vrp: 0, pag_periculosidade: 0, pag_adicional_noturno: 0, pag_reembolsos: 0, pag_total: 0,
+          resultado_bruto: 0, resultado_liquido: 0, margem_percentual: 0,
+          status: "CANCELADO", created_by: user.name,
+          observacoes: `OS ${so.status === "recusada" ? "RECUSADA" : "CANCELADA"}${(so as any).cancellationReason ? " — " + (so as any).cancellationReason : ""}`,
+        }).select().single();
+        if (zeroErr) throw zeroErr;
+        return res.json(zeroBilling);
       }
 
       const photos = await storage.getMissionPhotosByOS(serviceOrderId);
