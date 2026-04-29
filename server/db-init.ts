@@ -683,6 +683,10 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await execSql(`
+      ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS os_number TEXT
+    `).catch(() => {});
+
+    await execSql(`
       ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS name TEXT
     `).catch(() => {});
 
