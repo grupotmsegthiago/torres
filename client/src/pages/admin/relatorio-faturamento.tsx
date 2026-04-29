@@ -247,7 +247,7 @@ export default function RelatorioFaturamentoPage() {
       (vehiclesData || []).forEach((v: any) => vehiclesMap.set(v.id, v));
 
       const approved = (billingsData || [])
-        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "RECUSADA")
+        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "RECUSADA" || b.status === "REJEITADA" || b.status === "CANCELADA" || b.status === "CANCELADO")
         .map((b: any) => {
           const so = ordersMap.get(b.service_order_id);
           if (so) {
@@ -411,7 +411,7 @@ export default function RelatorioFaturamentoPage() {
       const kmExcedente = n(b.km_excedente) || Math.max(0, kmTotal - franquiaKm);
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
-      const isRecusada = b.status === "RECUSADA" || b._so_status === "recusada" || b._so_status === "cancelada";
+      const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "recusada" || b._so_status === "cancelada";
       const fatHoraExtra = isRecusada ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
       const fatKmExtra = isRecusada ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
       const fatPedagio = isRecusada ? 0 : n(b.despesas_pedagio);
