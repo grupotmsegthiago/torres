@@ -499,7 +499,7 @@ export default function RelatorioFaturamentoPage() {
       o.count += 1; o.km += r.kmTotal; o.hours += r.horasMissaoNum; o.total += r.totalGeral;
       byOrigin.set(origin, o);
 
-      const veic = r.viatura || "—";
+      const veic = (r.cargoPlate && r.cargoPlate !== "—") ? r.cargoPlate : "—";
       const v = byVehicle.get(veic) || { count: 0, km: 0, hours: 0, total: 0, routes: new Set<string>() };
       v.count += 1; v.km += r.kmTotal; v.hours += r.horasMissaoNum; v.total += r.totalGeral;
       if (r.route) v.routes.add(r.route);
@@ -1208,13 +1208,13 @@ export default function RelatorioFaturamentoPage() {
               {/* Ranking de viaturas */}
               <div style={{ marginTop: "16px" }} data-testid="dashboard-by-vehicle">
                 <h4 style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#111", marginBottom: "6px" }}>
-                  Viaturas de Escolta — Ranking por Volume de Missões
+                  Veículos Escoltados — Ranking por Volume de Missões
                 </h4>
                 <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db", fontSize: "10px" }}>
                   <thead>
                     <tr style={{ background: "#1f2937", color: "#fff" }}>
                       <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700, width: "40px" }}>#</th>
-                      <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Viatura</th>
+                      <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Veículo Escoltado</th>
                       <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Missões</th>
                       <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>KM Rodados</th>
                       <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Horas</th>
