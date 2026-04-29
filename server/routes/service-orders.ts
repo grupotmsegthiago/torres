@@ -371,10 +371,12 @@ import type { Express } from "express";
         return res.status(403).json({ message: "Boletim aprovado — valores travados. Não é possível alterar." });
       }
 
-      const { completedDate, hora_chegada_origem, km_chegada_origem, km_fim_missao } = req.body;
+      const { completedDate, hora_chegada_origem, mission_started_at, scheduled_date, km_chegada_origem, km_fim_missao } = req.body;
 
       const updates: any = {};
       if (completedDate !== undefined) updates.completedDate = completedDate ? new Date(completedDate) : null;
+      if (mission_started_at !== undefined) updates.missionStartedAt = mission_started_at ? new Date(mission_started_at) : null;
+      if (scheduled_date !== undefined) updates.scheduledDate = scheduled_date ? new Date(scheduled_date) : null;
 
       if (Object.keys(updates).length > 0) {
         await storage.updateServiceOrder(osId, updates);

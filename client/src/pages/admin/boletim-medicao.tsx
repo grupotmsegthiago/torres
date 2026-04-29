@@ -293,7 +293,7 @@ export default function BoletimMedicaoPage() {
         if (!sd) return "";
         return fmtDt(sd);
       };
-      setOverrideHoraChegada(fmtDt(selectedOs.hora_chegada_origem) || fallbackFromScheduled());
+      setOverrideHoraChegada(fmtDt(selectedOs.missionStartedAt) || fallbackFromScheduled());
       setOverrideHoraFim(fmtDt(selectedOs.hora_fim_missao) || fmtDt(selectedOs.completedDate) || fallbackFromScheduled());
       setEditingFields(false);
     }
@@ -1478,8 +1478,8 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                   </div>
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Data e Hora — Chegada Origem</p>
-                      <input type="datetime-local" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Início de Missão (Agendamento)</p>
+                      <input type="datetime-local" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-inicio-missao" />
                     </div>
                     <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
                       <p className="text-[9px] font-bold text-neutral-400 uppercase">Data e Hora — Fim Missão</p>
@@ -1508,7 +1508,10 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                         }
                         if (overrideHoraChegada) {
                           const iso = brToIso(overrideHoraChegada);
-                          if (iso) payload.hora_chegada_origem = iso;
+                          if (iso) {
+                            payload.mission_started_at = iso;
+                            payload.scheduled_date = iso;
+                          }
                         }
                         if (Object.keys(payload).length > 0) {
                           overrideMutation.mutate({ osId: os.id, data: payload });
