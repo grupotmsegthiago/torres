@@ -459,9 +459,63 @@ export default function RelatorioFaturamentoPage() {
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
         clientName: b.client_name,
+        horasMissaoNum: horasMissao,
+        originRaw: origem,
+        originCity: origem ? extractCity(origem) : "—",
+        destinationCity: destino ? extractCity(destino) : "—",
       };
     });
   }, [billings, contracts]);
+
+  const dashboardStats = useMemo(() => {
+    if (!rowsData.length) return null;
+    const byDay = new Map<string, { count: number; km: number; hours: number; total: number }>();
+    const byOrigin = new Map<string, { count: number; km: number; hours: number; total: number }>();
+    const byVehicle = new Map<string, { count: number; km: number; hours: number; total: number; routes: Set<string> }>();
+    let totalKm = 0;
+    let totalHours = 0;
+    let totalMissoes = 0;
+
+    for (const r of rowsData) {
+      totalKm += r.kmTotal;
+      totalHours += r.horasMissaoNum;
+      totalMissoes += 1;
+
+      const day = r.startDate || "—";
+      const d = byDay.get(day) || { count: 0, km: 0, hours: 0, total: 0 };
+      d.count += 1; d.km += r.kmTotal; d.hours += r.horasMissaoNum; d.total += r.totalGeral;
+      byDay.set(day, d);
+
+      const origin = r.originCity || "—";
+      const o = byOrigin.get(origin) || { count: 0, km: 0, hours: 0, total: 0 };
+      o.count += 1; o.km += r.kmTotal; o.hours += r.horasMissaoNum; o.total += r.totalGeral;
+      byOrigin.set(origin, o);
+
+      const veic = r.viatura || "—";
+      const v = byVehicle.get(veic) || { count: 0, km: 0, hours: 0, total: 0, routes: new Set<string>() };
+      v.count += 1; v.km += r.kmTotal; v.hours += r.horasMissaoNum; v.total += r.totalGeral;
+      if (r.route) v.routes.add(r.route);
+      byVehicle.set(veic, v);
+    }
+
+    const parseDayKey = (s: string) => {
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+    };
+    const days = Array.from(byDay.entries())
+      .map(([day, v]) => ({ day, ...v }))
+      .sort((a, b) => parseDayKey(a.day).localeCompare(parseDayKey(b.day)));
+
+    const origins = Array.from(byOrigin.entries())
+      .map(([origin, v]) => ({ origin, ...v }))
+      .sort((a, b) => b.count - a.count);
+
+    const vehicles = Array.from(byVehicle.entries())
+      .map(([veic, v]) => ({ veic, ...v, routes: Array.from(v.routes) }))
+      .sort((a, b) => b.count - a.count);
+
+    return { days, origins, vehicles, totalKm, totalHours, totalMissoes };
+  }, [rowsData]);
 
   const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
@@ -1061,6 +1115,122 @@ export default function RelatorioFaturamentoPage() {
               </tfoot>
             </table>
           </div>
+
+          {dashboardStats && (
+            <div className="dashboard-section" style={{ marginTop: "30px", paddingTop: "15px", borderTop: "2px solid #111", position: "relative", zIndex: 1 }} data-testid="section-dashboard">
+              <h3 style={{ fontSize: "14px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", color: "#111", marginBottom: "12px", paddingBottom: "6px", borderBottom: "1px solid #d1d5db" }}>
+                Dashboard Operacional — Resumo do Período
+              </h3>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "16px" }}>
+                <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "6px", padding: "10px" }} data-testid="card-total-missoes">
+                  <div style={{ fontSize: "9px", fontWeight: 700, color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total de Missões</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#111", fontFamily: fontMono }}>{dashboardStats.totalMissoes}</div>
+                </div>
+                <div style={{ background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "10px" }} data-testid="card-total-km">
+                  <div style={{ fontSize: "9px", fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.5px" }}>KM Rodados</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#111", fontFamily: fontMono }}>{fmtNum(Math.round(dashboardStats.totalKm))}</div>
+                </div>
+                <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "6px", padding: "10px" }} data-testid="card-total-horas">
+                  <div style={{ fontSize: "9px", fontWeight: 700, color: "#854d0e", textTransform: "uppercase", letterSpacing: "0.5px" }}>Horas de Operação</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#111", fontFamily: fontMono }}>{fmtHHMM(dashboardStats.totalHours)}</div>
+                </div>
+                <div style={{ background: "#fce7f3", border: "1px solid #fbcfe8", borderRadius: "6px", padding: "10px" }} data-testid="card-total-faturado">
+                  <div style={{ fontSize: "9px", fontWeight: 700, color: "#9d174d", textTransform: "uppercase", letterSpacing: "0.5px" }}>Faturamento</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#111", fontFamily: fontMono }}>{fmt(grandTotal)}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                {/* Missões por dia */}
+                <div data-testid="dashboard-by-day">
+                  <h4 style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#111", marginBottom: "6px" }}>Missões por Dia</h4>
+                  <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db", fontSize: "10px" }}>
+                    <thead>
+                      <tr style={{ background: "#1f2937", color: "#fff" }}>
+                        <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Data</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Missões</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>KM</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Horas</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>R$</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardStats.days.map((d) => (
+                        <tr key={d.day} style={{ borderTop: "1px solid #e5e7eb" }} data-testid={`row-day-${d.day}`}>
+                          <td style={{ padding: "4px 8px", fontFamily: fontMono, fontWeight: 700 }}>{d.day}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono, fontWeight: 700 }}>{d.count}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtNum(Math.round(d.km))}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtHHMM(d.hours)}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmt(d.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Missões por origem */}
+                <div data-testid="dashboard-by-origin">
+                  <h4 style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#111", marginBottom: "6px" }}>Missões por Origem</h4>
+                  <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db", fontSize: "10px" }}>
+                    <thead>
+                      <tr style={{ background: "#1f2937", color: "#fff" }}>
+                        <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Origem</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Missões</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>KM</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Horas</th>
+                        <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>R$</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardStats.origins.map((o) => (
+                        <tr key={o.origin} style={{ borderTop: "1px solid #e5e7eb" }} data-testid={`row-origin-${o.origin}`}>
+                          <td style={{ padding: "4px 8px", fontWeight: 700 }}>{o.origin}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono, fontWeight: 700 }}>{o.count}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtNum(Math.round(o.km))}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtHHMM(o.hours)}</td>
+                          <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmt(o.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Ranking de viaturas */}
+              <div style={{ marginTop: "16px" }} data-testid="dashboard-by-vehicle">
+                <h4 style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#111", marginBottom: "6px" }}>
+                  Viaturas de Escolta — Ranking por Volume de Missões
+                </h4>
+                <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #d1d5db", fontSize: "10px" }}>
+                  <thead>
+                    <tr style={{ background: "#1f2937", color: "#fff" }}>
+                      <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700, width: "40px" }}>#</th>
+                      <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Viatura</th>
+                      <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Missões</th>
+                      <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>KM Rodados</th>
+                      <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Horas</th>
+                      <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>Faturamento</th>
+                      <th style={{ padding: "5px 8px", textAlign: "left", fontWeight: 700 }}>Rotas Atendidas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardStats.vehicles.map((v, i) => (
+                      <tr key={v.veic} style={{ borderTop: "1px solid #e5e7eb", background: i === 0 ? "#fef9c3" : i === 1 ? "#fef3c7" : i === 2 ? "#fef3c7" : undefined }} data-testid={`row-vehicle-${v.veic}`}>
+                        <td style={{ padding: "4px 8px", fontWeight: 900, fontFamily: fontMono, color: i < 3 ? "#a16207" : "#111" }}>{i + 1}{i === 0 ? "º" : ""}</td>
+                        <td style={{ padding: "4px 8px", fontWeight: 900, fontFamily: fontMono, letterSpacing: "0.5px" }}>{v.veic}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono, fontWeight: 900 }}>{v.count}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtNum(Math.round(v.km))}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono }}>{fmtHHMM(v.hours)}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: fontMono, fontWeight: 700 }}>{fmt(v.total)}</td>
+                        <td style={{ padding: "4px 8px", fontSize: "9px", color: "#374151" }}>{v.routes.slice(0, 3).join(" · ")}{v.routes.length > 3 ? ` +${v.routes.length - 3}` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="sign-section" style={{ marginTop: "30px", display: "flex", justifyContent: "space-between", paddingTop: "15px", borderTop: "1px solid #111", alignItems: "flex-end", position: "relative", zIndex: 1 }}>
             <div className="sign-box" style={{ textAlign: "center", width: "250px" }}>
