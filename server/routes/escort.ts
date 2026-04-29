@@ -1014,7 +1014,32 @@ import type { Express } from "express";
       if (to) query = query.lte("data_missao", to as string);
       const { data, error } = await query;
       if (error) throw error;
-      res.json(data || []);
+      const list = data || [];
+
+      // Enriquecer com status real da OS para que o cliente saiba diferenciar
+      // RECUSADA (operacional não atendeu) de CANCELADA (cliente cancelou).
+      const osIds = Array.from(new Set(list.map((b: any) => b.service_order_id).filter((x: any) => x != null)));
+      let osMap: Record<string, any> = {};
+      if (osIds.length > 0) {
+        const { data: osList } = await supabaseAdmin
+          .from("service_orders")
+          .select("id, os_number, status, mission_status, cancellation_reason")
+          .in("id", osIds);
+        for (const o of (osList || [])) {
+          osMap[String(o.id)] = o;
+        }
+      }
+      const enriched = list.map((b: any) => {
+        const os = osMap[String(b.service_order_id)] || {};
+        return {
+          ...b,
+          os_number: b.os_number || os.os_number || null,
+          _so_status: os.status || null,
+          _so_mission_status: os.mission_status || null,
+          _so_cancellation_reason: os.cancellation_reason || null,
+        };
+      });
+      res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
