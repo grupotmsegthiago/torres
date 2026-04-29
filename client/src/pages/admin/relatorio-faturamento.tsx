@@ -414,13 +414,19 @@ export default function RelatorioFaturamentoPage() {
       const kmExcedente = n(b.km_excedente) || Math.max(0, kmTotal - franquiaKm);
       const hrExcedente = Math.max(0, horasMissao - franquiaHoras);
 
-      const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "recusada" || b._so_status === "cancelada";
-      const fatHoraExtra = isRecusada ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
-      const fatKmExtra = isRecusada ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
-      const fatPedagio = isRecusada ? 0 : n(b.despesas_pedagio);
-      const receitasOs = isRecusada ? 0 : n(b.receitas_os);
-      const valorAcionamentoFinal = isRecusada ? 0 : valorAcionamento;
-      const fatTotal = isRecusada ? 0 : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs));
+      // RECUSADA = operacional não atendeu → R$ 0 em tudo
+      // CANCELADA = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (hora extra, KM extra, pedágio)
+      const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b._so_status === "recusada";
+      const isCancelada = !isRecusada && (b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "cancelada");
+      const zeroOut = isRecusada;
+      const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
+      const fatKmExtra = zeroOut ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
+      const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
+      const receitasOs = zeroOut ? 0 : n(b.receitas_os);
+      const valorAcionamentoFinal = zeroOut ? 0 : valorAcionamento;
+      const fatTotal = zeroOut ? 0 : (isCancelada
+        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs)
+        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + receitasOs)));
 
       const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
       const origem = b.origem || b.origin || "";
