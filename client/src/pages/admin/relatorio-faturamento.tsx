@@ -466,6 +466,9 @@ export default function RelatorioFaturamentoPage() {
         totalGeral: fatTotal,
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
+        motivoRejeicao: b.motivo_rejeicao || "",
+        observacoesBilling: b.observacoes || "",
+        revisadoPor: b.revisado_por || "",
         clientName: b.client_name,
         horasMissaoNum: horasMissao,
         originRaw: origem,
@@ -936,17 +939,50 @@ export default function RelatorioFaturamentoPage() {
               const isExpanded = expandedRows.has(r.billingId);
               return (
                 <div key={r.billingId} className={`border rounded-lg ${isExpanded ? "border-gray-300 bg-gray-50" : "border-gray-100"}`}>
-                  <div className={`flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors ${r.status === "FATURADO" || r.status === "FATURADA" ? "bg-amber-50/60" : ""}`} onClick={() => setExpandedRows(prev => { const n = new Set(prev); n.has(r.billingId) ? n.delete(r.billingId) : n.add(r.billingId); return n; })} data-testid={`row-billing-${i}`}>
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div className={`flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors ${r.status === "FATURADO" || r.status === "FATURADA" ? "bg-amber-50/60" : r.status === "REJEITADA" ? "bg-red-50/40" : (r.status === "CANCELADA" || r.status === "CANCELADO") ? "bg-red-50/40" : r.status === "A_VERIFICAR" ? "bg-yellow-50/40" : r.status === "PENDENTE" || r.status === "ENVIADA_APROVACAO" ? "bg-blue-50/30" : ""}`} onClick={() => setExpandedRows(prev => { const n = new Set(prev); n.has(r.billingId) ? n.delete(r.billingId) : n.add(r.billingId); return n; })} data-testid={`row-billing-${i}`}>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       {isExpanded ? <ChevronDown size={14} className="text-gray-600 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
-                      <span className="text-xs font-black text-black">{r.id}</span>
+                      <span className="text-xs font-black text-black shrink-0">{r.id}</span>
                       {(r.status === "FATURADO" || r.status === "FATURADA") && (
-                        <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded" data-testid={`badge-faturado-${i}`}>Faturada</span>
+                        <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-faturado-${i}`}>Faturada</span>
+                      )}
+                      {r.status === "APROVADA" && (
+                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-aprovada-${i}`}>Aprovada</span>
+                      )}
+                      {r.status === "REJEITADA" && (
+                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-rejeitada-${i}`}>Rejeitada</span>
+                      )}
+                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && (
+                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-cancelada-${i}`}>Cancelada</span>
+                      )}
+                      {r.status === "A_VERIFICAR" && (
+                        <span className="text-[9px] font-black uppercase bg-yellow-100 text-yellow-800 border border-yellow-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-averificar-${i}`}>A Verificar</span>
+                      )}
+                      {r.status === "PENDENTE" && (
+                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 border border-blue-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-pendente-${i}`}>Pendente</span>
+                      )}
+                      {r.status === "ENVIADA_APROVACAO" && (
+                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 border border-blue-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-enviada-${i}`}>Enviada Aprovação</span>
                       )}
                       <span className="text-xs font-bold text-gray-500 truncate max-w-[200px]">{r.route}</span>
-                      <span className="text-xs text-gray-400">{r.startDate}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{r.startDate}</span>
+                      {r.status === "REJEITADA" && r.motivoRejeicao && (
+                        <span className="text-[10px] font-bold text-red-600 truncate" title={`Rejeitado por ${r.revisadoPor || "—"}`} data-testid={`text-motivo-${i}`}>
+                          · Motivo: {r.motivoRejeicao}
+                        </span>
+                      )}
+                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.observacoesBilling && (
+                        <span className="text-[10px] font-bold text-red-600 truncate" title={r.observacoesBilling} data-testid={`text-cancel-${i}`}>
+                          · {r.observacoesBilling.split("|")[0].trim()}
+                        </span>
+                      )}
+                      {r.status === "A_VERIFICAR" && (
+                        <span className="text-[10px] font-bold text-yellow-700 truncate" data-testid={`text-averificar-${i}`}>
+                          · Aguardando revisão (não aprovada ainda)
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className="text-xs font-bold text-gray-500">{r.timeTotal}h</span>
                       <span className="text-xs font-bold text-gray-500">{fmtNum(r.kmTotal)} km</span>
                       <span className="text-sm font-black text-black">{fmt(r.totalGeral)}</span>
