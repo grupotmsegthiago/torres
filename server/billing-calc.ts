@@ -149,7 +149,7 @@ export function calcularHorasTrabalhadas(inicio: string, fim?: string): number {
   const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
   let diff = toMin(fim) - toMin(inicio);
   if (diff < 0) diff += 24 * 60;
-  return Math.round((diff / 60) * 100) / 100;
+  return diff / 60;
 }
 
 export function calcularEscolta(dados: {

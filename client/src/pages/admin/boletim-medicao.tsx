@@ -1303,7 +1303,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   if (billingInicio && billingFim) {
     let diff = toMin(billingFim) - toMin(billingInicio);
     if (diff < 0) diff += 24 * 60;
-    hCalc = Math.round((diff / 60) * 100) / 100;
+    hCalc = diff / 60;
   }
 
   const acionamento = Number(b?.fat_acionamento || 0);

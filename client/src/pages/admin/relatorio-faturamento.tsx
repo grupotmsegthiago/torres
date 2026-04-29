@@ -317,13 +317,15 @@ export default function RelatorioFaturamentoPage() {
       const fatKm = Math.round(kmExcedente * valorKmExtra * 100) / 100;
 
       const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return (h || 0) * 60 + (m || 0); };
-      let horasMissao = n(b?.horas_missao);
+      let horasMissaoExata = n(b?.horas_missao);
+      let horasMissao = horasMissaoExata;
       if (editForm.horario_inicio && editForm.horario_fim) {
         let diff = toMin(editForm.horario_fim) - toMin(editForm.horario_inicio);
         if (diff < 0) diff += 1440;
-        horasMissao = Math.round((diff / 60) * 100) / 100;
+        horasMissaoExata = diff / 60;
+        horasMissao = Math.round(horasMissaoExata * 100) / 100;
       }
-      const horasExcedentes = Math.max(0, horasMissao - franquiaHoras);
+      const horasExcedentes = Math.max(0, horasMissaoExata - franquiaHoras);
       const fatHoraExtra = Math.round(horasExcedentes * valorHoraExtra * 100) / 100;
 
       const fatAcionamento = n(b?.fat_acionamento);
