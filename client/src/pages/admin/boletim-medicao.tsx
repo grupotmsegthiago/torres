@@ -279,10 +279,22 @@ export default function BoletimMedicaoPage() {
       setOverrideKmFim(selectedOs.km_final != null ? String(selectedOs.km_final) : "");
       const fmtDt = (v: string | null) => {
         if (!v) return "";
-        try { return new Date(_eu(v)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || ""; } catch { return ""; }
+        try {
+          const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(_eu(v)));
+          const get = (t: string) => parts.find(p => p.type === t)?.value || "";
+          const yyyy = get("year"); const mm = get("month"); const dd = get("day");
+          const hh = get("hour") === "24" ? "00" : get("hour"); const mi = get("minute");
+          if (!yyyy || !mm || !dd) return "";
+          return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        } catch { return ""; }
       };
-      setOverrideHoraChegada(fmtDt(selectedOs.hora_chegada_origem));
-      setOverrideHoraFim(fmtDt(selectedOs.hora_fim_missao));
+      const fallbackFromScheduled = () => {
+        const sd = selectedOs.scheduledDate;
+        if (!sd) return "";
+        return fmtDt(sd);
+      };
+      setOverrideHoraChegada(fmtDt(selectedOs.hora_chegada_origem) || fallbackFromScheduled());
+      setOverrideHoraFim(fmtDt(selectedOs.hora_fim_missao) || fmtDt(selectedOs.completedDate) || fallbackFromScheduled());
       setEditingFields(false);
     }
   }, [selectedOs]);
@@ -1466,12 +1478,12 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                   </div>
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Chegada Origem</p>
-                      <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Data e Hora — Chegada Origem</p>
+                      <input type="datetime-local" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraChegada} onChange={(e: any) => setOverrideHoraChegada(e.target.value)} data-testid="input-hora-chegada-origem" />
                     </div>
                     <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Hora Fim Missão</p>
-                      <input type="time" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraFim} onChange={(e: any) => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
+                      <p className="text-[9px] font-bold text-neutral-400 uppercase">Data e Hora — Fim Missão</p>
+                      <input type="datetime-local" className="w-full p-1.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold mt-1 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" value={overrideHoraFim} onChange={(e: any) => setOverrideHoraFim(e.target.value)} data-testid="input-hora-fim-missao" />
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -1484,19 +1496,19 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                         if (overrideKmFim !== (os.km_final != null ? String(os.km_final) : "")) {
                           payload.km_fim_missao = Number(overrideKmFim) || 0;
                         }
+                        const brToIso = (v: string) => {
+                          if (!v) return null;
+                          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+                          if (!m) return null;
+                          return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00-03:00`).toISOString();
+                        };
                         if (overrideHoraFim) {
-                          const baseDate = os.completedDate || os.scheduledDate || new Date().toISOString();
-                          const [hh, mm] = overrideHoraFim.split(":");
-                          const d = new Date(baseDate);
-                          d.setHours(Number(hh), Number(mm), 0, 0);
-                          payload.completedDate = d.toISOString();
+                          const iso = brToIso(overrideHoraFim);
+                          if (iso) payload.completedDate = iso;
                         }
                         if (overrideHoraChegada) {
-                          const baseDate = os.hora_chegada_origem || os.scheduledDate || new Date().toISOString();
-                          const [hh, mm] = overrideHoraChegada.split(":");
-                          const d = new Date(baseDate);
-                          d.setHours(Number(hh), Number(mm), 0, 0);
-                          payload.hora_chegada_origem = d.toISOString();
+                          const iso = brToIso(overrideHoraChegada);
+                          if (iso) payload.hora_chegada_origem = iso;
                         }
                         if (Object.keys(payload).length > 0) {
                           overrideMutation.mutate({ osId: os.id, data: payload });
