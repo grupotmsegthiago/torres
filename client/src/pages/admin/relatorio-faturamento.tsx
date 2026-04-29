@@ -247,7 +247,7 @@ export default function RelatorioFaturamentoPage() {
       (vehiclesData || []).forEach((v: any) => vehiclesMap.set(v.id, v));
 
       const approved = (billingsData || [])
-        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "RECUSADA" || b.status === "REJEITADA" || b.status === "CANCELADA" || b.status === "CANCELADO")
+        .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "CANCELADA" || b.status === "CANCELADO" || b.status === "A_VERIFICAR" || b.status === "PENDENTE" || b.status === "ENVIADA_APROVACAO")
         .map((b: any) => {
           const so = ordersMap.get(b.service_order_id);
           if (so) {
@@ -262,6 +262,7 @@ export default function RelatorioFaturamentoPage() {
             if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
             if (!b.completed_date && so.completedDate) b.completed_date = so.completedDate;
             b._so_status = so.status;
+            b._so_cancellation_reason = so.cancellationReason || so.cancellation_reason || "";
           }
           return b;
         });
@@ -466,6 +467,8 @@ export default function RelatorioFaturamentoPage() {
         totalGeral: fatTotal,
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
+        osStatus: b._so_status || "",
+        osCancellationReason: b._so_cancellation_reason || "",
         motivoRejeicao: b.motivo_rejeicao || "",
         observacoesBilling: b.observacoes || "",
         revisadoPor: b.revisado_por || "",
@@ -952,7 +955,10 @@ export default function RelatorioFaturamentoPage() {
                       {r.status === "REJEITADA" && (
                         <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-rejeitada-${i}`}>Rejeitada</span>
                       )}
-                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && (
+                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus === "recusada" && (
+                        <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-recusada-${i}`}>Recusada</span>
+                      )}
+                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus !== "recusada" && (
                         <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-cancelada-${i}`}>Cancelada</span>
                       )}
                       {r.status === "A_VERIFICAR" && (
@@ -971,9 +977,9 @@ export default function RelatorioFaturamentoPage() {
                           · Motivo: {r.motivoRejeicao}
                         </span>
                       )}
-                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.observacoesBilling && (
-                        <span className="text-[10px] font-bold text-red-600 truncate" title={r.observacoesBilling} data-testid={`text-cancel-${i}`}>
-                          · {r.observacoesBilling.split("|")[0].trim()}
+                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && (r.observacoesBilling || r.osCancellationReason) && (
+                        <span className={`text-[10px] font-bold truncate ${r.osStatus === "recusada" ? "text-orange-600" : "text-red-600"}`} title={r.observacoesBilling || r.osCancellationReason} data-testid={`text-cancel-${i}`}>
+                          · {(r.observacoesBilling || r.osCancellationReason).split("|")[0].trim()}
                         </span>
                       )}
                       {r.status === "A_VERIFICAR" && (
