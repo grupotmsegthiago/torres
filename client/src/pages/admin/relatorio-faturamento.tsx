@@ -263,6 +263,7 @@ export default function RelatorioFaturamentoPage() {
             if (!b.data_missao && so.scheduledDate) b.data_missao = so.scheduledDate;
             if (!b.completed_date && so.completedDate) b.completed_date = so.completedDate;
             b._so_status = so.status;
+            b._so_mission_status = so.missionStatus || so.mission_status || "";
             b._so_cancellation_reason = so.cancellationReason || so.cancellation_reason || "";
           }
           return b;
@@ -469,6 +470,7 @@ export default function RelatorioFaturamentoPage() {
         franchiseHoursFmt: fmtHHMM(franquiaHoras),
         status: b.status,
         osStatus: b._so_status || "",
+        osMissionStatus: b._so_mission_status || "",
         osCancellationReason: b._so_cancellation_reason || "",
         motivoRejeicao: b.motivo_rejeicao || "",
         observacoesBilling: b.observacoes || "",
@@ -601,7 +603,7 @@ export default function RelatorioFaturamentoPage() {
     const isOmega = clientLabel.toUpperCase().includes("OMEGA SOLUTIONS");
 
     const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
-    const baseDataRows = rowsData.map(r => [
+    const baseDataRows = rowsData.filter(r => r.osStatus !== "recusada").map(r => [
       r.id, r.route, Number(r.activationFee || 0), r.franchiseHoursFmt, r.franchiseKm > 0 ? r.franchiseKm : 0, Number(r.unitHr || 0), Number(r.unitKm || 0),
       r.startDate, r.startTime, r.viatura, r.cargoPlate, r.endDate, r.endTime,
       r.kmStart > 0 ? r.kmStart : 0, r.kmEnd > 0 ? r.kmEnd : 0, r.kmTotal > 0 ? r.kmTotal : 0,
@@ -925,10 +927,14 @@ export default function RelatorioFaturamentoPage() {
       )}
 
       {reportGenerated && rowsData.length > 0 && (() => {
-        const aprovadasRows = rowsData.filter(r => r.status === "APROVADA" || r.status === "FATURADO" || r.status === "FATURADA" || r.status === "PAGO");
-        const canceladasRows = rowsData.filter(r => (r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus !== "recusada");
-        const recusadasRows = rowsData.filter(r => (r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus === "recusada");
-        const pendentesRows = rowsData.filter(r => r.status === "A_VERIFICAR" || r.status === "PENDENTE" || r.status === "ENVIADA_APROVACAO");
+        const effectiveLabel = (r: typeof rowsData[number]) => getRelatorioStatus(r.osStatus, r.status, (r as any).osMissionStatus).label;
+        const aprovadasRows = rowsData.filter(r => effectiveLabel(r) === "Aprovada" || effectiveLabel(r) === "Faturada" || effectiveLabel(r) === "Pago");
+        const canceladasRows = rowsData.filter(r => effectiveLabel(r) === "Cancelada");
+        const recusadasRows = rowsData.filter(r => effectiveLabel(r) === "Recusada");
+        const pendentesRows = rowsData.filter(r => {
+          const lbl = effectiveLabel(r);
+          return lbl === "A Verificar" || lbl === "Pendente" || lbl === "Enviada Aprovação";
+        });
         const sumTotal = (arr: typeof rowsData) => arr.reduce((s, r) => s + r.totalGeral, 0);
         const aprovadasTotal = sumTotal(aprovadasRows);
         const pendentesTotal = sumTotal(pendentesRows);
@@ -986,7 +992,7 @@ export default function RelatorioFaturamentoPage() {
                         <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-faturado-${i}`}>Faturada</span>
                       )}
                       {(() => {
-                        const info = getRelatorioStatus(r.osStatus, r.status);
+                        const info = getRelatorioStatus(r.osStatus, r.status, (r as any).osMissionStatus);
                         return (
                           <span className={`text-[9px] font-black uppercase ${info.badgeClass} px-1.5 py-0.5 rounded shrink-0`} data-testid={`badge-status-${i}`}>
                             {info.label}
@@ -1148,7 +1154,7 @@ export default function RelatorioFaturamentoPage() {
                 </tr>
               </thead>
               <tbody>
-                {rowsData.map((r, i) => (
+                {rowsData.filter(r => r.osStatus !== "recusada").map((r, i) => (
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
                     <td style={{ ...cellBold, fontSize: "10.5px", backgroundColor: "#f3f4f6", color: "#111", fontWeight: 900 }}>{i + 1}</td>
                     <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.id}</td>

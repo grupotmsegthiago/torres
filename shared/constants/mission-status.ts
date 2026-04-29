@@ -91,10 +91,18 @@ export function getBillingStatusInfo(billingStatus: string | null | undefined): 
 
 export function getRelatorioStatus(
   osStatus: string | null | undefined,
-  billingStatus: string | null | undefined
+  billingStatus: string | null | undefined,
+  osMissionStatus?: string | null | undefined
 ): StatusDescriptor {
   if (osStatus === "recusada") return OS_STATUS_MAP.recusada;
   if (osStatus === "cancelada") return OS_STATUS_MAP.cancelada;
+  // Operacional manda no Faturamento: OS concluída + missão encerrada vale como APROVADA
+  // mesmo que o financeiro ainda não tenha revisado o billing.
+  const isOsConcluida = (osStatus === "concluída" || osStatus === "concluida" || osStatus === "completed");
+  const isMissionEncerrada = (osMissionStatus === "encerrada");
+  if (isOsConcluida && isMissionEncerrada && billingStatus !== "FATURADO" && billingStatus !== "FATURADA" && billingStatus !== "PAGO" && billingStatus !== "CANCELADO" && billingStatus !== "CANCELADA" && billingStatus !== "REJEITADA") {
+    return BILLING_STATUS_MAP.APROVADA;
+  }
   return getBillingStatusInfo(billingStatus);
 }
 
