@@ -963,14 +963,17 @@ export default function RelatorioFaturamentoPage() {
             </div>
             <div className="bg-gray-900 border border-gray-900 rounded-lg px-3 py-2.5" data-testid="stat-total">
               <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total Geral</p>
-              <p className="text-lg font-black text-white font-mono">{rowsData.length} OS</p>
-              <p className="text-[10px] font-bold text-white font-mono">{fmt(grandTotal)}</p>
+              <p className="text-lg font-black text-white font-mono">{aprovadasRows.length + canceladasRows.length + pendentesRows.length} OS</p>
+              <p className="text-[10px] font-bold text-white font-mono">{fmt(aprovadasTotal + pendentesTotal)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 mb-3">
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700">
-              {rowsData.length} OS &middot; Total: <span className="text-black font-black">{fmt(grandTotal)}</span>
+              {aprovadasRows.length + canceladasRows.length + pendentesRows.length} OS &middot; Total: <span className="text-black font-black">{fmt(aprovadasTotal + pendentesTotal)}</span>
+              {recusadasRows.length > 0 && (
+                <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">+ {recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
+              )}
               {faturadoBillings.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{faturadoBillings.length} faturada{faturadoBillings.length > 1 ? "s" : ""}</span>
               )}
