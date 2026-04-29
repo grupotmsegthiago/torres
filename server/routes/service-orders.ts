@@ -1148,6 +1148,7 @@ import type { Express } from "express";
       && existing && existing.status !== parsed.data.status;
     if (isRecusadaOuCancelada) {
       const actionLabel = parsed.data.status === "recusada" ? "recusada" : "cancelada";
+      const isRecusada = parsed.data.status === "recusada";
       const reason = String((parsed.data as any).cancellationReason || "").trim();
       if (!reason || reason.length < 3) {
         return res.status(400).json({ message: `Informe o motivo da ${actionLabel} (mínimo 3 caracteres) no campo cancellationReason.` });
@@ -1156,21 +1157,34 @@ import type { Express } from "express";
       const timeBRT = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const adminName = req.user?.name || req.user?.email || "Sistema";
 
-      (parsed.data as any).revenueValue = 0;
-      (parsed.data as any).fat_calculado = 0;
-      (parsed.data as any).custo_total_alocado = 0;
-      (parsed.data as any).lucro_calculado = 0;
-      (parsed.data as any).margem_calculada = 0;
-      (parsed.data as any).valorEstimado = 0;
-      (parsed.data as any).pedagioEstimado = 0;
+      // RECUSADA: operacional não atendeu → zera tudo
+      // CANCELADA: cliente cancelou mas equipe foi acionada → mantém custos (acionamento + extras)
+      if (isRecusada) {
+        (parsed.data as any).revenueValue = 0;
+        (parsed.data as any).fat_calculado = 0;
+        (parsed.data as any).custo_total_alocado = 0;
+        (parsed.data as any).lucro_calculado = 0;
+        (parsed.data as any).margem_calculada = 0;
+        (parsed.data as any).valorEstimado = 0;
+        (parsed.data as any).pedagioEstimado = 0;
+      }
       (parsed.data as any).custos_congelados_em = new Date().toISOString();
       (parsed.data as any).custos_congelados_por = `${actionLabel}_por_${adminName}`;
 
       try {
-        await supabaseAdmin.from("escort_billings")
-          .update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 })
-          .eq("service_order_id", Number(req.params.id))
-          .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+        if (isRecusada) {
+          // recusada: zera valores do billing
+          await supabaseAdmin.from("escort_billings")
+            .update({ status: "CANCELADO", fat_total: 0, fat_acionamento: 0, fat_hora_extra: 0, fat_km: 0 })
+            .eq("service_order_id", Number(req.params.id))
+            .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+        } else {
+          // cancelada: só marca status como CANCELADO, preserva valores de cobrança
+          await supabaseAdmin.from("escort_billings")
+            .update({ status: "CANCELADO" })
+            .eq("service_order_id", Number(req.params.id))
+            .in("status", ["A_VERIFICAR", "VERIFICADA", "PENDENTE"]);
+        }
       } catch (_e) {}
 
       try {
