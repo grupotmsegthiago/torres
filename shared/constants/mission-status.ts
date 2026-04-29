@@ -106,6 +106,36 @@ export function getRelatorioStatus(
   return getBillingStatusInfo(billingStatus);
 }
 
+/**
+ * Retorna 1 ou 2 selos para o relatório.
+ * Se a OS foi APROVADA pelo financeiro (ou operacional) e DEPOIS cancelada pelo cliente,
+ * mostra os dois: "Aprovada / Cancelada".
+ */
+export function getRelatorioBadges(
+  osStatus: string | null | undefined,
+  billingStatus: string | null | undefined,
+  osMissionStatus?: string | null | undefined
+): StatusDescriptor[] {
+  // Recusada = operacional não atendeu — selo único
+  if (osStatus === "recusada") return [OS_STATUS_MAP.recusada];
+
+  // Cancelada pelo cliente: se já tinha sido aprovada antes, mostra os dois selos
+  if (osStatus === "cancelada") {
+    const wasApproved =
+      billingStatus === "APROVADA" ||
+      billingStatus === "FATURADO" ||
+      billingStatus === "FATURADA" ||
+      billingStatus === "PAGO";
+    if (wasApproved) {
+      return [BILLING_STATUS_MAP.APROVADA, OS_STATUS_MAP.cancelada];
+    }
+    return [OS_STATUS_MAP.cancelada];
+  }
+
+  // Caso normal: usa a regra única (operacional manda no faturamento)
+  return [getRelatorioStatus(osStatus, billingStatus, osMissionStatus)];
+}
+
 export function appearsInMedicao(
   osStatus: string | null | undefined,
   billingStatus: string | null | undefined

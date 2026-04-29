@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
-import { getRelatorioStatus } from "@shared/constants/mission-status";
+import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -1001,12 +1001,12 @@ export default function RelatorioFaturamentoPage() {
                         <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-faturado-${i}`}>Faturada</span>
                       )}
                       {(() => {
-                        const info = getRelatorioStatus(r.osStatus, r.status, (r as any).osMissionStatus);
-                        return (
-                          <span className={`text-[9px] font-black uppercase ${info.badgeClass} px-1.5 py-0.5 rounded shrink-0`} data-testid={`badge-status-${i}`}>
+                        const badges = getRelatorioBadges(r.osStatus, r.status, (r as any).osMissionStatus);
+                        return badges.map((info, idx) => (
+                          <span key={idx} className={`text-[9px] font-black uppercase ${info.badgeClass} px-1.5 py-0.5 rounded shrink-0`} data-testid={`badge-status-${i}-${idx}`}>
                             {info.label}
                           </span>
-                        );
+                        ));
                       })()}
                       <span className="text-xs font-bold text-gray-500 truncate max-w-[200px]">{r.route}</span>
                       <span className="text-xs text-gray-400 shrink-0">{r.startDate}</span>
