@@ -893,7 +893,17 @@ export default function BoletimMedicaoPage() {
                                     {b?.boletim_numero && <p className="text-[9px] text-blue-600 font-mono font-bold mt-0.5">{b.boletim_numero}</p>}
                                     {isLiveOs(os) && <p className="text-[9px] text-green-600 font-bold mt-0.5">EM ANDAMENTO</p>}
                                     {os.status === "cancelada" && <p className="text-[9px] text-red-600 font-bold mt-0.5">{(os as any).cancellationReason || (b?.observacoes ? b.observacoes.split("|")[0].trim() : "Cancelada")}</p>}
-                                    {os.status === "recusada" && <p className="text-[9px] text-orange-600 font-bold mt-0.5">{(os as any).cancellationReason || "Recusada"} — Faturamento Zerado</p>}
+                                    {os.status === "recusada" && <p className="text-[9px] text-orange-600 font-bold mt-0.5">{(os as any).cancellationReason || (b?.observacoes ? b.observacoes.split("|")[0].trim() : "Recusada")} — Faturamento Zerado</p>}
+                                    {os.status !== "cancelada" && os.status !== "recusada" && b?.status === "REJEITADA" && (
+                                      <p className="text-[9px] text-red-600 font-bold mt-0.5" title={`Rejeitado por ${b.revisado_por || "—"}${b.revisado_em ? " em " + fmtDate(b.revisado_em) : ""}`}>
+                                        REJEITADA: {b.motivo_rejeicao || "Sem motivo informado"}
+                                      </p>
+                                    )}
+                                    {os.status !== "cancelada" && os.status !== "recusada" && (b?.status === "CANCELADA" || b?.status === "CANCELADO") && (
+                                      <p className="text-[9px] text-red-600 font-bold mt-0.5">
+                                        CANCELADA: {b?.observacoes ? b.observacoes.split("|")[0].trim() : "Sem motivo informado"}
+                                      </p>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3.5">
                                     <span className="font-semibold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</span>
