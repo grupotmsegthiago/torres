@@ -11,7 +11,7 @@ import {
   Loader2, Eye, ChevronDown, ChevronRight, Truck, Shield,
   Car, User, Calculator, Lock, Pencil, RotateCcw, Navigation,
   Hash, Calendar, Route, Gauge, DollarSign, ArrowRight,
-  CircleDot, Timer, Download, Send, Mail, Camera,
+  CircleDot, Timer, Download, Send, Mail, Camera, Search,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
@@ -56,6 +56,7 @@ export default function BoletimMedicaoPage() {
     if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "ENVIADA_APROVACAO", "APROVADA", "REJEITADA", "FORA_CICLO", "A_FATURAR", "FATURADA", "CANCELADA"].includes(s)) return s as StatusFilter;
     return "PENDENTE";
   });
+  const [osSearch, setOsSearch] = useState("");
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
   const [aprovarFaturarDialog, setAprovarFaturarDialog] = useState<{ clientId: number; clientName: string; osIds: number[]; billingIds: string[]; total: number; minDate: string; maxDate: string } | null>(null);
   const [aprovarFaturarLoading, setAprovarFaturarLoading] = useState(false);
@@ -348,6 +349,14 @@ export default function BoletimMedicaoPage() {
         return d && d >= start && d < end;
       });
     }
+    if (osSearch.trim()) {
+      const q = osSearch.trim().toLowerCase().replace(/^tor[-\s]?/i, "").replace(/^0+/, "");
+      orders = orders.filter(o => {
+        const num = (o.osNumber || `TOR-${String(o.id).padStart(4, "0")}`).toLowerCase();
+        const numNorm = num.replace(/^tor[-\s]?/i, "").replace(/^0+/, "");
+        return num.includes(osSearch.trim().toLowerCase()) || numNorm.includes(q) || numNorm === q;
+      });
+    }
     if (orders.length === 0) return null;
     return { clientId: Number(cid), clientName: group.clientName, clientCnpj: group.clientCnpj, clientEmail: group.clientEmail, orders };
   }).filter(Boolean) as { clientId: number; clientName: string; clientCnpj: string | null; clientEmail: string | null; orders: any[] }[];
@@ -618,6 +627,47 @@ export default function BoletimMedicaoPage() {
               <RotateCcw className="w-3 h-3" /> Limpar
             </button>
           )}
+          <div className="h-6 w-px bg-neutral-200 mx-1" />
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={osSearch}
+              onChange={e => {
+                const v = e.target.value;
+                setOsSearch(v);
+                if (v.trim() && statusFilter !== "ALL") setStatusFilter("ALL");
+              }}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  const q = osSearch.trim().toLowerCase().replace(/^tor[-\s]?/i, "").replace(/^0+/, "");
+                  if (!q) return;
+                  const match = osConcluidas.find((o: any) => {
+                    const num = (o.osNumber || `TOR-${String(o.id).padStart(4, "0")}`).toLowerCase();
+                    const numNorm = num.replace(/^tor[-\s]?/i, "").replace(/^0+/, "");
+                    return numNorm === q;
+                  });
+                  if (match) {
+                    setSelectedOs(match);
+                    setPedagioValue(match.billing?.despesas_pedagio || (match as any).pedagioEstimado || "0");
+                    setObservacoesValue(match.billing?.observacoes || "");
+                  }
+                }
+              }}
+              placeholder="Buscar OS (ex: 59 ou TOR-0059)"
+              className="text-xs font-bold border border-neutral-200 rounded-lg pl-8 pr-8 py-2 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10 uppercase tracking-wider w-56"
+              data-testid="input-search-os"
+            />
+            {osSearch && (
+              <button
+                onClick={() => setOsSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                data-testid="button-clear-search-os"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {billingAlerts.length > 0 && (
