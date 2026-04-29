@@ -42,7 +42,7 @@ const computeKm = (os: any) => {
   return Math.max(0, kmFim - kmChegada);
 };
 
-type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "ENVIADA_APROVACAO" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "A_FATURAR" | "FATURADA";
+type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "ENVIADA_APROVACAO" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "A_FATURAR" | "FATURADA" | "CANCELADA";
 
 export default function BoletimMedicaoPage() {
   const { toast } = useToast();
@@ -53,7 +53,7 @@ export default function BoletimMedicaoPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("status");
-    if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "ENVIADA_APROVACAO", "APROVADA", "REJEITADA", "FORA_CICLO", "A_FATURAR", "FATURADA"].includes(s)) return s as StatusFilter;
+    if (s && ["ALL", "EM_ANDAMENTO", "PENDENTE", "ENVIADA_APROVACAO", "APROVADA", "REJEITADA", "FORA_CICLO", "A_FATURAR", "FATURADA", "CANCELADA"].includes(s)) return s as StatusFilter;
     return "PENDENTE";
   });
   const [checkedOsIds, setCheckedOsIds] = useState<Set<number>>(new Set());
@@ -328,6 +328,7 @@ export default function BoletimMedicaoPage() {
     else if (statusFilter === "A_FATURAR") orders = orders.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO");
     else if (statusFilter === "FATURADA") orders = orders.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO");
     else if (statusFilter === "REJEITADA") orders = orders.filter(o => o.billing?.status === "REJEITADA");
+    else if (statusFilter === "CANCELADA") orders = orders.filter(o => o.status === "cancelada" || o.status === "recusada" || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO");
     else if (statusFilter === "FORA_CICLO") {
       orders = orders.filter(o => {
         if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
@@ -368,6 +369,7 @@ export default function BoletimMedicaoPage() {
   const approvedCount = periodFilteredOs.filter(o => o.billing?.status === "APROVADA" || o.billing?.boletim_gerado).length;
   const faturadoCount = periodFilteredOs.filter(o => o.billing?.status === "FATURADO" || o.billing?.status === "PAGO").length;
   const aFaturarCount = periodFilteredOs.filter(o => (o.billing?.status === "APROVADA" || o.billing?.boletim_gerado) && o.billing?.status !== "FATURADO" && o.billing?.status !== "PAGO").length;
+  const canceladasCount = periodFilteredOs.filter(o => o.status === "cancelada" || o.status === "recusada" || o.billing?.status === "CANCELADA" || o.billing?.status === "CANCELADO").length;
   const foraCicloCount = periodFilteredOs.filter(o => {
     if (!o.clientBillingCycle || o.clientBillingCycle === "por_missao") return false;
     const bStatus = o.billing?.status;
@@ -569,6 +571,7 @@ export default function BoletimMedicaoPage() {
             ["A_FATURAR", `A Faturar (${aFaturarCount})`],
             ["FATURADA", `Faturadas (${faturadoCount})`],
             ["REJEITADA", "Rejeitadas"],
+            ["CANCELADA", `Canceladas (${canceladasCount})`],
             ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : []),
           ] as [StatusFilter, string][]).map(([val, label]) => (
             <button
