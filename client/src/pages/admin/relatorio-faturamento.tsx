@@ -953,7 +953,7 @@ export default function RelatorioFaturamentoPage() {
                         <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-aprovada-${i}`}>Aprovada</span>
                       )}
                       {r.status === "REJEITADA" && (
-                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-rejeitada-${i}`}>Rejeitada</span>
+                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-rejeitada-${i}`}>Recusada</span>
                       )}
                       {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus === "recusada" && (
                         <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-recusada-${i}`}>Recusada</span>

@@ -1242,7 +1242,7 @@ export default function FinanceiroPage() {
                               try {
                                 await apiRequest("POST", `/api/escort/billings/${b.id}/revisar`, { acao: "REJEITADA", motivo_rejeicao: motivo });
                                 invalidateRelatedQueries("billing");
-                                toast({ title: "OS Rejeitada", description: "Correção solicitada." });
+                                toast({ title: "OS Recusada", description: "Correção solicitada." });
                               } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
                             }}
                             className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
@@ -1278,7 +1278,7 @@ export default function FinanceiroPage() {
                           <span className="text-[10px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{b.boletim_numero || "—"}</span>
                           {b.status === "A_VERIFICAR" && <Badge className="bg-amber-100 text-amber-800 text-[9px] font-black border-0">Pendente</Badge>}
                           {b.status === "APROVADA" && <Badge className="bg-green-100 text-green-800 text-[9px] font-black border-0">Aprovada</Badge>}
-                          {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Rejeitada</Badge>}
+                          {b.status === "REJEITADA" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Recusada</Badge>}
                           {b.status === "CANCELADO" && <Badge className="bg-red-100 text-red-800 text-[9px] font-black border-0">Cancelada</Badge>}
                         </div>
                         <span className="text-[10px] font-mono text-neutral-400">{new Date((/[Zz]$/.test(b.created_at) || /[+-]\d{2}:\d{2}$/.test(b.created_at)) ? b.created_at : b.created_at + "Z").toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>

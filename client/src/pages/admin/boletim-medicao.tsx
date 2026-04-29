@@ -162,7 +162,7 @@ export default function BoletimMedicaoPage() {
     },
     onSuccess: () => {
       invalidateAllRelated();
-      toast({ title: "OS Rejeitada", description: "Correção solicitada." });
+      toast({ title: "OS Recusada", description: "Correção solicitada." });
       setSelectedOs(null);
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -418,7 +418,7 @@ export default function BoletimMedicaoPage() {
       case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
       case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-50 text-amber-700 border border-amber-200", dot: "bg-amber-500" };
       case "APROVADA": return { label: "Aprovada", color: "bg-emerald-50 text-emerald-700 border border-emerald-200", dot: "bg-emerald-500" };
-      case "REJEITADA": return { label: "Rejeitada", color: "bg-red-50 text-red-700 border border-red-200", dot: "bg-red-500" };
+      case "REJEITADA": return { label: "Recusada", color: "bg-red-50 text-red-700 border border-red-200", dot: "bg-red-500" };
       case "CALCULADO": return { label: "Calculado", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
       case "FATURADO": return { label: "Faturado", color: "bg-indigo-50 text-indigo-700 border border-indigo-200", dot: "bg-indigo-500" };
       case "CANCELADO": return { label: "Cancelada", color: "bg-red-600 text-white", dot: "bg-red-300" };
@@ -591,7 +591,7 @@ export default function BoletimMedicaoPage() {
             ["APROVADA", `Aprovadas (${approvedCount})`],
             ["A_FATURAR", `A Faturar (${aFaturarCount})`],
             ["FATURADA", `Faturadas (${faturadoCount})`],
-            ["REJEITADA", "Rejeitadas"],
+            ["REJEITADA", "Recusadas"],
             ["CANCELADA", `Canceladas (${canceladasCount})`],
             ...(foraCicloCount > 0 ? [["FORA_CICLO", `⚠ Fora do Ciclo (${foraCicloCount})`]] : []),
           ] as [StatusFilter, string][]).map(([val, label]) => (
@@ -950,7 +950,7 @@ export default function BoletimMedicaoPage() {
                                           onClick={() => calcularMutation.mutate(os.id)}
                                           disabled={calcularMutation.isPending}
                                           className="p-1.5 rounded-lg hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all"
-                                          title={b?.status === "REJEITADA" ? "Recalcular (Rejeitada)" : b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
+                                          title={b?.status === "REJEITADA" ? "Recalcular (Recusada)" : b && isLiveOs(os) ? "Recalcular Estimativa" : "Calcular Billing"}
                                           data-testid={`button-calc-os-${os.id}`}
                                         >
                                           <Calculator size={15} className={b?.status === "REJEITADA" ? "text-red-500" : isLiveOs(os) && b ? "text-green-500" : "text-blue-500"} />
