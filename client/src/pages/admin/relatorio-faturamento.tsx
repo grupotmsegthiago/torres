@@ -923,8 +923,43 @@ export default function RelatorioFaturamentoPage() {
         </div>
       )}
 
-      {reportGenerated && rowsData.length > 0 && (
+      {reportGenerated && rowsData.length > 0 && (() => {
+        const aprovadasRows = rowsData.filter(r => r.status === "APROVADA" || r.status === "FATURADO" || r.status === "FATURADA" || r.status === "PAGO");
+        const canceladasRows = rowsData.filter(r => (r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus !== "recusada");
+        const recusadasRows = rowsData.filter(r => (r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus === "recusada");
+        const pendentesRows = rowsData.filter(r => r.status === "A_VERIFICAR" || r.status === "PENDENTE" || r.status === "ENVIADA_APROVACAO");
+        const sumTotal = (arr: typeof rowsData) => arr.reduce((s, r) => s + r.totalGeral, 0);
+        const aprovadasTotal = sumTotal(aprovadasRows);
+        const pendentesTotal = sumTotal(pendentesRows);
+        return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" data-testid="stat-aprovadas">
+              <p className="text-[9px] font-black uppercase tracking-wider text-emerald-700">Aprovadas</p>
+              <p className="text-lg font-black text-emerald-900 font-mono">{aprovadasRows.length}</p>
+              <p className="text-[10px] font-bold text-emerald-800 font-mono">{fmt(aprovadasTotal)}</p>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes">
+              <p className="text-[9px] font-black uppercase tracking-wider text-yellow-700">A Verificar</p>
+              <p className="text-lg font-black text-yellow-900 font-mono">{pendentesRows.length}</p>
+              <p className="text-[10px] font-bold text-yellow-800 font-mono">{fmt(pendentesTotal)}</p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="stat-canceladas">
+              <p className="text-[9px] font-black uppercase tracking-wider text-red-700">Canceladas</p>
+              <p className="text-lg font-black text-red-900 font-mono">{canceladasRows.length}</p>
+              <p className="text-[10px] font-bold text-red-800 font-mono">R$ 0,00</p>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5" data-testid="stat-recusadas">
+              <p className="text-[9px] font-black uppercase tracking-wider text-orange-700">Recusadas</p>
+              <p className="text-lg font-black text-orange-900 font-mono">{recusadasRows.length}</p>
+              <p className="text-[10px] font-bold text-orange-800 font-mono">R$ 0,00</p>
+            </div>
+            <div className="bg-gray-900 border border-gray-900 rounded-lg px-3 py-2.5" data-testid="stat-total">
+              <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total Geral</p>
+              <p className="text-lg font-black text-white font-mono">{rowsData.length} OS</p>
+              <p className="text-[10px] font-bold text-white font-mono">{fmt(grandTotal)}</p>
+            </div>
+          </div>
           <div className="flex items-center gap-3 mb-3">
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700">

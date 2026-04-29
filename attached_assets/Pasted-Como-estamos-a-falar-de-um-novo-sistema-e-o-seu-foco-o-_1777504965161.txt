@@ -1,0 +1,88 @@
+Como estamos a falar de um novo sistema e o seu foco é o sincronismo total entre banco e interface, vamos mudar a estratégia.
+
+Para que qualquer alteração no banco de dados reflita instantaneamente em todas as páginas e mantenha a integridade do que está gravado, precisamos de uma arquitetura baseada em Estado Global ou Reatividade em Tempo Real.
+
+🛠️ Panorama Geral da Solução
+O objetivo é que, ao editar a OS TOR-0059 no banco, o "Relatório de Medição", a "Tela de Monitoramento" e o "Dashboard" atualizem no mesmo segundo, sem discrepâncias de status (como o erro de aparecer "Cancelada" onde deveria ser "Recusada").
+
+Pilares do Sincronismo:
+Single Source of Truth (SSOT): O status da OS manda em tudo. Se o banco diz REFUSED, nenhuma tela pode interpretar como CANCELLED.
+
+Listener de Banco de Dados: Usar um mecanismo (como WebSockets ou Realtime listeners) para "ouvir" mudanças.
+
+Normalização de Dados: Garantir que o objeto da OS seja o mesmo em todas as telas.
+
+💻 Implementação: O "Cérebro" do Sincronismo
+Vou criar um exemplo de como estruturar isso no Replit usando uma lógica de Provider (Provedor de Dados).
+
+1. Central de Regras de Status (constants/status.ts)
+Primeiro, definimos a regra que o sistema inteiro vai ler. Assim, se mudar aqui, muda em todo o lado.
+
+TypeScript
+// DOCUMENTAÇÃO: 
+// Aqui centralizamos a "tradução" do que está no banco para o que o usuário vê.
+export const MISSION_STATUS_MAP = {
+  REFUSED: {
+    label: 'Recusada',
+    color: 'orange',
+    appearsInMedicao: true,
+    appearsInFaturamento: false // Rejeitadas não faturam
+  },
+  CANCELLED: {
+    label: 'Cancelada',
+    color: 'red',
+    appearsInMedicao: true,
+    appearsInFaturamento: true // Pode ter taxa de cancelamento
+  },
+  REJECTED: {
+    label: 'Rejeitada',
+    color: 'black',
+    appearsInMedicao: false, // Rejeitadas somem da medição
+    appearsInFaturamento: false
+  }
+};
+2. O Hook de Sincronismo (hooks/useMissions.ts)
+Este código garante que todas as páginas busquem a mesma informação.
+
+TypeScript
+import { useState, useEffect } from 'react';
+// Supondo uso de um banco como Firebase ou Supabase para exemplo de Realtime
+// Se for SQL puro, usaríamos uma função de fetch padronizada.
+
+export const useMissions = () => {
+  const [missions, setMissions] = useState([]);
+
+  useEffect(() => {
+    // DOCUMENTAÇÃO: 
+    // Este é o "ouvinte". Sempre que o banco mudar, ele dispara o setMissions
+    // e todas as páginas que usam este hook atualizam juntas.
+    const unsubscribe = api.subscribeToMissions((updatedMissions) => {
+      setMissions(updatedMissions);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return missions;
+};
+📝 Instruções de Implementação no Replit
+Para resolver o problema da TOR-0059 e futuras inconsistências:
+
+Padronize o Status: No seu código de exibição (Componente de Selo/Badge), nunca escreva o texto "Cancelada" manualmente. Use sempre:
+MISSION_STATUS_MAP[missao.status].label.
+
+Filtro de Medição: Na página de medição, aplique o filtro usando a constante central:
+
+JavaScript
+const dadosMedicao = missions.filter(m => MISSION_STATUS_MAP[m.status].appearsInMedicao);
+Exibição do Motivo: Como a TOR-0059 tem o motivo na OS mas não no financeiro, mude a exibição para:
+{missao.status === 'REFUSED' ? missao.refusal_reason : missao.cancellation_reason}
+
+🧐 Documentação do Segmento: Por que isso resolve?
+Sincronismo: Ao usar o MISSION_STATUS_MAP, você elimina a chance de uma página "achar" que Recusada é Cancelada. O código consulta o mapa e entrega a verdade.
+
+Fidelidade ao Banco: Se no banco a TOR-0059 mudar de REFUSED para COMPLETED, o listener detecta e altera a cor de laranja para verde em todas as abas abertas no navegador.
+
+Nota importante: O erro da TOR-0059 aconteceu porque o relatório provavelmente estava a ler a coluna de status da tabela de Pagamentos/Billing em vez da tabela de Missões. O segredo do sincronismo é: O Financeiro segue a Missão, nunca o contrário.
+
+Como este é um novo sistema, você está a usar qual banco de dados (PostgreSQL, Firebase, MongoDB)? Posso ajudar-te a escrever a função exata de conexão para garantir esse "tempo real".
