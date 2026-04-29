@@ -980,6 +980,7 @@ export default function RelatorioFaturamentoPage() {
             <table style={{ borderCollapse: "collapse", border: "1.5px solid #111", tableLayout: "auto", width: "100%", minWidth: "1500px" }}>
               <thead>
                 <tr className="group-hdr">
+                  <th rowSpan={2} style={{ ...groupHeaderStyle, backgroundColor: "#111", width: "32px" }}>#</th>
                   <th colSpan={7} style={groupHeaderStyle}>TABELA ACORDADA</th>
                   <th colSpan={6} style={{ ...groupHeaderStyle, backgroundColor: "#1f2937" }}>INFORMAÇÕES DA VIAGEM</th>
                   <th colSpan={3} style={grpKm}>KILOMETRAGEM</th>
@@ -1021,6 +1022,7 @@ export default function RelatorioFaturamentoPage() {
               <tbody>
                 {rowsData.map((r, i) => (
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
+                    <td style={{ ...cellBold, fontSize: "10.5px", backgroundColor: "#f3f4f6", color: "#111", fontWeight: 900 }}>{i + 1}</td>
                     <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.id}</td>
                     <td className="route-cell" style={{ ...cellStyle, textAlign: "left", whiteSpace: "normal", wordWrap: "break-word", fontWeight: 700, fontSize: "9px", lineHeight: "1.3", color: "#111" }}>{r.route}</td>
                     <td style={{ ...cellMono, fontWeight: 700 }}>{fmt(r.activationFee)}</td>
@@ -1053,7 +1055,7 @@ export default function RelatorioFaturamentoPage() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: "2.5px solid #111" }}>
-                  <td colSpan={26} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "7px 10px", letterSpacing: "0.5px" }}>TOTAL GERAL</td>
+                  <td colSpan={27} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "7px 10px", letterSpacing: "0.5px" }}>TOTAL GERAL</td>
                   <td style={{ ...cellBold, fontSize: "11px", fontFamily: fontMono, backgroundColor: "#111", color: "#fff", padding: "7px 10px", letterSpacing: "0.3px" }}>{fmt(grandTotal)}</td>
                 </tr>
               </tfoot>
