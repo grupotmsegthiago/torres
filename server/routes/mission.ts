@@ -1958,7 +1958,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
                 vigilante_id: so.assignedEmployeeId, vigilante_name: emp?.name || "--",
                 origem: so.origin || null, destino: so.destination || null,
                 placa_viatura: vehicle?.plate || null,
-                data_missao: so.missionStartedAt || so.scheduledDate || new Date().toISOString(),
+                data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
                 status: "CANCELADO", created_by: user.name,
                 observacoes: `${cenarioDesc} | Motivo: ${reason || "Cancelada pelo administrador"} | Cenário ${cenario}`,
               });
@@ -2356,7 +2356,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
             placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
             placa_escoltado: so.escortedVehiclePlate || null,
             motorista_escoltado: so.escortedDriverName || null,
-            data_missao: so.missionStartedAt || so.scheduledDate || new Date().toISOString(),
+            data_missao: so.scheduledDate || so.missionStartedAt || new Date().toISOString(),
             status: "A_VERIFICAR", created_by: user.name,
           };
           const { data: existBill } = await supabaseAdmin.from("escort_billings").select("id").eq("service_order_id", serviceOrderId).order("created_at", { ascending: false }).limit(1);

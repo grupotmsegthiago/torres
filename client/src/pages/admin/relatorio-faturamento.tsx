@@ -426,8 +426,16 @@ export default function RelatorioFaturamentoPage() {
       const viatura = b.placa_viatura || b.vehicle_plate || "—";
       const escoltado = b.placa_escoltado || b.escorted_vehicle_plate || "—";
 
-      const dataMissao = b.data_missao || b.created_at;
-      const dataFimMissao = b.completed_date || dataMissao;
+      // DATA/HORA INÍCIO = sempre o AGENDAMENTO (o que o cliente solicitou),
+      // nunca o "início real" (missionStartedAt) nem o "fim".
+      // Prioridade: scheduled_date (do snapshot da OS) → data_missao → created_at.
+      const sched = b.snapshot_data?.scheduled_date || b.scheduled_date || b.scheduledDate;
+      const dataMissao = sched || b.data_missao || b.created_at;
+      const dataFimMissao = b.completed_date || b.finished_at || dataMissao;
+      const horarioAgendadoStr =
+        (b.horario_agendado && b.horario_agendado.toString().substring(0, 5)) ||
+        (sched ? fmtTime(sched) : null) ||
+        (b.data_missao ? fmtTime(b.data_missao) : null);
 
       return {
         id: osNum,
@@ -439,7 +447,7 @@ export default function RelatorioFaturamentoPage() {
         unitHr: valorHoraExtra,
         unitKm: valorKmExtra,
         startDate: fmtDate(dataMissao),
-        startTime: b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(dataMissao),
+        startTime: horarioAgendadoStr || (b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(dataMissao)),
         viatura,
         cargoPlate: escoltado,
         endDate: fmtDate(dataFimMissao),

@@ -324,7 +324,7 @@ import type { Express } from "express";
         placa_viatura: so.vehicleId ? (await storage.getVehicle(so.vehicleId))?.plate || null : null,
         placa_escoltado: (so as any).escortedVehiclePlate || null,
         motorista_escoltado: (so as any).escortedDriverName || null,
-        data_missao: (so as any).missionStartedAt || so.scheduledDate || new Date().toISOString(),
+        data_missao: so.scheduledDate || (so as any).missionStartedAt || new Date().toISOString(),
         status: "A_VERIFICAR", created_by: user.name,
       }).select().single();
       if (error) throw error;
