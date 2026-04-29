@@ -14,6 +14,7 @@ import {
   CircleDot, Timer, Download, Send, Mail, Camera, Search,
 } from "lucide-react";
 import { exportFormattedExcel } from "@/lib/excel-export";
+import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -414,16 +415,8 @@ export default function BoletimMedicaoPage() {
 
   const getBillingStatus = (os: any) => {
     if (!os.billing) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
-    switch (os.billing.status) {
-      case "ESTIMATIVA": return { label: "Estimativa", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
-      case "A_VERIFICAR": return { label: "A Verificar", color: "bg-amber-50 text-amber-700 border border-amber-200", dot: "bg-amber-500" };
-      case "APROVADA": return { label: "Aprovada", color: "bg-emerald-50 text-emerald-700 border border-emerald-200", dot: "bg-emerald-500" };
-      case "REJEITADA": return { label: "Recusada", color: "bg-red-50 text-red-700 border border-red-200", dot: "bg-red-500" };
-      case "CALCULADO": return { label: "Calculado", color: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500" };
-      case "FATURADO": return { label: "Faturado", color: "bg-indigo-50 text-indigo-700 border border-indigo-200", dot: "bg-indigo-500" };
-      case "CANCELADO": return { label: "Cancelada", color: "bg-red-600 text-white", dot: "bg-red-300" };
-      default: return { label: os.billing.status, color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
-    }
+    const info = getRelatorioStatus(os.status, os.billing.status);
+    return { label: info.label, color: info.badgeClass, dot: info.dotClass };
   };
 
   const isLiveOs = (os: any) => os.status !== "recusada" && os.status !== "cancelada" && (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";

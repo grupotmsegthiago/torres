@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
+import { getRelatorioStatus } from "@shared/constants/mission-status";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -984,27 +985,14 @@ export default function RelatorioFaturamentoPage() {
                       {(r.status === "FATURADO" || r.status === "FATURADA") && (
                         <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-faturado-${i}`}>Faturada</span>
                       )}
-                      {r.status === "APROVADA" && (
-                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-aprovada-${i}`}>Aprovada</span>
-                      )}
-                      {r.status === "REJEITADA" && (
-                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-rejeitada-${i}`}>Recusada</span>
-                      )}
-                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus === "recusada" && (
-                        <span className="text-[9px] font-black uppercase bg-orange-100 text-orange-700 border border-orange-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-recusada-${i}`}>Recusada</span>
-                      )}
-                      {(r.status === "CANCELADA" || r.status === "CANCELADO") && r.osStatus !== "recusada" && (
-                        <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-cancelada-${i}`}>Cancelada</span>
-                      )}
-                      {r.status === "A_VERIFICAR" && (
-                        <span className="text-[9px] font-black uppercase bg-yellow-100 text-yellow-800 border border-yellow-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-averificar-${i}`}>A Verificar</span>
-                      )}
-                      {r.status === "PENDENTE" && (
-                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 border border-blue-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-pendente-${i}`}>Pendente</span>
-                      )}
-                      {r.status === "ENVIADA_APROVACAO" && (
-                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 border border-blue-300 px-1.5 py-0.5 rounded shrink-0" data-testid={`badge-enviada-${i}`}>Enviada Aprovação</span>
-                      )}
+                      {(() => {
+                        const info = getRelatorioStatus(r.osStatus, r.status);
+                        return (
+                          <span className={`text-[9px] font-black uppercase ${info.badgeClass} px-1.5 py-0.5 rounded shrink-0`} data-testid={`badge-status-${i}`}>
+                            {info.label}
+                          </span>
+                        );
+                      })()}
                       <span className="text-xs font-bold text-gray-500 truncate max-w-[200px]">{r.route}</span>
                       <span className="text-xs text-gray-400 shrink-0">{r.startDate}</span>
                       {r.status === "REJEITADA" && r.motivoRejeicao && (
