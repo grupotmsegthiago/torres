@@ -1102,7 +1102,8 @@ export default function RelatorioFaturamentoPage() {
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {reportGenerated && rowsData.length > 0 && (
         <div id="print-area" className="mt-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4 overflow-x-auto" style={{ position: "relative" }}>
