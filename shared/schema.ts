@@ -140,12 +140,35 @@ export const employeeSalaries = pgTable("employee_salaries", {
   effectiveDate: date("effective_date").notNull(),
   reason: text("reason"),
   notes: text("notes"),
+  // Benefícios mensais e parâmetros para cálculo de custo/hora
+  valeRefeicaoMensal: decimal("vale_refeicao_mensal", { precision: 10, scale: 2 }).default("0"),
+  valeTransporteMensal: decimal("vale_transporte_mensal", { precision: 10, scale: 2 }).default("0"),
+  beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
+  encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
+  horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertEmployeeSalarySchema = createInsertSchema(employeeSalaries).omit({ id: true, createdAt: true });
 export type InsertEmployeeSalary = z.infer<typeof insertEmployeeSalarySchema>;
 export type EmployeeSalary = typeof employeeSalaries.$inferSelect;
+
+// Custos Fixos da Operação (Aluguel, Água, Luz, Internet, Softwares etc.)
+// Usado pra calcular o "Custo de Estar Aberto" diário e ratear no balanço.
+export const fixedCosts = pgTable("fixed_costs", {
+  id: serial("id").primaryKey(),
+  description: text("description").notNull(),
+  category: text("category").notNull(), // "Aluguel", "Utilidades", "Softwares", "Veiculos", "Outros"
+  monthlyValue: decimal("monthly_value", { precision: 10, scale: 2 }).notNull(),
+  dueDay: integer("due_day"), // dia do mês de vencimento (1-31)
+  active: boolean("active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertFixedCostSchema = createInsertSchema(fixedCosts).omit({ id: true, createdAt: true });
+export type InsertFixedCost = z.infer<typeof insertFixedCostSchema>;
+export type FixedCost = typeof fixedCosts.$inferSelect;
 
 export const vehicles = pgTable("vehicles", {
   id: serial("id").primaryKey(),

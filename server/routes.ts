@@ -340,6 +340,7 @@ async function ensureSystemSettingsTable() {
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
   import { registerLeadRoutes } from "./routes/leads";
   import { registerConciliacaoRoutes } from "./routes/conciliacao";
+  import { registerFixedCostsRoutes } from "./routes/fixed-costs";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -781,6 +782,7 @@ async function ensureSystemSettingsTable() {
     registerBoletimApprovalRoutes(app);
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
+    registerFixedCostsRoutes(app);
 
   
   // ===== WEAPONS =====

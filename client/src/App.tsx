@@ -37,6 +37,7 @@ const BoletimMedicaoPage = lazy(() => import("@/pages/admin/boletim-medicao"));
 const RelatorioFaturamentoPage = lazy(() => import("@/pages/admin/relatorio-faturamento"));
 const RelatorioAbastecimentoPage = lazy(() => import("@/pages/admin/relatorio-abastecimento"));
 const BalancoGerencialPage = lazy(() => import("@/pages/admin/balanco-gerencial"));
+const CustosFixosPage = lazy(() => import("@/pages/admin/custos-fixos"));
 const SimuladorMissaoPage = lazy(() => import("@/pages/admin/simulador-missao"));
 const RelatorioOSPage = lazy(() => import("@/pages/admin/relatorio-os"));
 const CotacaoGastoPage = lazy(() => import("@/pages/admin/cotacao-gasto"));
@@ -210,6 +211,7 @@ function Router() {
         <Route path="/admin/auditoria">{() => <ProtectedRoute component={AuditPage} />}</Route>
         <Route path="/admin/financeiro">{() => <ProtectedRoute component={FinanceiroPage} />}</Route>
         <Route path="/admin/balanco-gerencial">{() => <ProtectedRoute component={BalancoGerencialPage} />}</Route>
+        <Route path="/admin/custos-fixos">{() => <ProtectedRoute component={CustosFixosPage} />}</Route>
         <Route path="/admin/faturas">{() => <ProtectedRoute component={FaturasPage} />}</Route>
         <Route path="/admin/holerites">{() => <ProtectedRoute component={HoleritesPage} />}</Route>
         <Route path="/admin/jornada-diretoria">{() => <ProtectedRoute component={JornadaDiretoriaPage} />}</Route>

@@ -123,6 +123,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
+          { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2, iconColor: "text-blue-500" },
           { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel, iconColor: "text-amber-500" },
           { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: FileText, iconColor: "text-amber-600" },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },

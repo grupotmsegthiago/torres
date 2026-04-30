@@ -199,6 +199,13 @@ export default function BalancoGerencialPage() {
     queryKey: ["/api/employees"],
   });
 
+  // Custos Fixos da operação (Aluguel, Internet, Softwares etc.)
+  // Usado pra ratear o "Custo de Estar Aberto" no balanço.
+  const { data: fixedCostsSummary } = useQuery<{ monthly: number; daily: number; weekly: number; yearly: number }>({
+    queryKey: ["/api/fixed-costs/summary"],
+    refetchInterval: 600_000,
+  });
+
   const activeAgentCount = useMemo(() => {
     if (!allEmployees) return 0;
     return allEmployees.filter((e: any) =>
@@ -212,7 +219,7 @@ export default function BalancoGerencialPage() {
   const filtered = useMemo(() => {
     if (!data) return {
       missions: [] as any[], vehicles: [] as any[], agents: [] as any[], missionDetails: [] as any[],
-      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, other: 0, total: 0 },
+      expenses: { fueling: 0, mission_cost: 0, maintenance: 0, payroll: 0, other: 0, total: 0 },
       expensesByVehicle: {} as Record<string, { fueling: number; mission_cost: number; maintenance: number; total: number }>,
       periodExpenses: [] as ExpenseTransaction[],
     };
@@ -343,7 +350,10 @@ export default function BalancoGerencialPage() {
     // ainda não foi totalmente lançada, a provisão segue cobrindo o gap).
     const folhaConsiderada = Math.max(provisaoRH, despFin.payroll);
     const despReaisExFolha = despReais - despFin.payroll;
-    const custoTotal = pag + despReaisExFolha + folhaConsiderada;
+    // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
+    const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
+    const custosFixosRateados = (custosFixosMensal / 30) * daysInPeriod;
+    const custoTotal = pag + despReaisExFolha + folhaConsiderada + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -357,9 +367,11 @@ export default function BalancoGerencialPage() {
       desp_outras: despFin.other,
       provisaoRH,
       folhaConsiderada,
+      custosFixosMensal,
+      custosFixosRateados,
       custoTotal,
     };
-  }, [filtered, provisaoRH]);
+  }, [filtered, provisaoRH, fixedCostsSummary, daysInPeriod]);
 
   const eficiencia = useMemo(() => {
     if (!data) return { mediaKmL: 0, totalKm: 0, totalLiters: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
@@ -584,6 +596,20 @@ export default function BalancoGerencialPage() {
                   </p>
                 </div>
               )}
+              {totals.custosFixosRateados > 0 && (
+                <div className="space-y-0.5 border-t border-neutral-100 pt-1">
+                  <p className="text-[10px] text-blue-600 uppercase tracking-wide">Custos Fixos (rateados)</p>
+                  <p
+                    className="text-blue-700"
+                    title={`Custo de Estar Aberto: ${fmt(totals.custosFixosMensal)}/mês ÷ 30 × ${daysInPeriod} dias`}
+                  >
+                    Aluguel/Internet/Softwares: {fmt(totals.custosFixosRateados)}
+                  </p>
+                  <p className="text-[10px] text-neutral-500">
+                    Base: {fmt(totals.custosFixosMensal)}/mês ({fmt(totals.custosFixosMensal / 30)}/dia)
+                  </p>
+                </div>
+              )}
               {totals.custoTotal === 0 && <p className="text-neutral-500">Sem despesas no período</p>}
             </div>
           </Card>
@@ -592,27 +618,58 @@ export default function BalancoGerencialPage() {
               <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
                 <DollarSign size={16} className="text-blue-700" />
               </div>
-              <span className="text-xs font-black text-neutral-400 uppercase">Lucro Bruto</span>
+              <span className="text-xs font-black text-neutral-400 uppercase">Lucro Líquido</span>
             </div>
-            <p className={`text-xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(totals.lucro)}</p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">c/ provisão RH</p>
-          </Card>
-          <Card className="p-4 border-neutral-200" data-testid="card-margem">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${totals.margem >= 30 ? "bg-green-100" : totals.margem >= 15 ? "bg-amber-100" : "bg-red-100"}`}>
-                {totals.margem >= 15
-                  ? <TrendingUp size={16} className={totals.margem >= 30 ? "text-green-700" : "text-amber-700"} />
-                  : <TrendingDown size={16} className="text-red-700" />}
-              </div>
-              <span className="text-xs font-black text-neutral-400 uppercase">Margem</span>
-            </div>
-            <p className={`text-xl font-black font-mono ${totals.margem >= 30 ? "text-green-700" : totals.margem >= 15 ? "text-amber-700" : "text-red-700"}`}>
-              {fmtPct(totals.margem)}
-            </p>
-            <p className="text-xs text-neutral-500 font-bold mt-1">
-              {totals.margem >= 30 ? "Saudável" : totals.margem >= 15 ? "Atenção" : "Crítico"}
+            <p className={`text-xl font-black font-mono ${totals.lucro >= 0 ? "text-blue-700" : "text-red-700"}`} data-testid="text-lucro">{fmt(totals.lucro)}</p>
+            <p className="text-xs text-neutral-500 font-bold mt-1" title="Faturamento − (custos reais + provisão RH + custos fixos rateados)">
+              c/ RH + custos fixos
             </p>
           </Card>
+          {(() => {
+            const META = 35; // meta de margem líquida (%)
+            const ok = totals.margem >= META;
+            const atencao = totals.margem >= 25 && totals.margem < META;
+            const tone = ok ? "green" : atencao ? "amber" : "red";
+            const labelMap: Record<string, string> = { green: "Saudável", amber: "Atenção", red: "ABAIXO DA META" };
+            return (
+              <Card
+                className={`p-4 border-2 ${ok ? "border-green-200" : atencao ? "border-amber-300" : "border-red-400"}`}
+                data-testid="card-margem"
+                title={`Meta: margem líquida ≥ ${META}% (Faturamento − custo total) ÷ Faturamento`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${ok ? "bg-green-100" : atencao ? "bg-amber-100" : "bg-red-100"}`}>
+                    {ok || atencao
+                      ? <TrendingUp size={16} className={ok ? "text-green-700" : "text-amber-700"} />
+                      : <TrendingDown size={16} className="text-red-700" />}
+                  </div>
+                  <span className="text-xs font-black text-neutral-400 uppercase">Margem Líquida</span>
+                  {!ok && (
+                    <Badge className={`text-[10px] font-black px-1.5 py-0 border-0 ${atencao ? "bg-amber-500" : "bg-red-600"} text-white`}>
+                      {atencao ? "ATENÇÃO" : "ABAIXO DA META"}
+                    </Badge>
+                  )}
+                </div>
+                <p className={`text-xl font-black font-mono ${ok ? "text-green-700" : atencao ? "text-amber-700" : "text-red-700"}`} data-testid="text-margem">
+                  {fmtPct(totals.margem)}
+                </p>
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-neutral-400">Meta: {META}%</span>
+                    <span className={`text-[10px] font-black ${ok ? "text-green-700" : atencao ? "text-amber-700" : "text-red-700"}`}>
+                      {labelMap[tone]}
+                    </span>
+                  </div>
+                  <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${ok ? "bg-green-500" : atencao ? "bg-amber-500" : "bg-red-500"}`}
+                      style={{ width: `${Math.min(Math.max(totals.margem, 0) / META * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </Card>
+            );
+          })()}
           {isDiretoria && (() => {
             const kmTotal = totals.km || 0;
             const kmDia = daysInPeriod > 0 ? kmTotal / daysInPeriod : 0;

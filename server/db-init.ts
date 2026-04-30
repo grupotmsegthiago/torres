@@ -1097,7 +1097,40 @@ export async function ensureCalcMissionRPC() {
     console.log("[db-init] driver_sessions + driver_shifts tables ensured");
   } catch (e: any) {
     console.error("[db-init] driver_sessions error:", e.message);
-  } finally {
-    await closeDbInitClient();
   }
+
+  // Custos Fixos da Operação (Aluguel, Água, Luz, Internet, Softwares etc.)
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS fixed_costs (
+        id SERIAL PRIMARY KEY,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'Outros',
+        monthly_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+        due_day INTEGER,
+        active BOOLEAN NOT NULL DEFAULT true,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_fixed_costs_active ON fixed_costs(active)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_fixed_costs_category ON fixed_costs(category)`);
+    console.log("[db-init] fixed_costs table ensured");
+  } catch (e: any) {
+    console.error("[db-init] fixed_costs error:", e.message);
+  }
+
+  // Garante colunas de benefícios em employee_salaries (cálculo de custo/hora real do agente)
+  try {
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_refeicao_mensal NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_transporte_mensal NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS beneficios_outros NUMERIC(10,2) DEFAULT 0`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS encargos_pct NUMERIC(5,2) DEFAULT 80.00`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS horas_mensais NUMERIC(6,2) DEFAULT 220.00`);
+    console.log("[db-init] employee_salaries benefit columns ensured");
+  } catch (e: any) {
+    console.error("[db-init] employee_salaries alter error:", e.message);
+  }
+
+  await closeDbInitClient();
 }
