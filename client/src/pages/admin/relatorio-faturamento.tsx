@@ -920,9 +920,9 @@ export default function RelatorioFaturamentoPage() {
             <Receipt size={20} className="text-indigo-600" />
             <div>
               <p className="text-sm font-bold text-indigo-900">
-                {approvedBillings.length} medicao(oes) aprovada{approvedBillings.length > 1 ? "s" : ""} — {fmt(approvedTotal)}
+                {approvedBillings.length} medição{approvedBillings.length > 1 ? "ões" : ""} pronta{approvedBillings.length > 1 ? "s" : ""} para fatura — {fmt(approvedTotal)}
               </p>
-              <p className="text-xs text-indigo-600">Pronta{approvedBillings.length > 1 ? "s" : ""} para geracao de fatura</p>
+              <p className="text-xs text-indigo-600">Clique em "Gerar Fatura" para emitir o boleto + NFS-e dos itens aprovados</p>
             </div>
           </div>
           <button
@@ -948,39 +948,44 @@ export default function RelatorioFaturamentoPage() {
         const sumTotal = (arr: typeof rowsData) => arr.reduce((s, r) => s + r.totalGeral, 0);
         const aprovadasTotal = sumTotal(aprovadasRows);
         const pendentesTotal = sumTotal(pendentesRows);
+        const canceladasTotal = sumTotal(canceladasRows);
+        const totalFaturamento = aprovadasTotal + canceladasTotal + pendentesTotal;
+        const totalCount = aprovadasRows.length + canceladasRows.length + pendentesRows.length;
+        const tooltip = "O Total p/ Faturamento considera apenas OS Aprovadas e Canceladas (com acionamento + extras). Recusadas e A Verificar não entram na soma.";
         return (
         <div className="mt-4 no-print bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" data-testid="stat-aprovadas">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5" data-testid="stat-aprovadas" title="Soma no Total p/ Faturamento">
               <p className="text-[9px] font-black uppercase tracking-wider text-emerald-700">Aprovadas</p>
               <p className="text-lg font-black text-emerald-900 font-mono">{aprovadasRows.length}</p>
               <p className="text-[10px] font-bold text-emerald-800 font-mono">{fmt(aprovadasTotal)}</p>
             </div>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5" data-testid="stat-pendentes" title="Não entra no Total — precisa ser revisada antes">
               <p className="text-[9px] font-black uppercase tracking-wider text-yellow-700">A Verificar</p>
               <p className="text-lg font-black text-yellow-900 font-mono">{pendentesRows.length}</p>
               <p className="text-[10px] font-bold text-yellow-800 font-mono">{fmt(pendentesTotal)}</p>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="stat-canceladas">
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5" data-testid="stat-canceladas" title="Cliente cancelou após acionamento — cobra acionamento + extras">
               <p className="text-[9px] font-black uppercase tracking-wider text-red-700">Canceladas</p>
               <p className="text-lg font-black text-red-900 font-mono">{canceladasRows.length}</p>
-              <p className="text-[10px] font-bold text-red-800 font-mono">R$ 0,00</p>
+              <p className="text-[10px] font-bold text-red-800 font-mono">{fmt(canceladasTotal)}</p>
             </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5" data-testid="stat-recusadas">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5" data-testid="stat-recusadas" title="Operacional não atendeu — não entra no faturamento">
               <p className="text-[9px] font-black uppercase tracking-wider text-orange-700">Recusadas</p>
               <p className="text-lg font-black text-orange-900 font-mono">{recusadasRows.length}</p>
               <p className="text-[10px] font-bold text-orange-800 font-mono">R$ 0,00</p>
             </div>
-            <div className="bg-gray-900 border border-gray-900 rounded-lg px-3 py-2.5" data-testid="stat-total">
-              <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total Geral</p>
-              <p className="text-lg font-black text-white font-mono">{aprovadasRows.length + canceladasRows.length + pendentesRows.length} OS</p>
-              <p className="text-[10px] font-bold text-white font-mono">{fmt(aprovadasTotal + pendentesTotal)}</p>
+            <div className="bg-gray-900 border border-gray-900 rounded-lg px-3 py-2.5" data-testid="stat-total" title={tooltip}>
+              <p className="text-[9px] font-black uppercase tracking-wider text-gray-300">Total p/ Faturamento</p>
+              <p className="text-lg font-black text-white font-mono">{totalCount} OS</p>
+              <p className="text-[10px] font-bold text-white font-mono">{fmt(totalFaturamento)}</p>
+              <p className="text-[8px] font-medium text-gray-400 mt-0.5">Aprovadas + Canceladas</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3" title={tooltip}>
             <Calculator size={18} className="text-gray-700" />
             <span className="text-sm font-bold text-gray-700">
-              {aprovadasRows.length + canceladasRows.length + pendentesRows.length} OS &middot; Total: <span className="text-black font-black">{fmt(aprovadasTotal + pendentesTotal)}</span>
+              {totalCount} OS processadas &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
               {recusadasRows.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">+ {recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
               )}
