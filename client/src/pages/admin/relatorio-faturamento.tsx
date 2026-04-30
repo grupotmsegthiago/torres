@@ -499,7 +499,11 @@ export default function RelatorioFaturamentoPage() {
     let totalHours = 0;
     let totalMissoes = 0;
 
-    for (const r of rowsData) {
+    // Dashboard exclui RECUSADAS (operacional não atendeu, R$ 0, não conta).
+    // Conta apenas APROVADAS + CANCELADAS pelo cliente (que cobram acionamento+extras).
+    const dashRows = rowsData.filter(r => r.osStatus !== "recusada");
+
+    for (const r of dashRows) {
       totalKm += r.kmTotal;
       totalHours += r.horasMissaoNum;
       totalMissoes += 1;
