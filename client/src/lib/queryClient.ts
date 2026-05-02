@@ -413,6 +413,78 @@ if (typeof window !== "undefined") {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "weapon_kits" }, () => {
         _invalidateLocal("service-order");
+        queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "weapons" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/weapon-kits"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "weapon_assignments" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/weapons"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/weapon-assignments"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "fixed_costs" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/balanco-gerencial"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/financial/resumo"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "agent_daily_allowances" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_salaries" }, () => {
+        _invalidateLocal("employee");
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_documents" }, () => {
+        _invalidateLocal("employee");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("documents") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_maintenance" }, () => {
+        _invalidateLocal("vehicle");
+        queryClient.invalidateQueries({ queryKey: ["/api/vehicle-maintenance"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_assignments" }, () => {
+        _invalidateLocal("vehicle");
+        queryClient.invalidateQueries({ queryKey: ["/api/vehicle-assignments"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_vehicles" }, () => {
+        _invalidateLocal("client");
+        queryClient.invalidateQueries({ queryKey: ["/api/client-vehicles"] });
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("/vehicles") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_forwards" }, () => {
+        _invalidateLocal("client");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("forwards") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "mission_photos" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("/photos") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "trips" }, () => {
+        _invalidateLocal("vehicle");
+        queryClient.invalidateQueries({ queryKey: ["/api/trips"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "gerenciadoras" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/gerenciadoras"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "absences" }, () => {
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("absences") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "fines" }, () => {
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.includes("fines") });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "salary_discounts" }, () => {
+        _invalidateLocal("hr");
+        queryClient.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).includes("salary") });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "system_settings" }, () => {
         queryClient.invalidateQueries({ queryKey: ["/api/system-settings"] });
