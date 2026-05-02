@@ -413,6 +413,60 @@ export const insertTicketlogPostoSchema = createInsertSchema(ticketlogPostos).om
 export type InsertTicketlogPosto = z.infer<typeof insertTicketlogPostoSchema>;
 export type TicketlogPosto = typeof ticketlogPostos.$inferSelect;
 
+// ─── Control iD: aparelho biométrico (iDFace/iDClass/REP-C via Cloud ou LAN) ───
+export const controlIdDevices = pgTable("control_id_devices", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull(),
+  tipo: text("tipo").default("idface_cloud"), // idface_cloud | idface_lan | rep_c | idclass
+  baseUrl: text("base_url").notNull(),         // ex: https://api.controlid.com.br
+  login: text("login").notNull(),
+  passwordEnc: text("password_enc").notNull(), // AES-256-GCM (base64)
+  sessionToken: text("session_token"),         // cache do token atual
+  sessionExpires: timestamp("session_expires"),
+  ativo: boolean("ativo").default(true),
+  notas: text("notas"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: text("last_sync_status"),    // ok | erro | pendente
+  lastSyncMessage: text("last_sync_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertControlIdDeviceSchema = createInsertSchema(controlIdDevices).omit({ id: true, createdAt: true, sessionToken: true, sessionExpires: true, lastSyncAt: true, lastSyncStatus: true, lastSyncMessage: true });
+export type InsertControlIdDevice = z.infer<typeof insertControlIdDeviceSchema>;
+export type ControlIdDevice = typeof controlIdDevices.$inferSelect;
+
+// Mapping: funcionário ERP <-> usuário cadastrado no aparelho
+export const controlIdUsersMap = pgTable("control_id_users_map", {
+  id: serial("id").primaryKey(),
+  deviceId: integer("device_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  controlIdUserId: text("control_id_user_id").notNull(), // ID do usuário no aparelho
+  controlIdUserName: text("control_id_user_name"),
+  matricula: text("matricula"),                          // matrícula CLT (PIS, etc)
+  ativo: boolean("ativo").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertControlIdUserMapSchema = createInsertSchema(controlIdUsersMap).omit({ id: true, createdAt: true });
+export type InsertControlIdUserMap = z.infer<typeof insertControlIdUserMapSchema>;
+export type ControlIdUserMap = typeof controlIdUsersMap.$inferSelect;
+
+// Batidas brutas puxadas do aparelho
+export const controlIdPunches = pgTable("control_id_punches", {
+  id: serial("id").primaryKey(),
+  deviceId: integer("device_id").notNull(),
+  controlIdUserId: text("control_id_user_id").notNull(),
+  employeeId: integer("employee_id"),                    // null se não mapeado
+  punchAt: timestamp("punch_at").notNull(),              // horário da batida (UTC)
+  direction: text("direction"),                          // in | out | unknown
+  source: text("source"),                                // facial | rfid | digital | senha
+  rawEvent: jsonb("raw_event"),                          // payload bruto da API
+  externalId: text("external_id").notNull(),             // ID do evento na Control iD (pra dedup)
+  processed: boolean("processed").default(false),        // já consolidado em folha?
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertControlIdPunchSchema = createInsertSchema(controlIdPunches).omit({ id: true, createdAt: true });
+export type InsertControlIdPunch = z.infer<typeof insertControlIdPunchSchema>;
+export type ControlIdPunch = typeof controlIdPunches.$inferSelect;
+
 export const timesheets = pgTable("timesheets", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull(),

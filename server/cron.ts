@@ -175,6 +175,21 @@ export function initCronJobs() {
     });
 
     // ============================================================
+    // CRON: Control iD — puxa batidas dos aparelhos a cada 5 min
+    // ============================================================
+    cron.schedule("*/5 * * * *", async () => {
+      try {
+        const { syncAllDevices } = await import("./control-id");
+        const r = await syncAllDevices();
+        if (r.devices > 0 && r.totalSaved > 0) {
+          log(`CRON ControlID: ${r.devices} aparelho(s), ${r.totalSaved} batida(s) nova(s)`, "cron");
+        }
+      } catch (e: any) {
+        log(`CRON ControlID: Erro: ${e.message}`, "cron");
+      }
+    });
+
+    // ============================================================
     // CRON: Reconciliação Banco Inter — extrato dos últimos 7 dias
     // a cada 30 min, casa entradas com invoices PENDING
     // ============================================================

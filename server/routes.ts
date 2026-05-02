@@ -147,6 +147,51 @@ async function ensureFinancialOriginColumns() {
      )`,
     "CREATE INDEX IF NOT EXISTS idx_ticketlog_postos_nome ON ticketlog_postos(LOWER(nome_posto))",
     "CREATE INDEX IF NOT EXISTS idx_vfueling_tl_status ON vehicle_fueling(ticketlog_status)",
+    // ─── Control iD (iDFace MAX via Cloud) ───
+    `CREATE TABLE IF NOT EXISTS control_id_devices (
+       id SERIAL PRIMARY KEY,
+       nome TEXT NOT NULL,
+       tipo TEXT DEFAULT 'idface_cloud',
+       base_url TEXT NOT NULL,
+       login TEXT NOT NULL,
+       password_enc TEXT NOT NULL,
+       session_token TEXT,
+       session_expires TIMESTAMP,
+       ativo BOOLEAN DEFAULT TRUE,
+       notas TEXT,
+       last_sync_at TIMESTAMP,
+       last_sync_status TEXT,
+       last_sync_message TEXT,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    `CREATE TABLE IF NOT EXISTS control_id_users_map (
+       id SERIAL PRIMARY KEY,
+       device_id INTEGER NOT NULL,
+       employee_id INTEGER NOT NULL,
+       control_id_user_id TEXT NOT NULL,
+       control_id_user_name TEXT,
+       matricula TEXT,
+       ativo BOOLEAN DEFAULT TRUE,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_cidmap_device_user ON control_id_users_map(device_id, control_id_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cidmap_employee ON control_id_users_map(employee_id)",
+    `CREATE TABLE IF NOT EXISTS control_id_punches (
+       id SERIAL PRIMARY KEY,
+       device_id INTEGER NOT NULL,
+       control_id_user_id TEXT NOT NULL,
+       employee_id INTEGER,
+       punch_at TIMESTAMP NOT NULL,
+       direction TEXT,
+       source TEXT,
+       raw_event JSONB,
+       external_id TEXT NOT NULL,
+       processed BOOLEAN DEFAULT FALSE,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_cidpunch_device_external ON control_id_punches(device_id, external_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cidpunch_employee_time ON control_id_punches(employee_id, punch_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_cidpunch_device_time ON control_id_punches(device_id, punch_at DESC)",
   ];
 
   let ok = false;
@@ -434,6 +479,7 @@ async function ensureSystemSettingsTable() {
   import { registerHolidaysRoutes } from "./routes/holidays";
   import { registerDailyAllowancesRoutes } from "./routes/daily-allowances";
   import { registerInterRoutes } from "./routes/inter";
+  import { registerControlIdRoutes } from "./routes/control-id";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -879,6 +925,7 @@ async function ensureSystemSettingsTable() {
     registerHolidaysRoutes(app);
     registerInterRoutes(app);
     registerDailyAllowancesRoutes(app);
+    registerControlIdRoutes(app);
 
   
   // ===== WEAPONS =====
