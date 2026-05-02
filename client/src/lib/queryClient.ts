@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
-const CACHE_VERSION = "20260408-tz-fix-v3";
+const CACHE_VERSION = "20260502-realtime-expand-v1";
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("torres_cache_version");
   if (stored && stored !== CACHE_VERSION) {

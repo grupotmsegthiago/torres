@@ -854,6 +854,18 @@ const REALTIME_TABLES = [
   "service_orders", "mission_updates", "mission_acceptances",
   "chat_conversations", "chat_messages", "chat_presence",
   "mission_positions", "agent_locations",
+  "mission_costs", "financial_transactions", "vehicle_fueling",
+  "escort_billings", "billing_alerts", "invoices",
+  "clients", "employees", "vehicles",
+  "ponto_registros", "timesheets", "holerites",
+  "users", "weapon_kits", "system_settings",
+  "weapons", "weapon_assignments",
+  "fixed_costs", "holidays", "agent_daily_allowances",
+  "employee_salaries", "employee_documents",
+  "vehicle_maintenance", "vehicle_assignments",
+  "client_vehicles", "client_forwards",
+  "mission_photos", "trips", "gerenciadoras",
+  "absences", "fines", "salary_discounts",
 ];
 
 async function ensureRealtimePublication() {

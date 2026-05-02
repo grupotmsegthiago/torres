@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { supabaseAdmin } from "../supabase";
-import { requireAuth, requireAdminRole } from "./_helpers";
+import { requireAuth, requireAdminRole } from "../auth";
 import { z } from "zod";
 
 /**
