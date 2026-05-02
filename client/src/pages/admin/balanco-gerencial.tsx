@@ -564,55 +564,105 @@ export default function BalancoGerencialPage() {
               </Card>
             );
           })()}
-          <Card className="p-4 border-neutral-200" data-testid="card-custos">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                <ArrowDownRight size={16} className="text-red-700" />
+          {(() => {
+            const operacional =
+              (totals.pag || 0) +
+              (totals.desp_combustivel || 0) +
+              (totals.desp_pedagio || 0) +
+              (totals.desp_manutencao || 0) +
+              (totals.desp_outras || 0);
+            const rhUsado = totals.folhaConsiderada || 0;
+            const fixos = totals.custosFixosRateados || 0;
+            const folhaMaior = (totals.desp_folha || 0) >= (totals.provisaoRH || 0);
+            const Row = ({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) => (
+              <div className="flex justify-between items-baseline">
+                <span className={`text-xs ${muted ? "text-neutral-500" : "text-neutral-700"}`}>{label}</span>
+                <span className={`text-xs font-mono font-semibold ${muted ? "text-neutral-500" : "text-neutral-800"}`}>{value}</span>
               </div>
-              <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
-            </div>
-            <p className="text-xl font-black text-red-700 font-mono">{fmt(totals.custoTotal)}</p>
-            <div className="text-xs font-bold mt-1 space-y-1">
-              {(totals.pag > 0 || totals.desp > 0) && (
-                <div className="space-y-0.5">
-                  <p className="text-[10px] text-neutral-400 uppercase tracking-wide">Custos Reais</p>
-                  {totals.pag > 0 && <p className="text-neutral-600">VRP: {fmt(totals.pag)}</p>}
-                  {totals.desp_combustivel > 0 && <p className="text-neutral-600">Combustível: {fmt(totals.desp_combustivel)}</p>}
-                  {totals.desp_pedagio > 0 && <p className="text-neutral-600">Pedágio/Missão: {fmt(totals.desp_pedagio)}</p>}
-                  {totals.desp_manutencao > 0 && <p className="text-neutral-600">Manutenção: {fmt(totals.desp_manutencao)}</p>}
-                  {totals.desp_folha > 0 && <p className="text-neutral-600" title="Folha lançada no Financeiro (origin_type=payroll)">Folha realizada: {fmt(totals.desp_folha)}</p>}
-                  {totals.desp_outras > 0 && <p className="text-neutral-600">Outras: {fmt(totals.desp_outras)}</p>}
+            );
+            return (
+              <Card className="p-4 border-neutral-200" data-testid="card-custos">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                    <ArrowDownRight size={16} className="text-red-700" />
+                  </div>
+                  <span className="text-xs font-black text-neutral-400 uppercase">Custos Totais</span>
                 </div>
-              )}
-              {totals.provisaoRH > 0 && (
-                <div className="space-y-0.5 border-t border-neutral-100 pt-1">
-                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Provisão RH (CCT)</p>
-                  <p className="text-amber-700" title="Estimativa baseada na CCT vigente — usada quando a folha realizada está abaixo">
-                    Estimada ({activeAgentCount} ag. × {daysInPeriod}d): {fmt(totals.provisaoRH)}
-                  </p>
-                  <p className="text-[10px] text-neutral-500" title="O Custo Total considera o MAIOR entre folha realizada e provisão CCT, evitando contar duas vezes">
-                    RH considerado: <span className="font-mono">{fmt(totals.folhaConsiderada)}</span>
-                    {totals.desp_folha > 0 && totals.provisaoRH > 0 ? ` (max realizada × provisão)` : ""}
-                  </p>
-                </div>
-              )}
-              {totals.custosFixosRateados > 0 && (
-                <div className="space-y-0.5 border-t border-neutral-100 pt-1">
-                  <p className="text-[10px] text-blue-600 uppercase tracking-wide">Custos Fixos (rateados)</p>
-                  <p
-                    className="text-blue-700"
-                    title={`Custo de Estar Aberto: ${fmt(totals.custosFixosMensal)}/mês ÷ 30 × ${daysInPeriod} dias`}
-                  >
-                    Aluguel/Internet/Softwares: {fmt(totals.custosFixosRateados)}
-                  </p>
-                  <p className="text-[10px] text-neutral-500">
-                    Base: {fmt(totals.custosFixosMensal)}/mês ({fmt(totals.custosFixosMensal / 30)}/dia)
-                  </p>
-                </div>
-              )}
-              {totals.custoTotal === 0 && <p className="text-neutral-500">Sem despesas no período</p>}
-            </div>
-          </Card>
+                <p className="text-xl font-black text-red-700 font-mono" data-testid="text-custo-total">{fmt(totals.custoTotal)}</p>
+
+                {totals.custoTotal === 0 && (
+                  <p className="text-xs text-neutral-500 mt-2">Sem despesas no período</p>
+                )}
+
+                {operacional > 0 && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">Operacional</span>
+                      <span className="text-xs font-mono font-bold text-red-700">{fmt(operacional)}</span>
+                    </div>
+                    <div className="space-y-0.5 pl-2 border-l-2 border-red-100">
+                      {totals.pag > 0 && <Row label="VRP (agentes)" value={fmt(totals.pag)} muted />}
+                      {totals.desp_combustivel > 0 && <Row label="Combustível" value={fmt(totals.desp_combustivel)} muted />}
+                      {totals.desp_pedagio > 0 && <Row label="Pedágio" value={fmt(totals.desp_pedagio)} muted />}
+                      {totals.desp_manutencao > 0 && <Row label="Manutenção" value={fmt(totals.desp_manutencao)} muted />}
+                      {totals.desp_outras > 0 && <Row label="Outras" value={fmt(totals.desp_outras)} muted />}
+                    </div>
+                  </div>
+                )}
+
+                {rhUsado > 0 && (
+                  <div className="mt-3">
+                    <div
+                      className="flex items-center justify-between mb-1"
+                      title="Considera o MAIOR entre folha realizada e provisão CCT, evitando contar duas vezes"
+                    >
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (folha + encargos)</span>
+                      <span className="text-xs font-mono font-bold text-amber-700">{fmt(rhUsado)}</span>
+                    </div>
+                    <div className="space-y-0.5 pl-2 border-l-2 border-amber-100">
+                      {totals.desp_folha > 0 && (
+                        <Row
+                          label={`Realizada${folhaMaior ? " ✓" : ""}`}
+                          value={fmt(totals.desp_folha)}
+                          muted={!folhaMaior}
+                        />
+                      )}
+                      {totals.provisaoRH > 0 && (
+                        <Row
+                          label={`Provisão CCT (${activeAgentCount} ag. × ${daysInPeriod}d)${!folhaMaior ? " ✓" : ""}`}
+                          value={fmt(totals.provisaoRH)}
+                          muted={folhaMaior}
+                        />
+                      )}
+                      <p className="text-[10px] text-neutral-400 italic mt-0.5">✓ valor usado no cálculo</p>
+                    </div>
+                  </div>
+                )}
+
+                {fixos > 0 && (
+                  <div className="mt-3">
+                    <div
+                      className="flex items-center justify-between mb-1"
+                      title={`Custo de Estar Aberto: ${fmt(totals.custosFixosMensal)}/mês ÷ 30 × ${daysInPeriod} dias`}
+                    >
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Estrutura (rateado)</span>
+                      <span className="text-xs font-mono font-bold text-blue-700">{fmt(fixos)}</span>
+                    </div>
+                    <div className="space-y-0.5 pl-2 border-l-2 border-blue-100">
+                      <Row
+                        label={`${daysInPeriod} dia(s) × ${fmt(totals.custosFixosMensal / 30)}/dia`}
+                        value={fmt(fixos)}
+                        muted
+                      />
+                      <p className="text-[10px] text-neutral-400 italic mt-0.5">
+                        Base: {fmt(totals.custosFixosMensal)}/mês
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
           <Card className="p-4 border-neutral-200" data-testid="card-lucro">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
