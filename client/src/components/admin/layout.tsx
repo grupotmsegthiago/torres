@@ -308,7 +308,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
                           }`}
                           data-testid={`button-menu-${item.label.toLowerCase().replace(/\s/g, '-')}`}
                         >
-                          <item.icon className={`w-4 h-4 ${item.iconColor || section.iconColor}`} />
+                          <item.icon className={`w-4 h-4 ${section.iconColor}`} />
                           <span className="flex-1 text-left">{item.label}</span>
                           {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                         </button>
@@ -325,7 +325,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
                                   }`}
                                   data-testid={`link-${child.path!.split("/").pop()}`}
                                 >
-                                  <child.icon className={`w-3.5 h-3.5 ${child.iconColor || section.iconColor}`} />
+                                  <child.icon className={`w-3.5 h-3.5 ${section.iconColor}`} />
                                   {child.label}
                                 </span>
                               </Link>
@@ -346,7 +346,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
                         }`}
                         data-testid={`link-${item.path!.split("/").pop()}`}
                       >
-                        <item.icon className={`w-4 h-4 ${item.iconColor || section.iconColor}`} />
+                        <item.icon className={`w-4 h-4 ${section.iconColor}`} />
                         {item.label}
                       </span>
                     </Link>
