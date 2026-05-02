@@ -403,7 +403,7 @@ function MappingTab() {
 function PunchesTab() {
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const empMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
-  const [employeeId, setEmployeeId] = useState<string>("");
+  const [employeeId, setEmployeeId] = useState<string>("__all__");
   const today = new Date();
   const [from, setFrom] = useState(new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10));
   const [to, setTo] = useState(today.toISOString().slice(0, 10));
@@ -412,7 +412,7 @@ function PunchesTab() {
     queryKey: ["/api/control-id/punches", employeeId, from, to],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (employeeId) params.set("employeeId", employeeId);
+      if (employeeId && employeeId !== "__all__") params.set("employeeId", employeeId);
       if (from) params.set("from", new Date(from).toISOString());
       if (to) { const d = new Date(to); d.setHours(23, 59, 59); params.set("to", d.toISOString()); }
       params.set("limit", "300");
@@ -428,7 +428,7 @@ function PunchesTab() {
         <Select value={employeeId} onValueChange={setEmployeeId}>
           <SelectTrigger className="w-56 h-8 text-sm" data-testid="filter-employee"><SelectValue placeholder="Todos os funcionários" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos os funcionários</SelectItem>
+            <SelectItem value="__all__">Todos os funcionários</SelectItem>
             {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
