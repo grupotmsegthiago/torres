@@ -159,6 +159,22 @@ export function initCronJobs() {
     });
 
     // ============================================================
+    // CRON: Validação TicketLog — re-tenta fuelings pendentes a cada 20 min
+    // (TicketLog pode demorar minutos pra processar a transação após o agente
+    //  passar o cartão; tentamos novamente até bater)
+    // ============================================================
+    cron.schedule("*/20 * * * *", async () => {
+      try {
+        const { isTicketLogConfigured, retryPendingValidations } = await import("./ticketlog");
+        if (!isTicketLogConfigured()) return;
+        const r = await retryPendingValidations(5);
+        if (r.tried > 0) log(`CRON TicketLog: ${r.tried} tentativa(s) — ${r.ok} OK, ${r.divergent} divergente, ${r.failed} falhou`, "cron");
+      } catch (e: any) {
+        log(`CRON TicketLog: Erro: ${e.message}`, "cron");
+      }
+    });
+
+    // ============================================================
     // CRON: Reconciliação Banco Inter — extrato dos últimos 7 dias
     // a cada 30 min, casa entradas com invoices PENDING
     // ============================================================

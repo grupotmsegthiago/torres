@@ -373,6 +373,10 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
       runAiValidation(data.id).catch(err => console.error(`[ai-validate] Background validation failed for fueling #${data.id}:`, err.message));
     }
 
+    if (data && data.id && ticketlog.isTicketLogConfigured()) {
+      ticketlog.validateFueling(data.id).catch(err => console.error(`[TicketLog] auto-validate fueling #${data.id} failed:`, err.message));
+    }
+
     res.status(201).json(data);
   });
 
@@ -469,6 +473,95 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
 
   app.get("/api/ticketlog/status", requireAuth, async (_req, res) => {
     res.json({ configured: ticketlog.isTicketLogConfigured(), env: process.env.TICKETLOG_ENV || "producao" });
+  });
+
+  // === DE/PARA: Valida 1 abastecimento contra TicketLog (manual ou re-tentativa) ===
+  app.post("/api/fueling/:id/validate-ticketlog", requireAuth, async (req, res) => {
+    try {
+      const fuelingId = Number(req.params.id);
+      if (!fuelingId) return res.status(400).json({ message: "ID inválido" });
+      const result = await ticketlog.validateFueling(fuelingId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === Polling-friendly: status atual da validação TicketLog ===
+  app.get("/api/fueling/:id/ticketlog-status", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { data } = await supabaseAdmin
+        .from("vehicle_fueling")
+        .select("id, ticketlog_status, ticketlog_message, ticketlog_valor_tl, ticketlog_diff_valor, ticketlog_validated_at, ticketlog_autorizacao, ticketlog_estab_nome, total_cost, station")
+        .eq("id", id).maybeSingle();
+      if (!data) return res.status(404).json({ message: "Não encontrado" });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === Revalidação em massa (admin) ===
+  app.post("/api/fueling/validate-ticketlog/batch", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { ids, days } = req.body as { ids?: number[]; days?: number };
+      if (Array.isArray(ids) && ids.length > 0) {
+        const results: any[] = [];
+        for (const id of ids) {
+          const r = await ticketlog.validateFueling(Number(id)).catch((e: any) => ({ status: "erro", message: e.message }));
+          results.push({ id, ...r });
+          await new Promise(r2 => setTimeout(r2, 200));
+        }
+        return res.json({ results });
+      }
+      const r = await ticketlog.retryPendingValidations(Number(days) || 5);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === CRUD Postos TicketLog (mapping nome posto → código estabelecimento) ===
+  app.get("/api/ticketlog/postos", requireAuth, async (_req, res) => {
+    const { data } = await supabaseAdmin.from("ticketlog_postos").select("*").order("nome_posto", { ascending: true });
+    res.json(data || []);
+  });
+
+  app.post("/api/ticketlog/postos", requireAuth, requireAdminRole, async (req, res) => {
+    const { nomePosto, codigoEstabelecimento, endereco, cidade, ativo, notas } = req.body;
+    if (!nomePosto || !codigoEstabelecimento) return res.status(400).json({ message: "nomePosto e codigoEstabelecimento são obrigatórios" });
+    const { data, error } = await supabaseAdmin.from("ticketlog_postos").insert({
+      nome_posto: nomePosto,
+      codigo_estabelecimento: String(codigoEstabelecimento),
+      endereco: endereco || null,
+      cidade: cidade || null,
+      ativo: ativo !== false,
+      notas: notas || null,
+    }).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.status(201).json(data);
+  });
+
+  app.patch("/api/ticketlog/postos/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const id = Number(req.params.id);
+    const { nomePosto, codigoEstabelecimento, endereco, cidade, ativo, notas } = req.body;
+    const upd: any = {};
+    if (nomePosto !== undefined) upd.nome_posto = nomePosto;
+    if (codigoEstabelecimento !== undefined) upd.codigo_estabelecimento = String(codigoEstabelecimento);
+    if (endereco !== undefined) upd.endereco = endereco;
+    if (cidade !== undefined) upd.cidade = cidade;
+    if (ativo !== undefined) upd.ativo = ativo;
+    if (notas !== undefined) upd.notas = notas;
+    const { data, error } = await supabaseAdmin.from("ticketlog_postos").update(upd).eq("id", id).select().single();
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data);
+  });
+
+  app.delete("/api/ticketlog/postos/:id", requireAuth, requireAdminRole, async (req, res) => {
+    const { error } = await supabaseAdmin.from("ticketlog_postos").delete().eq("id", Number(req.params.id));
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ ok: true });
   });
 
   app.post("/api/ticketlog/buscar-autorizacao", requireAuth, async (req, res) => {

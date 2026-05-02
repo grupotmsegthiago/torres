@@ -21,6 +21,58 @@ const fuelLabel: Record<string, string> = {
 type SortField = "date" | "plate" | "cost" | "station";
 type SortDir = "asc" | "desc";
 
+function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const status = String((fueling as any).ticketlogStatus || "");
+  const msg = String((fueling as any).ticketlogMessage || "");
+  const valTl = (fueling as any).ticketlogValorTl;
+  const diff = (fueling as any).ticketlogDiffValor;
+
+  const revalidate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const r = await authFetch(`/api/fueling/${fueling.id}/validate-ticketlog`, { method: "POST" });
+      const d = await r.json();
+      toast({ title: d.status === "ok" ? "OK!" : "Resultado", description: d.message || "Validação concluída" });
+      queryClient.invalidateQueries({ queryKey: ["/api/fueling"] });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally { setBusy(false); }
+  };
+
+  let badge: React.ReactNode = null;
+  if (status === "ok") {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> OK</span>;
+  } else if (status === "divergencia_pequena" || status === "divergencia_grande") {
+    badge = (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700" title={msg}>
+        <AlertTriangle className="w-3 h-3" /> Diverg. {diff != null ? `R$ ${Math.abs(Number(diff)).toFixed(2)}` : ""}
+      </span>
+    );
+  } else if (status === "nao_encontrado") {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700" title={msg}><XCircle className="w-3 h-3" /> Não achou</span>;
+  } else if (status === "sem_codigo_posto") {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700" title="Cadastre o posto em /admin/ticketlog-postos"><AlertTriangle className="w-3 h-3" /> S/ posto</span>;
+  } else if (status === "sem_credenciais") {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500" title="Configure TICKETLOG_USER/PASS">N/D</span>;
+  } else if (status === "erro") {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-500" title={msg}><AlertTriangle className="w-3 h-3" /> Erro</span>;
+  } else {
+    badge = <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500"><Loader2 className="w-3 h-3 animate-spin" /> Pend.</span>;
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      {badge}
+      <Button variant="ghost" size="icon" className="h-5 w-5 text-neutral-400 hover:text-blue-600" disabled={busy} onClick={revalidate} title="Revalidar agora" data-testid={`button-revalidate-tl-${fueling.id}`}>
+        {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+      </Button>
+    </div>
+  );
+}
+
 function formatDateBR(d: string | null) {
   if (!d) return "-";
   const dt = new Date(d + "T12:00:00");
@@ -277,6 +329,7 @@ export default function RelatorioAbastecimentoPage() {
                   <th className="p-2 text-left font-medium text-neutral-600 cursor-pointer select-none" onClick={() => toggleSort("station")}>
                     <span className="flex items-center gap-1">Posto <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
+                  <th className="p-2 text-center font-medium text-neutral-600">TicketLog</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Ações</th>
                 </tr>
               </thead>
@@ -350,6 +403,9 @@ export default function RelatorioAbastecimentoPage() {
                       </td>
                       <td className="p-2 text-sm text-neutral-600 max-w-[140px] truncate" title={f.station || ""}>
                         {f.station || "-"}
+                      </td>
+                      <td className="p-2 text-center">
+                        <TicketLogBadge fueling={f} />
                       </td>
                       <td className="p-2 text-center">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => setDetailId(f.id)} data-testid={`button-detail-${f.id}`}>

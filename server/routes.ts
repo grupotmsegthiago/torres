@@ -128,6 +128,25 @@ async function ensureFinancialOriginColumns() {
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS recommendation_followed BOOLEAN",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ai_validation_status TEXT",
     "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ai_validation_result JSONB",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_valor_tl DECIMAL(10,2)",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_litros_tl DECIMAL(10,2)",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_diff_valor DECIMAL(10,2)",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_validated_at TIMESTAMP",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_message TEXT",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_estab_nome TEXT",
+    "ALTER TABLE vehicle_fueling ADD COLUMN IF NOT EXISTS ticketlog_attempts INTEGER DEFAULT 0",
+    `CREATE TABLE IF NOT EXISTS ticketlog_postos (
+       id SERIAL PRIMARY KEY,
+       nome_posto TEXT NOT NULL,
+       codigo_estabelecimento TEXT NOT NULL,
+       endereco TEXT,
+       cidade TEXT,
+       ativo BOOLEAN DEFAULT TRUE,
+       notas TEXT,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_ticketlog_postos_nome ON ticketlog_postos(LOWER(nome_posto))",
+    "CREATE INDEX IF NOT EXISTS idx_vfueling_tl_status ON vehicle_fueling(ticketlog_status)",
   ];
 
   let ok = false;

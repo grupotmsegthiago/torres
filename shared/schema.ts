@@ -383,6 +383,13 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
   ticketlogStatus: text("ticketlog_status"),
   ticketlogNfeData: jsonb("ticketlog_nfe_data"),
   ticketlogCodigoEstab: text("ticketlog_codigo_estab"),
+  ticketlogValorTl: decimal("ticketlog_valor_tl", { precision: 10, scale: 2 }),
+  ticketlogLitrosTl: decimal("ticketlog_litros_tl", { precision: 10, scale: 2 }),
+  ticketlogDiffValor: decimal("ticketlog_diff_valor", { precision: 10, scale: 2 }),
+  ticketlogValidatedAt: timestamp("ticketlog_validated_at"),
+  ticketlogMessage: text("ticketlog_message"),
+  ticketlogEstabNome: text("ticketlog_estab_nome"),
+  ticketlogAttempts: integer("ticketlog_attempts").default(0),
   aiValidationStatus: text("ai_validation_status"),
   aiValidationResult: jsonb("ai_validation_result"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -391,6 +398,20 @@ export const vehicleFueling = pgTable("vehicle_fueling", {
 export const insertVehicleFuelingSchema = createInsertSchema(vehicleFueling).omit({ id: true, createdAt: true });
 export type InsertVehicleFueling = z.infer<typeof insertVehicleFuelingSchema>;
 export type VehicleFueling = typeof vehicleFueling.$inferSelect;
+
+export const ticketlogPostos = pgTable("ticketlog_postos", {
+  id: serial("id").primaryKey(),
+  nomePosto: text("nome_posto").notNull(),
+  codigoEstabelecimento: text("codigo_estabelecimento").notNull(),
+  endereco: text("endereco"),
+  cidade: text("cidade"),
+  ativo: boolean("ativo").default(true),
+  notas: text("notas"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertTicketlogPostoSchema = createInsertSchema(ticketlogPostos).omit({ id: true, createdAt: true });
+export type InsertTicketlogPosto = z.infer<typeof insertTicketlogPostoSchema>;
+export type TicketlogPosto = typeof ticketlogPostos.$inferSelect;
 
 export const timesheets = pgTable("timesheets", {
   id: serial("id").primaryKey(),

@@ -51,6 +51,9 @@ export default function MobileAbastecimentoPage() {
   }, [gasolinaPrice, etanolPrice]);
   const [oilAlert, setOilAlert] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [createdFuelingId, setCreatedFuelingId] = useState<number | null>(null);
+  const [tlStatus, setTlStatus] = useState<any>(null);
+  const [tlPolling, setTlPolling] = useState(false);
   const [geoAddress, setGeoAddress] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [searchPlate, setSearchPlate] = useState("");
@@ -135,6 +138,42 @@ export default function MobileAbastecimentoPage() {
     stopCamera();
   }, [captureMode, stopCamera]);
 
+  const startTicketLogPolling = useCallback(async (id: number) => {
+    setTlPolling(true);
+    setTlStatus(null);
+    const maxAttempts = 12; // ~ 60s
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, i === 0 ? 2000 : 5000));
+      try {
+        const r = await authFetch(`/api/fueling/${id}/ticketlog-status`);
+        if (r.ok) {
+          const d = await r.json();
+          setTlStatus(d);
+          // status terminais — para o polling
+          if (["ok", "divergencia_pequena", "divergencia_grande", "sem_codigo_posto", "sem_credenciais"].includes(String(d.ticketlog_status))) {
+            setTlPolling(false);
+            return;
+          }
+        }
+      } catch {}
+    }
+    setTlPolling(false);
+  }, []);
+
+  const retryTicketLog = useCallback(async () => {
+    if (!createdFuelingId) return;
+    setTlPolling(true);
+    setTlStatus(null);
+    try {
+      const r = await authFetch(`/api/fueling/${createdFuelingId}/validate-ticketlog`, { method: "POST" });
+      const d = await r.json();
+      // re-poll pra pegar update
+      startTicketLogPolling(createdFuelingId);
+    } catch {
+      setTlPolling(false);
+    }
+  }, [createdFuelingId, startTicketLogPolling]);
+
   const submitMutation = useMutation({
     mutationFn: async () => {
       const coords = await requestFreshGeo();
@@ -169,11 +208,14 @@ export default function MobileAbastecimentoPage() {
     onSuccess: (data) => {
       setSubmitted(true);
       if (data.oilAlert) setOilAlert(data.oilAlert);
+      const fuelingId = data?.fueling?.id || null;
+      setCreatedFuelingId(fuelingId);
       queryClient.invalidateQueries({ queryKey: ["/api/mobile/abastecimento/vehicles"] });
       invalidateRelatedQueries("vehicle");
       invalidateRelatedQueries("financial");
       invalidateRelatedQueries("mission-cost");
       toast({ title: "Abastecimento registrado!" });
+      if (fuelingId) startTicketLogPolling(fuelingId);
     },
     onError: (err: Error) => toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" }),
   });
@@ -208,6 +250,15 @@ export default function MobileAbastecimentoPage() {
   }
 
   if (submitted) {
+    const tlS = String(tlStatus?.ticketlog_status || "");
+    const isOk = tlS === "ok";
+    const isDivergencia = tlS === "divergencia_pequena" || tlS === "divergencia_grande";
+    const isNaoEncontrado = tlS === "nao_encontrado";
+    const isSemPosto = tlS === "sem_codigo_posto";
+    const isSemCred = tlS === "sem_credenciais";
+    const isErro = tlS === "erro";
+    const showWaiting = tlPolling || (!tlStatus && !!createdFuelingId);
+
     return (
       <MobileLayout>
         <div className="p-4 space-y-4" data-testid="abastecimento-success">
@@ -216,6 +267,94 @@ export default function MobileAbastecimentoPage() {
             <h2 className="text-lg font-black text-emerald-800">Abastecimento Registrado!</h2>
             <p className="text-sm text-emerald-600 mt-1">{selectedVehicle?.plate} · {km} km</p>
           </div>
+
+          {createdFuelingId && (
+            <div className="rounded-2xl border-2 overflow-hidden" data-testid="card-ticketlog-status">
+              <div className="bg-neutral-900 px-4 py-2 flex items-center gap-2">
+                <ShieldCheck size={14} className="text-white" />
+                <p className="text-[10px] font-black text-white uppercase tracking-widest">Validação TicketLog (DE/PARA)</p>
+              </div>
+
+              {showWaiting && (
+                <div className="bg-blue-50 border-blue-200 p-4 flex items-center gap-3" data-testid="status-tl-waiting">
+                  <Loader2 size={22} className="text-blue-600 animate-spin shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-blue-800">Conferindo com a TicketLog...</p>
+                    <p className="text-xs text-blue-600 mt-0.5">Comparando o que você lançou com a cobrança no cartão. Pode levar alguns segundos.</p>
+                  </div>
+                </div>
+              )}
+
+              {!showWaiting && isOk && (
+                <div className="bg-emerald-50 border-emerald-200 p-4 flex items-start gap-3" data-testid="status-tl-ok">
+                  <CheckCircle size={22} className="text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-emerald-800">✅ OK, lançado corretamente</p>
+                    <p className="text-xs text-emerald-700 mt-1">A TicketLog confirmou a cobrança com o mesmo valor e volume que você informou.</p>
+                    {tlStatus?.ticketlog_autorizacao && (
+                      <p className="text-[10px] text-emerald-600 mt-1 font-mono">Autorização: {tlStatus.ticketlog_autorizacao}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!showWaiting && isDivergencia && (
+                <div className="bg-amber-50 border-amber-200 p-4 flex items-start gap-3" data-testid="status-tl-divergente">
+                  <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-amber-800">⚠️ Divergência de valores</p>
+                    <p className="text-xs text-amber-700 mt-1">{tlStatus?.ticketlog_message || "Valor lançado difere da cobrança TicketLog."}</p>
+                    {tlStatus?.ticketlog_valor_tl != null && (
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white rounded p-2 border border-amber-200">
+                          <p className="text-neutral-500 text-[10px]">Você lançou</p>
+                          <p className="font-bold text-neutral-900">R$ {Number(tlStatus.total_cost).toFixed(2)}</p>
+                        </div>
+                        <div className="bg-white rounded p-2 border border-amber-200">
+                          <p className="text-neutral-500 text-[10px]">TicketLog cobrou</p>
+                          <p className="font-bold text-amber-700">R$ {Number(tlStatus.ticketlog_valor_tl).toFixed(2)}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!showWaiting && isNaoEncontrado && (
+                <div className="bg-red-50 border-red-200 p-4 flex items-start gap-3" data-testid="status-tl-nao-encontrado">
+                  <AlertTriangle size={22} className="text-red-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-red-800">❌ Não encontrado na TicketLog</p>
+                    <p className="text-xs text-red-700 mt-1">A TicketLog ainda não localizou esta cobrança. Pode ser que o cartão usado não seja TL, que a transação ainda não tenha sido processada, ou que você tenha digitado valor/volume diferente.</p>
+                    <button onClick={retryTicketLog} className="mt-2 text-xs font-bold text-red-700 underline" data-testid="button-retry-tl">
+                      Tentar de novo
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!showWaiting && isSemPosto && (
+                <div className="bg-amber-50 border-amber-200 p-4 flex items-start gap-3" data-testid="status-tl-sem-posto">
+                  <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-amber-800">Posto não cadastrado</p>
+                    <p className="text-xs text-amber-700 mt-1">O posto "{station || "?"}" ainda não está mapeado na lista de Postos TicketLog. Avise o admin para cadastrar.</p>
+                  </div>
+                </div>
+              )}
+
+              {!showWaiting && (isSemCred || isErro) && (
+                <div className="bg-neutral-50 border-neutral-200 p-4 flex items-start gap-3" data-testid="status-tl-erro">
+                  <AlertTriangle size={22} className="text-neutral-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-neutral-700">Validação indisponível</p>
+                    <p className="text-xs text-neutral-600 mt-1">{tlStatus?.ticketlog_message || "Não foi possível validar agora — o admin será notificado e tentamos de novo automaticamente."}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {oilAlert && (
             <div className={`rounded-2xl p-4 border flex items-start gap-3 ${oilAlert.includes("VENCIDA") ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
               <AlertTriangle size={20} className={oilAlert.includes("VENCIDA") ? "text-red-600" : "text-amber-600"} />
