@@ -3,6 +3,8 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { insertFixedCostSchema } from "@shared/schema";
 import { z } from "zod";
+import { countBusinessDays, loadHolidaySet, monthRange } from "./holidays";
+import { sumDailyAllowancesForPeriod } from "./daily-allowances";
 
 // Aceita número ou string (form envia número) e normaliza pra string decimal
 const fixedCostInputSchema = insertFixedCostSchema.extend({
@@ -77,12 +79,32 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
 }
 
 /**
- * Custo total mensal de UM agente (salário + encargos + benefícios).
+ * Custo total mensal de UM agente (salário + encargos + VR diário + VT + cesta + outros).
  * Usa o registro mais recente de employee_salaries.
+ *
+ * `opts.businessDays` — quando informado, usa esse número de dias úteis para o VR.
+ *                       Senão, calcula com base nos dias úteis do mês corrente
+ *                       (descontando feriados informados em opts.holidaySet).
+ * `opts.diariasManuais` — soma de diárias de lançamento manual no período (apenas no breakdown).
  */
-export async function calculateAgentMonthlyCost(employeeId: number): Promise<{
+export async function calculateAgentMonthlyCost(
+  employeeId: number,
+  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number }
+): Promise<{
   total: number;
-  breakdown: { base: number; encargos: number; vr: number; vt: number; outros: number; horasMensais: number; custoHora: number };
+  breakdown: {
+    base: number;
+    encargos: number;
+    vrDiario: number;
+    vrDias: number;
+    vrTotal: number;
+    vt: number;
+    cesta: number;
+    outros: number;
+    diarias: number;
+    horasMensais: number;
+    custoHora: number;
+  };
 }> {
   const { data, error } = await supabaseAdmin
     .from("employee_salaries")
@@ -90,20 +112,47 @@ export async function calculateAgentMonthlyCost(employeeId: number): Promise<{
     .eq("employee_id", employeeId)
     .order("effective_date", { ascending: false })
     .limit(1);
-  if (error || !data || data.length === 0) {
-    return { total: 0, breakdown: { base: 0, encargos: 0, vr: 0, vt: 0, outros: 0, horasMensais: 220, custoHora: 0 } };
+
+  // Dias úteis padrão: mês corrente
+  let vrDias = opts?.businessDays;
+  if (vrDias === undefined) {
+    const now = new Date();
+    const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
+    const set = opts?.holidaySet ?? (await loadHolidaySet(from, to));
+    vrDias = countBusinessDays(from, to, set);
   }
+
+  if (error || !data || data.length === 0) {
+    return {
+      total: 0,
+      breakdown: {
+        base: 0, encargos: 0,
+        vrDiario: 43, vrDias, vrTotal: 0,
+        vt: 0, cesta: 0, outros: 0, diarias: opts?.diariasManuais ?? 0,
+        horasMensais: 220, custoHora: 0,
+      },
+    };
+  }
+
   const s: any = data[0];
   const base = Number(s.base_salary || 0);
   const encargosPct = Number(s.encargos_pct ?? 80) / 100;
   const encargos = base * encargosPct;
-  const vr = Number(s.vale_refeicao_mensal || 0);
+  const vrDiario = Number(s.vale_refeicao_diario ?? 43);
+  // Compat: se o campo legado vale_refeicao_mensal estiver preenchido, usa-o; senão calcula por dia útil.
+  const vrLegacy = Number(s.vale_refeicao_mensal || 0);
+  const vrTotal = vrLegacy > 0 ? vrLegacy : vrDiario * vrDias;
   const vt = Number(s.vale_transporte_mensal || 0);
+  const cesta = Number(s.cesta_basica ?? 200);
   const outros = Number(s.beneficios_outros || 0);
+  const diarias = opts?.diariasManuais ?? 0;
   const horasMensais = Number(s.horas_mensais || 220);
-  const total = base + encargos + vr + vt + outros;
+  const total = base + encargos + vrTotal + vt + cesta + outros + diarias;
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
-  return { total, breakdown: { base, encargos, vr, vt, outros, horasMensais, custoHora } };
+  return {
+    total,
+    breakdown: { base, encargos, vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora },
+  };
 }
 
 export async function calculateAgentCostPerHour(employeeId: number): Promise<number> {
@@ -112,7 +161,7 @@ export async function calculateAgentCostPerHour(employeeId: number): Promise<num
 }
 
 /**
- * Soma o custo mensal de RH (todos agentes ativos).
+ * Soma o custo mensal de RH (todos agentes ativos) — mês corrente.
  */
 export async function getMonthlyRHCost(): Promise<number> {
   const { data: employees, error } = await supabaseAdmin
@@ -122,20 +171,44 @@ export async function getMonthlyRHCost(): Promise<number> {
   const ativos = employees.filter((e: any) =>
     !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
   );
+  const now = new Date();
+  const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
+  const holidaySet = await loadHolidaySet(from, to);
+  const businessDays = countBusinessDays(from, to, holidaySet);
   let total = 0;
   for (const emp of ativos) {
-    const r = await calculateAgentMonthlyCost(emp.id);
+    const r = await calculateAgentMonthlyCost(emp.id, { businessDays, holidaySet });
     total += r.total;
   }
   return total;
 }
 
 export async function getRHCostForPeriod(fromISO: string, toISO: string): Promise<number> {
-  const from = new Date(fromISO + "T00:00:00");
-  const to = new Date(toISO + "T23:59:59");
-  const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-  const monthly = await getMonthlyRHCost();
-  return (monthly / 30) * days;
+  const holidaySet = await loadHolidaySet(fromISO, toISO);
+  const businessDays = countBusinessDays(fromISO, toISO, holidaySet);
+  const totalDias = Math.max(
+    1,
+    Math.round((new Date(toISO).getTime() - new Date(fromISO).getTime()) / (1000 * 60 * 60 * 24)) + 1
+  );
+  const { data: employees } = await supabaseAdmin.from("employees").select("id, status");
+  const ativos = (employees || []).filter((e: any) =>
+    !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
+  );
+  const diarias = await sumDailyAllowancesForPeriod(fromISO, toISO);
+  let total = 0;
+  for (const emp of ativos) {
+    // Para período ≠ mês cheio: salário base/encargos rateado por dia corrido,
+    // VR pelos dias úteis efetivos do período, diárias somadas integralmente.
+    const r = await calculateAgentMonthlyCost(emp.id, {
+      businessDays,
+      holidaySet,
+      diariasManuais: diarias.porAgente[emp.id] || 0,
+    });
+    // Componentes "mensais" rateados por dia corrido do período (30d como base):
+    const mensalRateado = (r.breakdown.base + r.breakdown.encargos + r.breakdown.vt + r.breakdown.cesta + r.breakdown.outros) / 30 * totalDias;
+    total += mensalRateado + r.breakdown.vrTotal + r.breakdown.diarias;
+  }
+  return total;
 }
 
 export function registerFixedCostsRoutes(app: Express) {
@@ -151,41 +224,69 @@ export function registerFixedCostsRoutes(app: Express) {
   });
 
   // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
-  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, async (_req, res) => {
+  // Aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD para período custom; default = mês corrente.
+  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, async (req, res) => {
     const { data: employees, error } = await supabaseAdmin
       .from("employees")
-      .select("id, full_name, name, status");
+      .select("id, name, status");
     if (error) return res.status(500).json({ message: error.message });
 
     const ativos = (employees || []).filter((e: any) =>
       !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
     );
 
+    // Período: por padrão mês corrente
+    const now = new Date();
+    const def = monthRange(now.getFullYear(), now.getMonth() + 1);
+    const from = (req.query.from as string) || def.from;
+    const to = (req.query.to as string) || def.to;
+    const holidaySet = await loadHolidaySet(from, to);
+    const businessDays = countBusinessDays(from, to, holidaySet);
+    const diarias = await sumDailyAllowancesForPeriod(from, to);
+
     const porAgente: Array<{
       id: number; name: string; total: number;
-      base: number; encargos: number; vr: number; vt: number; outros: number;
+      base: number; encargos: number;
+      vrDiario: number; vrDias: number; vrTotal: number;
+      vt: number; cesta: number; outros: number; diarias: number;
       horasMensais: number; custoHora: number;
     }> = [];
     let totalMensal = 0;
     let totalBase = 0;
     let totalEncargos = 0;
-    let totalBeneficios = 0;
+    let totalVR = 0;
+    let totalVT = 0;
+    let totalCesta = 0;
+    let totalOutros = 0;
+    let totalDiarias = 0;
 
     for (const emp of ativos) {
-      const r = await calculateAgentMonthlyCost(emp.id);
+      const r = await calculateAgentMonthlyCost(emp.id, {
+        businessDays,
+        holidaySet,
+        diariasManuais: diarias.porAgente[emp.id] || 0,
+      });
       totalMensal += r.total;
       totalBase += r.breakdown.base;
       totalEncargos += r.breakdown.encargos;
-      totalBeneficios += r.breakdown.vr + r.breakdown.vt + r.breakdown.outros;
+      totalVR += r.breakdown.vrTotal;
+      totalVT += r.breakdown.vt;
+      totalCesta += r.breakdown.cesta;
+      totalOutros += r.breakdown.outros;
+      totalDiarias += r.breakdown.diarias;
       porAgente.push({
         id: emp.id,
-        name: emp.full_name || emp.name || `Agente ${emp.id}`,
+        name: emp.name || `Agente ${emp.id}`,
         total: r.total,
         base: r.breakdown.base,
         encargos: r.breakdown.encargos,
-        vr: r.breakdown.vr,
+        vrDiario: r.breakdown.vrDiario,
+        vrDias: r.breakdown.vrDias,
+        vrTotal: r.breakdown.vrTotal,
         vt: r.breakdown.vt,
+        cesta: r.breakdown.cesta,
         outros: r.breakdown.outros,
+        diarias: r.breakdown.diarias,
         horasMensais: r.breakdown.horasMensais,
         custoHora: r.breakdown.custoHora,
       });
@@ -199,10 +300,16 @@ export function registerFixedCostsRoutes(app: Express) {
       weekly: (totalMensal / 30) * 7,
       yearly: totalMensal * 12,
       agentCount: ativos.length,
+      period: { from, to, businessDays, holidaysCount: holidaySet.size },
       breakdown: {
         base: totalBase,
         encargos: totalEncargos,
-        beneficios: totalBeneficios,
+        vr: totalVR,
+        vt: totalVT,
+        cesta: totalCesta,
+        outros: totalOutros,
+        diarias: totalDiarias,
+        beneficios: totalVR + totalVT + totalCesta + totalOutros + totalDiarias,
       },
       porAgente,
     });

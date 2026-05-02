@@ -146,6 +146,9 @@ export const employeeSalaries = pgTable("employee_salaries", {
   beneficiosOutros: decimal("beneficios_outros", { precision: 10, scale: 2 }).default("0"),
   encargosPct: decimal("encargos_pct", { precision: 5, scale: 2 }).default("80.00"),
   horasMensais: decimal("horas_mensais", { precision: 6, scale: 2 }).default("220.00"),
+  // CCT atual: VR pago por dia útil (R$ 43) + Cesta Básica mensal (R$ 200)
+  valeRefeicaoDiario: decimal("vale_refeicao_diario", { precision: 10, scale: 2 }).default("43.00"),
+  cestaBasica: decimal("cesta_basica", { precision: 10, scale: 2 }).default("200.00"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -169,6 +172,31 @@ export const fixedCosts = pgTable("fixed_costs", {
 export const insertFixedCostSchema = createInsertSchema(fixedCosts).omit({ id: true, createdAt: true });
 export type InsertFixedCost = z.infer<typeof insertFixedCostSchema>;
 export type FixedCost = typeof fixedCosts.$inferSelect;
+
+// Feriados — usados para descontar dias úteis no cálculo do VR
+export const holidays = pgTable("holidays", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull().unique(),
+  name: text("name").notNull(),
+  national: boolean("national").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertHolidaySchema = createInsertSchema(holidays).omit({ id: true, createdAt: true });
+export type InsertHoliday = z.infer<typeof insertHolidaySchema>;
+export type Holiday = typeof holidays.$inferSelect;
+
+// Diárias (Lançamento Manual) — ajudas pontuais por agente em data específica
+export const agentDailyAllowances = pgTable("agent_daily_allowances", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  date: date("date").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgentDailyAllowanceSchema = createInsertSchema(agentDailyAllowances).omit({ id: true, createdAt: true });
+export type InsertAgentDailyAllowance = z.infer<typeof insertAgentDailyAllowanceSchema>;
+export type AgentDailyAllowance = typeof agentDailyAllowances.$inferSelect;
 
 export const vehicles = pgTable("vehicles", {
   id: serial("id").primaryKey(),

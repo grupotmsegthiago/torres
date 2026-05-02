@@ -186,7 +186,18 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     enabled: open,
   });
 
-  const [form, setForm] = useState({ baseSalary: "", effectiveDate: "", reason: "", notes: "" });
+  const [form, setForm] = useState({
+    baseSalary: "",
+    effectiveDate: "",
+    reason: "",
+    notes: "",
+    valeRefeicaoDiario: "43.00",
+    cestaBasica: "200.00",
+    valeTransporteMensal: "0",
+    beneficiosOutros: "0",
+    encargosPct: "80",
+    horasMensais: "220",
+  });
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -194,7 +205,13 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees", employee.id, "salaries"] });
-      setForm({ baseSalary: "", effectiveDate: "", reason: "", notes: "" });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      setForm({
+        baseSalary: "", effectiveDate: "", reason: "", notes: "",
+        valeRefeicaoDiario: "43.00", cestaBasica: "200.00",
+        valeTransporteMensal: "0", beneficiosOutros: "0",
+        encargosPct: "80", horasMensais: "220",
+      });
       toast({ title: "Salário cadastrado" });
     },
     onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
@@ -210,7 +227,7 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Salários - {titleCase(employee.name)}</DialogTitle>
         </DialogHeader>
@@ -228,11 +245,45 @@ function SalaryModal({ employee, open, onClose }: { employee: Employee; open: bo
               <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Motivo</label>
               <Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Ex: Promoção, Reajuste" data-testid="input-salary-reason" />
             </div>
-            <div className="flex items-end">
-              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !form.baseSalary || !form.effectiveDate} className="w-full" data-testid="button-save-salary">
-                {createMutation.isPending ? "Salvando..." : "Adicionar"}
-              </Button>
+            <div>
+              <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Encargos (%)</label>
+              <Input type="text" inputMode="decimal" value={form.encargosPct} onChange={(e) => setForm({ ...form, encargosPct: e.target.value })} placeholder="80" data-testid="input-salary-encargos" />
             </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <h4 className="text-sm font-semibold text-neutral-700 mb-2">Benefícios CCT</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1.5 block">VR — Valor por dia útil (R$)</label>
+                <Input type="text" inputMode="decimal" value={form.valeRefeicaoDiario} onChange={(e) => setForm({ ...form, valeRefeicaoDiario: e.target.value })} placeholder="43.00" data-testid="input-salary-vr-diario" />
+                <p className="text-[11px] text-neutral-500 mt-1">Multiplicado pelos dias úteis do mês (sem feriados)</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Cesta Básica (R$/mês)</label>
+                <Input type="text" inputMode="decimal" value={form.cestaBasica} onChange={(e) => setForm({ ...form, cestaBasica: e.target.value })} placeholder="200.00" data-testid="input-salary-cesta" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Vale Transporte (R$/mês)</label>
+                <Input type="text" inputMode="decimal" value={form.valeTransporteMensal} onChange={(e) => setForm({ ...form, valeTransporteMensal: e.target.value })} placeholder="0" data-testid="input-salary-vt" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Outros Benefícios (R$/mês)</label>
+                <Input type="text" inputMode="decimal" value={form.beneficiosOutros} onChange={(e) => setForm({ ...form, beneficiosOutros: e.target.value })} placeholder="0" data-testid="input-salary-outros" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Horas Mensais</label>
+                <Input type="text" inputMode="decimal" value={form.horasMensais} onChange={(e) => setForm({ ...form, horasMensais: e.target.value })} placeholder="220" data-testid="input-salary-horas" />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !form.baseSalary || !form.effectiveDate} className="w-full" data-testid="button-save-salary">
+                  {createMutation.isPending ? "Salvando..." : "Adicionar"}
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-2">
+              Diárias pontuais (plantões extras, ajudas) são lançadas separadamente em <strong>Custos Fixos → Diárias</strong>.
+            </p>
           </div>
 
           <div className="border-t pt-3">

@@ -62,13 +62,38 @@ interface RHSummary {
   weekly: number;
   yearly: number;
   agentCount: number;
-  breakdown: { base: number; encargos: number; beneficios: number };
+  period: { from: string; to: string; businessDays: number; holidaysCount: number };
+  breakdown: {
+    base: number; encargos: number;
+    vr: number; vt: number; cesta: number; outros: number; diarias: number;
+    beneficios: number;
+  };
   porAgente: Array<{
     id: number; name: string; total: number;
-    base: number; encargos: number; vr: number; vt: number; outros: number;
+    base: number; encargos: number;
+    vrDiario: number; vrDias: number; vrTotal: number;
+    vt: number; cesta: number; outros: number; diarias: number;
     horasMensais: number; custoHora: number;
   }>;
 }
+
+interface DailyAllowance {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  date: string;
+  amount: number;
+  description: string | null;
+}
+
+interface Holiday {
+  id: number;
+  date: string;
+  name: string;
+  national: boolean;
+}
+
+interface EmployeeLite { id: number; name: string; status?: string | null; }
 
 export default function CustosFixosPage() {
   const { toast } = useToast();
@@ -259,12 +284,24 @@ export default function CustosFixosPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <DollarSign className="h-4 w-4" /> Benefícios
               </div>
-              <div className="text-2xl font-bold mt-1">
+              <div className="text-2xl font-bold mt-1" data-testid="text-rh-beneficios">
                 {fmtBRL(rhSummary?.breakdown.beneficios ?? 0)}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">VR + VT + outros</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                VR {fmtBRL(rhSummary?.breakdown.vr ?? 0)} · Cesta {fmtBRL(rhSummary?.breakdown.cesta ?? 0)}
+                {(rhSummary?.breakdown.diarias ?? 0) > 0 && <> · Diárias {fmtBRL(rhSummary?.breakdown.diarias ?? 0)}</>}
+              </div>
             </Card>
           </div>
+
+          {rhSummary?.period && (
+            <p className="text-[11px] text-muted-foreground mt-2 ml-1">
+              Período: {rhSummary.period.from} → {rhSummary.period.to} ·
+              <strong> {rhSummary.period.businessDays} dias úteis</strong>
+              {rhSummary.period.holidaysCount > 0 && <> ({rhSummary.period.holidaysCount} feriado(s) descontado(s))</>}
+              · VR pago por dia útil
+            </p>
+          )}
 
           {rhSummary && rhSummary.porAgente.length > 0 && (
             <Card className="p-4 mt-3">
@@ -278,8 +315,11 @@ export default function CustosFixosPage() {
                       <th className="py-2 px-2">Agente</th>
                       <th className="py-2 px-2 text-right">Base</th>
                       <th className="py-2 px-2 text-right">Encargos</th>
-                      <th className="py-2 px-2 text-right">VR + VT + Outros</th>
-                      <th className="py-2 px-2 text-right">Total Mensal</th>
+                      <th className="py-2 px-2 text-right">VR (dia × dias úteis)</th>
+                      <th className="py-2 px-2 text-right">Cesta</th>
+                      <th className="py-2 px-2 text-right">VT + Outros</th>
+                      <th className="py-2 px-2 text-right">Diárias</th>
+                      <th className="py-2 px-2 text-right">Total</th>
                       <th className="py-2 px-2 text-right">Custo/Hora</th>
                     </tr>
                   </thead>
@@ -290,7 +330,13 @@ export default function CustosFixosPage() {
                         <td className="py-2 px-2 text-right">{fmtBRL(a.base)}</td>
                         <td className="py-2 px-2 text-right text-amber-700 dark:text-amber-400">{fmtBRL(a.encargos)}</td>
                         <td className="py-2 px-2 text-right text-cyan-700 dark:text-cyan-400">
-                          {fmtBRL(a.vr + a.vt + a.outros)}
+                          {fmtBRL(a.vrTotal)}
+                          <div className="text-[10px] text-muted-foreground">{fmtBRL(a.vrDiario)}×{a.vrDias}</div>
+                        </td>
+                        <td className="py-2 px-2 text-right">{fmtBRL(a.cesta)}</td>
+                        <td className="py-2 px-2 text-right">{fmtBRL(a.vt + a.outros)}</td>
+                        <td className="py-2 px-2 text-right text-violet-700 dark:text-violet-400">
+                          {a.diarias > 0 ? fmtBRL(a.diarias) : "—"}
                         </td>
                         <td className="py-2 px-2 text-right font-semibold">{fmtBRL(a.total)}</td>
                         <td className="py-2 px-2 text-right text-emerald-700 dark:text-emerald-400">
@@ -302,11 +348,17 @@ export default function CustosFixosPage() {
                 </table>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2">
-                Cadastre/atualize o salário e os benefícios em <strong>Funcionários</strong> → seleciona o agente → aba "Salário".
-                Encargos padrão: 80%. Horas mensais padrão: 220.
+                VR = R$/dia × dias úteis do mês (sem feriados). Cadastre/atualize valores em <strong>Funcionários → Salário</strong>.
+                Diárias pontuais são lançadas na seção abaixo.
               </p>
             </Card>
           )}
+
+          {/* === DIÁRIAS (LANÇAMENTO MANUAL) === */}
+          <DailyAllowancesSection />
+
+          {/* === FERIADOS (CALENDÁRIO) === */}
+          <HolidaysSection />
         </div>
 
         {/* === CUSTO TOTAL DA OPERAÇÃO === */}
@@ -585,5 +637,285 @@ function FixedCostForm({ editing, onClose }: { editing: FixedCost | null; onClos
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ============================================================
+// DIÁRIAS — Lançamento Manual (plantões extras, ajudas pontuais)
+// ============================================================
+function DailyAllowancesSection() {
+  const { toast } = useToast();
+  const today = new Date().toISOString().slice(0, 10);
+  const firstOfMonth = today.slice(0, 8) + "01";
+  const [from, setFrom] = useState(firstOfMonth);
+  const [to, setTo] = useState(today);
+  const [employeeId, setEmployeeId] = useState<string>("");
+  const [date, setDate] = useState(today);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+
+  const { data: employees = [] } = useQuery<EmployeeLite[]>({
+    queryKey: ["/api/employees"],
+  });
+  const ativos = employees.filter((e) =>
+    !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
+  );
+
+  const { data: list = [], isLoading } = useQuery<DailyAllowance[]>({
+    queryKey: ["/api/daily-allowances", from, to],
+    queryFn: async () => {
+      const { authFetch } = await import("@/lib/queryClient");
+      const r = await authFetch(`/api/daily-allowances?from=${from}&to=${to}`);
+      return r.json();
+    },
+  });
+
+  const totalPeriodo = list.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  const createMut = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/daily-allowances", {
+        employeeId: Number(employeeId),
+        date,
+        amount: amount.replace(",", "."),
+        description: description || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      setAmount(""); setDescription("");
+      toast({ title: "Diária lançada" });
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/daily-allowances/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      toast({ title: "Diária removida" });
+    },
+  });
+
+  return (
+    <Card className="p-4 mt-3" data-testid="section-daily-allowances">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 className="font-semibold text-sm flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-violet-600" />
+          Diárias (Lançamento Manual)
+        </h3>
+        <div className="flex items-center gap-2 text-xs">
+          <Label className="text-xs">De</Label>
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-auto" data-testid="input-allow-from" />
+          <Label className="text-xs">Até</Label>
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 w-auto" data-testid="input-allow-to" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3 p-3 bg-violet-50/40 dark:bg-violet-950/20 rounded">
+        <div>
+          <Label className="text-xs">Agente *</Label>
+          <Select value={employeeId} onValueChange={setEmployeeId}>
+            <SelectTrigger className="h-9" data-testid="select-allow-employee">
+              <SelectValue placeholder="Selecione" />
+            </SelectTrigger>
+            <SelectContent>
+              {ativos.map((e) => (
+                <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Data *</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-allow-date" />
+        </div>
+        <div>
+          <Label className="text-xs">Valor (R$) *</Label>
+          <Input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" className="h-9" data-testid="input-allow-amount" />
+        </div>
+        <div className="md:col-span-2">
+          <Label className="text-xs">Descrição</Label>
+          <div className="flex gap-2">
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ex: Plantão extra noturno" className="h-9" data-testid="input-allow-desc" />
+            <Button
+              size="sm"
+              onClick={() => createMut.mutate()}
+              disabled={!employeeId || !amount || !date || createMut.isPending}
+              data-testid="button-add-allowance"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Lançar
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs mb-2">
+        <span className="text-muted-foreground">{list.length} lançamento(s) no período</span>
+        <span className="font-semibold text-violet-700 dark:text-violet-300" data-testid="text-allow-total">
+          Total: {fmtBRL(totalPeriodo)}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground py-3 text-center">Carregando...</p>
+      ) : list.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-3 text-center">Nenhuma diária lançada no período.</p>
+      ) : (
+        <div className="overflow-x-auto max-h-[280px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-background">
+              <tr className="border-b text-left text-xs text-muted-foreground uppercase">
+                <th className="py-2 px-2">Data</th>
+                <th className="py-2 px-2">Agente</th>
+                <th className="py-2 px-2">Descrição</th>
+                <th className="py-2 px-2 text-right">Valor</th>
+                <th className="py-2 px-2 text-right w-12">—</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((r) => (
+                <tr key={r.id} className="border-b hover:bg-muted/30" data-testid={`row-allowance-${r.id}`}>
+                  <td className="py-1.5 px-2">{r.date}</td>
+                  <td className="py-1.5 px-2 font-medium">{r.employeeName}</td>
+                  <td className="py-1.5 px-2 text-muted-foreground text-xs">{r.description || "—"}</td>
+                  <td className="py-1.5 px-2 text-right font-semibold text-violet-700 dark:text-violet-300">{fmtBRL(r.amount)}</td>
+                  <td className="py-1.5 px-2 text-right">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMut.mutate(r.id)} data-testid={`button-del-allowance-${r.id}`}>
+                      <Trash2 className="h-3 w-3 text-red-500" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ============================================================
+// FERIADOS — descontados no cálculo de dias úteis (VR)
+// ============================================================
+function HolidaysSection() {
+  const { toast } = useToast();
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [date, setDate] = useState("");
+  const [name, setName] = useState("");
+
+  const { data: holidays = [], isLoading } = useQuery<Holiday[]>({
+    queryKey: ["/api/holidays", year],
+    queryFn: async () => {
+      const { authFetch } = await import("@/lib/queryClient");
+      const r = await authFetch(`/api/holidays?year=${year}`);
+      return r.json();
+    },
+  });
+
+  const createMut = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/holidays", { date, name, national: false });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      setDate(""); setName("");
+      toast({ title: "Feriado adicionado" });
+    },
+    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/holidays/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
+      toast({ title: "Feriado removido" });
+    },
+  });
+
+  return (
+    <Card className="p-4 mt-3" data-testid="section-holidays">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div>
+          <h3 className="font-semibold text-sm flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-rose-600" />
+            Feriados {year}
+          </h3>
+          <p className="text-[11px] text-muted-foreground">
+            Descontados do cálculo de dias úteis para VR. Adicione feriados estaduais/municipais conforme necessário.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs">Ano</Label>
+          <Input type="number" min="2024" max="2030" value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-8 w-24" data-testid="input-holiday-year" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 p-3 bg-rose-50/40 dark:bg-rose-950/20 rounded">
+        <div>
+          <Label className="text-xs">Data *</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" data-testid="input-holiday-date" />
+        </div>
+        <div>
+          <Label className="text-xs">Nome *</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aniversário da cidade" className="h-9" data-testid="input-holiday-name" />
+        </div>
+        <div className="flex items-end">
+          <Button
+            size="sm"
+            onClick={() => createMut.mutate()}
+            disabled={!date || !name || createMut.isPending}
+            className="w-full"
+            data-testid="button-add-holiday"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground py-3 text-center">Carregando...</p>
+      ) : holidays.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-3 text-center">Nenhum feriado cadastrado em {year}.</p>
+      ) : (
+        <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-background">
+              <tr className="border-b text-left text-xs text-muted-foreground uppercase">
+                <th className="py-2 px-2">Data</th>
+                <th className="py-2 px-2">Nome</th>
+                <th className="py-2 px-2">Tipo</th>
+                <th className="py-2 px-2 text-right w-12">—</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holidays.map((h) => (
+                <tr key={h.id} className="border-b hover:bg-muted/30" data-testid={`row-holiday-${h.id}`}>
+                  <td className="py-1.5 px-2">{h.date}</td>
+                  <td className="py-1.5 px-2 font-medium">{h.name}</td>
+                  <td className="py-1.5 px-2">
+                    <Badge variant={h.national ? "default" : "outline"} className="text-[10px]">
+                      {h.national ? "Nacional" : "Local"}
+                    </Badge>
+                  </td>
+                  <td className="py-1.5 px-2 text-right">
+                    {!h.national && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteMut.mutate(h.id)} data-testid={`button-del-holiday-${h.id}`}>
+                        <Trash2 className="h-3 w-3 text-red-500" />
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

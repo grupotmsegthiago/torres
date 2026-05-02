@@ -167,15 +167,24 @@ import type { Express } from "express";
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const emp = await storage.getEmployee(Number(req.params.id));
     if (!emp) return res.status(404).json({ message: "Funcionário não encontrado" });
-    const { baseSalary, effectiveDate, reason, notes } = req.body;
+    const { baseSalary, effectiveDate, reason, notes,
+            valeRefeicaoDiario, cestaBasica, valeTransporteMensal,
+            beneficiosOutros, encargosPct, horasMensais } = req.body;
     if (!baseSalary || !effectiveDate) return res.status(400).json({ message: "Salário e data são obrigatórios" });
-    const salary = await storage.createEmployeeSalary({
+    const payload: any = {
       employeeId: emp.id,
       baseSalary: String(baseSalary),
       effectiveDate,
       reason: reason || null,
       notes: notes || null,
-    });
+    };
+    if (valeRefeicaoDiario !== undefined && valeRefeicaoDiario !== "") payload.valeRefeicaoDiario = String(valeRefeicaoDiario);
+    if (cestaBasica !== undefined && cestaBasica !== "") payload.cestaBasica = String(cestaBasica);
+    if (valeTransporteMensal !== undefined && valeTransporteMensal !== "") payload.valeTransporteMensal = String(valeTransporteMensal);
+    if (beneficiosOutros !== undefined && beneficiosOutros !== "") payload.beneficiosOutros = String(beneficiosOutros);
+    if (encargosPct !== undefined && encargosPct !== "") payload.encargosPct = String(encargosPct);
+    if (horasMensais !== undefined && horasMensais !== "") payload.horasMensais = String(horasMensais);
+    const salary = await storage.createEmployeeSalary(payload);
     res.status(201).json(salary);
   });
 

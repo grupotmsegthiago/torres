@@ -341,6 +341,8 @@ async function ensureSystemSettingsTable() {
   import { registerLeadRoutes } from "./routes/leads";
   import { registerConciliacaoRoutes } from "./routes/conciliacao";
   import { registerFixedCostsRoutes } from "./routes/fixed-costs";
+  import { registerHolidaysRoutes } from "./routes/holidays";
+  import { registerDailyAllowancesRoutes } from "./routes/daily-allowances";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -783,6 +785,8 @@ async function ensureSystemSettingsTable() {
     registerLeadRoutes(app);
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
+    registerHolidaysRoutes(app);
+    registerDailyAllowancesRoutes(app);
 
   
   // ===== WEAPONS =====

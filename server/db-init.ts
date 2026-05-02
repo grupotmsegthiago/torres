@@ -1127,9 +1127,70 @@ export async function ensureCalcMissionRPC() {
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS beneficios_outros NUMERIC(10,2) DEFAULT 0`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS encargos_pct NUMERIC(5,2) DEFAULT 80.00`);
     await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS horas_mensais NUMERIC(6,2) DEFAULT 220.00`);
-    console.log("[db-init] employee_salaries benefit columns ensured");
+    // Novas colunas (CCT atual): VR diário (R$ 43/dia útil) + Cesta Básica mensal (R$ 200)
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS vale_refeicao_diario NUMERIC(10,2) DEFAULT 43.00`);
+    await execSql(`ALTER TABLE employee_salaries ADD COLUMN IF NOT EXISTS cesta_basica NUMERIC(10,2) DEFAULT 200.00`);
+    console.log("[db-init] employee_salaries benefit columns ensured (VR diário + cesta)");
   } catch (e: any) {
     console.error("[db-init] employee_salaries alter error:", e.message);
+  }
+
+  // Feriados (para cálculo de dias úteis do VR)
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS holidays (
+        id SERIAL PRIMARY KEY,
+        date DATE NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        national BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_holidays_date ON holidays(date)`);
+    // Seed feriados nacionais 2026 (idempotente via ON CONFLICT)
+    const seed2026: Array<[string, string]> = [
+      ["2026-01-01", "Confraternização Universal"],
+      ["2026-02-16", "Carnaval"],
+      ["2026-02-17", "Carnaval"],
+      ["2026-02-18", "Quarta-feira de Cinzas"],
+      ["2026-04-03", "Sexta-feira Santa"],
+      ["2026-04-21", "Tiradentes"],
+      ["2026-05-01", "Dia do Trabalho"],
+      ["2026-06-04", "Corpus Christi"],
+      ["2026-09-07", "Independência do Brasil"],
+      ["2026-10-12", "Nossa Senhora Aparecida"],
+      ["2026-11-02", "Finados"],
+      ["2026-11-15", "Proclamação da República"],
+      ["2026-11-20", "Consciência Negra"],
+      ["2026-12-25", "Natal"],
+    ];
+    for (const [d, n] of seed2026) {
+      await execSql(
+        `INSERT INTO holidays (date, name, national) VALUES ('${d}', '${n.replace(/'/g, "''")}', true) ON CONFLICT (date) DO NOTHING`
+      );
+    }
+    console.log("[db-init] holidays table ensured (+ seed 2026)");
+  } catch (e: any) {
+    console.error("[db-init] holidays error:", e.message);
+  }
+
+  // Diárias de Lançamento Manual (ajudas pontuais por agente/dia)
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS agent_daily_allowances (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL,
+        date DATE NOT NULL,
+        amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+        description TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_daily_allow_emp_date ON agent_daily_allowances(employee_id, date)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_daily_allow_date ON agent_daily_allowances(date)`);
+    console.log("[db-init] agent_daily_allowances table ensured");
+  } catch (e: any) {
+    console.error("[db-init] agent_daily_allowances error:", e.message);
   }
 
   await closeDbInitClient();
