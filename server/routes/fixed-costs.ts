@@ -2,6 +2,18 @@ import type { Express } from "express";
 import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { insertFixedCostSchema } from "@shared/schema";
+import { z } from "zod";
+
+// Aceita número ou string (form envia número) e normaliza pra string decimal
+const fixedCostInputSchema = insertFixedCostSchema.extend({
+  monthlyValue: z.union([z.string(), z.number()]).transform((v) => String(v)),
+  dueDay: z.union([z.number(), z.string(), z.null()]).optional().transform((v) => {
+    if (v === null || v === undefined || v === "") return null;
+    return typeof v === "string" ? Number(v) : v;
+  }),
+  active: z.boolean().optional().default(true),
+  notes: z.string().nullable().optional(),
+});
 
 export const FIXED_COST_CATEGORIES = [
   "Aluguel",
@@ -146,7 +158,7 @@ export function registerFixedCostsRoutes(app: Express) {
 
   // CREATE
   app.post("/api/fixed-costs", requireAuth, requireAdminRole, async (req, res) => {
-    const parsed = insertFixedCostSchema.safeParse(req.body);
+    const parsed = fixedCostInputSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
@@ -172,8 +184,14 @@ export function registerFixedCostsRoutes(app: Express) {
     const updates: any = {};
     if (req.body.description !== undefined) updates.description = req.body.description;
     if (req.body.category !== undefined) updates.category = req.body.category;
-    if (req.body.monthlyValue !== undefined) updates.monthly_value = req.body.monthlyValue;
-    if (req.body.dueDay !== undefined) updates.due_day = req.body.dueDay;
+    if (req.body.monthlyValue !== undefined) {
+      updates.monthly_value = String(req.body.monthlyValue);
+    }
+    if (req.body.dueDay !== undefined) {
+      updates.due_day = req.body.dueDay === null || req.body.dueDay === ""
+        ? null
+        : Number(req.body.dueDay);
+    }
     if (req.body.active !== undefined) updates.active = req.body.active;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
