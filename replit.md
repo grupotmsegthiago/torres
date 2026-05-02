@@ -338,3 +338,39 @@ The system employs a modern web stack: React with TypeScript and Vite for the fr
 - **Página `/admin/control-id` (`client/src/pages/admin/control-id.tsx`):** 4 tabs — **Aparelhos** (CRUD + Testar + Sync manual), **Mapping Funcionários** (com botão 'Buscar usuários do aparelho' e quick-map de não-mapeados), **Batidas** (filtros funcionário+período, refetch 30s, badge entrada/saída), **Folha de Ponto** (consolidação mensal com entrada/almoço/saída/horas).
 - **Sidebar:** item 'Ponto Control iD' adicionado em RH (`client/src/components/admin/layout.tsx`); legacy renomeado para 'Folha de Ponto (legado)'.
 - **Pendente (Fase 2):** após cadastrar o aparelho na tela e validar fluxo completo (test/sync/mapping/batidas chegando), DELETAR `/admin/timesheets`, `/mobile/ponto`, `/mobile/ponto-operacional` e `/admin/ponto-operacional` + tabelas órfãs (`ponto_registros`, `timesheets`).
+
+## 🛡️ Anti-Patterns / Memória de Bugs (NÃO REINTRODUZIR)
+
+Esta seção documenta bugs caros já corrigidos. **Antes de mexer nos sistemas
+abaixo, leia os pontos correspondentes.** Se você encontrar algum desses
+padrões reaparecendo, corrija imediatamente.
+
+### Toasts (`client/src/hooks/use-toast.ts`)
+- ❌ **`TOAST_LIMIT = 1`** — descarta avisos legítimos quando vários eventos chegam juntos (chat + alerta + missão). ✅ Manter em 5.
+- ❌ **`TOAST_REMOVE_DELAY = 1000000`** (≈17 min) — toast nunca somia da tela. ✅ 5000ms (5s).
+- ❌ Disparar toast por evento Realtime sem `dedupKey` — gera 3-4 toasts idênticos para a mesma mensagem (Supabase entrega INSERT em múltiplos canais). ✅ Sempre passar `dedupKey: "chat-${msgId}"` ou similar.
+- ❌ ID sequencial `let count = 0` — colide entre instâncias. ✅ `crypto.randomUUID()`.
+
+### Push Notifications (`server/routes/push.ts` + tabela `push_subscriptions`)
+- ❌ Armazenar subscriptions em **`Map` na memória do servidor** — somem a cada redeploy/reboot, usuário precisa "se cadastrar" de novo. ✅ Persistir em Supabase (`push_subscriptions` com `endpoint UNIQUE`).
+- ❌ `userId` derivado de `Math.random()` ou de algo volátil — quebra associação após relogar. ✅ Usar `req.user.id` (estável) e `req.user.email` como fallback.
+- ❌ Endpoint `/api/push/send` público — qualquer um envia push em nome da empresa. ✅ Sempre `requireAuth` (e idealmente `requireAdminRole`).
+- ❌ Não desinscrever no logout — usuário continua recebendo push após sair. ✅ Frontend chama `/api/push/unsubscribe` no logout.
+
+### WhatsApp / Z-API
+- ❌ Chamar **Z-API direto do navegador** com `CLIENT_TOKEN` no bundle — qualquer cliente com DevTools rouba o token e envia mensagens em nome da empresa. ✅ Sempre via proxy backend autenticado (`/api/whatsapp/*` com `requireAuth`). **Hoje o sistema usa apenas links `wa.me/*` (deeplinks, sem token), o que é seguro. NÃO migrar para chamadas Z-API no frontend.**
+- ❌ Canal Realtime hardcoded (ex: `"whatsapp-rt"`) compartilhado entre tabs — mensagens são perdidas/duplicadas. ✅ Canal único por usuário: `whatsapp-rt-${userId}-${Date.now()}`.
+- ❌ `alert("...")` para feedback — bloqueia a UI. ✅ `toast({...})`.
+
+### E-mails (`server/routes/_helpers.ts`, `server/asaas.ts`, `server/generate-boletim-omega.ts`, `server/routes/mission.ts`, `server/routes/service-orders.ts`)
+- ❌ **`bcc: "a@x, b@x"`** (string) — Office365/Outlook ignora silenciosamente, e-mails de cobrança/boletim "somem". ✅ SEMPRE array: `bcc: ["a@x", "b@x"]`.
+- ❌ Criar `nodemailer.createTransport()` a cada e-mail — leak de socket + handshake repetido. ✅ Singleton em `_helpers.ts:createSmtpTransporter()` com `pool: true`.
+- ❌ Não validar `EMAIL_PASS`/`SMTP_PASS` antes de enviar — erro confuso e tentativa repetida. ✅ Helper retorna `null` e loga uma vez se faltar credencial.
+- ❌ BCC para destinatário externo do cliente — vaza endereços internos da Torres. ✅ BCC vai SOMENTE para `thiago@grupotmseg.com.br` e contatos internos da empresa.
+
+### Cache PWA (`server/static.ts`, `client/public/sw.js`, `client/src/main.tsx`)
+- ❌ `express.static(distPath)` sem `setHeaders` — `index.html` fica cacheado pelo navegador apontando para hashes JS antigos após deploy. ✅ `setHeaders` com `no-cache` para `index.html`/`sw.js`/`manifest.json` e `immutable max-age=31536000` para `/assets/*` (já têm hash do Vite).
+- ❌ Service Worker sem versionamento — não tem como saber se está velho. ✅ `SW_VERSION` no topo do `sw.js` e limpeza de caches antigos no `activate`.
+- ❌ Confiar apenas em `skipWaiting()` para atualizar — em PWA instalada no iOS o SW pode não atualizar nunca. ✅ Cliente chama `GET /api/version` no boot e a cada `visibilitychange`; se versão local ≠ servidor, faz hard reset (SWs + caches + IndexedDB) preservando login. Bumpar `APP_VERSION` em `server/constants.ts` a cada deploy importante.
+- ❌ Hard reset apagando `localStorage` inteiro — usuário desloga em todo update. ✅ Preservar `auth_token`, `supabase.auth.token`, `notification_sound_enabled`.
+- ❌ Hard reset sem flag de sessão — loop infinito. ✅ `sessionStorage.setItem("__did_hard_reset", "1")` evita re-execução na mesma sessão.

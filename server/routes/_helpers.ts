@@ -44,26 +44,48 @@ export function parseEmailList(raw: string | null | undefined): string[] {
   return raw.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 }
 
+// ─── ANTI-PATTERNS (NÃO REINTRODUZIR) ───
+// ❌ Criar transporter novo a cada e-mail: leak de socket + handshake repetido.
+// ❌ BCC como string ("a@x, b@x"): alguns SMTP (Office365/Outlook) ignoram
+//    silenciosamente. SEMPRE passar como array.
+// ❌ Não validar EMAIL_PASS/SMTP_PASS antes de tentar enviar: gera erro
+//    confuso. Retornar null e logar uma vez.
+let _transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
+let _transporterInitTried = false;
+
 export function createSmtpTransporter() {
+  if (_transporter) return _transporter;
+  if (_transporterInitTried) return null; // não retentar a cada chamada
+  _transporterInitTried = true;
+
   const host = process.env.SMTP_HOST || "smtp.office365.com";
   const port = parseInt(process.env.SMTP_PORT || "587");
   const user = process.env.SMTP_USER || process.env.EMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
-  if (!user || !pass) return null;
-  return nodemailer.createTransport({
+  if (!user || !pass) {
+    console.warn("[smtp] não configurado — defina SMTP_USER/SMTP_PASS (ou EMAIL_USER/EMAIL_PASS)");
+    return null;
+  }
+  _transporter = nodemailer.createTransport({
     host, port, secure: port === 465,
     requireTLS: port === 587,
     auth: { user, pass },
     tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
   });
+  console.log(`[smtp] transporter pronto (${host}:${port}, user=${user})`);
+  return _transporter;
 }
 
 export function getSmtpFrom() {
   return `"Torres Vigilância Patrimonial" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
 }
 
-export const SMTP_BCC_OS = "thiago@grupotmseg.com.br, operacional@grupotmseg.com.br";
-export const SMTP_BCC_WELCOME = "thiago@grupotmseg.com.br";
+// SEMPRE arrays — string é silenciosamente ignorada por Office365.
+export const SMTP_BCC_OS: string[] = ["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"];
+export const SMTP_BCC_WELCOME: string[] = ["thiago@grupotmseg.com.br"];
 
 export function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;

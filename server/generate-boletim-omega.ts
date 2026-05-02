@@ -246,7 +246,7 @@ export async function sendBoletimEmail(xlsxBuffer: Buffer): Promise<void> {
   const from = getSmtpFrom();
   const to = "mariaeduarda.nogueira@omegasolutions.com.br";
   const cc = "gr.transportes@omegasolutions.com.br";
-  const bcc = "thiago@grupotmseg.com.br, financeiro@torresseguranca.com.br";
+  const bcc = ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"];
 
   await transporter.sendMail({
     from,

@@ -7,10 +7,83 @@ import {
   LayoutDashboard, Users, Car, FileText, Wrench,
   Fuel, Clock, MapPin, Menu, X, LogOut, UserCircle, UserCog,
   ChevronDown, ChevronRight, Building2, Target, Radio, Crown, BookOpen, Smartphone, Crosshair, Shield, Wallet, Calculator, BarChart3, Play, Receipt, MessageCircle, Calendar,
-  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings
+  Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatWidget from "@/components/chat-widget";
+import { useToast } from "@/hooks/use-toast";
+
+// Limpa TUDO (Service Workers, Cache Storage, IndexedDB, sessionStorage,
+// localStorage preservando login) e recarrega com bypass de cache.
+async function hardResetCache() {
+  try {
+    // 1. Service Workers
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    // 2. Cache Storage
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    // 3. IndexedDB (se browser suportar)
+    if ("indexedDB" in window && (indexedDB as any).databases) {
+      try {
+        const dbs = await (indexedDB as any).databases();
+        await Promise.all((dbs || []).map((d: any) => d.name && indexedDB.deleteDatabase(d.name)));
+      } catch {}
+    }
+    // 4. sessionStorage
+    try { sessionStorage.clear(); } catch {}
+    // 5. localStorage preservando chaves de login
+    try {
+      const KEEP = ["auth_token", "supabase.auth.token", "notification_sound_enabled"];
+      const keep: Record<string, string> = {};
+      for (const k of KEEP) {
+        const v = localStorage.getItem(k);
+        if (v != null) keep[k] = v;
+      }
+      localStorage.clear();
+      for (const [k, v] of Object.entries(keep)) localStorage.setItem(k, v);
+    } catch {}
+  } catch (e) {
+    console.warn("[hardReset] falha parcial:", e);
+  }
+  // 6. Reload com bypass
+  const url = new URL(window.location.href);
+  url.searchParams.set("__r", Date.now().toString());
+  window.location.replace(url.toString());
+}
+
+function VersionFooter() {
+  const { toast } = useToast();
+  const { data } = useQuery<{ version: string }>({
+    queryKey: ["/api/version"],
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const handleClear = () => {
+    if (!confirm("Limpar cache e recarregar? Você continuará logado.")) return;
+    toast({ title: "Limpando cache...", duration: 2000 });
+    setTimeout(hardResetCache, 200);
+  };
+  return (
+    <div className="flex items-center justify-between gap-2 px-1 pt-2 border-t border-white/5">
+      <span className="text-[10px] text-white/30 font-mono" data-testid="text-app-version">
+        v{data?.version || "—"}
+      </span>
+      <button
+        onClick={handleClear}
+        className="text-[10px] text-white/40 hover:text-white/80 flex items-center gap-1 transition-colors"
+        title="Limpar cache do navegador"
+        data-testid="button-hard-reset-cache"
+      >
+        <Trash2 className="w-3 h-3" /> Limpar cache
+      </button>
+    </div>
+  );
+}
 
 type MenuItem = {
   path?: string;
@@ -421,6 +494,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </Button>
             </div>
           </Link>
+          <VersionFooter />
         </div>
       </aside>
 

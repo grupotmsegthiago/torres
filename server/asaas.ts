@@ -189,7 +189,7 @@ async function sendBillingEmail(invoice: {
     await transporter.sendMail({
       from: getSmtpFrom(),
       to: clientEmail,
-      bcc: "thiago@grupotmseg.com.br, financeiro@torresseguranca.com.br",
+      bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
       subject: `Torres Segurança - Fatura ${valueFormatted} - Venc. ${dueDateFormatted}${osRef ? ` - ${osRef}` : ""}`,
       html,
     });

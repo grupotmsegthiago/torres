@@ -5,14 +5,22 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+// ─── ANTI-PATTERNS (NÃO REINTRODUZIR) ───
+// ❌ TOAST_LIMIT = 1: descarta avisos legítimos quando vários eventos ocorrem
+//    juntos (chat, alertas, missão). 5 é o equilíbrio bom para não poluir.
+// ❌ TOAST_REMOVE_DELAY = 1000000 (1000s): toast nunca desaparecia.
+//    5 segundos é o padrão visual aceitável.
+// ❌ Sem dedupKey: realtime fazia 3-4 toasts idênticos para a mesma mensagem.
+const TOAST_LIMIT = 5
+const TOAST_REMOVE_DELAY = 5000
 
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  /** Se fornecido, toast com mesmo dedupKey nas últimas 3s é ignorado */
+  dedupKey?: string
 }
 
 const actionTypes = {
@@ -22,11 +30,12 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-let count = 0
-
 function genId() {
-  count = (count + 1) % Number.MAX_SAFE_INTEGER
-  return count.toString()
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36)
+  }
 }
 
 type ActionType = typeof actionTypes
@@ -54,6 +63,8 @@ interface State {
 }
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+const recentDedup = new Map<string, number>()
+const DEDUP_WINDOW_MS = 3000
 
 const addToRemoveQueue = (toastId: string) => {
   if (toastTimeouts.has(toastId)) {
@@ -90,8 +101,6 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
@@ -139,13 +148,28 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">
 
-function toast({ ...props }: Toast) {
+function toast({ dedupKey, ...props }: Toast) {
+  // Deduplicação: ignora toast idêntico dentro da janela
+  if (dedupKey) {
+    const last = recentDedup.get(dedupKey) || 0
+    const now = Date.now()
+    if (now - last < DEDUP_WINDOW_MS) {
+      return { id: "", dismiss: () => {}, update: () => {} }
+    }
+    recentDedup.set(dedupKey, now)
+    // Limpa entradas antigas pra não vazar memória
+    if (recentDedup.size > 50) {
+      const cutoff = now - DEDUP_WINDOW_MS * 4
+      for (const [k, t] of recentDedup) if (t < cutoff) recentDedup.delete(k)
+    }
+  }
+
   const id = genId()
 
-  const update = (props: ToasterToast) =>
+  const update = (next: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",
-      toast: { ...props, id },
+      toast: { ...next, id },
     })
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
@@ -160,6 +184,9 @@ function toast({ ...props }: Toast) {
       },
     },
   })
+
+  // Auto-dismiss após o delay (sem isso o toast some só ao fechar manual)
+  setTimeout(dismiss, TOAST_REMOVE_DELAY)
 
   return {
     id: id,

@@ -1068,6 +1068,28 @@ export async function ensureCalcMissionRPC() {
     console.error("[db-init] boletim_approvals error:", e.message);
   }
 
+  // ─── push_subscriptions (Web Push API) ───
+  try {
+    await execSql(`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        endpoint TEXT UNIQUE NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth_key TEXT NOT NULL,
+        user_id INTEGER,
+        user_email TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)`);
+    await execSql(`CREATE INDEX IF NOT EXISTS idx_push_subs_email ON push_subscriptions(user_email)`);
+    console.log("[db-init] push_subscriptions table ensured");
+  } catch (e: any) {
+    console.error("[db-init] push_subscriptions error:", e.message);
+  }
+
   try {
     await execSql(`
       CREATE TABLE IF NOT EXISTS driver_sessions (

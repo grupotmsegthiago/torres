@@ -10,6 +10,8 @@ import { initCronJobs } from "./cron";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
 import { registerDriverControlRoutes } from "./routes/driver-control";
+import { registerPushRoutes } from "./routes/push";
+import { APP_VERSION, APP_BUILD_AT } from "./constants";
 
 const app = express();
 app.set("etag", false);
@@ -42,7 +44,16 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
+// ─── /api/version (público, sem cache) ───
+// Cliente PWA chama no boot pra detectar mismatch e disparar hard reset.
+// Lê constants em runtime — qualquer require/import do APP_VERSION reflete aqui.
+app.get("/api/version", (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.json({ version: APP_VERSION, builtAt: APP_BUILD_AT });
+});
+
 setupAuth(app);
+registerPushRoutes(app);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
