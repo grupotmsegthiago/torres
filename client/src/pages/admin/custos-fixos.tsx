@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Building2, Plus, Edit, Trash2, Calendar, DollarSign, Loader2,
   AlertCircle, Calculator, TrendingDown, Users, Briefcase, Layers,
+  Target, TrendingUp,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { FixedCost } from "@shared/schema";
@@ -114,6 +115,30 @@ export default function CustosFixosPage() {
 
   const totalMensal = (summary?.monthly ?? 0) + (rhSummary?.monthly ?? 0);
   const totalDiario = totalMensal / 30;
+  const totalSemanal = totalDiario * 7;
+  const totalAnual = totalMensal * 12;
+
+  // Margem de lucro mínima (default 35%) — persistida no localStorage
+  const [margemPct, setMargemPct] = useState<number>(() => {
+    if (typeof window === "undefined") return 35;
+    const stored = localStorage.getItem("torres_margem_lucro_pct");
+    const n = stored ? Number(stored) : 35;
+    return Number.isFinite(n) && n > 0 && n < 100 ? n : 35;
+  });
+  const setMargemPersist = (n: number) => {
+    setMargemPct(n);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("torres_margem_lucro_pct", String(n));
+    }
+  };
+  // Fórmula: lucro = (faturamento - custo) ≥ margem% × faturamento
+  // => faturamento ≥ custo / (1 - margem%/100)
+  const fatorMeta = 1 - margemPct / 100;
+  const metaMensal = fatorMeta > 0 ? totalMensal / fatorMeta : 0;
+  const metaDiaria = metaMensal / 30;
+  const metaSemanal = metaDiaria * 7;
+  const metaAnual = metaMensal * 12;
+  const lucroMensalEsperado = metaMensal - totalMensal;
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/fixed-costs/${id}`),
@@ -154,7 +179,7 @@ export default function CustosFixosPage() {
               Custos Fixos da Operação
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Aluguel, utilidades, softwares e demais despesas mensais recorrentes — base do "Custo de Estar Aberto".
+              <strong>Todas as saídas mensais</strong> (estrutura + folha de RH + benefícios) — base do "Custo de Estar Aberto".
             </p>
           </div>
           <Button onClick={handleNew} data-testid="button-new-fixed-cost">
@@ -162,16 +187,18 @@ export default function CustosFixosPage() {
           </Button>
         </div>
 
-        {/* Cards de rateio */}
+        {/* Cards de rateio — TOTAL (custos fixos + RH) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <Card className="p-4 border-l-4 border-l-blue-500">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" /> Mensal
             </div>
             <div className="text-2xl font-bold mt-1" data-testid="text-monthly-total">
-              {fmtBRL(summary?.monthly ?? 0)}
+              {rhLoading ? <Loader2 className="h-5 w-5 animate-spin inline" /> : fmtBRL(totalMensal)}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">Soma de todos os custos ativos</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Estrutura {fmtBRL(summary?.monthly ?? 0)} + RH {fmtBRL(rhSummary?.monthly ?? 0)}
+            </div>
           </Card>
 
           <Card className="p-4 border-l-4 border-l-orange-500">
@@ -179,7 +206,7 @@ export default function CustosFixosPage() {
               <Calculator className="h-4 w-4" /> Diário (÷30)
             </div>
             <div className="text-2xl font-bold mt-1" data-testid="text-daily-total">
-              {fmtBRL(summary?.daily ?? 0)}
+              {fmtBRL(totalDiario)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Custo de estar aberto por dia</div>
           </Card>
@@ -189,7 +216,7 @@ export default function CustosFixosPage() {
               <Calendar className="h-4 w-4" /> Semanal (×7)
             </div>
             <div className="text-2xl font-bold mt-1" data-testid="text-weekly-total">
-              {fmtBRL(summary?.weekly ?? 0)}
+              {fmtBRL(totalSemanal)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Projeção semanal</div>
           </Card>
@@ -199,11 +226,97 @@ export default function CustosFixosPage() {
               <TrendingDown className="h-4 w-4" /> Anual (×12)
             </div>
             <div className="text-2xl font-bold mt-1" data-testid="text-yearly-total">
-              {fmtBRL(summary?.yearly ?? 0)}
+              {fmtBRL(totalAnual)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Compromisso anual</div>
           </Card>
         </div>
+
+        {/* === META DE FATURAMENTO (lucro mínimo configurável, default 35%) === */}
+        <Card className="p-5 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 border-2 border-emerald-300 dark:border-emerald-800">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-6 w-6 text-emerald-700" />
+              <div>
+                <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                  Meta de Faturamento Mínimo
+                </h2>
+                <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                  Quanto a empresa precisa faturar para cobrir TODOS os custos e ter <strong>{margemPct}% de lucro</strong>.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="margem-pct" className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 whitespace-nowrap">
+                Lucro mínimo:
+              </Label>
+              <Input
+                id="margem-pct"
+                type="number"
+                min={1}
+                max={99}
+                step={1}
+                value={margemPct}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n > 0 && n < 100) setMargemPersist(n);
+                }}
+                className="w-20 h-9 text-center font-bold"
+                data-testid="input-margem-pct"
+              />
+              <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">%</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5" /> Diária
+              </div>
+              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-daily">
+                {fmtBRL(metaDiaria)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">por dia útil/corrido</div>
+            </Card>
+
+            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5" /> Semanal
+              </div>
+              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-weekly">
+                {fmtBRL(metaSemanal)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">7 dias</div>
+            </Card>
+
+            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5" /> Mensal
+              </div>
+              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-monthly">
+                {fmtBRL(metaMensal)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">
+                Lucro: <strong className="text-emerald-600">{fmtBRL(lucroMensalEsperado)}</strong>
+              </div>
+            </Card>
+
+            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5" /> Anual
+              </div>
+              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-yearly">
+                {fmtBRL(metaAnual)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">12 meses</div>
+            </Card>
+          </div>
+
+          <p className="text-[11px] text-emerald-800/70 dark:text-emerald-300/70 mt-3 leading-relaxed">
+            <strong>Cálculo:</strong> Faturamento mínimo = Custo total ÷ (1 − {margemPct}%) = {fmtBRL(totalMensal)} ÷ {fatorMeta.toFixed(2)} = <strong>{fmtBRL(metaMensal)}/mês</strong>.
+            Acima desse valor, cada real extra é lucro; abaixo, a operação está no prejuízo.
+          </p>
+        </Card>
 
         {/* Por Categoria */}
         {summary && Object.keys(summary.porCategoria).length > 0 && (
