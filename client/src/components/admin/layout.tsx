@@ -29,6 +29,7 @@ type MenuSection = {
   iconColor: string;
   items: MenuItem[];
   adminOnly?: boolean;
+  diretoriaOnly?: boolean;
 };
 
 const PREFETCH_MAP: Record<string, string[]> = {
@@ -122,8 +123,6 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
-          { path: "/admin/contas-a-pagar", label: "Contas a Pagar", icon: Landmark, iconColor: "text-emerald-500" },
-          { path: "/admin/inter-extrato", label: "Extrato Inter", icon: Wallet, iconColor: "text-orange-500", diretoriaOnly: true },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2, iconColor: "text-blue-500" },
@@ -132,6 +131,16 @@ const menuSections: MenuSection[] = [
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
       },
+    ],
+  },
+  {
+    title: "BANCO INTER",
+    icon: Landmark,
+    iconColor: "text-orange-400",
+    diretoriaOnly: true,
+    items: [
+      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet, iconColor: "text-orange-500" },
+      { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark, iconColor: "text-orange-500" },
     ],
   },
   {
@@ -230,7 +239,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
 
 const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "BANCO INTER": true, "SISTEMA": true });
 
   const toggleGroup = useCallback((label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -270,7 +279,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
         </Link>
       ))}
 
-      {menuSections.filter(s => !s.adminOnly || isAdmin).map((section) => {
+      {menuSections.filter(s => s.diretoriaOnly ? isDiretoria : (!s.adminOnly || isAdmin)).map((section) => {
         const isSectionOpen = openSections[section.title] ?? true;
         return (
           <div key={section.title}>
