@@ -158,10 +158,13 @@ export default function MobileChatPage() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return;
     const channel = supabase
-      .channel("mobile-chat-rt")
+      .channel(`mobile-chat-rt-${user.id}-${Date.now()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
         if (msg.conversation_id === activeConvId) refetchMsgs();
         refetchConvs();
         if (msg.sender_id !== user?.id) {
@@ -169,7 +172,10 @@ export default function MobileChatPage() {
           showBrowserNotification(sender?.name || "Mensagem", msg.content || "Nova mensagem");
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") console.log("[mobile/chat] realtime conectado");
+        if (status === "CHANNEL_ERROR") console.warn("[mobile/chat] erro de canal");
+      });
     return () => { supabase.removeChannel(channel); };
   }, [activeConvId, user?.id, userMap]);
 

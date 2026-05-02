@@ -163,10 +163,13 @@ export default function ChatPage() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return;
     const channel = supabase
-      .channel("chat-realtime")
+      .channel(`admin-chat-rt-${user.id}-${Date.now()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
         if (msg.conversation_id === activeConvId) {
           refetchMsgs();
         }

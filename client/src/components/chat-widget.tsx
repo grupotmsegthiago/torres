@@ -394,30 +394,59 @@ export default function ChatWidget() {
 
   const activeConv = conversations.find(c => c.id === activeConvId);
 
+  // Pede permissão de notificação ao abrir o widget pela primeira vez
   useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
     const channel = supabase
-      .channel("widget-chat-rt")
+      .channel(`widget-chat-rt-${user.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
         const msg = payload.new as any;
         if (msg.sender_id === user?.id) return;
 
+        // Sempre invalida cache (badges etc)
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+        if (msg.conversation_id) {
+          queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations", msg.conversation_id, "messages"] });
+        }
+
         if (open && msg.conversation_id === activeConvId) refetchMsgs();
         if (open) refetchConvs();
-        queryClient.invalidateQueries({ queryKey: ["/api/chat/unread-count"] });
 
-        const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
-        if (!isDiretoria) {
+        // Toast + som + browser notification para TODOS (admin, diretoria, agente)
+        // Só não dispara se a conversa atual está aberta
+        const isCurrentlyViewing = open && msg.conversation_id === activeConvId && document.visibilityState === "visible";
+        if (!isCurrentlyViewing) {
           playNotificationSound();
           toast({
             title: "💬 Nova mensagem",
-            description: "Você recebeu uma nova mensagem no chat.",
+            description: msg.content ? String(msg.content).slice(0, 80) : "Nova mensagem no chat",
             duration: 4000,
           });
+          // Browser notification se app em background
+          if ("Notification" in window && Notification.permission === "granted" && document.visibilityState !== "visible") {
+            try {
+              new Notification("Torres — Nova mensagem", {
+                body: msg.content ? String(msg.content).slice(0, 100) : "Você tem uma nova mensagem",
+                icon: "/icon-192x192.png",
+                tag: `chat-${msg.conversation_id}`,
+              });
+            } catch {}
+          }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") console.log("[ChatWidget] realtime conectado");
+        if (status === "CHANNEL_ERROR") console.warn("[ChatWidget] erro de canal realtime");
+      });
     return () => { supabase.removeChannel(channel); };
-  }, [activeConvId, open, user?.id, user?.role]);
+  }, [activeConvId, open, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
