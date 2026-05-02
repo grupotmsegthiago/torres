@@ -28,6 +28,37 @@ export const FIXED_COST_CATEGORIES = [
   "Outros",
 ] as const;
 
+// Custo mensal de aluguel por veículo ATIVO da frota.
+// Aplicado automaticamente a cada veículo cujo status não seja "baixado",
+// "vendido", "alienado" ou "inativo".
+export const FLEET_RENT_PER_VEHICLE = 3400;
+const INACTIVE_VEHICLE_STATUSES = new Set(["baixado", "vendido", "alienado", "inativo"]);
+
+/**
+ * Conta veículos ativos na frota (qualquer status que não seja "baixado/vendido/alienado/inativo").
+ */
+export async function getActiveVehicleCount(): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, status");
+  if (error) {
+    console.warn("[fixed-costs] erro ao contar veículos ativos:", error.message);
+    return 0;
+  }
+  return (data || []).filter((v: any) => {
+    const s = String(v.status || "").toLowerCase().trim();
+    return s === "" || !INACTIVE_VEHICLE_STATUSES.has(s);
+  }).length;
+}
+
+/**
+ * Custo mensal de aluguel da frota ativa = N veículos × R$ 3.400.
+ */
+export async function getFleetRentMonthlyTotal(): Promise<{ count: number; total: number; perVehicle: number }> {
+  const count = await getActiveVehicleCount();
+  return { count, total: count * FLEET_RENT_PER_VEHICLE, perVehicle: FLEET_RENT_PER_VEHICLE };
+}
+
 // Normaliza linha do Supabase (snake_case) pro tipo FixedCost (camelCase) usado no client.
 function toCamelFixedCost(r: any) {
   if (!r) return r;
@@ -44,8 +75,9 @@ function toCamelFixedCost(r: any) {
 }
 
 /**
- * Soma o valor mensal de TODOS os custos fixos ativos.
- * Esse é o "Custo de Estar Aberto" mensal da operação (CEA).
+ * Soma o valor mensal de TODOS os custos fixos ativos
+ * (custos cadastrados na tabela fixed_costs + aluguel da frota ativa).
+ * Esse é o "Custo de Estar Aberto" mensal da operação (CEA), excluindo RH.
  */
 export async function getMonthlyFixedCostsTotal(): Promise<number> {
   const { data, error } = await supabaseAdmin
@@ -54,9 +86,10 @@ export async function getMonthlyFixedCostsTotal(): Promise<number> {
     .eq("active", true);
   if (error) {
     console.warn("[fixed-costs] erro ao somar custos fixos:", error.message);
-    return 0;
   }
-  return (data || []).reduce((sum, r: any) => sum + Number(r.monthly_value || 0), 0);
+  const cadastrados = (data || []).reduce((sum, r: any) => sum + Number(r.monthly_value || 0), 0);
+  const fleet = await getFleetRentMonthlyTotal();
+  return cadastrados + fleet.total;
 }
 
 /**
@@ -322,7 +355,7 @@ export function registerFixedCostsRoutes(app: Express) {
     const weekly = daily * 7;
     const yearly = monthly * 12;
 
-    // Agrupa por categoria
+    // Agrupa por categoria (cadastrados + categoria sintética "Frota (Aluguel)")
     const { data } = await supabaseAdmin
       .from("fixed_costs")
       .select("category, monthly_value, active")
@@ -332,8 +365,19 @@ export function registerFixedCostsRoutes(app: Express) {
       const cat = r.category || "Outros";
       porCategoria[cat] = (porCategoria[cat] || 0) + Number(r.monthly_value || 0);
     });
+    const fleet = await getFleetRentMonthlyTotal();
+    if (fleet.total > 0) {
+      porCategoria["Frota (Aluguel)"] = (porCategoria["Frota (Aluguel)"] || 0) + fleet.total;
+    }
 
-    res.json({ monthly, daily, weekly, yearly, porCategoria });
+    res.json({
+      monthly,
+      daily,
+      weekly,
+      yearly,
+      porCategoria,
+      fleetRent: fleet, // { count, total, perVehicle }
+    });
   });
 
   // CREATE
