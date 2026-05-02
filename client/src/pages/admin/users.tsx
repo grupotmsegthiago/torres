@@ -48,6 +48,146 @@ function getLoginFromEmail(email: string): string {
 
 const DEFAULT_PASSWORD = "torres@123";
 
+function UserListSection({
+  title,
+  subtitle,
+  users,
+  currentUser,
+  isDiretoria,
+  onEdit,
+  onDelete,
+  onResetPassword,
+}: {
+  title: string;
+  subtitle: string;
+  users: SafeUser[];
+  currentUser: { id?: number; role?: string } | null | undefined;
+  isDiretoria: boolean;
+  onEdit: (u: SafeUser) => void;
+  onDelete: (u: SafeUser) => void;
+  onResetPassword: (id: number) => void;
+}) {
+  return (
+    <section data-testid={`section-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
+          <p className="text-xs text-neutral-500">{subtitle}</p>
+        </div>
+        <span className="text-xs text-neutral-400 font-medium" data-testid={`text-count-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+          {users.length} {users.length === 1 ? "usuário" : "usuários"}
+        </span>
+      </div>
+
+      {users.length === 0 ? (
+        <Card className="p-6 text-center text-sm text-neutral-400">
+          Nenhum usuário nesta categoria
+        </Card>
+      ) : (
+        <Card className="overflow-hidden p-0">
+          <div className="hidden md:grid grid-cols-[1fr_200px_180px_120px] gap-3 px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            <div>Nome / Perfil</div>
+            <div>Login</div>
+            <div>Senha</div>
+            <div className="text-right">Ações</div>
+          </div>
+          <ul className="divide-y divide-neutral-100">
+            {users.map((u) => {
+              const roleInfo = getRoleInfo(u.role);
+              const RoleIcon = roleInfo.icon;
+              const isCurrentUser = currentUser?.id === u.id;
+
+              return (
+                <li
+                  key={u.id}
+                  className="grid grid-cols-1 md:grid-cols-[1fr_200px_180px_120px] gap-2 md:gap-3 px-4 py-3 items-center hover:bg-neutral-50/60 transition-colors"
+                  data-testid={`row-user-${u.id}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      u.role === "diretoria" ? "bg-amber-50 text-amber-600" :
+                      u.role === "admin" ? "bg-blue-50 text-blue-600" :
+                      "bg-neutral-100 text-neutral-500"
+                    }`}>
+                      <RoleIcon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-neutral-900 text-sm truncate" data-testid={`text-user-name-${u.id}`}>
+                          {u.name}
+                        </span>
+                        {isCurrentUser && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                            VOCÊ
+                          </span>
+                        )}
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase tracking-wide ${
+                          u.role === "diretoria" ? "bg-neutral-900 text-white" :
+                          u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
+                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
+                        }`} data-testid={`text-user-role-${u.id}`}>
+                          {roleInfo.label}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-sm text-neutral-600 min-w-0" data-testid={`text-user-login-${u.id}`}>
+                    <LogIn className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
+                    <span className="font-mono text-xs truncate">{getLoginFromEmail(u.email)}</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-sm text-neutral-600" data-testid={`text-user-password-${u.id}`}>
+                    <Lock className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
+                    <span className="font-mono text-xs">{DEFAULT_PASSWORD}</span>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-0.5">
+                    {!isCurrentUser && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onResetPassword(u.id)}
+                        className="h-8 w-8 text-neutral-400 hover:text-amber-600"
+                        title="Resetar senha"
+                        data-testid={`button-reset-password-${u.id}`}
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onEdit(u)}
+                      className="h-8 w-8 text-neutral-400 hover:text-neutral-900"
+                      title="Editar"
+                      data-testid={`button-edit-user-${u.id}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    {!isCurrentUser && isDiretoria && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onDelete(u)}
+                        className="h-8 w-8 text-neutral-400 hover:text-red-600"
+                        title="Excluir"
+                        data-testid={`button-delete-user-${u.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
+    </section>
+  );
+}
+
 function CredentialCard({ user, onClose }: { user: CreatedUser; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
@@ -131,6 +271,10 @@ export default function UsersPage() {
     queryKey: ["/api/users"],
     enabled: isAdmin,
   });
+
+  const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const internalUsers = sortedUsers.filter((u) => u.role === "diretoria" || u.role === "admin");
+  const employeeUsers = sortedUsers.filter((u) => u.role === "funcionario");
 
   const createMutation = useMutation({
     mutationFn: async (data: { email: string; name: string; role: string }) => {
@@ -260,95 +404,27 @@ export default function UsersPage() {
             <p className="text-neutral-500">Nenhum usuário cadastrado</p>
           </Card>
         ) : (
-          <div className="grid gap-3">
-            {users.map((u) => {
-              const roleInfo = getRoleInfo(u.role);
-              const RoleIcon = roleInfo.icon;
-              const isCurrentUser = currentUser?.id === u.id;
-
-              return (
-                <Card
-                  key={u.id}
-                  className="p-4 flex items-center justify-between hover:shadow-sm transition-shadow"
-                  data-testid={`card-user-${u.id}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      u.role === "diretoria" ? "bg-amber-50 text-amber-600" :
-                      u.role === "admin" ? "bg-blue-50 text-blue-600" :
-                      "bg-neutral-100 text-neutral-500"
-                    }`}>
-                      <RoleIcon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-900" data-testid={`text-user-name-${u.id}`}>
-                          {u.name}
-                        </span>
-                        {isCurrentUser && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
-                            VOCÊ
-                          </span>
-                        )}
-                        <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
-                          u.role === "diretoria" ? "bg-neutral-900 text-white" :
-                          u.role === "admin" ? "bg-blue-50 text-blue-700 border border-blue-200" :
-                          "bg-neutral-100 text-neutral-600 border border-neutral-200"
-                        }`} data-testid={`text-user-role-${u.id}`}>
-                          {roleInfo.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-neutral-500 mt-0.5">
-                        <span className="flex items-center gap-1" data-testid={`text-user-login-${u.id}`}>
-                          <LogIn className="w-3 h-3" />
-                          <span className="text-neutral-400">Login:</span> {getLoginFromEmail(u.email)}
-                        </span>
-                        <span className="flex items-center gap-1" data-testid={`text-user-password-${u.id}`}>
-                          <Lock className="w-3 h-3" />
-                          <span className="text-neutral-400">Senha:</span>
-                          <span className="font-mono">{DEFAULT_PASSWORD}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    {!isCurrentUser && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => resetPasswordMutation.mutate(u.id)}
-                        className="text-neutral-400 hover:text-amber-600"
-                        title="Resetar senha"
-                        data-testid={`button-reset-password-${u.id}`}
-                      >
-                        <KeyRound className="w-4 h-4" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEdit(u)}
-                      className="text-neutral-400 hover:text-neutral-900"
-                      data-testid={`button-edit-user-${u.id}`}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    {!isCurrentUser && isDiretoria && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteConfirm(u)}
-                        className="text-neutral-400 hover:text-red-600"
-                        data-testid={`button-delete-user-${u.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
+          <div className="space-y-8">
+            <UserListSection
+              title="Usuários Internos"
+              subtitle="Diretoria e administradores com acesso ao sistema"
+              users={internalUsers}
+              currentUser={currentUser}
+              isDiretoria={isDiretoria}
+              onEdit={openEdit}
+              onDelete={setDeleteConfirm}
+              onResetPassword={(id) => resetPasswordMutation.mutate(id)}
+            />
+            <UserListSection
+              title="Funcionários"
+              subtitle="Vigilantes, motoristas e operacional"
+              users={employeeUsers}
+              currentUser={currentUser}
+              isDiretoria={isDiretoria}
+              onEdit={openEdit}
+              onDelete={setDeleteConfirm}
+              onResetPassword={(id) => resetPasswordMutation.mutate(id)}
+            />
           </div>
         )}
       </div>
