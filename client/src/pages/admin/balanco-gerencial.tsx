@@ -2,6 +2,8 @@ import AdminLayout from "@/components/admin/layout";
 import { formatDateBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
+import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -205,6 +207,17 @@ export default function BalancoGerencialPage() {
     queryKey: ["/api/fixed-costs/summary"],
     refetchInterval: 600_000,
   });
+
+  // Custos de RH (folha cct) — usado para o cálculo da meta de faturamento real
+  const { data: rhSummary } = useQuery<{ monthly: number }>({
+    queryKey: ["/api/fixed-costs/rh-summary"],
+    refetchInterval: 600_000,
+  });
+
+  // Configuração da Meta de Faturamento (compartilhada com tela "Custos Fixos")
+  const [metaCfg] = useMetaConfig();
+  const custoFixoTotalMensal = (fixedCostsSummary?.monthly || 0) + (rhSummary?.monthly || 0);
+  const metaResult = useMemo(() => calcMeta(custoFixoTotalMensal, metaCfg), [custoFixoTotalMensal, metaCfg]);
 
   const activeAgentCount = useMemo(() => {
     if (!allEmployees) return 0;
@@ -821,6 +834,90 @@ export default function BalancoGerencialPage() {
             );
           })()}
         </div>
+
+        {/* === META DE FATURAMENTO REAL (configurada em "Custos Fixos") === */}
+        {isDiretoria && custoFixoTotalMensal > 0 && metaResult.realista.valida && (() => {
+          const metaPeriodo = metaResult.realista.diaria * daysInPeriod;
+          const metaPct = metaPeriodo > 0 ? (totals.fat / metaPeriodo) * 100 : 0;
+          const tone = metaPct >= 100 ? "green" : metaPct >= 70 ? "amber" : "red";
+          const toneCfg = {
+            green: { text: "text-green-700", bar: "bg-green-500", icon: "text-green-700" },
+            amber: { text: "text-amber-700", bar: "bg-amber-500", icon: "text-amber-700" },
+            red:   { text: "text-red-700",   bar: "bg-red-500",   icon: "text-red-700"   },
+          }[tone];
+
+          return (
+            <Card className="p-4 border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50" data-testid="card-meta-faturamento">
+              <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-black text-emerald-900 uppercase tracking-tight flex items-center gap-2">
+                    <Target size={16} /> Meta de Faturamento — {metaCfg.lucroPct}% lucro REAL
+                  </h3>
+                  <p className="text-[11px] text-emerald-700/80 font-bold">
+                    Cobre custos fixos+RH ({fmt(custoFixoTotalMensal)}/mês) · impostos {metaCfg.impostoPct}% · custos variáveis {metaCfg.custoVarPct}%
+                  </p>
+                </div>
+                <Link to="/admin/custos-fixos">
+                  <Button variant="outline" size="sm" className="text-[10px] font-black uppercase" data-testid="button-meta-configurar">
+                    Configurar
+                  </Button>
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                <Card className="p-2 bg-white/70 border-emerald-200" data-testid="meta-card-diaria">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Diária</div>
+                  <div className="text-sm font-black text-emerald-700 font-mono">{fmt(metaResult.realista.diaria)}</div>
+                </Card>
+                <Card className="p-2 bg-white/70 border-emerald-200" data-testid="meta-card-semanal">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Semanal</div>
+                  <div className="text-sm font-black text-emerald-700 font-mono">{fmt(metaResult.realista.semanal)}</div>
+                </Card>
+                <Card className="p-2 bg-white/70 border-emerald-200" data-testid="meta-card-mensal">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Mensal</div>
+                  <div className="text-sm font-black text-emerald-700 font-mono">{fmt(metaResult.realista.mensal)}</div>
+                </Card>
+                <Card className="p-2 bg-white/70 border-emerald-200" data-testid="meta-card-anual">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Anual</div>
+                  <div className="text-sm font-black text-emerald-700 font-mono">{fmt(metaResult.realista.anual)}</div>
+                </Card>
+              </div>
+
+              {/* Comparativo: período selecionado */}
+              <div className="p-3 bg-white/70 rounded-lg border border-emerald-200">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-neutral-600 uppercase">
+                    Meta no período ({range.label}, {daysInPeriod}d):
+                  </span>
+                  <span className="text-sm font-black font-mono text-emerald-800" data-testid="text-meta-periodo">
+                    {fmt(metaPeriodo)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-neutral-600 uppercase">Faturamento real:</span>
+                  <span className={`text-sm font-black font-mono ${toneCfg.text}`} data-testid="text-meta-progresso">
+                    {fmt(totals.fat)} ({fmtPct(metaPct)})
+                  </span>
+                </div>
+                <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${toneCfg.bar}`}
+                    style={{ width: `${Math.min(metaPct, 100)}%` }}
+                  />
+                </div>
+                {metaPct < 100 ? (
+                  <p className={`text-[11px] font-bold mt-1.5 ${toneCfg.text}`}>
+                    Faltam <strong>{fmt(metaPeriodo - totals.fat)}</strong> ({(100 - metaPct).toFixed(1)}%) para bater a meta neste período.
+                  </p>
+                ) : (
+                  <p className="text-[11px] font-bold mt-1.5 text-green-700">
+                    Meta batida! Sobra de <strong>{fmt(totals.fat - metaPeriodo)}</strong> acima do alvo.
+                  </p>
+                )}
+              </div>
+            </Card>
+          );
+        })()}
 
         {isDiretoria && <Dialog open={showEficienciaModal} onOpenChange={setShowEficienciaModal}>
           <DialogContent className="max-w-2xl" data-testid="modal-eficiencia">

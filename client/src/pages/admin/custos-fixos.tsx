@@ -1,7 +1,8 @@
 import AdminLayout from "@/components/admin/layout";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMetaConfig, calcMeta } from "@/lib/meta-faturamento";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,90 +239,223 @@ export default function CustosFixosPage() {
           </Card>
         </div>
 
-        {/* === META DE FATURAMENTO (lucro mínimo configurável, default 35%) === */}
+        {/* === META DE FATURAMENTO — calculadora REALISTA com impostos e custos variáveis === */}
         <Card className="p-5 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 border-2 border-emerald-300 dark:border-emerald-800">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <Target className="h-6 w-6 text-emerald-700" />
-              <div>
-                <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
-                  Meta de Faturamento Mínimo
-                </h2>
-                <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
-                  Quanto a empresa precisa faturar para cobrir TODOS os custos e ter <strong>{margemPct}% de lucro</strong>.
-                </p>
-              </div>
+          <div className="flex items-center gap-2 mb-3">
+            <Target className="h-6 w-6 text-emerald-700" />
+            <div>
+              <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                Meta de Faturamento — para ter {metaCfg.lucroPct}% de lucro REAL
+              </h2>
+              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                Quanto a empresa precisa faturar para cobrir <strong>TODOS os custos + impostos + custos variáveis</strong> e ainda sobrar {metaCfg.lucroPct}% de lucro líquido.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="margem-pct" className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 whitespace-nowrap">
-                Lucro mínimo:
+          </div>
+
+          {/* Inputs configuráveis */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 p-3 bg-white/60 dark:bg-black/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+            <div>
+              <Label htmlFor="margem-pct" className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" /> Lucro mínimo alvo
               </Label>
-              <Input
-                id="margem-pct"
-                type="number"
-                min={1}
-                max={99}
-                step={1}
-                value={margemPct}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n) && n > 0 && n < 100) setMargemPersist(n);
-                }}
-                className="w-20 h-9 text-center font-bold"
-                data-testid="input-margem-pct"
-              />
-              <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">%</span>
+              <div className="flex items-center gap-1 mt-1">
+                <Input
+                  id="margem-pct"
+                  type="number"
+                  min={1}
+                  max={99}
+                  step={1}
+                  value={metaCfg.lucroPct}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 0 && n < 100) setMetaCfg({ lucroPct: n });
+                  }}
+                  className="h-9 text-center font-bold flex-1"
+                  data-testid="input-margem-pct"
+                />
+                <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">%</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">sobre o faturamento</p>
+            </div>
+
+            <div>
+              <Label htmlFor="imposto-pct" className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1">
+                <Briefcase className="h-3 w-3" /> Impostos sobre faturamento
+              </Label>
+              <div className="flex items-center gap-1 mt-1">
+                <Input
+                  id="imposto-pct"
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={metaCfg.impostoPct}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 0 && n < 100) setMetaCfg({ impostoPct: n });
+                  }}
+                  className="h-9 text-center font-bold flex-1"
+                  data-testid="input-imposto-pct"
+                />
+                <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">%</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Lucro Presumido vigilância: ~16% · Simples Anexo IV: 11–22%
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="cv-pct" className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1">
+                <Layers className="h-3 w-3" /> Custos variáveis
+              </Label>
+              <div className="flex items-center gap-1 mt-1">
+                <Input
+                  id="cv-pct"
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={metaCfg.custoVarPct}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 0 && n < 100) setMetaCfg({ custoVarPct: n });
+                  }}
+                  className="h-9 text-center font-bold flex-1"
+                  data-testid="input-cv-pct"
+                />
+                <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">%</span>
+                {varRatio && varRatio.faturamento > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-2 text-[10px] font-bold whitespace-nowrap"
+                    onClick={() => setMetaCfg({ custoVarPct: varRatio.ratioPct })}
+                    data-testid="button-use-historic-cv"
+                    title={`Histórico ${varRatio.period.from} a ${varRatio.period.to}: ${fmtBRL(varRatio.custosVariaveis)} de variáveis sobre ${fmtBRL(varRatio.faturamento)} de faturamento`}
+                  >
+                    Usar {varRatio.ratioPct}%
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Combustível + pedágio + manutenção / faturamento
+                {varRatio && varRatio.faturamento > 0 && (
+                  <> · histórico 3m: <strong className="text-emerald-700">{varRatio.ratioPct}%</strong></>
+                )}
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> Diária
-              </div>
-              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-daily">
-                {fmtBRL(metaDiaria)}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">por dia útil/corrido</div>
-            </Card>
+          {/* Validação: soma dos % não pode passar de 100 */}
+          {!meta.realista.valida && (
+            <div className="mb-3 p-3 rounded-lg bg-red-100 border border-red-300 dark:bg-red-950/40 dark:border-red-800">
+              <p className="text-xs font-semibold text-red-800 dark:text-red-200 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                Configuração inviável: imposto ({metaCfg.impostoPct}%) + custos variáveis ({metaCfg.custoVarPct}%) + lucro alvo ({metaCfg.lucroPct}%) = {(metaCfg.impostoPct + metaCfg.custoVarPct + metaCfg.lucroPct).toFixed(1)}% ≥ 100%.
+                Reduza algum dos valores.
+              </p>
+            </div>
+          )}
 
-            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> Semanal
-              </div>
-              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-weekly">
-                {fmtBRL(metaSemanal)}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">7 dias</div>
-            </Card>
+          {/* Cards de meta REALISTA */}
+          {meta.realista.valida && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card className="p-3 bg-white/80 dark:bg-black/30 border-emerald-300 dark:border-emerald-700">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Calendar className="h-3.5 w-3.5" /> Diária
+                  </div>
+                  <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-daily">
+                    {fmtBRL(meta.realista.diaria)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">por dia corrido</div>
+                </Card>
 
-            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TrendingUp className="h-3.5 w-3.5" /> Mensal
-              </div>
-              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-monthly">
-                {fmtBRL(metaMensal)}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">
-                Lucro: <strong className="text-emerald-600">{fmtBRL(lucroMensalEsperado)}</strong>
-              </div>
-            </Card>
+                <Card className="p-3 bg-white/80 dark:bg-black/30 border-emerald-300 dark:border-emerald-700">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Calendar className="h-3.5 w-3.5" /> Semanal
+                  </div>
+                  <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-weekly">
+                    {fmtBRL(meta.realista.semanal)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">7 dias</div>
+                </Card>
 
-            <Card className="p-3 bg-white/60 dark:bg-black/20 border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TrendingUp className="h-3.5 w-3.5" /> Anual
-              </div>
-              <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-yearly">
-                {fmtBRL(metaAnual)}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">12 meses</div>
-            </Card>
-          </div>
+                <Card className="p-3 bg-white/80 dark:bg-black/30 border-emerald-300 dark:border-emerald-700">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <TrendingUp className="h-3.5 w-3.5" /> Mensal
+                  </div>
+                  <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-monthly">
+                    {fmtBRL(meta.realista.mensal)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    Lucro: <strong className="text-emerald-600">{fmtBRL(meta.realista.decomposicao.lucro)}</strong>
+                  </div>
+                </Card>
 
-          <p className="text-[11px] text-emerald-800/70 dark:text-emerald-300/70 mt-3 leading-relaxed">
-            <strong>Cálculo:</strong> Faturamento mínimo = Custo total ÷ (1 − {margemPct}%) = {fmtBRL(totalMensal)} ÷ {fatorMeta.toFixed(2)} = <strong>{fmtBRL(metaMensal)}/mês</strong>.
-            Acima desse valor, cada real extra é lucro; abaixo, a operação está no prejuízo.
-          </p>
+                <Card className="p-3 bg-white/80 dark:bg-black/30 border-emerald-300 dark:border-emerald-700">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <TrendingUp className="h-3.5 w-3.5" /> Anual
+                  </div>
+                  <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1" data-testid="text-meta-yearly">
+                    {fmtBRL(meta.realista.anual)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">12 meses</div>
+                </Card>
+              </div>
+
+              {/* Decomposição do faturamento meta */}
+              <div className="mt-4 p-3 rounded-lg bg-white/60 dark:bg-black/20 border border-emerald-200 dark:border-emerald-800">
+                <p className="text-[11px] font-bold text-emerald-900 dark:text-emerald-100 uppercase tracking-wide mb-2">
+                  Para onde vão os {fmtBRL(meta.realista.mensal)}/mês:
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">Impostos ({metaCfg.impostoPct}%)</span>
+                    <span className="font-bold text-red-600 dark:text-red-400">−{fmtBRL(meta.realista.decomposicao.impostos)}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">Custos variáveis ({metaCfg.custoVarPct}%)</span>
+                    <span className="font-bold text-orange-600 dark:text-orange-400">−{fmtBRL(meta.realista.decomposicao.custosVariaveis)}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">Custos fixos + RH</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400">−{fmtBRL(meta.realista.decomposicao.custosFixos)}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">Lucro líquido ({metaCfg.lucroPct}%)</span>
+                    <span className="font-bold text-emerald-700 dark:text-emerald-300">+{fmtBRL(meta.realista.decomposicao.lucro)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comparativo: Simplificada vs Realista */}
+              <details className="mt-3 text-xs">
+                <summary className="cursor-pointer font-semibold text-emerald-800 dark:text-emerald-200 hover:underline">
+                  Por que essa meta é maior que a "simplificada"? (clique para ver)
+                </summary>
+                <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2">
+                  <p className="text-amber-900 dark:text-amber-100">
+                    A fórmula <strong>simplificada</strong> (custo ÷ (1 − {metaCfg.lucroPct}%)) ignora impostos e custos variáveis.
+                    Daria meta mensal de <strong>{fmtBRL(meta.simplificada.mensal)}</strong> — mas, descontando impostos
+                    ({metaCfg.impostoPct}%) e variáveis ({metaCfg.custoVarPct}%), o lucro REAL cairia para apenas
+                    <strong> {fmtBRL(meta.simplificada.mensal * (1 - metaCfg.impostoPct/100 - metaCfg.custoVarPct/100) - totalMensal)}</strong>
+                    {" "}
+                    ({((meta.simplificada.mensal * (1 - metaCfg.impostoPct/100 - metaCfg.custoVarPct/100) - totalMensal) / meta.simplificada.mensal * 100).toFixed(1)}% de margem real).
+                  </p>
+                  <p className="text-amber-900 dark:text-amber-100">
+                    A fórmula <strong>completa</strong> usada aqui:
+                    <br />
+                    <code className="text-[11px] bg-white/60 dark:bg-black/30 px-1.5 py-0.5 rounded font-mono">
+                      Faturamento = Custo Fixo ÷ (1 − {metaCfg.impostoPct}% − {metaCfg.custoVarPct}% − {metaCfg.lucroPct}%) = {fmtBRL(totalMensal)} ÷ {meta.realista.fator.toFixed(3)} = {fmtBRL(meta.realista.mensal)}
+                    </code>
+                  </p>
+                </div>
+              </details>
+            </>
+          )}
         </Card>
 
         {/* Por Categoria */}
