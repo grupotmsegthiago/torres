@@ -437,6 +437,63 @@ export function registerFixedCostsRoutes(app: Express) {
     res.json({ ok: true });
   });
 
+  // === Histórico de % de custos variáveis sobre faturamento ===
+  // GET /api/fixed-costs/variable-cost-ratio?months=3
+  // Calcula: (custos variáveis dos últimos N meses) / (faturamento dos últimos N meses)
+  // Usado para sugerir automaticamente o % de custos variáveis na calculadora de meta.
+  app.get("/api/fixed-costs/variable-cost-ratio", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const months = Math.max(1, Math.min(12, Number(req.query.months) || 3));
+      const today = new Date();
+      // Janela: últimos N meses COMPLETOS (não inclui o mês corrente parcial)
+      const start = new Date(today.getFullYear(), today.getMonth() - months, 1);
+      const end = new Date(today.getFullYear(), today.getMonth(), 0); // último dia do mês anterior
+      const startISO = start.toISOString().slice(0, 10);
+      const endISO = end.toISOString().slice(0, 10);
+
+      // Faturamento: service_orders concluídas, sem recusadas
+      const { data: ordens } = await supabaseAdmin
+        .from("service_orders")
+        .select("fat_total, mission_status, created_at")
+        .gte("created_at", startISO + "T00:00:00")
+        .lte("created_at", endISO + "T23:59:59");
+      const faturamento = (ordens || [])
+        .filter((r: any) => r.mission_status !== "RECUSADA")
+        .reduce((s: number, r: any) => s + Number(r.fat_total || 0), 0);
+
+      // Custos variáveis: combustível, mission_cost, maintenance, ou categoria CUSTOS_VARIAVEIS
+      const { data: txs } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("amount, type, category, origin_type, date")
+        .gte("date", startISO)
+        .lte("date", endISO);
+      const variaveis = (txs || [])
+        .filter((r: any) => {
+          const isDespesa = r.type === "despesa" || r.type === "DESPESA";
+          const isVar =
+            r.category === "CUSTOS_VARIAVEIS" ||
+            ["fueling", "mission_cost", "maintenance"].includes(String(r.origin_type || ""));
+          return isDespesa && isVar;
+        })
+        .reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+
+      const ratio = faturamento > 0 ? variaveis / faturamento : 0;
+      const ratioPct = Math.round(ratio * 1000) / 10; // 1 casa decimal
+
+      res.json({
+        months,
+        period: { from: startISO, to: endISO },
+        faturamento,
+        custosVariaveis: variaveis,
+        ratio,
+        ratioPct,
+      });
+    } catch (err: any) {
+      console.error("[variable-cost-ratio] error:", err);
+      res.status(500).json({ message: err.message || "Erro ao calcular ratio" });
+    }
+  });
+
   // === TCO / Balanço ===
   // GET /api/balanco/tco?from=YYYY-MM-DD&to=YYYY-MM-DD
   app.get("/api/balanco/tco", requireAuth, requireAdminRole, async (req, res) => {

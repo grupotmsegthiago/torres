@@ -119,27 +119,27 @@ export default function CustosFixosPage() {
   const totalSemanal = totalDiario * 7;
   const totalAnual = totalMensal * 12;
 
-  // Margem de lucro mínima (default 35%) — persistida no localStorage
-  const [margemPct, setMargemPct] = useState<number>(() => {
-    if (typeof window === "undefined") return 35;
-    const stored = localStorage.getItem("torres_margem_lucro_pct");
-    const n = stored ? Number(stored) : 35;
-    return Number.isFinite(n) && n > 0 && n < 100 ? n : 35;
+  // === META DE FATURAMENTO (configuração compartilhada com Balanço Gerencial) ===
+  const [metaCfg, setMetaCfg] = useMetaConfig();
+  const meta = useMemo(() => calcMeta(totalMensal, metaCfg), [totalMensal, metaCfg]);
+
+  // Sugestão de % de custos variáveis a partir do histórico (últimos 3 meses completos)
+  const { data: varRatio } = useQuery<{
+    months: number;
+    period: { from: string; to: string };
+    faturamento: number;
+    custosVariaveis: number;
+    ratio: number;
+    ratioPct: number;
+  }>({
+    queryKey: ["/api/fixed-costs/variable-cost-ratio"],
+    queryFn: async () => {
+      const r = await fetch("/api/fixed-costs/variable-cost-ratio?months=3", { credentials: "include" });
+      if (!r.ok) throw new Error("Falha ao calcular histórico de custos variáveis");
+      return r.json();
+    },
+    staleTime: 30 * 60_000,
   });
-  const setMargemPersist = (n: number) => {
-    setMargemPct(n);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("torres_margem_lucro_pct", String(n));
-    }
-  };
-  // Fórmula: lucro = (faturamento - custo) ≥ margem% × faturamento
-  // => faturamento ≥ custo / (1 - margem%/100)
-  const fatorMeta = 1 - margemPct / 100;
-  const metaMensal = fatorMeta > 0 ? totalMensal / fatorMeta : 0;
-  const metaDiaria = metaMensal / 30;
-  const metaSemanal = metaDiaria * 7;
-  const metaAnual = metaMensal * 12;
-  const lucroMensalEsperado = metaMensal - totalMensal;
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/fixed-costs/${id}`),
