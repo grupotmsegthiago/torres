@@ -18,8 +18,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Building2, Plus, Edit, Trash2, Calendar, DollarSign, Loader2,
-  AlertCircle, Calculator, TrendingDown,
+  AlertCircle, Calculator, TrendingDown, Users, Briefcase, Layers,
 } from "lucide-react";
+import { Link } from "wouter";
 import type { FixedCost } from "@shared/schema";
 
 const CATEGORIES = [
@@ -55,6 +56,20 @@ interface Summary {
   porCategoria: Record<string, number>;
 }
 
+interface RHSummary {
+  monthly: number;
+  daily: number;
+  weekly: number;
+  yearly: number;
+  agentCount: number;
+  breakdown: { base: number; encargos: number; beneficios: number };
+  porAgente: Array<{
+    id: number; name: string; total: number;
+    base: number; encargos: number; vr: number; vt: number; outros: number;
+    horasMensais: number; custoHora: number;
+  }>;
+}
+
 export default function CustosFixosPage() {
   const { toast } = useToast();
   const [editing, setEditing] = useState<FixedCost | null>(null);
@@ -67,6 +82,13 @@ export default function CustosFixosPage() {
   const { data: summary } = useQuery<Summary>({
     queryKey: ["/api/fixed-costs/summary"],
   });
+
+  const { data: rhSummary, isLoading: rhLoading } = useQuery<RHSummary>({
+    queryKey: ["/api/fixed-costs/rh-summary"],
+  });
+
+  const totalMensal = (summary?.monthly ?? 0) + (rhSummary?.monthly ?? 0);
+  const totalDiario = totalMensal / 30;
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/fixed-costs/${id}`),
@@ -178,6 +200,150 @@ export default function CustosFixosPage() {
             </div>
           </Card>
         )}
+
+        {/* === CUSTOS DE RH (salários + benefícios) === */}
+        <div className="border-t pt-4 mt-2">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div>
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Users className="h-5 w-5 text-emerald-600" />
+                Custos de RH (Salários + Benefícios)
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Folha mensal estimada com encargos (80%) + VR + VT + outros benefícios — base CCT vigente.
+              </p>
+            </div>
+            <Link href="/admin/employees">
+              <Button variant="outline" size="sm" data-testid="link-employees">
+                <Briefcase className="h-3.5 w-3.5 mr-1.5" /> Gerir Salários
+              </Button>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <Card className="p-4 border-l-4 border-l-emerald-500">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4" /> Folha Mensal
+              </div>
+              <div className="text-2xl font-bold mt-1" data-testid="text-rh-monthly">
+                {rhLoading ? <Loader2 className="h-5 w-5 animate-spin inline" /> : fmtBRL(rhSummary?.monthly ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {rhSummary?.agentCount ?? 0} agente(s) ativo(s)
+              </div>
+            </Card>
+
+            <Card className="p-4 border-l-4 border-l-orange-500">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calculator className="h-4 w-4" /> Diário (÷30)
+              </div>
+              <div className="text-2xl font-bold mt-1" data-testid="text-rh-daily">
+                {fmtBRL(rhSummary?.daily ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">Custo de RH por dia</div>
+            </Card>
+
+            <Card className="p-4 border-l-4 border-l-purple-500">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="h-4 w-4" /> Salário Base
+              </div>
+              <div className="text-2xl font-bold mt-1">
+                {fmtBRL(rhSummary?.breakdown.base ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Encargos: {fmtBRL(rhSummary?.breakdown.encargos ?? 0)}
+              </div>
+            </Card>
+
+            <Card className="p-4 border-l-4 border-l-cyan-500">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <DollarSign className="h-4 w-4" /> Benefícios
+              </div>
+              <div className="text-2xl font-bold mt-1">
+                {fmtBRL(rhSummary?.breakdown.beneficios ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">VR + VT + outros</div>
+            </Card>
+          </div>
+
+          {rhSummary && rhSummary.porAgente.length > 0 && (
+            <Card className="p-4 mt-3">
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Users className="h-4 w-4" /> Custo por Agente
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground uppercase">
+                      <th className="py-2 px-2">Agente</th>
+                      <th className="py-2 px-2 text-right">Base</th>
+                      <th className="py-2 px-2 text-right">Encargos</th>
+                      <th className="py-2 px-2 text-right">VR + VT + Outros</th>
+                      <th className="py-2 px-2 text-right">Total Mensal</th>
+                      <th className="py-2 px-2 text-right">Custo/Hora</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rhSummary.porAgente.map((a) => (
+                      <tr key={a.id} className="border-b hover:bg-muted/30" data-testid={`row-agent-${a.id}`}>
+                        <td className="py-2 px-2 font-medium">{a.name}</td>
+                        <td className="py-2 px-2 text-right">{fmtBRL(a.base)}</td>
+                        <td className="py-2 px-2 text-right text-amber-700 dark:text-amber-400">{fmtBRL(a.encargos)}</td>
+                        <td className="py-2 px-2 text-right text-cyan-700 dark:text-cyan-400">
+                          {fmtBRL(a.vr + a.vt + a.outros)}
+                        </td>
+                        <td className="py-2 px-2 text-right font-semibold">{fmtBRL(a.total)}</td>
+                        <td className="py-2 px-2 text-right text-emerald-700 dark:text-emerald-400">
+                          {fmtBRL(a.custoHora)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                Cadastre/atualize o salário e os benefícios em <strong>Funcionários</strong> → seleciona o agente → aba "Salário".
+                Encargos padrão: 80%. Horas mensais padrão: 220.
+              </p>
+            </Card>
+          )}
+        </div>
+
+        {/* === CUSTO TOTAL DA OPERAÇÃO === */}
+        <Card className="p-5 mt-2 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-2 border-indigo-200 dark:border-indigo-800">
+          <div className="flex items-center gap-2 mb-3">
+            <Layers className="h-6 w-6 text-indigo-700" />
+            <h2 className="text-lg font-bold text-indigo-900 dark:text-indigo-100">
+              Custo Total da Operação
+            </h2>
+            <Badge className="bg-indigo-600 text-white border-0">TCO</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <div className="text-xs text-muted-foreground uppercase font-bold">Custos Fixos</div>
+              <div className="text-xl font-bold text-blue-700 dark:text-blue-300" data-testid="text-total-fixed">
+                {fmtBRL(summary?.monthly ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground">Estrutura + softwares</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground uppercase font-bold">Custos de RH</div>
+              <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300" data-testid="text-total-rh">
+                {fmtBRL(rhSummary?.monthly ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground">Folha + benefícios</div>
+            </div>
+            <div className="border-l-2 border-indigo-300 pl-4">
+              <div className="text-xs text-muted-foreground uppercase font-bold">Total Mensal</div>
+              <div className="text-2xl font-black text-indigo-700 dark:text-indigo-300" data-testid="text-total-operacao">
+                {fmtBRL(totalMensal)}
+              </div>
+              <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                {fmtBRL(totalDiario)}/dia • {fmtBRL(totalMensal * 12)}/ano
+              </div>
+            </div>
+          </div>
+        </Card>
 
         {/* Lista */}
         <Card className="p-4">

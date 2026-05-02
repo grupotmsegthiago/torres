@@ -26,6 +26,21 @@ export const FIXED_COST_CATEGORIES = [
   "Outros",
 ] as const;
 
+// Normaliza linha do Supabase (snake_case) pro tipo FixedCost (camelCase) usado no client.
+function toCamelFixedCost(r: any) {
+  if (!r) return r;
+  return {
+    id: r.id,
+    description: r.description,
+    category: r.category,
+    monthlyValue: r.monthly_value,
+    dueDay: r.due_day,
+    active: r.active,
+    notes: r.notes,
+    createdAt: r.created_at,
+  };
+}
+
 /**
  * Soma o valor mensal de TODOS os custos fixos ativos.
  * Esse é o "Custo de Estar Aberto" mensal da operação (CEA).
@@ -132,7 +147,65 @@ export function registerFixedCostsRoutes(app: Express) {
       .order("category", { ascending: true })
       .order("description", { ascending: true });
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data || []);
+    res.json((data || []).map(toCamelFixedCost));
+  });
+
+  // === RH SUMMARY (salários + encargos + benefícios de todos agentes ativos) ===
+  app.get("/api/fixed-costs/rh-summary", requireAuth, requireAdminRole, async (_req, res) => {
+    const { data: employees, error } = await supabaseAdmin
+      .from("employees")
+      .select("id, full_name, name, status");
+    if (error) return res.status(500).json({ message: error.message });
+
+    const ativos = (employees || []).filter((e: any) =>
+      !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
+    );
+
+    const porAgente: Array<{
+      id: number; name: string; total: number;
+      base: number; encargos: number; vr: number; vt: number; outros: number;
+      horasMensais: number; custoHora: number;
+    }> = [];
+    let totalMensal = 0;
+    let totalBase = 0;
+    let totalEncargos = 0;
+    let totalBeneficios = 0;
+
+    for (const emp of ativos) {
+      const r = await calculateAgentMonthlyCost(emp.id);
+      totalMensal += r.total;
+      totalBase += r.breakdown.base;
+      totalEncargos += r.breakdown.encargos;
+      totalBeneficios += r.breakdown.vr + r.breakdown.vt + r.breakdown.outros;
+      porAgente.push({
+        id: emp.id,
+        name: emp.full_name || emp.name || `Agente ${emp.id}`,
+        total: r.total,
+        base: r.breakdown.base,
+        encargos: r.breakdown.encargos,
+        vr: r.breakdown.vr,
+        vt: r.breakdown.vt,
+        outros: r.breakdown.outros,
+        horasMensais: r.breakdown.horasMensais,
+        custoHora: r.breakdown.custoHora,
+      });
+    }
+
+    porAgente.sort((a, b) => b.total - a.total);
+
+    res.json({
+      monthly: totalMensal,
+      daily: totalMensal / 30,
+      weekly: (totalMensal / 30) * 7,
+      yearly: totalMensal * 12,
+      agentCount: ativos.length,
+      breakdown: {
+        base: totalBase,
+        encargos: totalEncargos,
+        beneficios: totalBeneficios,
+      },
+      porAgente,
+    });
   });
 
   // SUMMARY (rateios prontos)
@@ -175,7 +248,7 @@ export function registerFixedCostsRoutes(app: Express) {
       .select()
       .single();
     if (error) return res.status(500).json({ message: error.message });
-    res.status(201).json(data);
+    res.status(201).json(toCamelFixedCost(data));
   });
 
   // UPDATE
@@ -202,7 +275,7 @@ export function registerFixedCostsRoutes(app: Express) {
       .select()
       .single();
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data);
+    res.json(toCamelFixedCost(data));
   });
 
   // DELETE
