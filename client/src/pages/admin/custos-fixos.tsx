@@ -69,6 +69,7 @@ interface RHSummary {
   breakdown: {
     base: number; encargos: number;
     vr: number; vt: number; cesta: number; outros: number; diarias: number;
+    ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
     beneficios: number;
   };
   porAgente: Array<{
@@ -77,6 +78,8 @@ interface RHSummary {
     vrDiario: number; vrDias: number; vrTotal: number;
     vt: number; cesta: number; outros: number; diarias: number;
     horasMensais: number; custoHora: number;
+    ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
+    semSalario?: boolean;
   }>;
 }
 
@@ -488,7 +491,7 @@ export default function CustosFixosPage() {
                 Custos de RH (Salários + Benefícios)
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Folha mensal estimada com encargos (80%) + VR + VT + outros benefícios — base CCT vigente.
+                Custo real mensal por agente (salário cadastrado + encargos + benefícios + provisões de férias/13º/rescisão + médias de hora extra e adicional noturno). Distinto da Provisão CCT usada no Balanço.
               </p>
             </div>
             <Link href="/admin/employees">
@@ -556,6 +559,57 @@ export default function CustosFixosPage() {
             </p>
           )}
 
+          {/* Provisões Automáticas */}
+          {rhSummary && (rhSummary.breakdown.ferias > 0 || rhSummary.breakdown.decimoTerceiro > 0 || rhSummary.breakdown.rescisao > 0 || rhSummary.breakdown.horaExtra > 0 || rhSummary.breakdown.adicionalNoturno > 0) && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
+              <Card className="p-3 border-l-4 border-l-yellow-500">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" /> Provisão Férias
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-rh-ferias">
+                  {fmtBRL(rhSummary.breakdown.ferias ?? 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">(base+enc) × 4/3 ÷ 12</div>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-green-500">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <DollarSign className="h-3.5 w-3.5" /> Provisão 13º
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-rh-decimo-terceiro">
+                  {fmtBRL(rhSummary.breakdown.decimoTerceiro ?? 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">(base+enc) ÷ 12</div>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-red-500">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <AlertCircle className="h-3.5 w-3.5" /> Provisão Rescisão
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-rh-rescisao">
+                  {fmtBRL(rhSummary.breakdown.rescisao ?? 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">8% folha bruta (FGTS+multa)</div>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-indigo-500">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Calculator className="h-3.5 w-3.5" /> Hora Extra (média)
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-rh-hora-extra">
+                  {fmtBRL(rhSummary.breakdown.horaExtra ?? 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Média 3 meses × 150%</div>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-violet-500">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Calculator className="h-3.5 w-3.5" /> Adic. Noturno (média)
+                </div>
+                <div className="text-lg font-bold mt-1" data-testid="text-rh-adicional-noturno">
+                  {fmtBRL(rhSummary.breakdown.adicionalNoturno ?? 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Média 3 meses × 20%/h</div>
+              </Card>
+            </div>
+          )}
+
           {rhSummary && rhSummary.porAgente.length > 0 && (
             <Card className="p-4 mt-3">
               <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
@@ -568,18 +622,27 @@ export default function CustosFixosPage() {
                       <th className="py-2 px-2">Agente</th>
                       <th className="py-2 px-2 text-right">Base</th>
                       <th className="py-2 px-2 text-right">Encargos</th>
-                      <th className="py-2 px-2 text-right">VR (dia × dias úteis)</th>
+                      <th className="py-2 px-2 text-right">VR</th>
                       <th className="py-2 px-2 text-right">Cesta</th>
-                      <th className="py-2 px-2 text-right">VT + Outros</th>
+                      <th className="py-2 px-2 text-right">VT+Outros</th>
                       <th className="py-2 px-2 text-right">Diárias</th>
-                      <th className="py-2 px-2 text-right">Total</th>
-                      <th className="py-2 px-2 text-right">Custo/Hora</th>
+                      <th className="py-2 px-2 text-right text-yellow-700">Férias</th>
+                      <th className="py-2 px-2 text-right text-green-700">13º</th>
+                      <th className="py-2 px-2 text-right text-red-700">Rescisão</th>
+                      <th className="py-2 px-2 text-right text-indigo-700">H.Extra</th>
+                      <th className="py-2 px-2 text-right text-violet-700">Adic.Not.</th>
+                      <th className="py-2 px-2 text-right font-bold">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rhSummary.porAgente.map((a) => (
-                      <tr key={a.id} className="border-b hover:bg-muted/30" data-testid={`row-agent-${a.id}`}>
-                        <td className="py-2 px-2 font-medium">{a.name}</td>
+                      <tr key={a.id} className={`border-b hover:bg-muted/30 ${a.semSalario ? "opacity-60" : ""}`} data-testid={`row-agent-${a.id}`}>
+                        <td className="py-2 px-2 font-medium">
+                          {a.name}
+                          {a.semSalario && (
+                            <span className="ml-1 text-[10px] text-amber-600 font-semibold">(sem salário cadastrado)</span>
+                          )}
+                        </td>
                         <td className="py-2 px-2 text-right">{fmtBRL(a.base)}</td>
                         <td className="py-2 px-2 text-right text-amber-700 dark:text-amber-400">{fmtBRL(a.encargos)}</td>
                         <td className="py-2 px-2 text-right text-cyan-700 dark:text-cyan-400">
@@ -591,18 +654,30 @@ export default function CustosFixosPage() {
                         <td className="py-2 px-2 text-right text-violet-700 dark:text-violet-400">
                           {a.diarias > 0 ? fmtBRL(a.diarias) : "—"}
                         </td>
-                        <td className="py-2 px-2 text-right font-semibold">{fmtBRL(a.total)}</td>
-                        <td className="py-2 px-2 text-right text-emerald-700 dark:text-emerald-400">
-                          {fmtBRL(a.custoHora)}
+                        <td className="py-2 px-2 text-right text-yellow-700 dark:text-yellow-400">
+                          {fmtBRL(a.ferias ?? 0)}
                         </td>
+                        <td className="py-2 px-2 text-right text-green-700 dark:text-green-400">
+                          {fmtBRL(a.decimoTerceiro ?? 0)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-red-700 dark:text-red-400">
+                          {fmtBRL(a.rescisao ?? 0)}
+                        </td>
+                        <td className="py-2 px-2 text-right text-indigo-700 dark:text-indigo-400">
+                          {(a.horaExtra ?? 0) > 0 ? fmtBRL(a.horaExtra) : "—"}
+                        </td>
+                        <td className="py-2 px-2 text-right text-violet-700 dark:text-violet-400" data-testid={`text-agent-noturno-${a.id}`}>
+                          {(a.adicionalNoturno ?? 0) > 0 ? fmtBRL(a.adicionalNoturno) : "—"}
+                        </td>
+                        <td className="py-2 px-2 text-right font-semibold">{fmtBRL(a.total)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2">
-                VR = R$/dia × dias úteis do mês (sem feriados). Cadastre/atualize valores em <strong>Funcionários → Salário</strong>.
-                Diárias pontuais são lançadas na seção abaixo.
+                Férias = (base+enc)×4/3÷12 · 13º = (base+enc)÷12 · Rescisão = 8% folha bruta · H.Extra e Adic.Noturno = média últimos 3 meses (jornada).
+                VR = R$/dia × dias úteis. Cadastre salários em <strong>Funcionários → Salário</strong>.
               </p>
             </Card>
           )}

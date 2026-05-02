@@ -112,17 +112,19 @@ export async function getFixedCostsForPeriod(fromISO: string, toISO: string): Pr
 }
 
 /**
- * Custo total mensal de UM agente (salário + encargos + VR diário + VT + cesta + outros).
+ * Custo total mensal de UM agente (salário + encargos + VR diário + VT + cesta + outros
+ * + provisões de férias, 13º e rescisão).
  * Usa o registro mais recente de employee_salaries.
  *
  * `opts.businessDays` — quando informado, usa esse número de dias úteis para o VR.
  *                       Senão, calcula com base nos dias úteis do mês corrente
  *                       (descontando feriados informados em opts.holidaySet).
  * `opts.diariasManuais` — soma de diárias de lançamento manual no período (apenas no breakdown).
+ * `opts.rescisaoPct`   — percentual de rescisão sobre a folha bruta (default 8%).
  */
 export async function calculateAgentMonthlyCost(
   employeeId: number,
-  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number }
+  opts?: { businessDays?: number; holidaySet?: Set<string>; diariasManuais?: number; rescisaoPct?: number }
 ): Promise<{
   total: number;
   breakdown: {
@@ -137,6 +139,11 @@ export async function calculateAgentMonthlyCost(
     diarias: number;
     horasMensais: number;
     custoHora: number;
+    ferias: number;
+    decimoTerceiro: number;
+    rescisao: number;
+    horaExtra: number;
+    adicionalNoturno: number;
   };
 }> {
   const { data, error } = await supabaseAdmin
@@ -155,6 +162,41 @@ export async function calculateAgentMonthlyCost(
     vrDias = countBusinessDays(from, to, set);
   }
 
+  // Média mensal de hora extra e adicional noturno nos últimos 3 meses (a partir de jornada_calculos)
+  let horaExtraMedia = 0;
+  let adicionalNoturnoMedia = 0;
+  {
+    const now = new Date();
+    // Gera os 3 meses de referência no formato YYYY-MM
+    const meses: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    const { data: jornData, error: jornErr } = await supabaseAdmin
+      .from("jornada_calculos")
+      .select("horas_extras, valor_noturno, mes_referencia")
+      .eq("employee_id", employeeId)
+      .in("mes_referencia", meses);
+    if (!jornErr && jornData && jornData.length > 0) {
+      // Agrupa por mês e soma; divide pelo nº de meses distintos encontrados
+      const porMes = new Map<string, { extras: number; noturno: number }>();
+      for (const r of jornData) {
+        const k = String(r.mes_referencia || "").slice(0, 7);
+        if (!porMes.has(k)) porMes.set(k, { extras: 0, noturno: 0 });
+        porMes.get(k)!.extras += Number(r.horas_extras || 0);
+        porMes.get(k)!.noturno += Number(r.valor_noturno || 0);
+      }
+      const nMeses = porMes.size;
+      porMes.forEach((v) => {
+        horaExtraMedia += v.extras;
+        adicionalNoturnoMedia += v.noturno;
+      });
+      horaExtraMedia = horaExtraMedia / nMeses;
+      adicionalNoturnoMedia = adicionalNoturnoMedia / nMeses;
+    }
+  }
+
   if (error || !data || data.length === 0) {
     return {
       total: 0,
@@ -163,6 +205,7 @@ export async function calculateAgentMonthlyCost(
         vrDiario: 43, vrDias, vrTotal: 0,
         vt: 0, cesta: 0, outros: 0, diarias: opts?.diariasManuais ?? 0,
         horasMensais: 220, custoHora: 0,
+        ferias: 0, decimoTerceiro: 0, rescisao: 0, horaExtra: 0, adicionalNoturno: 0,
       },
     };
   }
@@ -180,17 +223,40 @@ export async function calculateAgentMonthlyCost(
   const outros = Number(s.beneficios_outros || 0);
   const diarias = opts?.diariasManuais ?? 0;
   const horasMensais = Number(s.horas_mensais || 220);
-  const total = base + encargos + vrTotal + vt + cesta + outros + diarias;
+
+  // Provisões mensais calculadas automaticamente
+  // Férias: (salário + encargos) × (1 + 1/3) / 12
+  const ferias = ((base + encargos) * (4 / 3)) / 12;
+  // 13º salário: (salário + encargos) / 12
+  const decimoTerceiro = (base + encargos) / 12;
+  // Rescisão (FGTS + multa rescisória): percentual configurável sobre folha bruta
+  const rescisaoPct = (opts?.rescisaoPct ?? 8) / 100;
+  const folhaBruta = base + encargos + vrTotal + vt + cesta + outros;
+  const rescisao = folhaBruta * rescisaoPct;
+  // Hora extra: média mensal de horas × custo/hora × 1.5 (adicional 50%)
+  const custoHoraBase = horasMensais > 0 ? (base + encargos) / horasMensais : 0;
+  const horaExtra = horaExtraMedia * custoHoraBase * 1.5;
+  // Adicional noturno: média mensal do valor já calculado pelo jornada_calculos (20% da hora normal)
+  const adicionalNoturno = adicionalNoturnoMedia;
+
+  const total = base + encargos + vrTotal + vt + cesta + outros + diarias + ferias + decimoTerceiro + rescisao + horaExtra + adicionalNoturno;
   const custoHora = horasMensais > 0 ? total / horasMensais : 0;
   return {
     total,
-    breakdown: { base, encargos, vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora },
+    breakdown: { base, encargos, vrDiario, vrDias, vrTotal, vt, cesta, outros, diarias, horasMensais, custoHora, ferias, decimoTerceiro, rescisao, horaExtra, adicionalNoturno },
   };
 }
 
 export async function calculateAgentCostPerHour(employeeId: number): Promise<number> {
   const r = await calculateAgentMonthlyCost(employeeId);
   return r.breakdown.custoHora;
+}
+
+// Critério de agente ativo: mesmo do Balanço Gerencial (excluir inativo e desligado)
+function isAtivo(e: any): boolean {
+  return e.status !== "inativo" && e.status !== "desligado" &&
+    e.status !== "Inativo" && e.status !== "Desligado" &&
+    e.status !== "INATIVO" && e.status !== "DESLIGADO";
 }
 
 /**
@@ -201,9 +267,7 @@ export async function getMonthlyRHCost(): Promise<number> {
     .from("employees")
     .select("id, status");
   if (error || !employees) return 0;
-  const ativos = employees.filter((e: any) =>
-    !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
-  );
+  const ativos = employees.filter(isAtivo);
   const now = new Date();
   const { from, to } = monthRange(now.getFullYear(), now.getMonth() + 1);
   const holidaySet = await loadHolidaySet(from, to);
@@ -224,9 +288,7 @@ export async function getRHCostForPeriod(fromISO: string, toISO: string): Promis
     Math.round((new Date(toISO).getTime() - new Date(fromISO).getTime()) / (1000 * 60 * 60 * 24)) + 1
   );
   const { data: employees } = await supabaseAdmin.from("employees").select("id, status");
-  const ativos = (employees || []).filter((e: any) =>
-    !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
-  );
+  const ativos = (employees || []).filter(isAtivo);
   const diarias = await sumDailyAllowancesForPeriod(fromISO, toISO);
   let total = 0;
   for (const emp of ativos) {
@@ -264,9 +326,7 @@ export function registerFixedCostsRoutes(app: Express) {
       .select("id, name, status");
     if (error) return res.status(500).json({ message: error.message });
 
-    const ativos = (employees || []).filter((e: any) =>
-      !e.status || ["ativo", "ATIVO", "Ativo"].includes(e.status)
-    );
+    const ativos = (employees || []).filter(isAtivo);
 
     // Período: por padrão mês corrente
     const now = new Date();
@@ -283,6 +343,8 @@ export function registerFixedCostsRoutes(app: Express) {
       vrDiario: number; vrDias: number; vrTotal: number;
       vt: number; cesta: number; outros: number; diarias: number;
       horasMensais: number; custoHora: number;
+      ferias: number; decimoTerceiro: number; rescisao: number; horaExtra: number; adicionalNoturno: number;
+      semSalario: boolean;
     }> = [];
     let totalMensal = 0;
     let totalBase = 0;
@@ -292,6 +354,11 @@ export function registerFixedCostsRoutes(app: Express) {
     let totalCesta = 0;
     let totalOutros = 0;
     let totalDiarias = 0;
+    let totalFerias = 0;
+    let totalDecimoTerceiro = 0;
+    let totalRescisao = 0;
+    let totalHoraExtra = 0;
+    let totalAdicionalNoturno = 0;
 
     for (const emp of ativos) {
       const r = await calculateAgentMonthlyCost(emp.id, {
@@ -307,6 +374,11 @@ export function registerFixedCostsRoutes(app: Express) {
       totalCesta += r.breakdown.cesta;
       totalOutros += r.breakdown.outros;
       totalDiarias += r.breakdown.diarias;
+      totalFerias += r.breakdown.ferias;
+      totalDecimoTerceiro += r.breakdown.decimoTerceiro;
+      totalRescisao += r.breakdown.rescisao;
+      totalHoraExtra += r.breakdown.horaExtra;
+      totalAdicionalNoturno += r.breakdown.adicionalNoturno;
       porAgente.push({
         id: emp.id,
         name: emp.name || `Agente ${emp.id}`,
@@ -322,6 +394,12 @@ export function registerFixedCostsRoutes(app: Express) {
         diarias: r.breakdown.diarias,
         horasMensais: r.breakdown.horasMensais,
         custoHora: r.breakdown.custoHora,
+        ferias: r.breakdown.ferias,
+        decimoTerceiro: r.breakdown.decimoTerceiro,
+        rescisao: r.breakdown.rescisao,
+        horaExtra: r.breakdown.horaExtra,
+        adicionalNoturno: r.breakdown.adicionalNoturno,
+        semSalario: r.breakdown.base === 0,
       });
     }
 
@@ -342,6 +420,11 @@ export function registerFixedCostsRoutes(app: Express) {
         cesta: totalCesta,
         outros: totalOutros,
         diarias: totalDiarias,
+        ferias: totalFerias,
+        decimoTerceiro: totalDecimoTerceiro,
+        rescisao: totalRescisao,
+        horaExtra: totalHoraExtra,
+        adicionalNoturno: totalAdicionalNoturno,
         beneficios: totalVR + totalVT + totalCesta + totalOutros + totalDiarias,
       },
       porAgente,

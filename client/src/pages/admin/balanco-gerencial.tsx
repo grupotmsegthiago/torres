@@ -356,17 +356,14 @@ export default function BalancoGerencialPage() {
     const pag = filtered.missions.reduce((a, m) => a + m.pag_total, 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
-    // Folha já lançada no financeiro (origin_type=payroll) está dentro de despReais
-    // (despFin.total). A provisão RH (CCT) é uma ESTIMATIVA. Para evitar contar
-    // a folha duas vezes, removemos a folha realizada de despReais e somamos
-    // o MAIOR entre a folha realizada e a provisão CCT (proteção: se a folha
-    // ainda não foi totalmente lançada, a provisão segue cobrindo o gap).
-    const folhaConsiderada = Math.max(provisaoRH, despFin.payroll);
+    // Lançamentos de folha (origin_type=payroll) ficam no extrato financeiro mas
+    // NÃO entram no custoTotal para evitar dupla contagem com a Provisão CCT.
+    // O RH é SEMPRE calculado pela Provisão CCT (custo diário × agentes × dias).
     const despReaisExFolha = despReais - despFin.payroll;
     // Custos fixos rateados pelo período (Aluguel, Internet, Softwares etc.)
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * daysInPeriod;
-    const custoTotal = pag + despReaisExFolha + folhaConsiderada + custosFixosRateados;
+    const custoTotal = pag + despReaisExFolha + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -379,7 +376,6 @@ export default function BalancoGerencialPage() {
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
       provisaoRH,
-      folhaConsiderada,
       custosFixosMensal,
       custosFixosRateados,
       custoTotal,
@@ -584,9 +580,7 @@ export default function BalancoGerencialPage() {
               (totals.desp_pedagio || 0) +
               (totals.desp_manutencao || 0) +
               (totals.desp_outras || 0);
-            const rhUsado = totals.folhaConsiderada || 0;
             const fixos = totals.custosFixosRateados || 0;
-            const folhaMaior = (totals.desp_folha || 0) >= (totals.provisaoRH || 0);
             const Row = ({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) => (
               <div className="flex justify-between items-baseline">
                 <span className={`text-xs ${muted ? "text-neutral-500" : "text-neutral-700"}`}>{label}</span>
@@ -623,31 +617,21 @@ export default function BalancoGerencialPage() {
                   </div>
                 )}
 
-                {rhUsado > 0 && (
+                {totals.provisaoRH > 0 && (
                   <div className="mt-3">
                     <div
                       className="flex items-center justify-between mb-1"
-                      title="Considera o MAIOR entre folha realizada e provisão CCT, evitando contar duas vezes"
+                      title="Provisão CCT: estimativa contratual baseada em custo diário CCT × agentes ativos × dias do período"
                     >
-                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (folha + encargos)</span>
-                      <span className="text-xs font-mono font-bold text-amber-700">{fmt(rhUsado)}</span>
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">RH (Provisão CCT)</span>
+                      <span className="text-xs font-mono font-bold text-amber-700">{fmt(totals.provisaoRH)}</span>
                     </div>
                     <div className="space-y-0.5 pl-2 border-l-2 border-amber-100">
-                      {totals.desp_folha > 0 && (
-                        <Row
-                          label={`Realizada${folhaMaior ? " ✓" : ""}`}
-                          value={fmt(totals.desp_folha)}
-                          muted={!folhaMaior}
-                        />
-                      )}
-                      {totals.provisaoRH > 0 && (
-                        <Row
-                          label={`Provisão CCT (${activeAgentCount} ag. × ${daysInPeriod}d)${!folhaMaior ? " ✓" : ""}`}
-                          value={fmt(totals.provisaoRH)}
-                          muted={folhaMaior}
-                        />
-                      )}
-                      <p className="text-[10px] text-neutral-400 italic mt-0.5">✓ valor usado no cálculo</p>
+                      <Row
+                        label={`Provisão CCT (${activeAgentCount} ag. × ${daysInPeriod}d)`}
+                        value={fmt(totals.provisaoRH)}
+                        muted
+                      />
                     </div>
                   </div>
                 )}
