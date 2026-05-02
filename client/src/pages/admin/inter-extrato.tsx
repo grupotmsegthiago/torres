@@ -11,6 +11,7 @@ import {
 import {
   Loader2, RefreshCw, Download, ArrowUpRight, ArrowDownRight,
   Wallet, Calendar, AlertCircle, CheckCircle2, XCircle,
+  Clock, TrendingUp, ExternalLink, Info,
 } from "lucide-react";
 
 interface InterStatus {
@@ -29,6 +30,19 @@ interface Transacao {
   valor: number;
   titulo?: string;
   descricao?: string;
+}
+
+interface InterPagamento {
+  id: number;
+  tipo: "boleto" | "pix";
+  valor: number;
+  data_pagamento: string;
+  descricao?: string;
+  beneficiario_nome?: string;
+  pix_destino_nome?: string;
+  status: string;
+  codigo_transacao_inter?: string;
+  created_at: string;
 }
 
 const fmtBRL = (n: number | undefined | null) =>
@@ -60,6 +74,16 @@ export default function InterExtratoPage() {
     queryKey: ["/api/inter/extrato", from, to],
     enabled: !!status?.connected && !!from && !!to,
   });
+
+  const { data: pagamentos = [], refetch: refetchPagamentos } = useQuery<InterPagamento[]>({
+    queryKey: ["/api/inter/pagamentos"],
+    refetchInterval: 30_000,
+  });
+
+  const pendentesAprovacao = useMemo(() => {
+    const pendingStatuses = ["PENDENTE", "AGUARDANDO_APROVACAO", "PROCESSANDO"];
+    return pagamentos.filter(p => pendingStatuses.includes((p.status || "").toUpperCase()));
+  }, [pagamentos]);
 
   const transacoes = useMemo(() => {
     const list = extrato?.transacoes || [];
@@ -111,7 +135,7 @@ export default function InterExtratoPage() {
             <p className="text-sm text-neutral-500">Movimentação bancária da conta integrada com o Banco Inter PJ</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { refetchStatus(); refetchExtrato(); }} data-testid="button-refresh">
+            <Button variant="outline" size="sm" onClick={() => { refetchStatus(); refetchExtrato(); refetchPagamentos(); }} data-testid="button-refresh">
               <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
             </Button>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!transacoes.length} data-testid="button-export-csv">
@@ -119,6 +143,88 @@ export default function InterExtratoPage() {
             </Button>
           </div>
         </div>
+
+        {/* Aprovações pendentes de pagamento */}
+        {pendentesAprovacao.length > 0 && (
+          <Card className="p-4 border-amber-200 bg-amber-50/50">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2 text-amber-900">
+                <Clock className="w-4 h-4" /> Pagamentos aguardando aprovação no IB PJ ({pendentesAprovacao.length})
+              </h2>
+              <a
+                href="https://internetbanking.bancointer.com.br"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-amber-700 hover:underline flex items-center gap-1"
+                data-testid="link-ib-pj"
+              >
+                Aprovar no IB PJ <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <div className="text-xs text-amber-800 mb-3 flex gap-2">
+              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                Por exigência do Banco Inter, todo pagamento PJ precisa de aprovação manual no app/IB PJ
+                (com 2FA do administrador da conta). O sistema apenas envia e acompanha — a liberação final é feita lá.
+              </span>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Tipo</TableHead>
+                  <TableHead>Beneficiário</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead className="w-[100px]">Vence</TableHead>
+                  <TableHead className="text-right w-[120px]">Valor</TableHead>
+                  <TableHead className="w-[140px]">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendentesAprovacao.map(p => (
+                  <TableRow key={p.id} data-testid={`row-pendente-${p.id}`}>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px]">{p.tipo.toUpperCase()}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">{p.beneficiario_nome || p.pix_destino_nome || "—"}</TableCell>
+                    <TableCell className="text-sm text-neutral-600">{p.descricao || "—"}</TableCell>
+                    <TableCell className="text-xs">{fmtData(p.data_pagamento)}</TableCell>
+                    <TableCell className="text-right font-mono font-semibold text-red-600">{fmtBRL(p.valor)}</TableCell>
+                    <TableCell>
+                      <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">
+                        {p.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+
+        {/* Aplicação Automática (CDB) */}
+        <Card className="p-4 border-blue-200 bg-blue-50/50">
+          <div className="flex items-start gap-3">
+            <TrendingUp className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-1">Rendimento automático do saldo (CDB Auto)</h3>
+              <p className="text-xs text-blue-800 mb-2">
+                O Banco Inter oferece a <strong>Aplicação Automática</strong> que rende seu saldo em CDB com liquidez diária
+                (≈ 100% do CDI). A configuração é feita uma única vez no app/IB PJ — o Inter não expõe API pública para
+                ativar/desativar isso programaticamente. Uma vez ligado, o saldo da conta corrente acima de um piso definido
+                por você é aplicado automaticamente todo dia útil e resgatado quando você precisar pagar algo (ex: este sistema).
+              </p>
+              <a
+                href="https://www.bancointer.com.br/pra-empresa/cdb/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-700 font-medium hover:underline inline-flex items-center gap-1"
+                data-testid="link-cdb-info"
+              >
+                Como ativar a Aplicação Automática <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </Card>
 
         {/* Cards de status */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">

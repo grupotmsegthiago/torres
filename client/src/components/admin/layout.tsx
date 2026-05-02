@@ -18,6 +18,7 @@ type MenuItem = {
   icon: any;
   iconColor?: string;
   adminOnly?: boolean;
+  diretoriaOnly?: boolean;
   children?: MenuItem[];
   prefetchKey?: string;
 };
@@ -122,7 +123,7 @@ const menuSections: MenuSection[] = [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
           { path: "/admin/contas-a-pagar", label: "Contas a Pagar", icon: Landmark, iconColor: "text-emerald-500" },
-          { path: "/admin/inter-extrato", label: "Extrato Inter", icon: Wallet, iconColor: "text-orange-500" },
+          { path: "/admin/inter-extrato", label: "Extrato Inter", icon: Wallet, iconColor: "text-orange-500", diretoriaOnly: true },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2, iconColor: "text-blue-500" },
@@ -227,7 +228,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
   );
 });
 
-const SidebarNav = memo(function SidebarNav({ location, isAdmin, unreadCount }: { location: string; isAdmin: boolean; unreadCount: number }) {
+const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "CONTROLADORIA": true, "SISTEMA": true });
 
@@ -240,9 +241,10 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, unreadCount }: 
   }, []);
 
   const filterItem = useCallback((item: MenuItem): boolean => {
+    if (item.diretoriaOnly) return isDiretoria;
     if (item.adminOnly) return isAdmin;
     return true;
-  }, [isAdmin]);
+  }, [isAdmin, isDiretoria]);
 
   return (
     <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
@@ -380,7 +382,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <SidebarNav location={location} isAdmin={isAdmin} unreadCount={unreadCount} />
+        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} />
 
         <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}
