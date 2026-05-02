@@ -13,11 +13,27 @@
  *  - INTER_AMBIENTE          ('prod' | 'sandbox', default sandbox)
  */
 import https from "https";
+import fs from "fs";
+import path from "path";
 
 const BASE_URLS = {
   prod: "https://cdpj.partners.bancointer.com.br",
   sandbox: "https://cdpj-sandbox.partners.uatinter.co",
 };
+
+// CA bundle do Banco Inter (SSSS Root + API Intermediate). Lido uma única vez.
+let _interCa: string | null = null;
+function getInterCa(): string | null {
+  if (_interCa !== null) return _interCa || null;
+  try {
+    const caPath = path.join(__dirname, "inter-ca.pem");
+    _interCa = fs.readFileSync(caPath, "utf8");
+    return _interCa;
+  } catch {
+    _interCa = "";
+    return null;
+  }
+}
 
 interface TokenCache {
   accessToken: string;
@@ -84,6 +100,7 @@ class InterClient {
     }
 
     return new Promise<T>((resolve, reject) => {
+      const ca = getInterCa();
       const req = https.request(
         {
           method,
@@ -92,6 +109,7 @@ class InterClient {
           path: url.pathname + url.search,
           cert,
           key,
+          ...(ca ? { ca } : {}),
           headers: finalHeaders,
         },
         (res) => {
