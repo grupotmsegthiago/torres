@@ -70,10 +70,9 @@ const menuSections: MenuSection[] = [
       {
         label: "Grid Operacional",
         icon: Radio,
-        iconColor: "text-amber-500",
         children: [
-          { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio, iconColor: "text-amber-500" },
-          { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar, iconColor: "text-sky-500" },
+          { path: "/admin/operational-grid", label: "Painel Operacional", icon: Radio },
+          { path: "/admin/agenda-vtr", label: "Agenda da VTR", icon: Calendar },
           { path: "/admin/relatorio-os", label: "Relatório de OS", icon: FileText },
           { path: "/admin/armamento", label: "Armamento", icon: Crosshair },
         ],
@@ -81,7 +80,6 @@ const menuSections: MenuSection[] = [
       {
         label: "Frota",
         icon: Car,
-        iconColor: "text-sky-500",
         children: [
           { path: "/admin/vehicles", label: "Veículos", icon: Car },
           { path: "/admin/fueling", label: "Abastecimento", icon: Fuel },
@@ -123,11 +121,11 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
-          { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
+          { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
-          { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2, iconColor: "text-blue-500" },
-          { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel, iconColor: "text-amber-500" },
-          { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: FileText, iconColor: "text-amber-600" },
+          { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2 },
+          { path: "/admin/relatorio-abastecimento", label: "Relatório Abastecimento", icon: Fuel },
+          { path: "/admin/conciliacao-ticketlog", label: "Conciliação TicketLog", icon: FileText },
           { path: "/admin/cotacao-gasto", label: "Cotação Gasto Mínimo", icon: Calculator },
         ],
       },
@@ -139,8 +137,8 @@ const menuSections: MenuSection[] = [
     iconColor: "text-orange-400",
     diretoriaOnly: true,
     items: [
-      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet, iconColor: "text-orange-500" },
-      { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark, iconColor: "text-orange-500" },
+      { path: "/admin/inter-extrato", label: "Extrato & Saldo", icon: Wallet },
+      { path: "/admin/contas-a-pagar", label: "Pagamentos (Boleto/PIX)", icon: Landmark },
     ],
   },
   {
