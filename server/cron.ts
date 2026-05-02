@@ -192,14 +192,25 @@ export function initCronJobs() {
 
           if (existing) continue;
 
-          const { data: invoice } = await supabaseAdmin
+          // Buscar TODAS as invoices PENDING/OVERDUE com mesmo valor
+          // Se houver MAIS DE UMA, NÃO concilia automaticamente (ambíguo) — deixa para revisão manual
+          const { data: candidateInvoices } = await supabaseAdmin
             .from("invoices")
-            .select("id, status")
+            .select("id, status, due_date, client_name")
             .eq("value", Number(tx.valor || 0).toFixed(2))
             .in("status", ["PENDING", "OVERDUE"])
-            .order("due_date", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .order("due_date", { ascending: true });
+
+          const invoice = (candidateInvoices && candidateInvoices.length === 1)
+            ? candidateInvoices[0]
+            : null;
+
+          // Auditoria: se múltiplas, registra para o usuário ver
+          let ambiguousCount = 0;
+          if (candidateInvoices && candidateInvoices.length > 1) {
+            ambiguousCount = candidateInvoices.length;
+            log(`CRON Inter-Reconcile: AMBIGUO — ${candidateInvoices.length} invoices com valor R$ ${tx.valor} em ${tx.dataEntrada}. Conciliação manual necessária.`, "cron");
+          }
 
           await supabaseAdmin.from("inter_extrato_lancamentos").insert({
             data_entrada: tx.dataEntrada,
@@ -207,7 +218,9 @@ export function initCronJobs() {
             tipo_operacao: tx.tipoOperacao,
             valor: Number(tx.valor || 0).toFixed(2),
             titulo: tx.titulo || null,
-            descricao: tx.descricao || null,
+            descricao: ambiguousCount > 0
+              ? `${tx.descricao || ""} [AMBIGUO: ${ambiguousCount} faturas mesmo valor — conciliar manualmente]`
+              : (tx.descricao || null),
             detalhes: tx,
             invoice_id: invoice?.id || null,
             reconciled_at: invoice ? new Date().toISOString() : null,

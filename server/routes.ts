@@ -104,6 +104,9 @@ async function ensureFinancialOriginColumns() {
   const migrations = [
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'",
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_id TEXT",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conciliado_em TIMESTAMP",
+    "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS conciliado_ref TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_financial_origin ON financial_transactions(origin_type, origin_id)",
     "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS valor_estimado REAL",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_id INTEGER",
     "ALTER TABLE escort_billings ADD COLUMN IF NOT EXISTS vigilante2_name TEXT",

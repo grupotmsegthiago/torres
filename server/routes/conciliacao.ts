@@ -307,4 +307,57 @@ export function registerConciliacaoRoutes(app: Express) {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // === MARCAR FINANCIAL_TRANSACTIONS COMO CONCILIADAS COM FATURA TICKETLOG ===
+  // Evita duplicação se o financeiro receber a fatura mensal da TicketLog:
+  // marcar essas transações como conciliadas pra excluí-las dos relatórios manuais.
+  app.post("/api/conciliacao-ticketlog/marcar", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { fueling_ids, ref } = req.body as { fueling_ids?: number[]; ref?: string };
+      if (!Array.isArray(fueling_ids) || fueling_ids.length === 0) {
+        return res.status(400).json({ message: "fueling_ids (array) obrigatório" });
+      }
+      if (!ref || typeof ref !== "string") {
+        return res.status(400).json({ message: "ref (string com identificador da fatura TicketLog) obrigatório" });
+      }
+      const idsAsStr = fueling_ids.map(String);
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({
+          conciliado_em: new Date().toISOString(),
+          conciliado_ref: ref,
+        })
+        .eq("origin_type", "vehicle_fueling")
+        .in("origin_id", idsAsStr)
+        .is("conciliado_em", null)
+        .select("id, origin_id, amount");
+      if (error) return res.status(500).json({ message: error.message });
+      const total = (data || []).reduce((s, t: any) => s + Number(t.amount || 0), 0);
+      res.json({
+        marcadas: (data || []).length,
+        total_marcado: total,
+        ref,
+      });
+    } catch (err: any) {
+      console.error("[conciliacao-ticketlog/marcar] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === DESFAZER CONCILIAÇÃO TICKETLOG (caso o usuário se arrependa) ===
+  app.post("/api/conciliacao-ticketlog/desmarcar", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { ref } = req.body as { ref?: string };
+      if (!ref) return res.status(400).json({ message: "ref obrigatório" });
+      const { data, error } = await supabaseAdmin
+        .from("financial_transactions")
+        .update({ conciliado_em: null, conciliado_ref: null })
+        .eq("conciliado_ref", ref)
+        .select("id");
+      if (error) return res.status(500).json({ message: error.message });
+      res.json({ desmarcadas: (data || []).length, ref });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 }

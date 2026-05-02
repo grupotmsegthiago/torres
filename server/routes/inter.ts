@@ -289,24 +289,26 @@ export function registerInterRoutes(app: Express) {
   });
 
   // === WEBHOOK PÚBLICO (recebe do Inter) ===
+  // Inter retenta em 4xx/5xx; respondemos 200 só após processar com sucesso.
+  // Idempotência: não duplica receita se mesmo codigoSolicitacao chegar 2x.
   app.post("/api/inter/webhook/cobranca", async (req, res) => {
     try {
       const events = Array.isArray(req.body) ? req.body : [req.body];
       for (const ev of events) {
         const codigoSolicitacao =
           ev?.codigoSolicitacao ||
-          ev?.cobranca?.codigoSolicitacao ||
           ev?.cobranca?.codigoSolicitacao;
         const evento = ev?.situacao || ev?.evento || "DESCONHECIDO";
+        const valorPago = Number(ev?.valor || ev?.valorTotalRecebido || ev?.cobranca?.valorTotalRecebido || 0);
 
-        await supabaseAdmin.from("inter_webhook_events").insert({
+        const { data: insertedEvent } = await supabaseAdmin.from("inter_webhook_events").insert({
           evento,
           codigo_solicitacao: codigoSolicitacao,
           payload: ev,
           processed: false,
-        });
+        }).select("id").single();
 
-        // Pagamento confirmado → atualiza invoice + cria transação
+        // Pagamento confirmado → atualiza invoice + cria transação (com idempotência)
         if (
           codigoSolicitacao &&
           ["RECEBIDO", "PAGO", "PAYMENT_RECEIVED", "PAYMENT_CONFIRMED", "MARCADA_RECEBIDA"].includes(evento)
@@ -314,38 +316,84 @@ export function registerInterRoutes(app: Express) {
           const dataHoraSituacao = ev?.dataHoraSituacao || new Date().toISOString();
           const { data: inv } = await supabaseAdmin
             .from("invoices")
-            .select("id, value, client_name, gateway")
+            .select("id, value, client_name, gateway, status")
             .eq("inter_codigo_solicitacao", codigoSolicitacao)
             .maybeSingle();
 
           if (inv) {
-            await supabaseAdmin
-              .from("invoices")
-              .update({ status: "RECEIVED", payment_date: String(dataHoraSituacao).slice(0, 10) })
-              .eq("id", inv.id);
+            // IDEMPOTÊNCIA #1: já existe transação financeira para este codigoSolicitacao?
+            const { data: existingTx } = await supabaseAdmin
+              .from("financial_transactions")
+              .select("id")
+              .eq("origin_type", "inter_webhook")
+              .eq("origin_id", codigoSolicitacao)
+              .limit(1);
+
+            if (existingTx && existingTx.length > 0) {
+              console.log(`[Inter Webhook] Evento ${evento} duplicado para ${codigoSolicitacao} — já existe transação. Ignorando.`);
+              if (insertedEvent?.id) {
+                await supabaseAdmin
+                  .from("inter_webhook_events")
+                  .update({ processed: true, error_msg: "DUPLICADO_IGNORADO" })
+                  .eq("id", insertedEvent.id);
+              }
+              continue;
+            }
+
+            // IDEMPOTÊNCIA #2: invoice já está RECEIVED?
+            if (inv.status === "RECEIVED" || inv.status === "PARTIAL") {
+              console.log(`[Inter Webhook] Invoice ${inv.id} já está ${inv.status}. Criando transação mas mantendo status.`);
+            }
+
+            // VALIDAÇÃO DE VALOR PARCIAL
+            const valorEsperado = Number(inv.value || 0);
+            const valorRecebido = valorPago > 0 ? valorPago : valorEsperado;
+            const isPartial = valorPago > 0 && Math.abs(valorPago - valorEsperado) > 0.01;
+            const novoStatus = isPartial ? "PARTIAL" : "RECEIVED";
+            const descPrefix = isPartial
+              ? `[PAGAMENTO PARCIAL] Recebido ${valorRecebido.toFixed(2)} de ${valorEsperado.toFixed(2)} — `
+              : "Recebimento Inter — ";
+
+            // Atualiza invoice apenas se ainda não foi marcada (preserva status mais grave)
+            if (inv.status !== "RECEIVED") {
+              await supabaseAdmin
+                .from("invoices")
+                .update({ status: novoStatus, payment_date: String(dataHoraSituacao).slice(0, 10) })
+                .eq("id", inv.id);
+            }
 
             await supabaseAdmin.from("financial_transactions").insert({
-              type: "RECEITA",
-              category: "Cobrança Inter",
-              description: `Recebimento Inter — ${inv.client_name || "Cliente"} (${codigoSolicitacao})`,
-              amount: inv.value,
-              date: String(dataHoraSituacao).slice(0, 10),
+              type: "INCOME",
+              status: "PAID",
+              description: `${descPrefix}${inv.client_name || "Cliente"} (${codigoSolicitacao})`,
+              amount: valorRecebido,
+              due_date: String(dataHoraSituacao).slice(0, 10),
+              category_name: "Cobrança Inter",
               origin_type: "inter_webhook",
               origin_id: codigoSolicitacao,
+              created_by: "INTER_WEBHOOK",
             });
 
-            await supabaseAdmin
-              .from("inter_webhook_events")
-              .update({ processed: true })
-              .eq("codigo_solicitacao", codigoSolicitacao);
+            if (insertedEvent?.id) {
+              await supabaseAdmin
+                .from("inter_webhook_events")
+                .update({ processed: true })
+                .eq("id", insertedEvent.id);
+            }
+
+            if (isPartial) {
+              console.warn(`[Inter Webhook] PAGAMENTO PARCIAL invoice ${inv.id}: esperado ${valorEsperado}, recebido ${valorPago}`);
+            }
+          } else {
+            console.warn(`[Inter Webhook] Nenhuma invoice encontrada para codigoSolicitacao=${codigoSolicitacao}`);
           }
         }
       }
-      // Sempre 200 — Inter retenta indefinidamente em 4xx/5xx
-      res.json({ ok: true });
+      res.status(200).json({ ok: true });
     } catch (e: any) {
       console.error("[Inter Webhook] erro processando:", e);
-      res.json({ ok: false, error: e.message });
+      // Retorna 500 para o Inter retentar (em vez de 200 mascarando falha)
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
 }

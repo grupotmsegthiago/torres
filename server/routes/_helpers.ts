@@ -199,11 +199,17 @@ export async function createAutoTransaction(params: {
     if (params.origin_type && params.origin_id) {
       const { data: existing } = await supabaseAdmin
         .from("financial_transactions")
-        .select("id")
+        .select("id, conciliado_em")
         .eq("origin_type", params.origin_type)
         .eq("origin_id", params.origin_id)
         .limit(1);
       if (existing && existing.length > 0) {
+        // Se já foi conciliada com fatura externa (TicketLog/etc), NÃO altera:
+        // qualquer mudança de valor após conciliação pode descasar o batimento manual.
+        if (existing[0].conciliado_em) {
+          console.log(`[AutoTransaction] Pulando atualização — transação ${existing[0].id} já conciliada em ${existing[0].conciliado_em}`);
+          return existing[0];
+        }
         const { data: updated, error: upErr } = await supabaseAdmin
           .from("financial_transactions")
           .update({

@@ -1817,6 +1817,15 @@ import type { Express } from "express";
         return Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0) + Number(b.receitas_os || 0);
       };
 
+      // FIX #5 — OS cancelada não pode arrastar despesas para o agregado por viatura/agente,
+      // senão gera prejuízo artificial. Quando NF cancelada, zera tudo (receita + despesa) daquele billing.
+      const calcDesp = (b: any) => {
+        if (b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id))) return 0;
+        return Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
+      };
+      const isCancelledBilling = (b: any) =>
+        b?.service_order_id && cancelledNfSoIds.has(Number(b.service_order_id));
+
       const osLookup = new Map(allOrders.map((so: any) => [so.id, so]));
 
       for (const b of items) {
@@ -1842,8 +1851,14 @@ import type { Express } from "express";
         }
       }
 
+      // FIX #16 + #5: combustível só atribuído à PRIMEIRA missão da placa/dia, e nunca a missão cancelada
       const fuelAllocatedVehicleDay = new Set<string>();
       for (const b of items) {
+        // Missão cancelada: zera combustível atribuído (despesa real fica em vehicle_fueling, não no billing)
+        if (isCancelledBilling(b)) {
+          b.despesas_combustivel = 0;
+          continue;
+        }
         const plate = (b.placa_viatura || "").toUpperCase();
         const day = toBRTDate(b.data_missao || b.created_at || "");
         if (!plate || !day) continue;
@@ -1866,9 +1881,11 @@ import type { Express } from "express";
           byVehicle[plate] = { plate, model: v?.model || "", fat_total: 0, pag_total: 0, missions: 0, despesas: 0 };
         }
         byVehicle[plate].fat_total += calcFat(b);
+        // Pagamento ao vigilante e contagem de missão acontecem mesmo em cancelada (tem que pagar o cara que foi)
         byVehicle[plate].pag_total += Number(b.pag_total || 0);
         byVehicle[plate].missions += 1;
-        byVehicle[plate].despesas += Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
+        // Mas despesa atribuída à OS zera quando cancelada (FIX #5)
+        byVehicle[plate].despesas += calcDesp(b);
       });
 
       const timesheetHoursByEmployee: Record<number, number> = {};
@@ -1914,7 +1931,8 @@ import type { Express } from "express";
 
       const byMission = items.map((b: any) => {
         const fat = calcFat(b);
-        const desp = Number(b.despesas_pedagio || 0) + Number(b.despesas_combustivel || 0) + Number(b.despesas_outras || 0);
+        // FIX #5: missão cancelada zera receita E despesas (lucro=0 em vez de prejuízo artificial)
+        const desp = calcDesp(b);
         const pag = Number(b.pag_total || 0);
         const lucro = fat - pag - desp;
         const so = osLookup.get(b.service_order_id);
