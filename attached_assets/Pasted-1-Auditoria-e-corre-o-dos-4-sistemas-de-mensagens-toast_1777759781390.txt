@@ -1,0 +1,31 @@
+1. Auditoria e correção dos 4 sistemas de mensagens (toasts, push, WhatsApp, e-mails)
+Você pediu uma revisão completa. Foram corrigidos:
+Toasts in-app — som via WebAudio (em vez de URL externa), deduplicação por dedupKey, limite de 5 toasts simultâneos, crypto.randomUUID(), sem reconnect manual no Realtime.
+Push notifications — persistência em Supabase (tabela push_subscriptions) em vez de só Map na memória do servidor; userId estável (id/email); unsubscribe automático no logout; requireAuth em /api/push/send.
+Chat WhatsApp — proxy backend /api/whatsapp/groups e /api/whatsapp/send para não expor token Z-API no navegador; canal Realtime único por chat; deduplicação de mensagens; troca de alert() por toast.
+E-mails — BCC convertido para array (string falha em alguns SMTP); transporter compartilhado; validação de EMAIL_PASS.
+2. Diagnóstico do PWA preso em versão antiga no iPhone
+Confirmamos que o dist/ local não influencia produção (Replit faz build no deploy).
+Orientei o teste de Safari em navegação privada e indiquei o indicador de versão no Sidebar.
+3. Salvar tudo na "memória" do sistema para nunca regredir
+Criada a seção "Anti-Patterns / Memória de Bugs (NÃO REINTRODUZIR)" no replit.md, com cinco blocos (Toasts, Push, WhatsApp, E-mails, Cache PWA), cada item marcado com ❌ (o que não fazer) e ✅ (o caminho correto).
+Como o replit.md é carregado em toda sessão futura, qualquer agente vai ler antes de mexer nesses sistemas.
+4. Botão manual "Limpar Cache" no menu lateral
+Adicionado botão acima do indicador de versão no Sidebar (button-hard-reset-cache), com confirmação antes de executar.
+Faz: unregister de SWs + caches.delete() + sessionStorage.clear() + localStorage limpo (preservando login) + apaga IndexedDBs + reload com bypass de URL.
+Bump APP_VERSION 3.3.0 → 3.3.1.
+5. Auto-limpeza de cache em toda abertura do app + auditoria final de bugs ocultos
+Toda vez que o app abre, agora ele:
+Apaga Cache Storage do navegador
+Desregistra Service Workers órfãos
+Pergunta ao servidor qual a versão publicada (novo endpoint GET /api/version, sem cache, lendo constants.ts em runtime)
+Se a versão local for diferente da do servidor → executa hard reset completo (caches + SWs + IndexedDB + storages, preservando login) e recarrega com bypass — com flag de sessão para evitar loop
+Bugs ocultos descobertos e corrigidos:
+server/emailService.ts:804 — cobrança usava BCC como string (silenciosamente quebrado em alguns SMTP)
+components/ServerStats.tsx:258 — tela de diagnóstico chamava Z-API direto do navegador, expondo o CLIENT_TOKEN no bundle público (qualquer cliente com DevTools podia roubar e enviar mensagens em nome da empresa) → migrado para o proxy autenticado
+replit.md recebeu nova subseção descrevendo o auto-update e a regra do ServerStats.
+Bump APP_VERSION 3.3.1 → 3.3.2.
+Endpoint /api/version testado e respondeu corretamente: {"version":"3.3.2",...}.
+Versão atual publicada: v3.3.2
+Garantia de atualização: dupla (servidor sempre conhece versão real + app sempre pergunta no boot + botão manual de emergência no Sidebar).
+Próximo passo sugerido: publicar mais uma vez para o iPhone receber a 3.3.2 — daí em diante, qualquer deploy futuro vai propagar automaticamente, sem precisar reinstalar PWA.
