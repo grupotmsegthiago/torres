@@ -3,6 +3,32 @@
 ## ⚠️ SISTEMA DE CONTEXTO MESTRE
 **Antes de qualquer tarefa, leia o arquivo `SYSTEM_BRAIN.md` na raiz do projeto.** Ele contém regras primordiais de timezone, finanças, arquitetura, dependências e lições aprendidas que NUNCA devem ser violadas.
 
+## 🏦 Integração Banco Inter (Maio/2026)
+
+Banco Inter foi integrado para **Cobrança (boleto+PIX) + Banking (extrato/saldo/pagamentos)**, substituindo o Asaas no fluxo de cobrança. Asaas permanece exclusivamente para emissão de NFS-e.
+
+### Arquitetura
+- **`server/services/inter/client.ts`** — cliente HTTP nativo via `https.request` com mTLS (cert .crt + .key). OAuth2 client_credentials com cache de token automático. Singleton `getInterClient()`.
+- **`server/services/inter/cobranca.ts`** — CRUD de cobranças (criar, consultar, cancelar, PDF, listar) + cadastro de webhook.
+- **`server/services/inter/banking.ts`** — saldo, extrato, extrato/completo, pagamento de boleto, PIX por chave/dados bancários.
+- **`server/routes/inter.ts`** — rotas Express completas em `/api/inter/*`. Webhook público em `/api/inter/webhook/cobranca` sempre retorna 200 (Inter retenta infinito em 4xx/5xx).
+- **`server/routes.ts:39 ensureInterTables()`** — cria via Supabase RPC as 3 tabelas Inter (`inter_extrato_lancamentos`, `inter_pagamentos`, `inter_webhook_events`) + colunas `gateway` e `inter_codigo_solicitacao` em `invoices`. Roda na startup, idempotente.
+- **`server/cron.ts`** — job a cada 30min lê extrato Inter dos últimos 7 dias, grava em `inter_extrato_lancamentos`, casa entradas (créditos) com `invoices` por valor + status PENDING/OVERDUE e marca como RECEIVED. Pula silenciosamente se Inter não estiver configurado (`isInterConfigured()`).
+- **Frontend:** `client/src/pages/admin/inter-extrato.tsx` (extrato com filtros + CSV) e `contas-a-pagar.tsx` (despesas pendentes com pagamento via PIX/Boleto Inter). Toggle "Gateway: Asaas | Inter" em `faturas.tsx` (CreateInvoiceDialog) com persistência em localStorage.
+
+### Variáveis de ambiente necessárias
+- `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET` — credenciais OAuth2 do app PJ no IB
+- `INTER_CONTA_CORRENTE` — conta corrente sem hífen
+- `INTER_CERT_CRT`, `INTER_CERT_KEY` — conteúdo PEM do certificado e chave (gerar via openssl + CSR no IB PJ)
+- `INTER_AMBIENTE=prod` ou `sandbox` (default: prod). Sandbox: `https://cdpj-sandbox.partners.uatinter.co`. Prod: `https://cdpj.partners.bancointer.com.br`.
+
+### Escopos OAuth2 obrigatórios no IB PJ
+- `boleto-cobranca.read`, `boleto-cobranca.write` (cobrança)
+- `extrato.read` (extrato)
+- `pagamento-boleto.read`, `pagamento-boleto.write` (pagamento de boletos)
+- `pagamento-pix.write` (PIX)
+- `webhook-banking.write`, `webhook-cobranca.write` (webhooks)
+
 ## Overview
 This project delivers an institutional landing page and an internal management system for Torres Vigilância Patrimonial, a Brazilian security company. The system's core purpose is to streamline operational workflows, manage company assets, track personnel and vehicles, and enhance overall operational efficiency. It provides robust user and role management, detailed asset tracking (vehicles, weapons), automated operational processes (service orders, mission workflows), and real-time operational oversight. The strategic goal is to provide a comprehensive, integrated platform that supports company growth, ensures regulatory compliance, and elevates the quality of security services.
 

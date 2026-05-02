@@ -983,6 +983,10 @@ export const invoices = pgTable("invoices", {
   notes: text("notes"),
   providerCnpj: text("provider_cnpj"),
   createdBy: integer("created_by"),
+  // Gateway de cobrança: 'asaas' (legado) | 'inter' (novo)
+  gateway: text("gateway").notNull().default("asaas"),
+  // ID único da cobrança no Banco Inter (codigoSolicitacao)
+  interCodigoSolicitacao: text("inter_codigo_solicitacao"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1033,3 +1037,63 @@ export const missionAcceptances = pgTable("mission_acceptances", {
 });
 
 export type MissionAcceptance = typeof missionAcceptances.$inferSelect;
+
+// === BANCO INTER ===
+
+// Lançamentos do extrato bancário Inter (espelho local + cache + reconciliação)
+export const interExtratoLancamentos = pgTable("inter_extrato_lancamentos", {
+  id: serial("id").primaryKey(),
+  dataEntrada: text("data_entrada").notNull(), // YYYY-MM-DD
+  tipoTransacao: text("tipo_transacao"),       // PIX, BOLETO_RECEBIDO, etc
+  tipoOperacao: text("tipo_operacao").notNull(), // 'C' (crédito) | 'D' (débito)
+  valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
+  titulo: text("titulo"),
+  descricao: text("descricao"),
+  codigoTransacao: text("codigo_transacao").unique(),
+  detalhes: jsonb("detalhes"),
+  invoiceId: integer("invoice_id"),
+  reconciledAt: timestamp("reconciled_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type InterExtratoLancamento = typeof interExtratoLancamentos.$inferSelect;
+
+// Pagamentos enviados pelo Inter (boletos pagos + PIX out)
+export const interPagamentos = pgTable("inter_pagamentos", {
+  id: serial("id").primaryKey(),
+  tipo: text("tipo").notNull(), // 'boleto' | 'pix'
+  codigoTransacaoInter: text("codigo_transacao_inter").unique(),
+  valor: decimal("valor", { precision: 14, scale: 2 }).notNull(),
+  dataPagamento: text("data_pagamento").notNull(),
+  descricao: text("descricao"),
+  // Boleto
+  codBarras: text("cod_barras"),
+  beneficiarioNome: text("beneficiario_nome"),
+  beneficiarioCpfCnpj: text("beneficiario_cpf_cnpj"),
+  // PIX
+  pixChave: text("pix_chave"),
+  pixDestinoNome: text("pix_destino_nome"),
+  pixDestinoCpfCnpj: text("pix_destino_cpf_cnpj"),
+  // Status: PENDENTE | APROVADO | REJEITADO | CANCELADO
+  status: text("status").notNull().default("PENDENTE"),
+  errorMsg: text("error_msg"),
+  financialTransactionId: text("financial_transaction_id"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertInterPagamentoSchema = createInsertSchema(interPagamentos).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInterPagamento = z.infer<typeof insertInterPagamentoSchema>;
+export type InterPagamento = typeof interPagamentos.$inferSelect;
+
+// Eventos de webhook recebidos do Inter (audit + reprocessamento)
+export const interWebhookEvents = pgTable("inter_webhook_events", {
+  id: serial("id").primaryKey(),
+  evento: text("evento").notNull(),
+  codigoSolicitacao: text("codigo_solicitacao"),
+  payload: jsonb("payload").notNull(),
+  processed: boolean("processed").default(false),
+  errorMsg: text("error_msg"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type InterWebhookEvent = typeof interWebhookEvents.$inferSelect;
+

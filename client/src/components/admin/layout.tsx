@@ -121,6 +121,8 @@ const menuSections: MenuSection[] = [
         children: [
           { path: "/admin/financeiro", label: "Contas", icon: Wallet },
           { path: "/admin/faturas", label: "Faturas / Cobranças", icon: Receipt },
+          { path: "/admin/contas-a-pagar", label: "Contas a Pagar", icon: Landmark, iconColor: "text-emerald-500" },
+          { path: "/admin/inter-extrato", label: "Extrato Inter", icon: Wallet, iconColor: "text-orange-500" },
           { path: "/admin/relatorio-nf", label: "Relatório de NFs", icon: Receipt, iconColor: "text-emerald-500" },
           { path: "/admin/balanco-gerencial", label: "Balanço Gerencial", icon: BarChart3 },
           { path: "/admin/custos-fixos", label: "Custos Fixos", icon: Building2, iconColor: "text-blue-500" },

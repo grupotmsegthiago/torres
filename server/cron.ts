@@ -158,6 +158,80 @@ export function initCronJobs() {
       }
     });
 
+    // ============================================================
+    // CRON: Reconciliação Banco Inter — extrato dos últimos 7 dias
+    // a cada 30 min, casa entradas com invoices PENDING
+    // ============================================================
+    cron.schedule("*/30 * * * *", async () => {
+      try {
+        const { isInterConfigured } = await import("./services/inter/client");
+        if (!isInterConfigured()) return; // pula silenciosamente se Inter não configurado
+        const { consultarExtrato } = await import("./services/inter/banking");
+        const hoje = new Date();
+        const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const dataInicio = seteDiasAtras.toISOString().slice(0, 10);
+        const dataFim = hoje.toISOString().slice(0, 10);
+
+        const extrato = await consultarExtrato(dataInicio, dataFim);
+        const transacoes = extrato.transacoes || [];
+
+        let novosLancamentos = 0;
+        let conciliados = 0;
+
+        for (const tx of transacoes) {
+          if (tx.tipoOperacao !== "C") continue;
+
+          const { data: existing } = await supabaseAdmin
+            .from("inter_extrato_lancamentos")
+            .select("id")
+            .eq("data_entrada", tx.dataEntrada)
+            .eq("valor", Number(tx.valor || 0).toFixed(2))
+            .eq("tipo_operacao", "C")
+            .eq("titulo", tx.titulo || "")
+            .maybeSingle();
+
+          if (existing) continue;
+
+          const { data: invoice } = await supabaseAdmin
+            .from("invoices")
+            .select("id, status")
+            .eq("value", Number(tx.valor || 0).toFixed(2))
+            .in("status", ["PENDING", "OVERDUE"])
+            .order("due_date", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          await supabaseAdmin.from("inter_extrato_lancamentos").insert({
+            data_entrada: tx.dataEntrada,
+            tipo_transacao: tx.tipoTransacao,
+            tipo_operacao: tx.tipoOperacao,
+            valor: Number(tx.valor || 0).toFixed(2),
+            titulo: tx.titulo || null,
+            descricao: tx.descricao || null,
+            detalhes: tx,
+            invoice_id: invoice?.id || null,
+            reconciled_at: invoice ? new Date().toISOString() : null,
+          });
+
+          novosLancamentos++;
+
+          if (invoice) {
+            await supabaseAdmin
+              .from("invoices")
+              .update({ status: "RECEIVED", payment_date: tx.dataEntrada })
+              .eq("id", invoice.id);
+            conciliados++;
+          }
+        }
+
+        if (novosLancamentos > 0) {
+          log(`CRON Inter-Reconcile: ${novosLancamentos} lançamento(s), ${conciliados} invoice(s) conciliada(s)`, "cron");
+        }
+      } catch (e: any) {
+        log(`CRON Inter-Reconcile: Erro: ${e.message}`, "cron");
+      }
+    });
+
     cron.schedule("0 2 * * *", async () => {
     log("CRON: Iniciando monitoramento de frota (multas PRF)", "cron");
     try {

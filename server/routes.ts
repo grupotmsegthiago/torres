@@ -33,6 +33,73 @@ import {
 } from "./routes/_helpers";
 
 
+async function ensureInterTables() {
+  const migrations = [
+    // Adiciona colunas Inter na tabela invoices
+    "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gateway TEXT DEFAULT 'asaas'",
+    "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS inter_codigo_solicitacao TEXT",
+    // Tabela de extrato Inter
+    `CREATE TABLE IF NOT EXISTS inter_extrato_lancamentos (
+      id SERIAL PRIMARY KEY,
+      data_entrada TEXT NOT NULL,
+      tipo_transacao TEXT,
+      tipo_operacao TEXT NOT NULL,
+      valor NUMERIC(14,2) NOT NULL,
+      titulo TEXT,
+      descricao TEXT,
+      codigo_transacao TEXT UNIQUE,
+      detalhes JSONB,
+      invoice_id INTEGER,
+      reconciled_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_inter_extrato_data ON inter_extrato_lancamentos(data_entrada)",
+    // Tabela de pagamentos Inter
+    `CREATE TABLE IF NOT EXISTS inter_pagamentos (
+      id SERIAL PRIMARY KEY,
+      tipo TEXT NOT NULL,
+      codigo_transacao_inter TEXT UNIQUE,
+      valor NUMERIC(14,2) NOT NULL,
+      data_pagamento TEXT NOT NULL,
+      descricao TEXT,
+      cod_barras TEXT,
+      beneficiario_nome TEXT,
+      beneficiario_cpf_cnpj TEXT,
+      pix_chave TEXT,
+      pix_destino_nome TEXT,
+      pix_destino_cpf_cnpj TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDENTE',
+      error_msg TEXT,
+      financial_transaction_id TEXT,
+      created_by INTEGER,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )`,
+    // Tabela de webhooks Inter
+    `CREATE TABLE IF NOT EXISTS inter_webhook_events (
+      id SERIAL PRIMARY KEY,
+      evento TEXT NOT NULL,
+      codigo_solicitacao TEXT,
+      payload JSONB NOT NULL,
+      processed BOOLEAN DEFAULT FALSE,
+      error_msg TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_inter_webhook_codigo ON inter_webhook_events(codigo_solicitacao)",
+    "CREATE INDEX IF NOT EXISTS idx_invoices_inter_codigo ON invoices(inter_codigo_solicitacao)",
+  ];
+
+  try {
+    for (const q of migrations) {
+      await supabaseAdmin.rpc("exec_sql", { query: q });
+    }
+    try { await supabaseAdmin.rpc("exec_sql", { query: "NOTIFY pgrst, 'reload schema'" }); } catch (_n) {}
+    console.log("[Inter] Schema (invoices.gateway + 3 tabelas Inter) garantido via Supabase RPC");
+  } catch (rpcErr: any) {
+    console.error("[Inter] CRITICAL: falha ao criar schema Inter:", rpcErr?.message);
+  }
+}
+
 async function ensureFinancialOriginColumns() {
   const migrations = [
     "ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS origin_type TEXT DEFAULT 'manual'",
@@ -153,6 +220,7 @@ async function ensureFinancialOriginColumns() {
   }
 }
 ensureFinancialOriginColumns();
+ensureInterTables();
 
 async function syncMissingAutoTransactions() {
   try {
@@ -343,6 +411,7 @@ async function ensureSystemSettingsTable() {
   import { registerFixedCostsRoutes } from "./routes/fixed-costs";
   import { registerHolidaysRoutes } from "./routes/holidays";
   import { registerDailyAllowancesRoutes } from "./routes/daily-allowances";
+  import { registerInterRoutes } from "./routes/inter";
 
   export async function registerRoutes(
   httpServer: Server,
@@ -786,6 +855,7 @@ async function ensureSystemSettingsTable() {
     registerConciliacaoRoutes(app);
     registerFixedCostsRoutes(app);
     registerHolidaysRoutes(app);
+    registerInterRoutes(app);
     registerDailyAllowancesRoutes(app);
 
   

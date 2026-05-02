@@ -43,6 +43,8 @@ const RelatorioOSPage = lazy(() => import("@/pages/admin/relatorio-os"));
 const CotacaoGastoPage = lazy(() => import("@/pages/admin/cotacao-gasto"));
 const ConciliacaoTicketlogPage = lazy(() => import("@/pages/admin/conciliacao-ticketlog"));
 const FaturasPage = lazy(() => import("@/pages/admin/faturas"));
+const InterExtratoPage = lazy(() => import("@/pages/admin/inter-extrato"));
+const ContasAPagarPage = lazy(() => import("@/pages/admin/contas-a-pagar"));
 const HoleritesPage = lazy(() => import("@/pages/admin/holerites"));
 const LaudoPage = lazy(() => import("@/pages/admin/laudo"));
 const JornadaDiretoriaPage = lazy(() => import("@/pages/admin/jornada-diretoria"));
@@ -236,6 +238,8 @@ function Router() {
         <Route path="/mobile/resumo-financeiro">{() => <MobileProtectedRoute component={MobileResumoFinanceiroPage} skipSelfieCheck />}</Route>
         <Route path="/mobile-test">{() => <MobileProtectedRoute component={MobileMissaoPage} />}</Route>
         <Route path="/admin/photo-inspection/:osId">{() => <ProtectedRoute component={PhotoInspectionPage} />}</Route>
+        <Route path="/admin/inter-extrato">{() => <ProtectedRoute component={InterExtratoPage} />}</Route>
+        <Route path="/admin/contas-a-pagar">{() => <ProtectedRoute component={ContasAPagarPage} />}</Route>
         <Route path="/aprovacao/:token" component={AprovacaoPage} />
         <Route component={NotFound} />
       </Switch>
