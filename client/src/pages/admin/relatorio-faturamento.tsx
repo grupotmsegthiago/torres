@@ -536,7 +536,11 @@ export default function RelatorioFaturamentoPage() {
       const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b._so_status === "recusada";
       const isCancelada = !isRecusada && (b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "cancelada");
       const zeroOut = isRecusada;
-      const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || Math.round(hrExcedente * valorHoraExtra * 100) / 100);
+      const horaExtraFracionada = ct?.hora_extra_fracionada !== false;
+      const fatHoraExtraFallback = horaExtraFracionada
+        ? Math.round(hrExcedente * 60) * (Math.floor(valorHoraExtra / 60 * 100) / 100)
+        : Math.ceil(hrExcedente) * valorHoraExtra;
+      const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || fatHoraExtraFallback);
       const fatKmExtra = zeroOut ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
       const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
       const fatAdNoturno = zeroOut ? 0 : n(b.fat_adicional_noturno);
