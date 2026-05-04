@@ -82,6 +82,7 @@ export default function RelatorioFaturamentoPage() {
   const [sendDialog, setSendDialog] = useState(false);
   const [sendEmail, setSendEmail] = useState("");
   const [sendLoading, setSendLoading] = useState(false);
+  const [osModalLoading, setOsModalLoading] = useState(false);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -400,65 +401,103 @@ export default function RelatorioFaturamentoPage() {
 
   const isLiveOs = (os: any) => os.status !== "recusada" && os.status !== "cancelada" && (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
 
-  const openOsModal = (billingId: string) => {
+  const openOsModal = async (billingId: string) => {
     const billing = billings.find((x: any) => x.id === billingId);
     if (!billing) return;
 
-    const so = ordersMap.get(billing.service_order_id) || {};
-    const ct = getContractForBilling(billing);
+    setOsModalLoading(true);
 
-    const os = {
-      id: billing.service_order_id,
-      osNumber: billing.os_number || so.osNumber,
-      clientName: billing.client_name,
-      clientId: billing.client_id,
-      status: so.status || billing._so_status || "concluida",
-      missionStatus: so.missionStatus || so.mission_status || billing._so_mission_status || "",
-      missionStartedAt: so.missionStartedAt || so.mission_started_at,
-      scheduledDate: so.scheduledDate || so.scheduled_date || billing.data_missao,
-      completedDate: so.completedDate || so.completed_date || billing.completed_date,
-      origin: billing.origem || so.origin,
-      destination: billing.destino || so.destination,
-      km_chegada_origem: so.km_chegada_origem || billing.km_inicial,
-      km_inicial: billing.km_inicial,
-      km_final: billing.km_final || so.km_final,
-      hora_chegada_origem: so.hora_chegada_origem,
-      hora_fim_missao: so.hora_fim_missao || so.completedDate,
-      vehiclePlate: billing.placa_viatura || (so.vehicleId ? vehiclesMap.get(so.vehicleId)?.plate : null),
-      vehicleModel: so.vehicleId ? vehiclesMap.get(so.vehicleId)?.model : null,
-      employee1Name: billing.vigilante_name,
-      employee2Name: billing.vigilante2_name,
-      escortedVehiclePlate: billing.placa_escoltado || so.escortedVehiclePlate,
-      escortedDriverName: billing.motorista_escoltado || so.escortedDriverName,
-      contractName: ct?.name || ct?.contract_name,
-      contractValues: ct || {},
-      billing: billing,
-      pedagioEstimado: so.pedagioEstimado || 0,
-      createdAt: so.createdAt || billing.created_at,
-      escortContractId: billing.contract_id,
-      assignedEmployeeId: so.assignedEmployeeId,
-      stepLogs: so.stepLogs || [],
-    };
+    let so: any = ordersMap.get(billing.service_order_id) || {};
+    let veh: any = null;
 
-    setSelectedOs(os);
-    setPedagioValue(String(billing.despesas_pedagio || so.pedagioEstimado || "0"));
-    setObservacoesValue(billing.observacoes || "");
-    setEditingFields(false);
-    setOverrideKmChegada(so.km_chegada_origem != null ? String(so.km_chegada_origem) : String(billing.km_inicial || ""));
-    setOverrideKmFim(so.km_final != null ? String(so.km_final) : String(billing.km_final || ""));
-    const fmtDtLocal = (v: string | null) => {
-      if (!v) return "";
-      try {
-        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(_eu(v)));
-        const get = (t: string) => parts.find(p => p.type === t)?.value || "";
-        const yyyy = get("year"); const mm = get("month"); const dd = get("day");
-        const hh = get("hour") === "24" ? "00" : get("hour"); const mi = get("minute");
-        if (!yyyy || !mm || !dd) return "";
-        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-      } catch { return ""; }
-    };
-    setOverrideHoraChegada(fmtDtLocal(so.missionStartedAt) || fmtDtLocal(so.scheduledDate) || "");
-    setOverrideHoraFim(fmtDtLocal(so.hora_fim_missao) || fmtDtLocal(so.completedDate) || "");
+    try {
+      const freshSoRes = await authFetch(`/api/service-orders/${billing.service_order_id}`);
+      const freshSo = freshSoRes.ok ? await freshSoRes.json() : null;
+
+      if (!freshSo) {
+        toast({ title: "Aviso", description: "Não foi possível atualizar os dados da OS. Exibindo dados do cache." });
+      }
+
+      if (freshSo) {
+        so = freshSo;
+        const newOrdersMap = new Map(ordersMap);
+        newOrdersMap.set(billing.service_order_id, freshSo);
+        setOrdersMap(newOrdersMap);
+      }
+
+      if (so.vehicleId) {
+        try {
+          const vRes = await authFetch(`/api/vehicles/${so.vehicleId}`);
+          if (vRes.ok) {
+            veh = await vRes.json();
+            const newVehiclesMap = new Map(vehiclesMap);
+            newVehiclesMap.set(so.vehicleId, veh);
+            setVehiclesMap(newVehiclesMap);
+          }
+        } catch (vehErr) {
+          console.warn("Error fetching vehicle data:", vehErr);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching fresh OS data:", err);
+      toast({ title: "Aviso", description: "Não foi possível atualizar os dados da OS. Exibindo dados do cache.", variant: "destructive" });
+    } finally {
+      const ct = getContractForBilling(billing);
+
+      const os = {
+        id: billing.service_order_id,
+        osNumber: billing.os_number || so.osNumber,
+        clientName: billing.client_name,
+        clientId: billing.client_id,
+        status: so.status || billing._so_status || "concluida",
+        missionStatus: so.missionStatus || so.mission_status || billing._so_mission_status || "",
+        missionStartedAt: so.missionStartedAt || so.mission_started_at,
+        scheduledDate: so.scheduledDate || so.scheduled_date || billing.data_missao,
+        completedDate: so.completedDate || so.completed_date || billing.completed_date,
+        origin: billing.origem || so.origin,
+        destination: billing.destino || so.destination,
+        km_chegada_origem: so.km_chegada_origem || billing.km_inicial,
+        km_inicial: billing.km_inicial,
+        km_final: billing.km_final || so.km_final,
+        hora_chegada_origem: so.hora_chegada_origem,
+        hora_fim_missao: so.hora_fim_missao || so.completedDate,
+        vehiclePlate: billing.placa_viatura || (so.vehicleId ? (veh?.plate || vehiclesMap.get(so.vehicleId)?.plate) : null),
+        vehicleModel: so.vehicleId ? (veh?.model || vehiclesMap.get(so.vehicleId)?.model) : null,
+        employee1Name: billing.vigilante_name,
+        employee2Name: billing.vigilante2_name,
+        escortedVehiclePlate: billing.placa_escoltado || so.escortedVehiclePlate,
+        escortedDriverName: billing.motorista_escoltado || so.escortedDriverName,
+        contractName: ct?.name || ct?.contract_name,
+        contractValues: ct || {},
+        billing: billing,
+        pedagioEstimado: so.pedagioEstimado || 0,
+        createdAt: so.createdAt || billing.created_at,
+        escortContractId: billing.contract_id,
+        assignedEmployeeId: so.assignedEmployeeId,
+        stepLogs: so.stepLogs || [],
+      };
+
+      setSelectedOs(os);
+      setPedagioValue(String(billing.despesas_pedagio || so.pedagioEstimado || "0"));
+      setObservacoesValue(billing.observacoes || "");
+      setEditingFields(false);
+      setOverrideKmChegada(so.km_chegada_origem != null ? String(so.km_chegada_origem) : String(billing.km_inicial || ""));
+      setOverrideKmFim(so.km_final != null ? String(so.km_final) : String(billing.km_final || ""));
+      const fmtDtLocal = (v: string | null) => {
+        if (!v) return "";
+        try {
+          const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(_eu(v)));
+          const get = (t: string) => parts.find(p => p.type === t)?.value || "";
+          const yyyy = get("year"); const mm = get("month"); const dd = get("day");
+          const hh = get("hour") === "24" ? "00" : get("hour"); const mi = get("minute");
+          if (!yyyy || !mm || !dd) return "";
+          return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        } catch { return ""; }
+      };
+      setOverrideHoraChegada(fmtDtLocal(so.missionStartedAt) || fmtDtLocal(so.scheduledDate) || "");
+      setOverrideHoraFim(fmtDtLocal(so.hora_fim_missao) || fmtDtLocal(so.completedDate) || "");
+      setOsModalLoading(false);
+    }
   };
 
   const handleRecalcLote = async () => {
@@ -1613,7 +1652,15 @@ export default function RelatorioFaturamentoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {selectedOs && (
+      {osModalLoading && (
+        <Dialog open={true} onOpenChange={() => {}}>
+          <DialogContent className="max-w-xs flex flex-col items-center justify-center py-12" data-testid="os-modal-loading">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-3" />
+            <p className="text-sm text-gray-600 font-medium">Carregando dados da OS...</p>
+          </DialogContent>
+        </Dialog>
+      )}
+      {selectedOs && !osModalLoading && (
         <OsDetailModal
           os={selectedOs}
           onClose={() => { setSelectedOs(null); setEditingFields(false); }}
