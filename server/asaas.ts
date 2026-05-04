@@ -2279,7 +2279,13 @@ export function registerAsaasRoutes(app: Express) {
         }
 
         // BIL avulso — uma linha por billing sem boletim/invoice
-        for (const b of avulsos) {
+        // Exclui billings ainda não verificados (A_VERIFICAR) — só mostra
+        // billings já aprovados ou faturados que ficaram sem boletim/invoice.
+        const avulsosFiltrados = avulsos.filter((b: any) => {
+          const st = String(b.status || "").toUpperCase();
+          return st !== "A_VERIFICAR" && st !== "PENDENTE" && st !== "ENVIADA_APROVACAO";
+        });
+        for (const b of avulsosFiltrados) {
           const cli = clientMap.get(b.client_id);
           const lbl = osLabel(b);
           const dataFmt = (b.data_missao || "").split("T")[0];
