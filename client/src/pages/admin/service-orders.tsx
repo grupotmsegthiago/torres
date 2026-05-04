@@ -802,13 +802,6 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     queryFn: getQueryFn({ on401: "throw" }),
     enabled: !!order?.id,
   });
-  const pedagioAutoSum = osCosts
-    .filter(c => {
-      const cat = ((c as any).category || "").toLowerCase();
-      return (cat.includes("pedágio") || cat.includes("pedagio")) && (c as any).costType !== "revenue";
-    })
-    .reduce((sum, c) => sum + parseBRL(c.amount), 0);
-
   const [form, setForm] = useState({
     osNumber: order?.osNumber || generateNextOsNumber(allOrders),
     clientId: order?.clientId || 0,
@@ -935,7 +928,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     ...(data.missionStartedAt && !(order && order.missionStatus && order.missionStatus !== "aguardando" && order.missionStartedAt) ? { missionStartedAt: localInputToUtc(data.missionStartedAt) } : {}),
     ...(data.completedDate ? { completedDate: localInputToUtc(data.completedDate) } : {}),
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
-    pedagioEstimado: pedagioAutoSum > 0 ? pedagioAutoSum : (data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null),  // Always IDA value only
+    pedagioEstimado: data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null,
     pedagioIdaVolta: !!data.pedagioIdaVolta,
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
@@ -1275,29 +1268,19 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 )}
               </div>
               <div>
-                <FieldLabel>Pedágio (R$) {pedagioAutoSum > 0 ? "✓ Lançado" : ""}</FieldLabel>
+                <FieldLabel>Pedágio (R$)</FieldLabel>
                 <div className="relative">
-                  {pedagioAutoSum > 0 ? (
-                    <Input
-                      type="text"
-                      readOnly
-                      value={(() => { const val = form.pedagioIdaVolta ? pedagioAutoSum * 2 : pedagioAutoSum; return val.toFixed(2).replace(".", ","); })()}
-                      className="text-sm font-mono bg-neutral-100 cursor-not-allowed border-amber-300"
-                      data-testid="input-os-pedagio"
-                    />
-                  ) : (
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={form.pedagioEstimado}
-                      onChange={(e) => setForm({ ...form, pedagioEstimado: maskBRL(e.target.value) })}
-                      placeholder="0,00"
-                      className="text-sm font-mono"
-                      data-testid="input-os-pedagio"
-                    />
-                  )}
-                  {pedagioAutoSum > 0 && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">{form.pedagioIdaVolta ? "IDA+VOLTA" : "SOMENTE IDA"}</span>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.pedagioEstimado}
+                    onChange={(e) => setForm({ ...form, pedagioEstimado: maskBRL(e.target.value) })}
+                    placeholder="0,00"
+                    className="text-sm font-mono"
+                    data-testid="input-os-pedagio"
+                  />
+                  {form.pedagioIdaVolta && (
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-600 font-bold">IDA+VOLTA</span>
                   )}
                 </div>
                 <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer" data-testid="toggle-pedagio-ida-volta">
