@@ -478,7 +478,9 @@ async function ensureInvoicesTable() {
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nf_anexo_url TEXT;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT FALSE;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
-      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_to TEXT;`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS email_sent_to TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMPTZ;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reminder_count INTEGER DEFAULT 0;`
     });
   } catch (e: any) {
     console.log("[asaas] ensureInvoicesTable via direct query fallback");
@@ -2408,6 +2410,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceId: inv.id,
             approvalToken: null,
             approvalUrl: null,
+            reminderCount: inv.reminder_count || 0,
+            lastReminderSentAt: inv.last_reminder_sent_at || null,
           });
         }
 
@@ -2445,6 +2449,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceId: inv.id,
             approvalToken: null,
             approvalUrl: null,
+            reminderCount: inv.reminder_count || 0,
+            lastReminderSentAt: inv.last_reminder_sent_at || null,
           });
         }
 
@@ -2483,6 +2489,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceId: null,
             approvalToken: ap.token,
             approvalUrl: ap.token ? `/aprovacao/${ap.token}` : null,
+            reminderCount: 0,
+            lastReminderSentAt: null,
           });
         }
 
@@ -2524,6 +2532,8 @@ export function registerAsaasRoutes(app: Express) {
             invoiceId: null,
             approvalToken: null,
             approvalUrl: null,
+            reminderCount: 0,
+            lastReminderSentAt: null,
           });
         }
 

@@ -987,7 +987,16 @@ export function initCronJobs() {
     }
   }, { timezone: "America/Sao_Paulo" });
 
-  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria)", "cron");
+  cron.schedule("0 9 * * 1-5", async () => {
+    try {
+      log("CRON CobrançaVencidos: Verificando faturas vencidas para envio de lembrete diário", "cron");
+      await sendOverdueReminders();
+    } catch (err: any) {
+      log(`CRON CobrançaVencidos: Erro: ${err.message}`, "cron");
+    }
+  }, { timezone: "America/Sao_Paulo" });
+
+  log("CRON: Tarefas agendadas - Frota (diário 02:00) | RH (trimestral dia 1 às 03:00) | Rodízio (seg-sex 06:30 e 16:30 BRT) | Billing (a cada 30min) | BillingAlerts (diário 03:00 BRT) | Provisão Salário (diário 23:59 BRT) | JornadaAlerta (diário 08:00 BRT) | AceiteExpirado (a cada 30min) | AlertaFrota (diário 07:00) | AlertaDocRH (diário 08:00) | ResumoFinanceiro (seg-sex 06h/09h/12h/15h/18h BRT — diretoria) | CobrançaVencidos (seg-sex 09:00 BRT)", "cron");
 }
 
 function getCronMailTransporter() {
@@ -1298,5 +1307,174 @@ export async function sendDailySummaryEmail(targetDate?: string): Promise<{ succ
   } catch (err: any) {
     log(`CRON ResumoDiario: Erro: ${err.message}`, "cron");
     return { success: false, message: err.message };
+  }
+}
+
+async function sendOverdueReminders() {
+  const transporter = getCronMailTransporter();
+  if (!transporter) {
+    log("CRON CobrançaVencidos: SMTP não configurado — lembretes não enviados", "cron");
+    return;
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: overdueInvoices, error } = await supabaseAdmin
+    .from("invoices")
+    .select("id, client_id, client_name, client_cpf_cnpj, value, due_date, description, invoice_url, bank_slip_url, pix_copia_e_cola, billing_type, status, nfse_status, reminder_count, last_reminder_sent_at")
+    .lt("due_date", today)
+    .not("status", "in", '("RECEIVED","CONFIRMED","RECEIVED_IN_CASH","CANCELLED","CANCELED")');
+
+  if (error) {
+    log(`CRON CobrançaVencidos: Erro ao buscar faturas vencidas: ${error.message}`, "cron");
+    return;
+  }
+
+  if (!overdueInvoices || overdueInvoices.length === 0) {
+    log("CRON CobrançaVencidos: Nenhuma fatura vencida encontrada", "cron");
+    return;
+  }
+
+  const validOverdue = overdueInvoices.filter((inv: any) => {
+    const nfStatus = String(inv.nfse_status || "").toUpperCase();
+    if (nfStatus.includes("CANCEL")) return false;
+    const lastSent = inv.last_reminder_sent_at ? new Date(inv.last_reminder_sent_at).toISOString().split("T")[0] : null;
+    if (lastSent === today) return false;
+    return true;
+  });
+
+  if (validOverdue.length === 0) {
+    log("CRON CobrançaVencidos: Todas as faturas vencidas já receberam lembrete hoje", "cron");
+    return;
+  }
+
+  let sent = 0;
+  let skipped = 0;
+
+  for (const inv of validOverdue) {
+    try {
+      const { data: clientData } = await supabaseAdmin
+        .from("clients")
+        .select("email, email_financeiro, name")
+        .eq("id", inv.client_id)
+        .single();
+
+      const clientEmail = clientData?.email_financeiro || clientData?.email;
+      if (!clientEmail) {
+        log(`CRON CobrançaVencidos: Fatura #${inv.id} (${inv.client_name}) — cliente sem e-mail cadastrado`, "cron");
+        skipped++;
+        continue;
+      }
+
+      const dueDate = new Date(inv.due_date + "T12:00:00");
+      const todayDate = new Date(today + "T12:00:00");
+      const diffMs = todayDate.getTime() - dueDate.getTime();
+      const diasAtraso = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const dueDateFmt = dueDate.toLocaleDateString("pt-BR");
+      const valueFmt = Number(inv.value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const reminderNum = (inv.reminder_count || 0) + 1;
+
+      const links: string[] = [];
+      if (inv.invoice_url) {
+        links.push(`<a href="${inv.invoice_url}" style="display:inline-block;background:#1a1a2e;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">📄 VER FATURA</a>`);
+      }
+      if (inv.bank_slip_url) {
+        links.push(`<a href="${inv.bank_slip_url}" style="display:inline-block;background:#0066cc;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px;margin:4px;">🏦 BOLETO BANCÁRIO</a>`);
+      }
+
+      let pixSection = "";
+      if (inv.pix_copia_e_cola) {
+        pixSection = `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:16px 0;">
+          <p style="font-size:13px;font-weight:bold;color:#166534;margin:0 0 8px;">Pagamento via PIX</p>
+          <p style="font-size:11px;color:#15803d;margin:0 0 8px;">Copie o código abaixo e cole no app do seu banco:</p>
+          <div style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:11px;color:#374151;">
+            ${inv.pix_copia_e_cola}
+          </div>
+        </div>`;
+      }
+
+      const urgencyColor = diasAtraso > 15 ? "#dc2626" : diasAtraso > 7 ? "#ea580c" : "#d97706";
+      const urgencyLabel = diasAtraso > 15 ? "URGENTE" : diasAtraso > 7 ? "IMPORTANTE" : "LEMBRETE";
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;">
+<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <div style="background:#1a1a2e;padding:24px;text-align:center;">
+    <h1 style="color:#fff;font-size:18px;margin:0;">Torres Vigilância Patrimonial</h1>
+    <p style="color:#94a3b8;font-size:12px;margin:4px 0 0;">Cobrança — ${urgencyLabel}</p>
+  </div>
+  <div style="background:${urgencyColor};padding:12px 24px;text-align:center;">
+    <p style="color:#fff;font-size:14px;font-weight:bold;margin:0;">⚠️ Fatura vencida há ${diasAtraso} dia${diasAtraso > 1 ? "s" : ""}</p>
+  </div>
+  <div style="padding:24px;">
+    <p style="font-size:14px;color:#1a1a1a;margin:0 0 16px;">
+      Prezado(a) <strong>${clientData?.name || inv.client_name}</strong>,
+    </p>
+    <p style="font-size:13px;color:#4a4a4a;line-height:1.6;margin:0 0 16px;">
+      Identificamos que a fatura abaixo encontra-se <strong style="color:${urgencyColor};">vencida há ${diasAtraso} dia${diasAtraso > 1 ? "s" : ""}</strong>. 
+      Solicitamos a gentileza de providenciar o pagamento o mais breve possível para evitar encargos adicionais.
+    </p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <table style="width:100%;font-size:13px;color:#333;">
+        <tr><td style="padding:4px 0;color:#666;">Descrição:</td><td style="padding:4px 0;font-weight:bold;text-align:right;">${inv.description || "Serviço de Escolta Armada"}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Valor:</td><td style="padding:4px 0;font-weight:bold;font-size:16px;color:#dc2626;text-align:right;">${valueFmt}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Vencimento:</td><td style="padding:4px 0;font-weight:bold;color:#dc2626;text-align:right;">${dueDateFmt}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Dias em atraso:</td><td style="padding:4px 0;font-weight:bold;color:${urgencyColor};text-align:right;">${diasAtraso} dia${diasAtraso > 1 ? "s" : ""}</td></tr>
+        <tr><td style="padding:4px 0;color:#666;">Lembrete nº:</td><td style="padding:4px 0;text-align:right;">${reminderNum}</td></tr>
+      </table>
+    </div>
+    ${links.length > 0 ? `<div style="text-align:center;margin:20px 0;">${links.join("\n")}</div>` : ""}
+    ${pixSection}
+    <p style="font-size:12px;color:#666;line-height:1.5;margin:20px 0 0;">
+      Caso o pagamento já tenha sido efetuado, por favor desconsidere este aviso e nos envie o comprovante para registro.
+    </p>
+    <p style="font-size:12px;color:#888;line-height:1.5;margin:12px 0 0;">
+      Em caso de dúvidas, entre em contato conosco pelo e-mail 
+      <a href="mailto:financeiro@torresseguranca.com.br" style="color:#1a1a2e;">financeiro@torresseguranca.com.br</a> 
+      ou pelo telefone (11) 96369-6699.
+    </p>
+  </div>
+  <div style="background:#f8f9fa;padding:16px;text-align:center;border-top:1px solid #eee;">
+    <p style="color:#888;font-size:11px;margin:2px 0;"><strong>Torres Vigilância Patrimonial</strong></p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">CNPJ 36.982.392/0001-89</p>
+    <p style="color:#999;font-size:10px;margin:2px 0;">📞 (11) 96369-6699 | ✉️ financeiro@torresseguranca.com.br</p>
+  </div>
+</div>
+</body></html>`;
+
+      const from = `"Torres Vigilância - Financeiro" <${process.env.SMTP_FROM || process.env.SMTP_USER || "escolta@torresseguranca.com.br"}>`;
+
+      await transporter.sendMail({
+        from,
+        to: clientEmail,
+        bcc: ["thiago@grupotmseg.com.br", "financeiro@torresseguranca.com.br"],
+        subject: `⚠️ ${urgencyLabel}: Fatura vencida há ${diasAtraso} dias — ${valueFmt} — Torres Segurança`,
+        html,
+      });
+
+      await supabaseAdmin.from("invoices").update({
+        last_reminder_sent_at: new Date().toISOString(),
+        reminder_count: reminderNum,
+      }).eq("id", inv.id);
+
+      log(`CRON CobrançaVencidos: ✓ Lembrete #${reminderNum} enviado — Fatura #${inv.id} (${inv.client_name}) ${valueFmt} vencida há ${diasAtraso}d → ${clientEmail}`, "cron");
+      sent++;
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (err: any) {
+      log(`CRON CobrançaVencidos: ✗ Erro fatura #${inv.id}: ${err.message}`, "cron");
+    }
+  }
+
+  log(`CRON CobrançaVencidos: Concluído — ${sent} lembrete(s) enviado(s), ${skipped} sem e-mail`, "cron");
+
+  if (sent > 0) {
+    await supabaseAdmin.from("audit_logs").insert({
+      user_name: "SISTEMA", user_role: "system",
+      action: "CRON_COBRANCA_VENCIDOS",
+      details: `${sent} lembrete(s) de cobrança enviado(s) para faturas vencidas. ${skipped} sem e-mail.`,
+    });
   }
 }

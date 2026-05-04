@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   Receipt, FileText, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, Search, Calendar,
-  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2,
+  Download, RefreshCw, ExternalLink, Eye, MailQuestion, Hourglass, Banknote, Ban, Trash2, FileCheck2, AlertOctagon,
 } from "lucide-react";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
@@ -49,6 +49,8 @@ type RelatorioRow = {
   invoiceId: number | null;
   approvalToken: string | null;
   approvalUrl: string | null;
+  reminderCount: number;
+  lastReminderSentAt: string | null;
 };
 
 type RelatorioResponse = {
@@ -77,7 +79,7 @@ const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: st
   NF_ERRO:            { label: "NF com erro",       cls: "text-red-700",     bg: "bg-red-50 border-red-200",           icon: AlertTriangle },
   NF_CANCELADA:       { label: "NF cancelada",      cls: "text-neutral-600", bg: "bg-neutral-100 border-neutral-200",  icon: XCircle },
   PAGO:               { label: "Pago",              cls: "text-emerald-800", bg: "bg-emerald-100 border-emerald-300",  icon: Banknote },
-  VENCIDO:            { label: "Vencido",           cls: "text-orange-700",  bg: "bg-orange-50 border-orange-200",     icon: Clock },
+  VENCIDO:            { label: "Vencido",           cls: "text-red-700",     bg: "bg-red-50 border-red-300",           icon: AlertOctagon },
   OUTRO:              { label: "Outro",             cls: "text-neutral-600", bg: "bg-neutral-100 border-neutral-200",  icon: Receipt },
 };
 
@@ -234,27 +236,42 @@ export default function RelatorioNFPage() {
   const exportXlsx = () => {
     const headers = [
       "Origem", "Cliente", "CPF/CNPJ", "Descrição", "Valor (R$)",
-      "Status", "Status NF (Asaas)", "Status Cobrança (Asaas)", "Status Boletim",
-      "Nº NF", "Vencimento", "Pagamento", "Criado em", "Asaas ID",
+      "Status", "Vencimento", "Dias Atraso", "Pagamento", "Situação Pgto",
+      "Status NF (Asaas)", "Status Cobrança (Asaas)", "Status Boletim",
+      "Nº NF", "Lembretes Enviados", "Criado em", "Asaas ID",
     ];
-    const dataExp = filtered.map(r => [
-      r.source === "INVOICE" ? "Fatura" : r.source === "BILLING_AVULSO" ? "OS sem boletim" : "Boletim",
-      r.clientName,
-      r.clientCpfCnpj || "",
-      r.description || "",
-      Number(r.value || 0),
-      STATUS_META[r.normalizedStatus]?.label || r.normalizedStatus,
-      r.rawNfseStatus || "",
-      r.rawStatus || "",
-      r.rawBoletimStatus || "",
-      r.nfseNumber || "",
-      fmtDate(r.dueDate),
-      fmtDate(r.paymentDate),
-      fmtDate(r.createdAt),
-      r.asaasPaymentId || "",
-    ]);
-    const colWidths = [10, 28, 18, 32, 14, 18, 22, 22, 18, 14, 14, 14, 14, 22];
-    const totalRow: (string | number)[] = ["TOTAL", "", "", "", filtered.reduce((s, r) => s + Number(r.value || 0), 0), "", "", "", "", "", "", "", "", ""];
+    const dataExp = filtered.map(r => {
+      const isPago = r.normalizedStatus === "PAGO";
+      const diasAtraso = (() => {
+        if (!r.dueDate || isPago) return 0;
+        const due = new Date(r.dueDate + "T12:00:00");
+        const now = new Date(); now.setHours(12, 0, 0, 0);
+        const diff = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+        return diff > 0 ? diff : 0;
+      })();
+      const situacao = isPago ? "PAGO" : diasAtraso > 0 ? "VENCIDO" : r.dueDate ? "EM ABERTO" : "—";
+      return [
+        r.source === "INVOICE" ? "Fatura" : r.source === "BILLING_AVULSO" ? "OS sem boletim" : "Boletim",
+        r.clientName,
+        r.clientCpfCnpj || "",
+        r.description || "",
+        Number(r.value || 0),
+        STATUS_META[r.normalizedStatus]?.label || r.normalizedStatus,
+        fmtDate(r.dueDate),
+        diasAtraso > 0 ? diasAtraso : "",
+        fmtDate(r.paymentDate),
+        situacao,
+        r.rawNfseStatus || "",
+        r.rawStatus || "",
+        r.rawBoletimStatus || "",
+        r.nfseNumber || "",
+        r.reminderCount || "",
+        fmtDate(r.createdAt),
+        r.asaasPaymentId || "",
+      ];
+    });
+    const colWidths = [10, 28, 18, 32, 14, 18, 14, 12, 14, 14, 22, 22, 18, 14, 14, 14, 22];
+    const totalRow: (string | number)[] = ["TOTAL", "", "", "", filtered.reduce((s, r) => s + Number(r.value || 0), 0), "", "", "", "", "", "", "", "", "", "", "", ""];
     exportFormattedExcel({
       title: "RELATÓRIO DE NOTAS FISCAIS — TORRES VIGILÂNCIA PATRIMONIAL",
       subtitle: `Período: ${from} a ${to}`,
@@ -276,6 +293,7 @@ export default function RelatorioNFPage() {
     { key: "AUTORIZADO",         label: "Autorizado",        icon: CheckCircle2,   cls: "from-violet-500 to-violet-700 text-white" },
     { key: "NF_EMITIDA",         label: "NF emitida",        icon: FileText,       cls: "from-emerald-500 to-emerald-700 text-white" },
     { key: "PAGO",               label: "Pago",              icon: Banknote,       cls: "from-emerald-700 to-emerald-900 text-white" },
+    { key: "VENCIDO",            label: "Vencido",           icon: AlertOctagon,   cls: "from-red-600 to-red-800 text-white" },
     { key: "NF_ERRO",            label: "Com erro",          icon: AlertTriangle,  cls: "from-red-500 to-red-700 text-white" },
     { key: "NF_CANCELADA",       label: "Cancelada",         icon: XCircle,        cls: "from-neutral-500 to-neutral-700 text-white" },
   ];
@@ -413,6 +431,8 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Descrição</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-center px-3 py-2 font-semibold">Status</th>
+                  <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
+                  <th className="text-left px-3 py-2 font-semibold">Pagamento</th>
                   <th className="text-left px-3 py-2 font-semibold">Status Asaas</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº NF</th>
                   <th className="text-left px-3 py-2 font-semibold">Criado em</th>
@@ -421,9 +441,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400">Nenhum registro no período</td></tr>
                 ) : filtered.map(r => {
                   const meta = STATUS_META[r.normalizedStatus] || STATUS_META.OUTRO;
                   const Icon = meta.icon;
@@ -431,8 +451,19 @@ export default function RelatorioNFPage() {
                   if (r.rawBoletimStatus) asaasParts.push(`Boletim: ${r.rawBoletimStatus}`);
                   if (r.rawStatus) asaasParts.push(`Cobrança: ${r.rawStatus}`);
                   if (r.rawNfseStatus) asaasParts.push(`NF: ${r.rawNfseStatus}`);
+                  const isOverdue = r.normalizedStatus === "VENCIDO";
+                  const isPago = r.normalizedStatus === "PAGO";
+                  const diasAtraso = (() => {
+                    if (!r.dueDate || isPago) return 0;
+                    const due = new Date(r.dueDate + "T12:00:00");
+                    const now = new Date();
+                    now.setHours(12, 0, 0, 0);
+                    const diff = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+                    return diff > 0 ? diff : 0;
+                  })();
+                  const rowBg = isOverdue ? "bg-red-50/60 hover:bg-red-100/60" : isPago ? "bg-emerald-50/40 hover:bg-emerald-50/80" : "hover:bg-slate-50/60";
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50/60" data-testid={`row-${r.id}`}>
+                    <tr key={r.id} className={rowBg} data-testid={`row-${r.id}`}>
                       <td className="px-3 py-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
                           r.source === "INVOICE"
@@ -488,6 +519,37 @@ export default function RelatorioNFPage() {
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.dueDate ? (
+                          <div className={`font-medium ${isOverdue ? "text-red-700" : "text-slate-700"}`}>
+                            {fmtDate(r.dueDate)}
+                            {diasAtraso > 0 && (
+                              <div className="text-[10px] font-bold text-red-600 mt-0.5">
+                                {diasAtraso}d em atraso
+                              </div>
+                            )}
+                          </div>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        {isPago && r.paymentDate ? (
+                          <div className="text-emerald-700 font-medium">
+                            {fmtDate(r.paymentDate)}
+                            <div className="text-[10px] text-emerald-600 mt-0.5">Pago</div>
+                          </div>
+                        ) : isOverdue ? (
+                          <div className="text-red-600 font-semibold text-[11px]">
+                            Em aberto
+                            {r.reminderCount > 0 && (
+                              <div className="text-[10px] text-red-500 mt-0.5" title={r.lastReminderSentAt ? `Último: ${fmtDateTime(r.lastReminderSentAt)}` : ""}>
+                                {r.reminderCount}x cobrado
+                              </div>
+                            )}
+                          </div>
+                        ) : r.dueDate ? (
+                          <span className="text-amber-600 text-[11px]">Aguardando</span>
+                        ) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-3 py-2 text-[10px] text-slate-500">
                         {asaasParts.length ? asaasParts.map((p, i) => <div key={i}>{p}</div>) : "—"}
