@@ -46,7 +46,7 @@ function getLoginFromEmail(email: string): string {
   return email;
 }
 
-const DEFAULT_PASSWORD = "torres@123";
+const FALLBACK_PASSWORD = "torres@123";
 
 function UserListSection({
   title,
@@ -139,7 +139,7 @@ function UserListSection({
 
                   <div className="flex items-center gap-1.5 text-sm text-neutral-600" data-testid={`text-user-password-${u.id}`}>
                     <Lock className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
-                    <span className="font-mono text-xs">{DEFAULT_PASSWORD}</span>
+                    <span className="font-mono text-xs">{(u as any).plainPassword || FALLBACK_PASSWORD}</span>
                   </div>
 
                   <div className="flex items-center justify-end gap-0.5">
@@ -484,7 +484,7 @@ export default function UsersPage() {
                     <Lock className="w-3.5 h-3.5" /> Senha Atual
                   </label>
                   <Input
-                    value={DEFAULT_PASSWORD}
+                    value={FALLBACK_PASSWORD}
                     disabled
                     className="font-mono bg-neutral-50"
                     data-testid="input-user-password"

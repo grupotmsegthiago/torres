@@ -885,7 +885,7 @@ async function ensureSystemSettingsTable() {
       return res.status(500).json({ message: "Erro ao atualizar senha: " + error.message });
     }
 
-    await storage.updateUser(req.user!.id, { mustChangePassword: 0 } as any);
+    await storage.updateUser(req.user!.id, { mustChangePassword: 0, plainPassword: newPassword } as any);
 
     res.json({ message: "Senha atualizada com sucesso" });
   });

@@ -100,6 +100,7 @@ import type { Express } from "express";
                   role: "funcionario",
                   employeeId: data.id,
                   mustChangePassword: 1,
+                  plainPassword: defaultPassword,
                 });
                 autoUserCreated = true;
               } catch (dbErr: any) {

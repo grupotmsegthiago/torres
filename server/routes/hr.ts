@@ -853,7 +853,14 @@ ${empNames}`
     const filtered = req.user!.role === "diretoria"
       ? allUsers
       : allUsers.filter(u => u.role !== "diretoria");
-    res.json(filtered.map(toSafeUser));
+    const safeUsers = filtered.map(u => {
+      const safe = toSafeUser(u);
+      if (req.user!.role !== "diretoria") {
+        delete safe.plainPassword;
+      }
+      return safe;
+    });
+    res.json(safeUsers);
   });
 
   app.post("/api/users", requireAuth, requireAdminRole, async (req, res) => {
@@ -891,6 +898,7 @@ ${empNames}`
         role: role || "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
+        plainPassword: tempPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -938,7 +946,7 @@ ${empNames}`
     });
 
     if (error) return res.status(500).json({ message: "Erro ao resetar senha: " + error.message });
-    await storage.updateUser(id, { mustChangePassword: 1 } as any);
+    await storage.updateUser(id, { mustChangePassword: 1, plainPassword: newPassword } as any);
     res.json({ ...toSafeUser(user), newPassword, mustChangePassword: true });
   });
 
@@ -1004,6 +1012,7 @@ ${empNames}`
         role: role || "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
+        plainPassword: tempPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -1048,6 +1057,7 @@ ${empNames}`
         role: "funcionario",
         employeeId: employeeId || null,
         mustChangePassword: 1,
+        plainPassword: defaultPassword,
       });
     } catch (dbErr: any) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});

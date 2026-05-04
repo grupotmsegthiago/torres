@@ -34,8 +34,8 @@ export default function ProfilePage() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw new Error(error.message);
+      const { apiRequest } = await import("@/lib/queryClient");
+      await apiRequest("POST", "/api/auth/change-password", { newPassword });
       toast({ title: "Senha alterada com sucesso!" });
       setNewPassword("");
       setConfirmPassword("");
