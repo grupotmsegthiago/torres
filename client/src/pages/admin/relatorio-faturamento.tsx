@@ -151,14 +151,19 @@ export default function RelatorioFaturamentoPage() {
   });
 
   const gerarFaturaMutation = useMutation({
-    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string; startDate: string; endDate: string; expectedTotal: number }) => {
-      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal });
+    mutationFn: async ({ clientId, billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal, splits: sp }: { clientId: number; billingType: string; sendToAsaas: boolean; dueDate: string; startDate: string; endDate: string; expectedTotal: number; splits?: any[] }) => {
+      return apiRequest("POST", `/api/boletim-medicao/gerar-fatura/${clientId}`, { billingType, sendToAsaas, dueDate, startDate: sd, endDate: ed, expectedTotal, splits: sp });
     },
     onSuccess: async (response: any) => {
       const data = await response.json?.() || response;
       const count = data?.missionsCount || 0;
       const val = data?.totalValue ? fmt(data.totalValue) : "";
-      toast({ title: "Fatura Gerada!", description: `${count} missão(ões) consolidada(s). ${val}` });
+      const splitCount = data?.splitCount || 0;
+      const title = splitCount > 1 ? `${splitCount} Faturas Geradas!` : "Fatura Gerada!";
+      const desc = splitCount > 1
+        ? `${count} missão(ões) dividida(s) em ${splitCount} faturas por CNPJ. Total: ${val}`
+        : `${count} missão(ões) consolidada(s). ${val}`;
+      toast({ title, description: desc });
       setFaturaDialog(false);
       invalidateRelatedQueries("billing");
       handleGenerate();

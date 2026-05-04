@@ -1837,6 +1837,198 @@ export function registerAsaasRoutes(app: Express) {
       const clientEmailConsolidado = clientData?.email_financeiro || clientData?.email || undefined;
       const clientPhoneConsolidado = clientData?.phone || undefined;
 
+      // ============================================================
+      // SPLIT MODE: cria uma invoice separada por CNPJ
+      // ============================================================
+      if (splits && Array.isArray(splits) && splits.length > 1) {
+        console.log(`[billing] SPLIT MODE: ${splits.length} faturas para ${splits.length} CNPJs`);
+        const createdInvoices: any[] = [];
+
+        for (let idx = 0; idx < splits.length; idx++) {
+          const sp = splits[idx];
+          const splitValue = Number(sp.valor);
+          const splitCnpj = String(sp.cnpj || "").replace(/\D/g, "");
+          const splitName = sp.razao_social || clientName;
+          const splitDescricao = `Ref. a Serviço de Escolta Armada Caracterizada - Período: ${periodoInicio} a ${periodoFim} (${splitName})`;
+
+          let spAsaasCustomerId: string | null = null;
+          let spAsaasPaymentId: string | null = null;
+          let spInvoiceUrl: string | null = null;
+          let spBankSlipUrl: string | null = null;
+          let spPixQrCode: string | null = null;
+          let spPixCopiaECola: string | null = null;
+          let spInvoiceStatus = "PENDING";
+          let spNfseStatus: string | null = null;
+          let spNfseNumber: string | null = null;
+
+          const spInssValor = retemInssConsolidado ? Number((splitValue * inssAliquotaConsolidado / 100).toFixed(2)) : 0;
+
+          if (sendToAsaas && process.env.ASAAS_API_KEY && splitCnpj) {
+            try {
+              spAsaasCustomerId = await findOrCreateAsaasCustomer(splitName, splitCnpj, clientEmailConsolidado, clientPhoneConsolidado, clientData?.address, clientData?.city, clientData?.state, clientData?.zip);
+              const payload: any = {
+                customer: spAsaasCustomerId,
+                billingType: billingType || "BOLETO",
+                value: splitValue,
+                dueDate: invoiceDueDate,
+                description: splitDescricao.substring(0, 500),
+                externalReference: `FATURA-SPLIT-${clientId}-${idx + 1}de${splits.length}-${now.getTime()}`,
+                notificationDisabled: true,
+              };
+              if (emiteNfConsolidado) {
+                payload.postalService = false;
+                const inssObs = retemInssConsolidado
+                  ? ` ${INSS_OBSERVACAO_LEGAL} Alíquota: ${inssAliquotaConsolidado.toFixed(2)}%. Valor retido: R$ ${spInssValor.toFixed(2).replace(".", ",")}.`
+                  : "";
+                payload.fiscalObservations = `CNAE ${CNAE_PRINCIPAL}. ${DESCRICAO_SERVICO_FIXA}. Período: ${periodoInicio} a ${periodoFim}.${inssObs}`;
+              }
+              console.log(`[asaas] SPLIT ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}, Valor R$${splitValue.toFixed(2)}. Payload:`, JSON.stringify(payload));
+              const payment = await asaasRequest("POST", "/payments", payload);
+              spAsaasPaymentId = payment.id;
+              spInvoiceUrl = payment.invoiceUrl;
+              spBankSlipUrl = payment.bankSlip?.url || payment.bankSlipUrl;
+              spInvoiceStatus = payment.status || "PENDING";
+              if (billingType === "PIX" || billingType === "UNDEFINED") {
+                try {
+                  const pixData = await asaasRequest("GET", `/payments/${payment.id}/pixQrCode`);
+                  spPixQrCode = pixData.encodedImage;
+                  spPixCopiaECola = pixData.payload;
+                } catch {}
+              }
+              if (spAsaasPaymentId) {
+                try {
+                  const nfResult = await emitNfseImmediate({
+                    paymentId: spAsaasPaymentId,
+                    value: splitValue,
+                    description: splitDescricao.substring(0, 500),
+                    observations: `CNAE ${CNAE_PRINCIPAL}. Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões). Split ${idx + 1}/${splits.length}.`,
+                    retemInss: retemInssConsolidado,
+                    inssAliquota: inssAliquotaConsolidado,
+                  });
+                  spNfseStatus = nfResult.status || "AUTHORIZED";
+                  if (nfResult.number) spNfseNumber = String(nfResult.number);
+                  else if (nfResult.id) spNfseNumber = String(nfResult.id);
+                  console.log(`[asaas] NFS-e split ${idx + 1} emitida para payment ${spAsaasPaymentId}. ID: ${nfResult.id}`);
+                } catch (nfErr: any) {
+                  spNfseStatus = "ERROR";
+                  console.log(`[asaas] NFS-e split ${idx + 1} error: ${nfErr.message}`);
+                }
+              }
+              await logSystemAudit({
+                userId: user?.id, userName: user?.name, userRole: user?.role,
+                action: "ASAAS_FATURA_SPLIT", targetId: spAsaasPaymentId, targetType: "invoice",
+                details: `Fatura split ${idx + 1}/${splits.length} — CNPJ ${splitCnpj} (${splitName}). R$${splitValue.toFixed(2)}. Asaas: ${spAsaasPaymentId}`,
+                ipAddress: (req as any).ip,
+              });
+            } catch (asaasErr: any) {
+              console.error(`[asaas] Erro split ${idx + 1}: ${asaasErr.message}`);
+              await logSystemAudit({
+                userId: user?.id, userName: user?.name, userRole: user?.role,
+                action: "ASAAS_FATURA_ERRO", targetId: String(clientId), targetType: "invoice",
+                details: `ERRO fatura split ${idx + 1}/${splits.length} CNPJ ${splitCnpj}: ${asaasErr.message}. Valor: R$${splitValue.toFixed(2)}`,
+                ipAddress: (req as any).ip,
+              });
+            }
+          }
+
+          const { data: spInvoice, error: spInvErr } = await supabaseAdmin.from("invoices").insert({
+            client_id: clientId,
+            client_name: splitName,
+            client_cpf_cnpj: splitCnpj || cpfCnpj || null,
+            asaas_customer_id: spAsaasCustomerId,
+            asaas_payment_id: spAsaasPaymentId,
+            description: splitDescricao,
+            value: splitValue,
+            due_date: invoiceDueDate,
+            billing_type: billingType || "BOLETO",
+            status: spInvoiceStatus,
+            invoice_url: spInvoiceUrl,
+            bank_slip_url: spBankSlipUrl,
+            pix_qr_code: spPixQrCode,
+            pix_copia_e_cola: spPixCopiaECola,
+            nfse_status: spNfseStatus,
+            nfse_number: spNfseNumber,
+            notes: `${DESCRICAO_SERVICO_FIXA} - Período: ${periodoInicio} a ${periodoFim}. ${billings.length} missão(ões). Split ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}.`,
+            external_reference: `BOLETIM-${clientId}-${billingIds.length}OS-SPLIT${idx + 1}`,
+            provider_cnpj: TORRES_CNPJ,
+            valor_inss_retido: retemInssConsolidado ? spInssValor : null,
+            inss_aliquota: retemInssConsolidado ? inssAliquotaConsolidado : null,
+            created_by: user?.id,
+          }).select().single();
+
+          if (spInvErr) throw spInvErr;
+          createdInvoices.push(spInvoice);
+
+          await supabaseAdmin.from("billing_splits").insert({
+            invoice_id: spInvoice.id,
+            client_id: clientId,
+            profile_id: sp.profile_id || null,
+            cnpj: sp.cnpj,
+            razao_social: sp.razao_social,
+            valor: splitValue,
+            billing_ids: billingIds,
+            status: spAsaasPaymentId ? "SENT" : "PENDING",
+            created_by: user?.name || "Sistema",
+          });
+
+          if (sp.save_profile) {
+            const { data: existing } = await supabaseAdmin
+              .from("customer_billing_profiles")
+              .select("id")
+              .eq("client_id", clientId)
+              .eq("cnpj", sp.cnpj)
+              .maybeSingle();
+            if (!existing) {
+              await supabaseAdmin.from("customer_billing_profiles").insert({
+                client_id: clientId,
+                label: sp.label || "",
+                cnpj: sp.cnpj,
+                razao_social: sp.razao_social,
+                is_default: false,
+              });
+              console.log(`[billing] Novo perfil CNPJ salvo para cliente ${clientId}: ${sp.cnpj}`);
+            }
+          }
+        }
+
+        const primaryInvoice = createdInvoices[0];
+        const { error: updateErr } = await supabaseAdmin
+          .from("escort_billings")
+          .update({
+            status: "FATURADO",
+            faturado_em: new Date().toISOString(),
+            faturado_por: user?.name || "Sistema",
+            invoice_id: primaryInvoice.id,
+          })
+          .in("id", billingIds);
+
+        if (updateErr) {
+          console.error("[billing] Erro ao atualizar status para FATURADO:", updateErr.message);
+        }
+
+        await logSystemAudit({
+          userId: user?.id, userName: user?.name, userRole: user?.role,
+          action: "GERAR_FATURA_SPLIT", targetId: createdInvoices.map((i: any) => i.id).join(","), targetType: "invoice",
+          details: `${createdInvoices.length} faturas split para ${clientName}. ${billings.length} OS(s). Total: R$${totalValue.toFixed(2)}. Invoices: ${createdInvoices.map((i: any) => `#${i.id} (R$${Number(i.value).toFixed(2)})`).join(", ")}`,
+          ipAddress: (req as any).ip,
+        });
+
+        console.log(`[billing] SPLIT concluído: ${createdInvoices.length} faturas criadas. IDs: ${createdInvoices.map((i: any) => i.id).join(", ")}`);
+
+        gerarFaturaLocks.delete(clientId);
+        return res.json({
+          invoice: primaryInvoice,
+          invoices: createdInvoices,
+          billingIds,
+          totalValue,
+          missionsCount: billings.length,
+          splitCount: createdInvoices.length,
+        });
+      }
+
+      // ============================================================
+      // MODO NORMAL: uma única fatura (sem splits)
+      // ============================================================
       let asaasCustomerId: string | null = null;
       let asaasPaymentId: string | null = null;
       let invoiceUrl: string | null = null;
@@ -1944,42 +2136,6 @@ export function registerAsaasRoutes(app: Express) {
 
       if (invErr) throw invErr;
 
-      if (splits && Array.isArray(splits) && splits.length > 0) {
-        for (const sp of splits) {
-          await supabaseAdmin.from("billing_splits").insert({
-            invoice_id: invoice.id,
-            client_id: clientId,
-            profile_id: sp.profile_id || null,
-            cnpj: sp.cnpj,
-            razao_social: sp.razao_social,
-            valor: Number(sp.valor),
-            billing_ids: billingIds,
-            status: "PENDING",
-            created_by: user?.name || "Sistema",
-          });
-
-          if (sp.save_profile) {
-            const { data: existing } = await supabaseAdmin
-              .from("customer_billing_profiles")
-              .select("id")
-              .eq("client_id", clientId)
-              .eq("cnpj", sp.cnpj)
-              .maybeSingle();
-            if (!existing) {
-              await supabaseAdmin.from("customer_billing_profiles").insert({
-                client_id: clientId,
-                label: sp.label || "",
-                cnpj: sp.cnpj,
-                razao_social: sp.razao_social,
-                is_default: false,
-              });
-              console.log(`[billing] Novo perfil CNPJ salvo para cliente ${clientId}: ${sp.cnpj}`);
-            }
-          }
-        }
-        console.log(`[billing] ${splits.length} split(s) salvo(s) para invoice ${invoice.id}`);
-      }
-
       const { error: updateErr } = await supabaseAdmin
         .from("escort_billings")
         .update({
@@ -1997,7 +2153,7 @@ export function registerAsaasRoutes(app: Express) {
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "GERAR_FATURA", targetId: String(invoice.id), targetType: "invoice",
-        details: `Fatura consolidada para ${clientName}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}. IDs: ${billingIds.join(", ")}. Asaas: ${asaasPaymentId || "não enviado"}${splits?.length ? `. Splits: ${splits.length} CNPJ(s)` : ""}`,
+        details: `Fatura consolidada para ${clientName}. ${billings.length} OS(s). Valor: R$${totalValue.toFixed(2)}. IDs: ${billingIds.join(", ")}. Asaas: ${asaasPaymentId || "não enviado"}`,
         ipAddress: (req as any).ip,
       });
 
