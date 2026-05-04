@@ -1810,7 +1810,7 @@ export function registerAsaasRoutes(app: Express) {
           .eq("client_id", clientId)
           .gte("data_missao", fromDate)
           .lte("data_missao", toDate)
-          .not("status", "in", '("RECUSADA","CANCELADA","FATURADA","FATURADO")');
+          .not("status", "in", '("RECUSADA","CANCELADA","CANCELADO","FATURADA","FATURADO","PAGO","REJEITADA")');
         const blocking = (allInPeriod || []).filter((b: any) =>
           !["APROVADA"].includes(b.status)
         );
