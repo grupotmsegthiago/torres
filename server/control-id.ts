@@ -421,6 +421,10 @@ export async function syncDevice(deviceId: number, opts: { fullBackfill?: boolea
       .order("punch_at", { ascending: false })
       .limit(1).maybeSingle();
     if (lastPunch?.punch_at) since = new Date(lastPunch.punch_at);
+    // Buffer defensivo de 6h: cobre eventuais batidas com timestamp passado,
+    // diferenças de TZ entre RHID/banco e atrasos de gravação. Dedup por
+    // external_id (upsert) garante idempotência.
+    if (since) since = new Date(since.getTime() - 6 * 60 * 60 * 1000);
   } else {
     since = new Date(0);
   }
@@ -844,8 +848,8 @@ export async function getDeviceSyncProgress(deviceId: number): Promise<{
     const events = await fetchAllEvents(device as DeviceRow);
     rhidTotal = events.length;
     if (events.length > 0) {
-      const last = events.reduce((m, e) => e.time > m ? e.time : m, events[0].time);
-      rhidLastPunchAt = last.toISOString();
+      // ev.time já é uma string ISO; comparação lexicográfica funciona para ISO 8601
+      rhidLastPunchAt = events.reduce((m, e) => (e.time > m ? e.time : m), events[0].time);
     }
     const persons = await fetchUsers(device as DeviceRow);
     rhidEmployees = persons.length;
