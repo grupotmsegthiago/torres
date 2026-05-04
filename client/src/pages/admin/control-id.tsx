@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch, queryClient, apiRequest } from "@/lib/queryClient";
 import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, CheckCircle2, Users, ListChecks, FileSpreadsheet, ScanFace, KeyRound, Activity, Loader2, Coffee, Stethoscope, CalendarX, CalendarDays, Save, X } from "lucide-react";
@@ -68,6 +69,53 @@ export default function ControlIdPage() {
 }
 
 // ═════════════════════ APARELHOS ═════════════════════
+type SyncProgress = {
+  rhidTotal: number; localTotal: number; missing: number; percent: number;
+  rhidEmployees: number; mappedEmployees: number; unmappedEmployees: number;
+  lastSyncAt: string | null; lastSyncStatus: string | null; lastSyncMessage: string | null;
+  isRunning: boolean; rhidLastPunchAt: string | null; localLastPunchAt: string | null;
+};
+
+function SyncProgressBar({ deviceId }: { deviceId: number }) {
+  const { data, isLoading } = useQuery<SyncProgress>({
+    queryKey: ["/api/control-id/devices", deviceId, "sync-progress"],
+    refetchInterval: 15000,
+  });
+
+  if (isLoading || !data) {
+    return <div className="mt-3 text-xs text-neutral-400 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Calculando progresso...</div>;
+  }
+
+  const isComplete = data.percent >= 100 && data.missing === 0;
+  const barColor = isComplete ? "bg-emerald-500" : data.percent >= 80 ? "bg-amber-500" : "bg-blue-500";
+
+  return (
+    <div className="mt-3 p-2.5 rounded-md bg-neutral-50 border border-neutral-200" data-testid={`progress-device-${deviceId}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2 text-xs font-bold text-neutral-700">
+          {isComplete ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${data.isRunning ? "animate-spin" : ""}`} />}
+          <span data-testid={`text-sync-status-${deviceId}`}>
+            {isComplete ? "Sincronizado" : `Sincronizando — faltam ${data.missing.toLocaleString("pt-BR")} batidas`}
+          </span>
+        </div>
+        <span className="text-xs font-mono font-bold text-neutral-700" data-testid={`text-sync-percent-${deviceId}`}>{data.percent}%</span>
+      </div>
+      <Progress value={data.percent} className="h-1.5" indicatorClassName={barColor} />
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-neutral-600">
+        <div><span className="text-neutral-400">RHID:</span> <strong className="font-mono" data-testid={`text-rhid-total-${deviceId}`}>{data.rhidTotal.toLocaleString("pt-BR")}</strong></div>
+        <div><span className="text-neutral-400">Local:</span> <strong className="font-mono" data-testid={`text-local-total-${deviceId}`}>{data.localTotal.toLocaleString("pt-BR")}</strong></div>
+        <div><span className="text-neutral-400">Func. mapeados:</span> <strong className="font-mono">{data.mappedEmployees}/{data.rhidEmployees}</strong></div>
+        <div><span className="text-neutral-400">Atualiza a cada:</span> <strong className="text-emerald-600">1 min</strong></div>
+      </div>
+      {data.unmappedEmployees > 0 && (
+        <p className="mt-1.5 text-[10px] text-amber-700 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" /> {data.unmappedEmployees} funcionário(s) do RHID ainda sem mapeamento — use a aba <strong>Mapping</strong>.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DevicesTab() {
   const { toast } = useToast();
   const [editing, setEditing] = useState<Partial<Device & { password?: string }> | null>(null);
@@ -201,6 +249,7 @@ function DevicesTab() {
                         {d.last_sync_message && <span className="text-neutral-400">— {d.last_sync_message}</span>}
                       </div>
                     )}
+                    <SyncProgressBar deviceId={d.id} />
                   </div>
                   <div className="flex gap-1">
                     <Button variant="outline" size="sm" disabled={testingId === d.id} onClick={() => testConnection(d.id)} data-testid={`button-test-${d.id}`}>
@@ -263,7 +312,7 @@ function DevicesTab() {
               </div>
               <div className="flex items-center gap-2">
                 <Switch checked={editing.ativo !== false} onCheckedChange={v => setEditing({ ...editing, ativo: v })} data-testid="switch-ativo" />
-                <span className="text-xs">Ativo (sincroniza a cada 5 min)</span>
+                <span className="text-xs">Ativo (sincroniza a cada 1 min)</span>
               </div>
               <div>
                 <label className="text-xs font-bold text-neutral-600 mb-1 block">Notas</label>

@@ -803,6 +803,82 @@ export async function updateRhidPunch(deviceId: number, rhidPunchId: string, fie
   return await r.json().catch(() => ({}));
 }
 
+/**
+ * Calcula progresso de sincronização: compara totais entre RHID e nosso banco.
+ */
+export async function getDeviceSyncProgress(deviceId: number): Promise<{
+  deviceId: number;
+  deviceName: string;
+  rhidTotal: number;
+  localTotal: number;
+  missing: number;
+  percent: number;
+  rhidEmployees: number;
+  mappedEmployees: number;
+  unmappedEmployees: number;
+  lastSyncAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncMessage: string | null;
+  isRunning: boolean;
+  rhidLastPunchAt: string | null;
+  localLastPunchAt: string | null;
+}> {
+  const { data: device } = await supabaseAdmin.from("control_id_devices").select("*").eq("id", deviceId).maybeSingle();
+  if (!device) throw new Error(`Device #${deviceId} não encontrado`);
+
+  // Total no RHID (busca todos eventos sem date filter)
+  let rhidTotal = 0, rhidEmployees = 0;
+  let rhidLastPunchAt: string | null = null;
+  try {
+    const events = await fetchAllEvents(device as DeviceRow);
+    rhidTotal = events.length;
+    if (events.length > 0) {
+      const last = events.reduce((m, e) => e.time > m ? e.time : m, events[0].time);
+      rhidLastPunchAt = last.toISOString();
+    }
+    const persons = await fetchUsers(device as DeviceRow);
+    rhidEmployees = persons.length;
+  } catch (e: any) {
+    console.error(`[ControlID] getDeviceSyncProgress fetch failed:`, e.message);
+  }
+
+  // Total local
+  const { count: localTotal } = await supabaseAdmin.from("control_id_punches")
+    .select("*", { count: "exact", head: true }).eq("device_id", deviceId);
+
+  const { data: lastLocal } = await supabaseAdmin.from("control_id_punches")
+    .select("punch_at").eq("device_id", deviceId)
+    .order("punch_at", { ascending: false }).limit(1).maybeSingle();
+
+  const { count: mappedEmployees } = await supabaseAdmin.from("control_id_users_map")
+    .select("*", { count: "exact", head: true }).eq("device_id", deviceId).eq("ativo", true);
+
+  const total = Number(localTotal || 0);
+  const missing = Math.max(0, rhidTotal - total);
+  const percent = rhidTotal > 0 ? Math.min(100, Math.round((total / rhidTotal) * 100)) : 100;
+
+  // Considera "rodando" se status pendente/sincronizando OU last_sync_at < 90s atrás (cron ativo)
+  const isRunning = device.last_sync_status === "sincronizando";
+
+  return {
+    deviceId: device.id,
+    deviceName: device.nome,
+    rhidTotal,
+    localTotal: total,
+    missing,
+    percent,
+    rhidEmployees,
+    mappedEmployees: Number(mappedEmployees || 0),
+    unmappedEmployees: Math.max(0, rhidEmployees - Number(mappedEmployees || 0)),
+    lastSyncAt: device.last_sync_at,
+    lastSyncStatus: device.last_sync_status,
+    lastSyncMessage: device.last_sync_message,
+    isRunning,
+    rhidLastPunchAt,
+    localLastPunchAt: lastLocal?.punch_at || null,
+  };
+}
+
 export async function syncAllDevices(): Promise<{ devices: number; totalSaved: number }> {
   const { data: devices } = await supabaseAdmin.from("control_id_devices").select("id").eq("ativo", true);
   if (!devices || devices.length === 0) return { devices: 0, totalSaved: 0 };

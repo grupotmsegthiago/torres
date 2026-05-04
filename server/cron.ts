@@ -175,9 +175,12 @@ export function initCronJobs() {
     });
 
     // ============================================================
-    // CRON: Control iD — puxa batidas dos aparelhos a cada 5 min
+    // CRON: Control iD — puxa batidas dos aparelhos a cada 1 min (near-realtime)
     // ============================================================
-    cron.schedule("*/5 * * * *", async () => {
+    let controlIdRunning = false;
+    cron.schedule("*/1 * * * *", async () => {
+      if (controlIdRunning) return; // evita sobreposição
+      controlIdRunning = true;
       try {
         const { syncAllDevices } = await import("./control-id");
         const r = await syncAllDevices();
@@ -186,6 +189,8 @@ export function initCronJobs() {
         }
       } catch (e: any) {
         log(`CRON ControlID: Erro: ${e.message}`, "cron");
+      } finally {
+        controlIdRunning = false;
       }
     });
 

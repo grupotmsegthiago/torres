@@ -83,6 +83,17 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
+  // Progresso de sincronização: compara totais RHID vs local
+  app.get("/api/control-id/devices/:id/sync-progress", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const r = await ctrl.getDeviceSyncProgress(id);
+      res.json(r);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Auto-import: importa funcionários do aparelho e tenta auto-mapear por nome
   app.post("/api/control-id/devices/:id/auto-import", requireAuth, requireAdminRole, async (req, res) => {
     try {
