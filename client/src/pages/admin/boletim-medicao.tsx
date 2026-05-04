@@ -1540,34 +1540,43 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
                 </>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100 text-center">
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Chegada Origem</p>
-                      <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmChegada > 0 ? kmChegada.toLocaleString("pt-BR") : "—"}</p>
-                    </div>
-                    <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100 text-center">
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase">KM Fim Missão</p>
-                      <p className="text-lg font-black font-mono text-neutral-900 mt-0.5">{kmFim > 0 ? kmFim.toLocaleString("pt-BR") : "—"}</p>
-                    </div>
+                  <div className="space-y-1">
+                    {(() => {
+                      const horaInicial = os.hora_chegada_origem || os.missionStartedAt || os.scheduledDate;
+                      const horaFinal = os.hora_fim_missao || os.completedDate;
+                      const fmtDtHr = (v: string | null) => {
+                        if (!v) return "—";
+                        try {
+                          const d = new Date(_eu(v));
+                          return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+                        } catch { return "—"; }
+                      };
+                      const franquiaHoras = Number(b?.franquia_horas || os.contractValues?.franquia_horas || 0);
+                      const horasExtras = hCalc > franquiaHoras && franquiaHoras > 0 ? hCalc - franquiaHoras : 0;
+                      const fmtH = (h: number) => h > 0 ? `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, "0")}min` : "0h00";
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 gap-3">
+                            <FieldRow label="Data / Hora Inicial" value={fmtDtHr(horaInicial)} />
+                            <FieldRow label="Data / Hora Final" value={fmtDtHr(horaFinal)} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <FieldRow label="Total de Horas" value={fmtH(hCalc)} accent="blue" />
+                            <FieldRow label="Total de Extras" value={horasExtras > 0 ? fmtH(horasExtras) : "—"} accent={horasExtras > 0 ? "amber" : undefined} />
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
-                      <p className="text-[9px] font-bold text-blue-400 uppercase">Total KM Rodado</p>
-                      <p className="text-lg font-black font-mono text-blue-800 mt-0.5">{kmTotalCalc > 0 ? kmTotalCalc.toLocaleString("pt-BR") : "—"} <span className="text-xs font-bold text-blue-500">km</span></p>
+
+                  <div className="border-t border-neutral-100 pt-3 space-y-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldRow label="KM Inicial" value={kmChegada > 0 ? kmChegada.toLocaleString("pt-BR") : "—"} mono />
+                      <FieldRow label="KM Final" value={kmFim > 0 ? kmFim.toLocaleString("pt-BR") : "—"} mono />
                     </div>
-                    <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
-                      <p className="text-[9px] font-bold text-purple-400 uppercase">Total Horas Missão</p>
-                      <p className="text-lg font-black font-mono text-purple-800 mt-0.5">{hCalc > 0 ? `${Math.floor(hCalc)}h${String(Math.round((hCalc % 1) * 60)).padStart(2, "0")}min` : "—"}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
-                      <p className="text-[9px] font-bold text-emerald-400 uppercase">Na Origem</p>
-                      <p className="text-lg font-black font-mono text-emerald-800 mt-0.5">{os.hora_chegada_origem ? fmtTime(os.hora_chegada_origem) : (schedTime || "—")}</p>
-                    </div>
-                    <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center">
-                      <p className="text-[9px] font-bold text-red-400 uppercase">Fim de Missão</p>
-                      <p className="text-lg font-black font-mono text-red-800 mt-0.5">{os.hora_fim_missao ? fmtTime(os.hora_fim_missao) : (endTime || "—")}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldRow label="Total de KM Rodado" value={kmTotalCalc > 0 ? `${kmTotalCalc.toLocaleString("pt-BR")} km` : "—"} accent="blue" />
+                      <FieldRow label="Total de KM Extra" value={kmExcCalc > 0 ? `${kmExcCalc.toLocaleString("pt-BR")} km` : "—"} accent={kmExcCalc > 0 ? "red" : undefined} />
                     </div>
                   </div>
                 </>
@@ -1576,40 +1585,17 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
 
             {b && (
               <>
-                <div className="border-t border-neutral-100 pt-4">
-                  <SectionTitle icon={<Calculator size={14} />} title="Cálculo da Missão" />
-                </div>
-
-                {b.horario_inicio_considerado && (
-                  <div className="bg-neutral-900 text-white rounded-xl p-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">Horário para Cobrança</p>
-                      <p className="text-2xl font-black font-mono tracking-tight mt-0.5">{b.horario_inicio_considerado}</p>
-                    </div>
-                    <div className="text-right space-y-0.5">
-                      {b.horario_agendado && <p className="text-[10px] text-neutral-400">Agendado: <span className="font-mono font-bold text-neutral-300">{b.horario_agendado}</span></p>}
-                      {b.horario_inicio && <p className="text-[10px] text-neutral-400">Chegada Real: <span className="font-mono font-bold text-neutral-300">{b.horario_inicio}</span></p>}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-4 gap-2">
-                  <MetricCard label="KM Total" value={String(kmTotalCalc)} accent="blue" />
-                  <MetricCard label="Franquia" value={String(franquia)} accent="neutral" />
-                  <MetricCard label="KM Excedente" value={String(kmExcCalc)} accent={kmExcCalc > 0 ? "red" : "neutral"} />
-                  <MetricCard label="Horas" value={fmtHoras(hCalc)} accent="neutral" />
-                </div>
-
-                <div className={`grid gap-2 ${[acionamento, horaExtra, kmExtraVal, pedagio].filter(v => v > 0 || v === acionamento).length <= 2 ? "grid-cols-2" : "grid-cols-3"}`}>
-                  <ValueCard label="Acionamento" value={fmt(acionamento)} color="blue" />
-                  {horaExtra > 0 && <ValueCard label="Hora Extra" value={fmt(horaExtra)} color="amber" />}
-                  {kmExtraVal > 0 && <ValueCard label="KM Excedente" value={fmt(kmExtraVal)} color="violet" />}
-                  <ValueCard label="Pedágio" value={fmt(pedagio)} color="neutral" />
-                  {receitasOs > 0 && <ValueCard label="Receitas OS" value={fmt(receitasOs)} color="green" />}
+                <div className="border-t border-neutral-100 pt-3 space-y-1">
+                  <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
+                  {horaExtra > 0 && <FieldRow label="Valor Hora Extra" value={fmt(horaExtra)} accent="amber" bold />}
+                  {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
+                  <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />
+                  {receitasOs > 0 && <FieldRow label="Receitas OS" value={fmt(receitasOs)} accent="green" bold />}
+                  {Number(b?.fat_adicional_noturno || 0) > 0 && <FieldRow label="Adicional Noturno" value={fmt(Number(b.fat_adicional_noturno))} accent="violet" bold />}
                 </div>
 
                 <div className={`rounded-xl p-4 text-center border-2 ${resultado >= 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Resultado</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Valor Total da Missão</p>
                   <p className={`text-3xl font-black font-mono ${resultado >= 0 ? "text-emerald-700" : "text-red-700"}`}>{fmt(resultado)}</p>
                 </div>
 
@@ -1795,6 +1781,23 @@ function MetricCard({ label, value, accent }: { label: string; value: string; ac
     <div className={`rounded-xl p-3 text-center border ${colors[accent]}`}>
       <p className={`text-[8px] font-bold uppercase tracking-wider ${labelColors[accent]}`}>{label}</p>
       <p className="text-xl font-black font-mono mt-0.5">{value}</p>
+    </div>
+  );
+}
+
+function FieldRow({ label, value, accent, mono, bold }: { label: string; value: string; accent?: "blue" | "amber" | "red" | "violet" | "green"; mono?: boolean; bold?: boolean }) {
+  const accentColors: Record<string, string> = {
+    blue: "text-blue-700",
+    amber: "text-amber-700",
+    red: "text-red-600",
+    violet: "text-violet-700",
+    green: "text-emerald-700",
+  };
+  const valColor = accent ? accentColors[accent] : "text-neutral-900";
+  return (
+    <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg border border-neutral-100" data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">{label}</span>
+      <span className={`text-sm font-black ${mono ? "font-mono" : ""} ${bold ? "font-black" : "font-bold"} ${valColor}`}>{value}</span>
     </div>
   );
 }
