@@ -868,7 +868,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     if (priority === "imediata") {
       updates.scheduledDate = nowLocal();
     }
-    setForm({ ...form, ...updates });
+    setForm(prev => ({ ...prev, ...updates }));
   };
 
   const calcRoute = async (orig: string, dest: string) => {
@@ -896,16 +896,20 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const handleOriginSelect = (p: { lat: number; lng: number }, address: string) => {
     setOriginCoords({ lat: p.lat, lng: p.lng });
-    const newForm = { ...form, origin: address, originLat: p.lat, originLng: p.lng };
-    setForm(newForm);
-    if (form.destination) calcRoute(address, form.destination);
+    setForm(prev => {
+      const updated = { ...prev, origin: address, originLat: p.lat, originLng: p.lng };
+      if (prev.destination) calcRoute(address, prev.destination);
+      return updated;
+    });
   };
 
   const handleDestSelect = (p: { lat: number; lng: number }, address: string) => {
     setDestCoords({ lat: p.lat, lng: p.lng });
-    const newForm = { ...form, destination: address, destinationLat: p.lat, destinationLng: p.lng };
-    setForm(newForm);
-    if (form.origin) calcRoute(form.origin, address);
+    setForm(prev => {
+      const updated = { ...prev, destination: address, destinationLat: p.lat, destinationLng: p.lng };
+      if (prev.origin) calcRoute(prev.origin, address);
+      return updated;
+    });
   };
 
   useEffect(() => {
@@ -1240,12 +1244,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 {order ? (
               <Input value={form.osNumber} readOnly onChange={() => {}} className="text-sm bg-neutral-50 text-neutral-500 cursor-not-allowed" data-testid="input-os-number" />
             ) : (
-              <Input value={form.osNumber} onChange={(e) => setForm({ ...form, osNumber: e.target.value })} className="text-sm" data-testid="input-os-number" />
+              <Input value={form.osNumber} onChange={(e) => setForm(prev => ({ ...prev, osNumber: e.target.value }))} className="text-sm" data-testid="input-os-number" />
             )}
               </div>
               <div>
                 <FieldLabel>Cliente *</FieldLabel>
-                <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: Number(e.target.value), escortContractId: "" })} className={selectClass} required data-testid="select-os-client">
+                <select value={form.clientId} onChange={(e) => setForm(prev => ({ ...prev, clientId: Number(e.target.value), escortContractId: "" }))} className={selectClass} required data-testid="select-os-client">
                   <option value={0}>Selecione...</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{titleCase((c as any).nomeFantasia || (c as any).nome_fantasia || c.name)}</option>)}
                 </select>
@@ -1253,7 +1257,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {form.clientId > 0 && clientContracts.length > 0 && (
                 <div>
                   <FieldLabel>Tabela de Preços</FieldLabel>
-                  <select value={form.escortContractId} onChange={(e) => setForm({ ...form, escortContractId: e.target.value })} className={selectClass} data-testid="select-os-price-table">
+                  <select value={form.escortContractId} onChange={(e) => setForm(prev => ({ ...prev, escortContractId: e.target.value }))} className={selectClass} data-testid="select-os-price-table">
                     <option value="">Selecione...</option>
                     {clientContracts.map(c => <option key={c.id} value={c.id}>{c.name || `Tabela ${c.id.slice(0, 8)}`}</option>)}
                   </select>
@@ -1264,7 +1268,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 {form.status === "recusada" || form.status === "cancelada" ? (
                   <Input type="text" readOnly value="0,00" className="text-sm font-mono bg-red-50 text-red-500 cursor-not-allowed" data-testid="input-os-valor-estimado" />
                 ) : (
-                  <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm({ ...form, valorEstimado: maskBRL(e.target.value) })} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
+                  <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm(prev => ({ ...prev, valorEstimado: maskBRL(e.target.value) }))} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
                 )}
               </div>
               <div>
@@ -1274,7 +1278,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     type="text"
                     inputMode="decimal"
                     value={form.pedagioEstimado}
-                    onChange={(e) => setForm({ ...form, pedagioEstimado: maskBRL(e.target.value) })}
+                    onChange={(e) => setForm(prev => ({ ...prev, pedagioEstimado: maskBRL(e.target.value) }))}
                     placeholder="0,00"
                     className="text-sm font-mono"
                     data-testid="input-os-pedagio"
@@ -1285,14 +1289,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 </div>
                 <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer" data-testid="toggle-pedagio-ida-volta">
                   <input type="checkbox" checked={form.pedagioIdaVolta} onChange={(e) => {
-                    setForm({ ...form, pedagioIdaVolta: e.target.checked });
+                    setForm(prev => ({ ...prev, pedagioIdaVolta: e.target.checked }));
                   }} className="rounded border-neutral-300 text-blue-600 w-3.5 h-3.5" />
                   <span className="text-[10px] text-neutral-500 font-medium">Cobrar pedágio ida e volta</span>
                 </label>
               </div>
               <div>
                 <FieldLabel>Solicitante</FieldLabel>
-                <Input value={form.requesterName} onChange={(e) => setForm({ ...form, requesterName: e.target.value })} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
+                <Input value={form.requesterName} onChange={(e) => setForm(prev => ({ ...prev, requesterName: e.target.value }))} placeholder="Nome do solicitante" className="text-sm" data-testid="input-os-requester" />
               </div>
               {(() => {
                 const cliName = (clients.find((c) => c.id === form.clientId)?.name || "").toUpperCase();
@@ -1302,7 +1306,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <FieldLabel>Nº do Processo (OMEGA) <span className="text-amber-600">★</span></FieldLabel>
                     <Input
                       value={form.processoOmega}
-                      onChange={(e) => setForm({ ...form, processoOmega: e.target.value })}
+                      onChange={(e) => setForm(prev => ({ ...prev, processoOmega: e.target.value }))}
                       placeholder="Ex.: 123456"
                       className="text-sm border-amber-300 bg-amber-50/30"
                       data-testid="input-os-processo-omega"
@@ -1324,7 +1328,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {order && (
                 <div>
                   <FieldLabel>Status</FieldLabel>
-                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={selectClass} data-testid="select-os-status">
+                  <select value={form.status} onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))} className={selectClass} data-testid="select-os-status">
                     <option value="agendada">Agendada</option>
                     <option value="aberta">Aberta</option>
                     <option value="em_andamento">Em Andamento</option>
@@ -1339,7 +1343,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <FieldLabel>Motivo da {form.status === "recusada" ? "Recusa" : "Cancelamento"} <span className="text-red-600">*</span></FieldLabel>
                   <textarea
                     value={form.cancellationReason}
-                    onChange={(e) => setForm({ ...form, cancellationReason: e.target.value })}
+                    onChange={(e) => setForm(prev => ({ ...prev, cancellationReason: e.target.value }))}
                     placeholder={`Descreva o motivo da ${form.status === "recusada" ? "recusa" : "cancelamento"} (obrigatório, mínimo 3 caracteres)`}
                     className="w-full text-sm border border-red-300 bg-red-50/50 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-400 min-h-[60px]"
                     data-testid="textarea-os-cancellation-reason"
@@ -1355,12 +1359,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               )}
               <div>
                 <FieldLabel>Data do Agendamento <span className="text-red-500">*</span></FieldLabel>
-                <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} className="text-sm" data-testid="input-os-scheduled" />
+                <Input type="datetime-local" value={form.scheduledDate} onChange={(e) => setForm(prev => ({ ...prev, scheduledDate: e.target.value }))} className="text-sm" data-testid="input-os-scheduled" />
               </div>
               {order && (
                 <div>
                   <FieldLabel>Início da Missão</FieldLabel>
-                  <Input type="datetime-local" value={form.missionStartedAt} onChange={(e) => setForm({ ...form, missionStartedAt: e.target.value })} className="text-sm" data-testid="input-os-mission-started" />
+                  <Input type="datetime-local" value={form.missionStartedAt} onChange={(e) => setForm(prev => ({ ...prev, missionStartedAt: e.target.value }))} className="text-sm" data-testid="input-os-mission-started" />
                 </div>
               )}
               {order && (
@@ -1373,7 +1377,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Origem</FieldLabel>
                 <PlacesAutocomplete
                   value={form.origin}
-                  onChange={(v) => setForm({ ...form, origin: v })}
+                  onChange={(v) => setForm(prev => ({ ...prev, origin: v }))}
                   onPlaceSelect={(p) => handleOriginSelect(p, p.address)}
                   placeholder="Ex: Sao Paulo, SP"
                   className="text-sm"
@@ -1385,7 +1389,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 <FieldLabel>Destino</FieldLabel>
                 <PlacesAutocomplete
                   value={form.destination}
-                  onChange={(v) => setForm({ ...form, destination: v })}
+                  onChange={(v) => setForm(prev => ({ ...prev, destination: v }))}
                   onPlaceSelect={(p) => handleDestSelect(p, p.address)}
                   placeholder="Ex: Campinas, SP"
                   className="text-sm"
@@ -1398,7 +1402,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <FieldLabel>Pontos de Parada (Entregas Intermediárias)</FieldLabel>
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, waypoints: [...form.waypoints, { address: "", lat: null, lng: null }] })}
+                    onClick={() => setForm(prev => ({ ...prev, waypoints: [...prev.waypoints, { address: "", lat: null, lng: null }] }))}
                     className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
                     data-testid="button-add-waypoint"
                   >
@@ -1415,14 +1419,18 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       <PlacesAutocomplete
                         value={wp.address}
                         onChange={(v) => {
-                          const wps = [...form.waypoints];
-                          wps[idx] = { ...wps[idx], address: v };
-                          setForm({ ...form, waypoints: wps });
+                          setForm(prev => {
+                            const wps = [...prev.waypoints];
+                            wps[idx] = { ...wps[idx], address: v };
+                            return { ...prev, waypoints: wps };
+                          });
                         }}
                         onPlaceSelect={(p) => {
-                          const wps = [...form.waypoints];
-                          wps[idx] = { address: p.address, lat: p.lat, lng: p.lng };
-                          setForm({ ...form, waypoints: wps });
+                          setForm(prev => {
+                            const wps = [...prev.waypoints];
+                            wps[idx] = { address: p.address, lat: p.lat, lng: p.lng };
+                            return { ...prev, waypoints: wps };
+                          });
                         }}
                         placeholder={`Parada ${idx + 1} — endereço de entrega`}
                         className="text-sm"
@@ -1433,8 +1441,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <button
                       type="button"
                       onClick={() => {
-                        const wps = form.waypoints.filter((_, i) => i !== idx);
-                        setForm({ ...form, waypoints: wps });
+                        setForm(prev => ({ ...prev, waypoints: prev.waypoints.filter((_, i) => i !== idx) }));
                       }}
                       className="p-1.5 rounded border border-neutral-200 hover:bg-red-50 transition-colors shrink-0"
                       title="Remover parada"
@@ -1459,7 +1466,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                           <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         </a>
                       )}
-                      <button type="button" onClick={() => { setForm({ ...form, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null }); setRouteInfo(null); setOriginCoords(null); setDestCoords(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
+                      <button type="button" onClick={() => { setForm(prev => ({ ...prev, route: "", origin: "", originLat: null, originLng: null, destination: "", destinationLat: null, destinationLng: null })); setRouteInfo(null); setOriginCoords(null); setDestCoords(null); }} className="p-2 rounded border border-neutral-200 hover:bg-red-50 transition-colors" title="Remover rota">
                         <X className="w-3.5 h-3.5 text-red-500" />
                       </button>
                     </div>
@@ -1489,26 +1496,26 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <FieldLabel>Motorista Escoltado</FieldLabel>
-                <Input value={form.escortedDriverName} onChange={(e) => setForm({ ...form, escortedDriverName: e.target.value })} placeholder="Nome do motorista" className="text-sm" data-testid="input-os-driver-name" />
+                <Input value={form.escortedDriverName} onChange={(e) => setForm(prev => ({ ...prev, escortedDriverName: e.target.value }))} placeholder="Nome do motorista" className="text-sm" data-testid="input-os-driver-name" />
               </div>
               <div>
                 <FieldLabel>Telefone do Motorista</FieldLabel>
-                <Input value={form.escortedDriverPhone} onChange={(e) => setForm({ ...form, escortedDriverPhone: e.target.value })} placeholder="(11) 99999-9999" className="text-sm" data-testid="input-os-driver-phone" />
+                <Input value={form.escortedDriverPhone} onChange={(e) => setForm(prev => ({ ...prev, escortedDriverPhone: e.target.value }))} placeholder="(11) 99999-9999" className="text-sm" data-testid="input-os-driver-phone" />
               </div>
               <div>
                 <FieldLabel>Placa do Veículo Escoltado</FieldLabel>
-                <Input value={form.escortedVehiclePlate} onChange={(e) => setForm({ ...form, escortedVehiclePlate: e.target.value.toUpperCase() })} placeholder="ABC1D23" className="text-sm" data-testid="input-os-driver-plate" />
+                <Input value={form.escortedVehiclePlate} onChange={(e) => setForm(prev => ({ ...prev, escortedVehiclePlate: e.target.value.toUpperCase() }))} placeholder="ABC1D23" className="text-sm" data-testid="input-os-driver-plate" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <FieldLabel>Descrição / Informações Complementares</FieldLabel>
-                <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="text-sm" data-testid="input-os-description" />
+                <Textarea value={form.description} onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))} rows={2} className="text-sm" data-testid="input-os-description" />
               </div>
               <div>
                 <FieldLabel>Observações</FieldLabel>
-                <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className="text-sm" data-testid="input-os-notes" />
+                <Textarea value={form.notes} onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} className="text-sm" data-testid="input-os-notes" />
               </div>
             </div>
           </>
@@ -1525,14 +1532,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               <div>
                 <FieldLabel>Agente 1</FieldLabel>
-                <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee">
+                <select value={form.assignedEmployeeId || ""} onChange={(e) => setForm(prev => ({ ...prev, assignedEmployeeId: e.target.value ? Number(e.target.value) : null }))} className={selectClass} data-testid="select-os-employee">
                   <option value="">Selecione...</option>
                   {employees.map((emp) => <option key={emp.id} value={emp.id}>{titleCase(emp.name)}</option>)}
                 </select>
               </div>
               <div>
                 <FieldLabel>Agente 2</FieldLabel>
-                <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm({ ...form, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-employee2">
+                <select value={form.assignedEmployee2Id || ""} onChange={(e) => setForm(prev => ({ ...prev, assignedEmployee2Id: e.target.value ? Number(e.target.value) : null }))} className={selectClass} data-testid="select-os-employee2">
                   <option value="">Selecione...</option>
                   {employees.map((emp) => <option key={emp.id} value={emp.id}>{titleCase(emp.name)}</option>)}
                 </select>
@@ -1556,14 +1563,14 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               <div>
                 <FieldLabel>Veículo</FieldLabel>
-                <select value={form.vehicleId || ""} onChange={(e) => setForm({ ...form, vehicleId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-vehicle">
+                <select value={form.vehicleId || ""} onChange={(e) => setForm(prev => ({ ...prev, vehicleId: e.target.value ? Number(e.target.value) : null }))} className={selectClass} data-testid="select-os-vehicle">
                   <option value="">Selecione...</option>
                   {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}{v.color ? ` · ${v.color}` : ""}</option>)}
                 </select>
               </div>
               <div>
                 <FieldLabel>Kit de Armamento</FieldLabel>
-                <select value={form.kitId || ""} onChange={(e) => setForm({ ...form, kitId: e.target.value ? Number(e.target.value) : null })} className={selectClass} data-testid="select-os-kit">
+                <select value={form.kitId || ""} onChange={(e) => setForm(prev => ({ ...prev, kitId: e.target.value ? Number(e.target.value) : null }))} className={selectClass} data-testid="select-os-kit">
                   <option value="">Sem kit</option>
                   {kits.map((k) => {
                     const linkedPlate = sv?.plate?.toUpperCase().trim();
