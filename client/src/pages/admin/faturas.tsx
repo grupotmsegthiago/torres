@@ -116,16 +116,31 @@ export default function FaturasPage() {
     queryKey: ["/api/asaas/status"],
   });
 
-  const { data: invoices = [], isLoading, refetch } = useQuery<Invoice[]>({
-    queryKey: ["/api/invoices", statusFilter, monthFilter],
+  const { data: allInvoices = [], isLoading, refetch } = useQuery<Invoice[]>({
+    queryKey: ["/api/invoices"],
     queryFn: async () => {
-      let url = `/api/invoices?status=${statusFilter}`;
-      if (monthFilter) url += `&month=${monthFilter}`;
-      const r = await authFetch(url);
+      const r = await authFetch(`/api/invoices?status=ALL`);
       if (!r.ok) throw new Error("Erro ao buscar faturas");
       return r.json();
     },
   });
+
+  const invoices = useMemo(() => {
+    let result = allInvoices;
+    if (statusFilter && statusFilter !== "ALL") {
+      result = result.filter(i => i.status === statusFilter);
+    }
+    if (monthFilter) {
+      result = result.filter(i => {
+        if (!i.due_date) return false;
+        return i.due_date.startsWith(monthFilter);
+      });
+    }
+    const aguardando = allInvoices.filter(i =>
+      i.status === "AGUARDANDO_FATURAMENTO" && !result.some(r => r.id === i.id)
+    );
+    return [...aguardando, ...result];
+  }, [allInvoices, statusFilter, monthFilter]);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -498,11 +513,44 @@ export default function FaturasPage() {
                             <span className="text-xs text-neutral-500 tabular-nums">{fmtDateFull(inv.created_at)}</span>
                           </TableCell>
                           <TableCell>
-                            <span className={`text-xs font-medium tabular-nums ${
-                              inv.status === "PENDING" && new Date(inv.due_date + "T23:59:59") < new Date() ? "text-red-600 font-bold" : "text-neutral-600"
-                            }`}>
-                              {fmtDate(inv.due_date)}
-                            </span>
+                            {(() => {
+                              const isPaid = ["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"].includes(inv.status);
+                              const isCancelled = inv.status === "CANCELLED";
+                              const isAguardando = inv.status === "AGUARDANDO_FATURAMENTO";
+                              const today = new Date();
+                              today.setHours(0, 0, 0, 0);
+                              const due = inv.due_date ? new Date(inv.due_date + "T00:00:00") : null;
+                              const diffDays = due ? Math.ceil((due.getTime() - today.getTime()) / 86400000) : null;
+                              const isOverdue = inv.status === "PENDING" && diffDays !== null && diffDays < 0;
+                              return (
+                                <div>
+                                  <span className={`text-xs font-medium tabular-nums ${isOverdue ? "text-red-600 font-bold" : "text-neutral-600"}`}>
+                                    {fmtDate(inv.due_date)}
+                                  </span>
+                                  {!isPaid && !isCancelled && !isAguardando && diffDays !== null && (
+                                    <p className={`text-[10px] font-semibold ${
+                                      diffDays < 0
+                                        ? "text-red-500"
+                                        : diffDays === 0
+                                          ? "text-amber-600"
+                                          : diffDays <= 3
+                                            ? "text-amber-500"
+                                            : "text-emerald-600"
+                                    }`}>
+                                      {diffDays < 0
+                                        ? `${Math.abs(diffDays)} dia${Math.abs(diffDays) !== 1 ? "s" : ""} em atraso`
+                                        : diffDays === 0
+                                          ? "Vence hoje"
+                                          : `${diffDays} dia${diffDays !== 1 ? "s" : ""} restante${diffDays !== 1 ? "s" : ""}`
+                                      }
+                                    </p>
+                                  )}
+                                  {isPaid && inv.payment_date && (
+                                    <p className="text-[10px] text-emerald-600 font-semibold">Pago {fmtDate(inv.payment_date)}</p>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell whitespace-nowrap">
                             <span className="text-xs text-neutral-500 whitespace-nowrap">{BILLING_TYPES[inv.billing_type] || inv.billing_type}</span>
