@@ -151,7 +151,7 @@ function DevicesTab() {
                     <div className="flex items-center gap-2 mb-1">
                       {d.ativo ? <Wifi className="w-4 h-4 text-emerald-600" /> : <WifiOff className="w-4 h-4 text-neutral-400" />}
                       <h3 className="font-bold text-neutral-900">{d.nome}</h3>
-                      <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-neutral-100 rounded text-neutral-600">{d.tipo}</span>
+                      <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-neutral-100 rounded text-neutral-600">{{ idface_cloud: "iDFace Cloud", idface_lan: "iDFace LAN", rep_c: "REP-C", idclass: "iDClass", rhid_cloud: "RHID Cloud" }[d.tipo as string] || d.tipo}</span>
                     </div>
                     <p className="text-xs text-neutral-500 font-mono">{d.base_url}</p>
                     <p className="text-xs text-neutral-500">Login: {d.login}</p>
@@ -199,6 +199,7 @@ function DevicesTab() {
                     <SelectItem value="idface_lan">iDFace na rede local (LAN)</SelectItem>
                     <SelectItem value="rep_c">REP-C (Portaria 671)</SelectItem>
                     <SelectItem value="idclass">iDClass / iDAccess</SelectItem>
+                    <SelectItem value="rhid_cloud">RHID Cloud (ControlID)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

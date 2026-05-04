@@ -90,8 +90,10 @@ function joinUrl(base: string, path: string): string {
 export async function loginDevice(device: DeviceRow): Promise<string> {
   const password = decryptSecret(device.password_enc);
 
-  // Tenta o endpoint padrão da Control iD Cloud / iDSecure
-  // Há duas variações conhecidas: /login (retorna session) e /api/login (retorna token)
+  if (device.tipo === "rhid_cloud") {
+    return loginRhidCloud(device, password);
+  }
+
   const candidates = [
     { url: joinUrl(device.base_url, "/login"), parse: (j: any) => j?.session || j?.token || j?.access_token },
     { url: joinUrl(device.base_url, "/api/login"), parse: (j: any) => j?.token || j?.access_token || j?.session },
@@ -110,7 +112,6 @@ export async function loginDevice(device: DeviceRow): Promise<string> {
         const j = await r.json().catch(() => ({}));
         const token = c.parse(j);
         if (token) {
-          // cacheia no DB (válido por 12h por padrão)
           const expires = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
           await supabaseAdmin.from("control_id_devices").update({
             session_token: token, session_expires: expires,
@@ -126,6 +127,26 @@ export async function loginDevice(device: DeviceRow): Promise<string> {
     }
   }
   throw new Error(`Falha no login Control iD: ${lastErr}`);
+}
+
+async function loginRhidCloud(device: DeviceRow, password: string): Promise<string> {
+  const url = joinUrl(device.base_url, "/login.svc/");
+  const r = await tryFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: device.login, password }),
+    timeoutMs: 20000,
+  });
+  if (!r.ok) throw new Error(`RHID login falhou: HTTP ${r.status}`);
+  const j = await r.json().catch(() => ({}));
+  const token = j?.accessToken || j?.access_token || j?.token || "";
+  if (!token) throw new Error("RHID login: resposta sem accessToken");
+  const expires = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+  await supabaseAdmin.from("control_id_devices").update({
+    session_token: token, session_expires: expires,
+  }).eq("id", device.id);
+  console.log(`[RHID] Login OK para ${device.login}`);
+  return token;
 }
 
 async function getOrLoginToken(device: DeviceRow): Promise<string> {
@@ -165,11 +186,14 @@ async function postJson(device: DeviceRow, token: string, path: string, body: an
  * Busca eventos (batidas) desde `since`. Tenta múltiplos endpoints conhecidos.
  */
 export async function fetchEvents(device: DeviceRow, since: Date | null): Promise<ControlIdEvent[]> {
+  if (device.tipo === "rhid_cloud") {
+    return fetchEventsRhid(device, since);
+  }
+
   const token = await getOrLoginToken(device);
   const sinceIso = since ? since.toISOString() : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const sinceUnix = Math.floor(new Date(sinceIso).getTime() / 1000);
 
-  // Variação 1: load_objects (padrão iDSecure / Control iD)
   try {
     const j = await postJson(device, token, "/load_objects", {
       object: "access_logs",
@@ -181,7 +205,6 @@ export async function fetchEvents(device: DeviceRow, since: Date | null): Promis
     if (Array.isArray(list)) return list.map(normalizeEvent);
   } catch {}
 
-  // Variação 2: /api/events?from=
   try {
     const url = joinUrl(device.base_url, `/api/events?from=${encodeURIComponent(sinceIso)}&limit=500`);
     const r = await tryFetch(url, { headers: { "Authorization": `Bearer ${token}`, "Session": token } });
@@ -192,7 +215,6 @@ export async function fetchEvents(device: DeviceRow, since: Date | null): Promis
     }
   } catch {}
 
-  // Variação 3: /api/access_logs
   try {
     const url = joinUrl(device.base_url, `/api/access_logs?since=${encodeURIComponent(sinceIso)}&limit=500`);
     const r = await tryFetch(url, { headers: { "Authorization": `Bearer ${token}`, "Session": token } });
@@ -204,6 +226,67 @@ export async function fetchEvents(device: DeviceRow, since: Date | null): Promis
   } catch {}
 
   return [];
+}
+
+function parseRhidDate(d: any): Date {
+  if (!d) return new Date(0);
+  if (typeof d === "string") {
+    const m = d.match(/\/Date\((\d+)([+-]\d{4})?\)\//);
+    if (m) return new Date(parseInt(m[1]));
+    return new Date(d);
+  }
+  return new Date(d);
+}
+
+async function fetchEventsRhid(device: DeviceRow, since: Date | null): Promise<ControlIdEvent[]> {
+  const token = await getOrLoginToken(device);
+
+  const afdUrl = joinUrl(device.base_url, "/customerdb/afd.svc/a");
+  const afdRes = await tryFetch(afdUrl, {
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+    timeoutMs: 30000,
+  });
+  if (afdRes.status === 401 || afdRes.status === 403) {
+    const newToken = await loginDevice(device);
+    const retry = await tryFetch(afdUrl, {
+      headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
+      timeoutMs: 30000,
+    });
+    if (!retry.ok) throw new Error(`RHID AFD falhou: HTTP ${retry.status}`);
+    const retryData = await retry.json();
+    return parseRhidAfdRecords(retryData, since);
+  }
+  if (!afdRes.ok) throw new Error(`RHID AFD falhou: HTTP ${afdRes.status}`);
+  const afdData = await afdRes.json();
+  return parseRhidAfdRecords(afdData, since);
+}
+
+function parseRhidAfdRecords(afdData: any, since: Date | null): ControlIdEvent[] {
+  const records = Array.isArray(afdData) ? afdData : (afdData?.data || afdData?.records || []);
+  const sinceMs = since ? since.getTime() : Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const events: ControlIdEvent[] = [];
+
+  for (const rec of records) {
+    const punchDate = parseRhidDate(rec.dateTime || rec.DateTime || rec.PunchDate || rec.punchDate || rec.Date || rec.date);
+    if (punchDate.getTime() <= 0 || punchDate.getTime() < sinceMs) continue;
+
+    const personId = String(rec.idPerson || rec.IdPerson || rec.PersonId || rec.personId || rec.EmployeeId || rec.id || "");
+    const personName = rec.personName || rec.PersonName || rec.Name || rec.name || "";
+    const punchIso = punchDate.toISOString();
+
+    events.push({
+      id: `rhid_${rec.id || personId}_${punchDate.getTime()}`,
+      userId: personId,
+      userName: personName,
+      time: punchIso,
+      direction: "unknown",
+      source: rec.faceScore > 0 ? "facial" : undefined,
+      raw: rec,
+    });
+  }
+
+  console.log(`[RHID] AFD: ${records.length} total, ${events.length} desde ${since?.toISOString() || "7d atrás"}`);
+  return events;
 }
 
 function normalizeEvent(raw: any): ControlIdEvent {
@@ -253,6 +336,10 @@ function normalizeEvent(raw: any): ControlIdEvent {
  * Busca cadastro de usuários do aparelho — pra ajudar o admin a fazer mapping.
  */
 export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string }>> {
+  if (device.tipo === "rhid_cloud") {
+    return fetchUsersRhid(device);
+  }
+
   const token = await getOrLoginToken(device);
   try {
     const j = await postJson(device, token, "/load_objects", { object: "users", limit: 1000 });
@@ -266,6 +353,32 @@ export async function fetchUsers(device: DeviceRow): Promise<Array<{ id: string;
     }
   } catch {}
   return [];
+}
+
+async function fetchUsersRhid(device: DeviceRow): Promise<Array<{ id: string; name: string; matricula?: string }>> {
+  const token = await getOrLoginToken(device);
+
+  const personUrl = joinUrl(device.base_url, "/customerdb/person.svc/a");
+  let personRes = await tryFetch(personUrl, {
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+    timeoutMs: 20000,
+  });
+  if (personRes.status === 401 || personRes.status === 403) {
+    const newToken = await loginDevice(device);
+    personRes = await tryFetch(personUrl, {
+      headers: { "Authorization": `Bearer ${newToken}`, "Accept": "application/json" },
+      timeoutMs: 20000,
+    });
+  }
+  if (!personRes.ok) throw new Error(`RHID persons falhou: HTTP ${personRes.status}`);
+  const personData = await personRes.json();
+  const persons = Array.isArray(personData) ? personData : (personData?.data || personData?.records || []);
+
+  return persons.filter((p: any) => !p.excluded).map((p: any) => ({
+    id: String(p.id || p.Id || p.PersonId || ""),
+    name: String(p.name || p.Name || p.PersonName || ""),
+    matricula: p.registration || p.Registration || p.pis || p.Pis || undefined,
+  }));
 }
 
 // ============================ TESTE DE CONEXÃO ============================
