@@ -1,12 +1,13 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
-import { authFetch, apiRequest, invalidateRelatedQueries } from "@/lib/queryClient";
+import { authFetch, apiRequest, invalidateRelatedQueries, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, Search, Printer, Loader2, FileSpreadsheet, ChevronDown, ChevronRight,
-  Calculator, Calendar, Pencil, Save, X, Check, Receipt, Banknote, Send, Mail,
-  Clock, AlertTriangle, User as UserIcon, RefreshCw,
+  Calculator, Calendar, Check, Receipt, Banknote, Send, Mail,
+  Clock, AlertTriangle, User as UserIcon, RefreshCw, Eye,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_1773954659471.jpeg";
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
+import { OsDetailModal } from "./boletim-medicao";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -43,6 +45,8 @@ const extractCity = (addr: string) => {
 
 export default function RelatorioFaturamentoPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isDiretoria = user?.role === "diretoria" || user?.role === "admin";
   const [selectedClient, setSelectedClient] = useState("");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date(); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-01`;
@@ -58,9 +62,17 @@ export default function RelatorioFaturamentoPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [billings, setBillings] = useState<any[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [editingBillingId, setEditingBillingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [ordersMap, setOrdersMap] = useState<Map<number, any>>(new Map());
+  const [vehiclesMap, setVehiclesMap] = useState<Map<number, any>>(new Map());
+  const [selectedOs, setSelectedOs] = useState<any>(null);
+  const [editingFields, setEditingFields] = useState(false);
+  const [overrideKmChegada, setOverrideKmChegada] = useState("");
+  const [overrideKmFim, setOverrideKmFim] = useState("");
+  const [overrideHoraChegada, setOverrideHoraChegada] = useState("");
+  const [overrideHoraFim, setOverrideHoraFim] = useState("");
+  const [pedagioValue, setPedagioValue] = useState("");
+  const [observacoesValue, setObservacoesValue] = useState("");
+  const [recalcLoteLoading, setRecalcLoteLoading] = useState(false);
   const [faturaDialog, setFaturaDialog] = useState(false);
   const [faturaBillingType, setFaturaBillingType] = useState("BOLETO");
   const [faturaDueDate, setFaturaDueDate] = useState(() => {
@@ -242,20 +254,22 @@ export default function RelatorioFaturamentoPage() {
       const ordersData = await ordersRes.json();
       const vehiclesData = await vehiclesRes.json();
 
-      const ordersMap = new Map<number, any>();
-      (ordersData || []).forEach((o: any) => ordersMap.set(o.id, o));
-      const vehiclesMap = new Map<number, any>();
-      (vehiclesData || []).forEach((v: any) => vehiclesMap.set(v.id, v));
+      const oMap = new Map<number, any>();
+      (ordersData || []).forEach((o: any) => oMap.set(o.id, o));
+      const vMap = new Map<number, any>();
+      (vehiclesData || []).forEach((v: any) => vMap.set(v.id, v));
+      setOrdersMap(oMap);
+      setVehiclesMap(vMap);
 
       const approved = (billingsData || [])
         .filter((b: any) => b.status === "APROVADA" || b.status === "FATURADO" || b.status === "FATURADA" || b.status === "PAGO" || b.status === "CANCELADA" || b.status === "CANCELADO" || b.status === "A_VERIFICAR" || b.status === "PENDENTE" || b.status === "ENVIADA_APROVACAO")
         .map((b: any) => {
-          const so = ordersMap.get(b.service_order_id);
+          const so = oMap.get(b.service_order_id);
           if (so) {
             if (!b.origem && so.origin) b.origem = so.origin;
             if (!b.destino && so.destination) b.destino = so.destination;
             if (!b.placa_viatura && so.vehicleId) {
-              const veh = vehiclesMap.get(so.vehicleId);
+              const veh = vMap.get(so.vehicleId);
               if (veh) b.placa_viatura = veh.plate;
             }
             if (!b.placa_escoltado && so.escortedVehiclePlate) b.placa_escoltado = so.escortedVehiclePlate;
@@ -286,92 +300,195 @@ export default function RelatorioFaturamentoPage() {
     return contracts.find((c: any) => c.id === b.contract_id) || null;
   };
 
-  const startEditBilling = (billingId: string) => {
-    const b = billings.find((x: any) => x.id === billingId);
-    if (!b) return;
-    setEditForm({
-      km_inicial: b.km_inicial || 0,
-      km_final: b.km_final || 0,
-      horario_inicio: b.horario_inicio || "",
-      horario_fim: b.horario_fim || "",
-      placa_viatura: b.placa_viatura || "",
-      placa_escoltado: b.placa_escoltado || "",
-      despesas_pedagio: b.despesas_pedagio || 0,
-    });
-    setEditingBillingId(billingId);
+  const invalidateAllRelated = () => {
+    invalidateRelatedQueries("billing");
+    queryClient.invalidateQueries({ queryKey: ["/api/boletim-medicao/os-concluidas"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/escort/billings"] });
   };
 
-  const saveEditBilling = async () => {
-    if (!editingBillingId) return;
-    setSavingEdit(true);
+  const refreshAfterModalAction = () => {
+    invalidateAllRelated();
+    handleGenerate();
+  };
+
+  const aprovarMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "APROVADA" });
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "OS Aprovada", description: "Boletim aprovado com sucesso." });
+      setSelectedOs(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const rejeitarMutation = useMutation({
+    mutationFn: async ({ billingId, motivo }: { billingId: string; motivo: string }) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/revisar`, { acao: "REJEITADA", motivo_rejeicao: motivo });
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "OS Recusada", description: "Correção solicitada." });
+      setSelectedOs(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const calcularMutation = useMutation({
+    mutationFn: async (osId: number) => {
+      return apiRequest("POST", `/api/boletim-medicao/calcular/${osId}`, {});
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "Cálculo realizado", description: "Billing recalculado com sucesso." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao calcular", description: err.message, variant: "destructive" }),
+  });
+
+  const reabrirMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/reabrir`);
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "Reaberta", description: "OS voltou para 'A Verificar'." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao reabrir", description: err.message, variant: "destructive" }),
+  });
+
+  const liberarFaturamentoMutation = useMutation({
+    mutationFn: async (billingId: string) => {
+      return apiRequest("POST", `/api/escort/billings/${billingId}/liberar-faturamento`);
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "Liberada", description: "Nota liberada para refaturamento." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao liberar", description: err.message, variant: "destructive" }),
+  });
+
+  const salvarBillingMutation = useMutation({
+    mutationFn: async ({ billingId, observacoes, pedagio }: { billingId: string; observacoes: string; pedagio: number }) => {
+      return apiRequest("PATCH", `/api/escort/billings/${billingId}/salvar`, { observacoes, despesas_pedagio: pedagio, recalcular: true });
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      toast({ title: "Salvo", description: "Valores recalculados e salvos." });
+    },
+    onError: (err: Error) => toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" }),
+  });
+
+  const overrideMutation = useMutation({
+    mutationFn: async ({ osId, data }: { osId: number; data: any }) => {
+      return apiRequest("PATCH", `/api/boletim-medicao/os/${osId}/diretoria-override`, data);
+    },
+    onSuccess: () => {
+      refreshAfterModalAction();
+      setEditingFields(false);
+      toast({ title: "Atualizado", description: "Campos alterados e billing recalculado." });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const getBillingStatus = (os: any) => {
+    const b = os.billing;
+    if (!b) return { label: "Sem Cálculo", color: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" };
+    const info = getRelatorioStatus(os.status || os._so_status || "concluida", b.status);
+    return { label: info.label, color: info.badgeClass, dot: info.dotClass };
+  };
+
+  const isLiveOs = (os: any) => os.status !== "recusada" && os.status !== "cancelada" && (os.status === "em_andamento" || (os.status === "agendada" && os.missionStartedAt)) && os.missionStatus !== "encerrada";
+
+  const openOsModal = (billingId: string) => {
+    const billing = billings.find((x: any) => x.id === billingId);
+    if (!billing) return;
+
+    const so = ordersMap.get(billing.service_order_id) || {};
+    const ct = getContractForBilling(billing);
+
+    const os = {
+      id: billing.service_order_id,
+      osNumber: billing.os_number || so.osNumber,
+      clientName: billing.client_name,
+      clientId: billing.client_id,
+      status: so.status || billing._so_status || "concluida",
+      missionStatus: so.missionStatus || so.mission_status || billing._so_mission_status || "",
+      missionStartedAt: so.missionStartedAt || so.mission_started_at,
+      scheduledDate: so.scheduledDate || so.scheduled_date || billing.data_missao,
+      completedDate: so.completedDate || so.completed_date || billing.completed_date,
+      origin: billing.origem || so.origin,
+      destination: billing.destino || so.destination,
+      km_chegada_origem: so.km_chegada_origem || billing.km_inicial,
+      km_inicial: billing.km_inicial,
+      km_final: billing.km_final || so.km_final,
+      hora_chegada_origem: so.hora_chegada_origem,
+      hora_fim_missao: so.hora_fim_missao || so.completedDate,
+      vehiclePlate: billing.placa_viatura || (so.vehicleId ? vehiclesMap.get(so.vehicleId)?.plate : null),
+      vehicleModel: so.vehicleId ? vehiclesMap.get(so.vehicleId)?.model : null,
+      employee1Name: billing.vigilante_name,
+      employee2Name: billing.vigilante2_name,
+      escortedVehiclePlate: billing.placa_escoltado || so.escortedVehiclePlate,
+      escortedDriverName: billing.motorista_escoltado || so.escortedDriverName,
+      contractName: ct?.name || ct?.contract_name,
+      contractValues: ct || {},
+      billing: billing,
+      pedagioEstimado: so.pedagioEstimado || 0,
+      createdAt: so.createdAt || billing.created_at,
+      escortContractId: billing.contract_id,
+      assignedEmployeeId: so.assignedEmployeeId,
+      stepLogs: so.stepLogs || [],
+    };
+
+    setSelectedOs(os);
+    setPedagioValue(String(billing.despesas_pedagio || so.pedagioEstimado || "0"));
+    setObservacoesValue(billing.observacoes || "");
+    setEditingFields(false);
+    setOverrideKmChegada(so.km_chegada_origem != null ? String(so.km_chegada_origem) : String(billing.km_inicial || ""));
+    setOverrideKmFim(so.km_final != null ? String(so.km_final) : String(billing.km_final || ""));
+    const fmtDtLocal = (v: string | null) => {
+      if (!v) return "";
+      try {
+        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(_eu(v)));
+        const get = (t: string) => parts.find(p => p.type === t)?.value || "";
+        const yyyy = get("year"); const mm = get("month"); const dd = get("day");
+        const hh = get("hour") === "24" ? "00" : get("hour"); const mi = get("minute");
+        if (!yyyy || !mm || !dd) return "";
+        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+      } catch { return ""; }
+    };
+    setOverrideHoraChegada(fmtDtLocal(so.missionStartedAt) || fmtDtLocal(so.scheduledDate) || "");
+    setOverrideHoraFim(fmtDtLocal(so.hora_fim_missao) || fmtDtLocal(so.completedDate) || "");
+  };
+
+  const handleRecalcLote = async () => {
+    const ids = billings
+      .filter((b: any) => !["FATURADO", "PAGO"].includes(b.status))
+      .map((b: any) => b.id);
+    if (ids.length === 0) {
+      toast({ title: "Nada para recalcular", description: "Não há billings pendentes neste período." });
+      return;
+    }
+    if (!confirm(`Recalcular ${ids.length} billing(s) usando a fórmula atualizada?\n\nBillings faturados/pagos serão ignorados.`)) return;
+
+    setRecalcLoteLoading(true);
     try {
-      const b = billings.find((x: any) => x.id === editingBillingId);
-      const ct = b ? getContractForBilling(b) : null;
-      const n = (v: any) => Number(v) || 0;
-      const franquiaKm = n(ct?.franquia_km) || n(ct?.franquia_minima_km) || n(b?.km_franquia);
-      const franquiaHoras = n(ct?.franquia_horas) || n(b?.franquia_horas);
-      const valorKmExtra = n(ct?.valor_km_extra) || n(ct?.valor_km_carregado) || n(b?.valor_km_extra);
-      const valorHoraExtra = n(ct?.valor_hora_extra) || n(b?.valor_hora_extra);
-
-      const kmIni = n(editForm.km_inicial);
-      const kmFin = n(editForm.km_final);
-      const kmTotal = Math.max(0, kmFin - kmIni);
-      const kmExcedente = Math.max(0, kmTotal - franquiaKm);
-      const fatKm = Math.round(kmExcedente * valorKmExtra * 100) / 100;
-
-      const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return (h || 0) * 60 + (m || 0); };
-      let horasMissaoExata = n(b?.horas_missao);
-      let horasMissao = horasMissaoExata;
-      if (editForm.horario_inicio && editForm.horario_fim) {
-        let diff = toMin(editForm.horario_fim) - toMin(editForm.horario_inicio);
-        if (diff < 0) diff += 1440;
-        horasMissaoExata = diff / 60;
-        horasMissao = Math.round(horasMissaoExata * 100) / 100;
-      }
-      const horasExcedentes = Math.max(0, horasMissaoExata - franquiaHoras);
-      const fatHoraExtra = Math.round(horasExcedentes * valorHoraExtra * 100) / 100;
-
-      const fatAcionamento = n(b?.fat_acionamento);
-      const fatEstadia = n(b?.fat_estadia);
-      const fatPernoite = n(b?.fat_pernoite);
-      const fatAdicNoturno = n(b?.fat_adicional_noturno);
-      const despPedagio = n(editForm.despesas_pedagio);
-      const despOutras = n(b?.despesas_outras);
-      const fatTotal = Math.round((fatAcionamento + fatKm + fatHoraExtra + fatEstadia + fatPernoite + fatAdicNoturno + despPedagio + despOutras) * 100) / 100;
-
-      const payload = {
-        km_inicial: kmIni,
-        km_final: kmFin,
-        km_total: kmTotal,
-        km_carregado: kmTotal,
-        km_excedente: kmExcedente,
-        km_faturado: kmTotal,
-        fat_km: fatKm,
-        fat_hora_extra: fatHoraExtra,
-        horas_missao: horasMissao,
-        horas_trabalhadas: horasMissao,
-        fat_total: fatTotal,
-        horario_inicio: editForm.horario_inicio || null,
-        horario_fim: editForm.horario_fim || null,
-        placa_viatura: editForm.placa_viatura || null,
-        placa_escoltado: editForm.placa_escoltado || null,
-        despesas_pedagio: despPedagio,
-        valor_km_extra: fatKm,
-      };
-
-      const r = await authFetch(`/api/escort/billings/${editingBillingId}`, {
-        method: "PATCH",
+      const r = await authFetch("/api/escort/billings/recalcular-lote", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ billing_ids: ids }),
       });
-      if (!r.ok) throw new Error("Erro ao salvar");
-
-      setBillings(prev => prev.map(bl => bl.id === editingBillingId ? { ...bl, ...payload } : bl));
-      setEditingBillingId(null);
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.message || "Erro");
+      toast({
+        title: "Recálculo concluído",
+        description: `${result.success} recalculado(s), ${result.skipped} ignorado(s), ${result.errors} erro(s).`,
+      });
+      handleGenerate();
     } catch (err: any) {
-      alert("Erro ao salvar: " + err.message);
+      toast({ title: "Erro ao recalcular", description: err.message, variant: "destructive" });
     } finally {
-      setSavingEdit(false);
+      setRecalcLoteLoading(false);
     }
   };
 
@@ -984,7 +1101,7 @@ export default function RelatorioFaturamentoPage() {
           </div>
           <div className="flex items-center gap-3 mb-3" title={tooltip}>
             <Calculator size={18} className="text-gray-700" />
-            <span className="text-sm font-bold text-gray-700">
+            <span className="text-sm font-bold text-gray-700 flex-1">
               {totalCount} OS processadas &middot; Total p/ Faturamento: <span className="text-black font-black">{fmt(totalFaturamento)}</span>
               {recusadasRows.length > 0 && (
                 <span className="ml-2 text-[10px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">+ {recusadasRows.length} recusada{recusadasRows.length > 1 ? "s" : ""} (não contam)</span>
@@ -996,6 +1113,16 @@ export default function RelatorioFaturamentoPage() {
                 <span className="ml-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">{approvedBillings.length} aprovada{approvedBillings.length > 1 ? "s" : ""}</span>
               )}
             </span>
+            <button
+              onClick={handleRecalcLote}
+              disabled={recalcLoteLoading || billings.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 rounded-lg text-[11px] font-bold uppercase shadow-sm disabled:opacity-50 shrink-0 transition-colors"
+              title="Recalcular todos os billings pendentes usando a fórmula atualizada"
+              data-testid="button-recalcular-todos"
+            >
+              {recalcLoteLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              Recalcular Todos
+            </button>
           </div>
           <div className="space-y-1">
             {rowsData.map((r, i) => {
@@ -1041,56 +1168,7 @@ export default function RelatorioFaturamentoPage() {
                       <span className="text-sm font-black text-black">{fmt(r.totalGeral)}</span>
                     </div>
                   </div>
-                  {isExpanded && editingBillingId === r.billingId && (
-                    <div className="px-3 pb-3 border-t border-gray-200 pt-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">KM Inicial</label>
-                          <input type="number" value={editForm.km_inicial} onChange={e => setEditForm({...editForm, km_inicial: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-km-ini" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">KM Final</label>
-                          <input type="number" value={editForm.km_final} onChange={e => setEditForm({...editForm, km_final: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-km-fin" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">Hora Início</label>
-                          <input type="time" value={editForm.horario_inicio?.substring(0,5) || ""} onChange={e => setEditForm({...editForm, horario_inicio: e.target.value})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-hr-ini" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">Hora Fim</label>
-                          <input type="time" value={editForm.horario_fim?.substring(0,5) || ""} onChange={e => setEditForm({...editForm, horario_fim: e.target.value})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-hr-fim" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">Placa Viatura</label>
-                          <input type="text" value={editForm.placa_viatura} onChange={e => setEditForm({...editForm, placa_viatura: e.target.value.toUpperCase()})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-viatura" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">Placa Escoltado</label>
-                          <input type="text" value={editForm.placa_escoltado} onChange={e => setEditForm({...editForm, placa_escoltado: e.target.value.toUpperCase()})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-escoltado" />
-                        </div>
-                        <div>
-                          <label className="text-gray-400 font-bold block mb-0.5">Pedágio (R$)</label>
-                          <input type="number" step="0.01" value={editForm.despesas_pedagio} onChange={e => setEditForm({...editForm, despesas_pedagio: Number(e.target.value)})} className="w-full px-2 py-1 border border-gray-300 rounded text-xs" data-testid="input-edit-pedagio" />
-                        </div>
-                        <div className="flex items-end gap-1">
-                          <button onClick={saveEditBilling} disabled={savingEdit} className="flex items-center gap-1 px-3 py-1 bg-black text-white rounded text-xs font-bold hover:bg-gray-800 disabled:opacity-50" data-testid="button-save-edit">
-                            {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Salvar
-                          </button>
-                          <button onClick={() => setEditingBillingId(null)} className="flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-bold hover:bg-gray-300" data-testid="button-cancel-edit">
-                            <X size={12} /> Cancelar
-                          </button>
-                        </div>
-                      </div>
-                      {editForm.km_final > editForm.km_inicial && (
-                        <div className="mt-2 text-[10px] text-gray-500 flex items-center gap-3">
-                          <span>KM Total: <strong>{editForm.km_final - editForm.km_inicial}</strong></span>
-                          <span>Franquia: <strong>{r.franchiseKm}</strong></span>
-                          <span>Excedente: <strong>{Math.max(0, (editForm.km_final - editForm.km_inicial) - r.franchiseKm)} km</strong></span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {isExpanded && editingBillingId !== r.billingId && (
+                  {isExpanded && (
                     <div className="px-3 pb-3 border-t border-gray-200 pt-2">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                         <div><span className="text-gray-400 font-bold">Acionamento:</span> <span className="font-black">{fmt(r.activationFee)}</span></div>
@@ -1103,8 +1181,8 @@ export default function RelatorioFaturamentoPage() {
                         <div><span className="text-gray-400 font-bold">Viatura:</span> <span className="font-black">{r.viatura}</span></div>
                       </div>
                       <div className="mt-2 flex justify-end">
-                        <button onClick={(e) => { e.stopPropagation(); startEditBilling(r.billingId); }} className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold transition-colors" data-testid={`button-edit-billing-${i}`}>
-                          <Pencil size={11} /> Editar
+                        <button onClick={(e) => { e.stopPropagation(); openOsModal(r.billingId); }} className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold transition-colors" data-testid={`button-edit-billing-${i}`}>
+                          <Eye size={11} /> Abrir Detalhes
                         </button>
                       </div>
                     </div>
@@ -1531,6 +1609,36 @@ export default function RelatorioFaturamentoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {selectedOs && (
+        <OsDetailModal
+          os={selectedOs}
+          onClose={() => { setSelectedOs(null); setEditingFields(false); }}
+          isDiretoria={isDiretoria}
+          editingFields={editingFields}
+          setEditingFields={setEditingFields}
+          overrideKmChegada={overrideKmChegada}
+          setOverrideKmChegada={setOverrideKmChegada}
+          overrideKmFim={overrideKmFim}
+          setOverrideKmFim={setOverrideKmFim}
+          overrideHoraChegada={overrideHoraChegada}
+          setOverrideHoraChegada={setOverrideHoraChegada}
+          overrideHoraFim={overrideHoraFim}
+          setOverrideHoraFim={setOverrideHoraFim}
+          overrideMutation={overrideMutation}
+          calcularMutation={calcularMutation}
+          aprovarMutation={aprovarMutation}
+          rejeitarMutation={rejeitarMutation}
+          reabrirMutation={reabrirMutation}
+          liberarFaturamentoMutation={liberarFaturamentoMutation}
+          salvarBillingMutation={salvarBillingMutation}
+          pedagioValue={pedagioValue}
+          setPedagioValue={setPedagioValue}
+          observacoesValue={observacoesValue}
+          setObservacoesValue={setObservacoesValue}
+          getBillingStatus={getBillingStatus}
+          isLiveOs={isLiveOs}
+        />
+      )}
     </AdminLayout>
   );
 }

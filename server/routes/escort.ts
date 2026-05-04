@@ -1181,6 +1181,91 @@ import type { Express } from "express";
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/escort/billings/recalcular-lote", requireAdminRole, async (req, res) => {
+    try {
+      const { billing_ids } = req.body;
+      if (!Array.isArray(billing_ids) || billing_ids.length === 0) {
+        return res.status(400).json({ message: "billing_ids é obrigatório" });
+      }
+
+      let success = 0, errors = 0, skipped = 0;
+      for (const id of billing_ids) {
+        try {
+          const { data: existing } = await supabaseAdmin.from("escort_billings").select("*").eq("id", id).single();
+          if (!existing) { errors++; continue; }
+          if (["FATURADO", "PAGO"].includes(existing.status)) { skipped++; continue; }
+          if (!existing.contract_id) { errors++; continue; }
+
+          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", existing.contract_id).single();
+          if (!contrato) { errors++; continue; }
+
+          const resultado = calcularEscolta({
+            km_inicial: Number(existing.km_inicial || 0),
+            km_final: Math.max(Number(existing.km_inicial || 0), Number(existing.km_final || 0)),
+            km_vazio: Number(existing.km_vazio || 0),
+            horas_missao: Number(existing.horas_missao || 0),
+            horas_estadia: Number(existing.horas_estadia || 0),
+            teve_pernoite: !!existing.teve_pernoite,
+            horario_inicio: existing.horario_inicio || undefined,
+            horario_fim: existing.horario_fim || undefined,
+            horario_agendado: existing.horario_agendado || undefined,
+            despesas_pedagio: Number(existing.despesas_pedagio || 0),
+            despesas_combustivel: Number(existing.despesas_combustivel || 0),
+            despesas_outras: Number(existing.despesas_outras || 0),
+            receitas_os: 0,
+            contrato,
+          });
+
+          await supabaseAdmin.from("escort_billings").update({
+            fat_total: resultado.fat_total,
+            fat_hora_extra: resultado.fat_hora_extra,
+            fat_km: resultado.fat_km || 0,
+            fat_acionamento: resultado.fat_acionamento,
+            fat_adicional_noturno: resultado.fat_adicional_noturno || 0,
+            fat_estadia: resultado.fat_estadia || 0,
+            fat_pernoite: resultado.fat_pernoite || 0,
+            horas_trabalhadas: resultado.horas_trabalhadas,
+            horas_missao: resultado.horas_trabalhadas,
+            horario_inicio_considerado: resultado.horario_inicio_considerado,
+            km_total: resultado.km_total,
+            km_carregado: resultado.km_carregado,
+            km_faturado: resultado.km_faturado,
+            km_franquia: resultado.km_franquia,
+            km_excedente: resultado.km_excedente,
+            valor_franquia: resultado.valor_franquia,
+            valor_km_extra: resultado.valor_km_extra,
+            resultado_bruto: resultado.resultado.bruto,
+            resultado_liquido: resultado.resultado.liquido,
+            margem_percentual: resultado.resultado.margem_pct,
+          }).eq("id", id);
+
+          if (existing.service_order_id) {
+            const n = (v: any) => Number(v) || 0;
+            const totalCalc = n(resultado.fat_acionamento) + n(resultado.fat_hora_extra) + n(resultado.fat_km) +
+              n(resultado.despesas?.pedagio) + n(resultado.fat_adicional_noturno) + n(resultado.fat_estadia) +
+              n(resultado.fat_pernoite) + n(resultado.despesas?.outras);
+            await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id);
+          }
+
+          success++;
+        } catch (err) {
+          console.error(`[RECALC-LOTE] Erro billing ${id}:`, (err as any).message);
+          errors++;
+        }
+      }
+
+      const user = req.user!;
+      await logSystemAudit({
+        userId: user.id, userName: user.name, userRole: user.role,
+        action: "RECALCULAR_LOTE", targetId: "batch", targetType: "escort_billing",
+        details: `Recálculo em lote: ${success} OK, ${errors} erros, ${skipped} ignorados (faturados). Total: ${billing_ids.length}`,
+        ipAddress: req.ip,
+      });
+
+      res.json({ success, errors, skipped, total: billing_ids.length });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.patch("/api/escort/billings/:id/salvar", requireAdminRole, async (req, res) => {
     try {
       const user = req.user!;
@@ -1335,6 +1420,62 @@ import type { Express } from "express";
         const now = new Date();
         updateData.boletim_numero = `BO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(Math.random().toString(36).substring(2, 6)).toUpperCase()}`;
         updateData.boletim_gerado = true;
+
+        if (billing.contract_id) {
+          const { data: contrato } = await supabaseAdmin.from("escort_contracts").select("*").eq("id", billing.contract_id).single();
+          if (contrato) {
+            try {
+              const resultado = calcularEscolta({
+                km_inicial: Number(billing.km_inicial || 0),
+                km_final: Math.max(Number(billing.km_inicial || 0), Number(billing.km_final || 0)),
+                km_vazio: Number(billing.km_vazio || 0),
+                horas_missao: Number(billing.horas_missao || 0),
+                horas_estadia: Number(billing.horas_estadia || 0),
+                teve_pernoite: !!billing.teve_pernoite,
+                horario_inicio: billing.horario_inicio || undefined,
+                horario_fim: billing.horario_fim || undefined,
+                horario_agendado: billing.horario_agendado || undefined,
+                despesas_pedagio: Number(billing.despesas_pedagio || 0),
+                despesas_combustivel: Number(billing.despesas_combustivel || 0),
+                despesas_outras: Number(billing.despesas_outras || 0),
+                receitas_os: 0,
+                contrato,
+              });
+              updateData.fat_total = resultado.fat_total;
+              updateData.fat_hora_extra = resultado.fat_hora_extra;
+              updateData.fat_km = resultado.fat_km || 0;
+              updateData.fat_acionamento = resultado.fat_acionamento;
+              updateData.fat_adicional_noturno = resultado.fat_adicional_noturno || 0;
+              updateData.fat_estadia = resultado.fat_estadia || 0;
+              updateData.fat_pernoite = resultado.fat_pernoite || 0;
+              updateData.horas_trabalhadas = resultado.horas_trabalhadas;
+              updateData.horas_missao = resultado.horas_trabalhadas;
+              updateData.horario_inicio_considerado = resultado.horario_inicio_considerado;
+              updateData.km_total = resultado.km_total;
+              updateData.km_carregado = resultado.km_carregado;
+              updateData.km_faturado = resultado.km_faturado;
+              updateData.km_franquia = resultado.km_franquia;
+              updateData.km_excedente = resultado.km_excedente;
+              updateData.valor_franquia = resultado.valor_franquia;
+              updateData.valor_km_extra = resultado.valor_km_extra;
+              updateData.resultado_bruto = resultado.resultado.bruto;
+              updateData.resultado_liquido = resultado.resultado.liquido;
+              updateData.margem_percentual = resultado.resultado.margem_pct;
+
+              if (billing.service_order_id) {
+                const n = (v: any) => Number(v) || 0;
+                const totalCalc = n(resultado.fat_acionamento) + n(resultado.fat_hora_extra) + n(resultado.fat_km) +
+                  n(resultado.despesas?.pedagio) + n(resultado.fat_adicional_noturno) + n(resultado.fat_estadia) +
+                  n(resultado.fat_pernoite) + n(resultado.despesas?.outras);
+                await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", billing.service_order_id);
+              }
+              console.log(`[REVISAR] Recalculado billing ${req.params.id} antes de aprovar. fat_total=${resultado.fat_total}`);
+            } catch (calcErr) {
+              console.error(`[REVISAR] Erro ao recalcular billing ${req.params.id}:`, (calcErr as any).message);
+              return res.status(500).json({ message: `Erro ao recalcular billing antes da aprovação: ${(calcErr as any).message}` });
+            }
+          }
+        }
       }
 
       const { data, error } = await supabaseAdmin.from("escort_billings").update(updateData).eq("id", req.params.id).select().single();

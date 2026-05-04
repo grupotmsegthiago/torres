@@ -925,7 +925,7 @@ export default function BoletimMedicaoPage() {
                                     {isOsRecusadaOuCancelada ? (
                                       <span className="font-mono font-black text-red-500">R$ 0,00</span>
                                     ) : (
-                                      <span className="font-mono font-black text-emerald-700">{b ? fmt(Number(b.fat_acionamento || 0) + Number(b.fat_hora_extra || 0) + Number(b.fat_km || 0) + Number(b.fat_adicional_noturno || 0) + Number(b.despesas_pedagio || 0)) : "—"}</span>
+                                      <span className="font-mono font-black text-emerald-700">{b ? fmt(getBillingTotal(os)) : "—"}</span>
                                     )}
                                   </td>
                                   <td className="px-4 py-3.5 text-center">
@@ -1328,7 +1328,7 @@ export default function BoletimMedicaoPage() {
   );
 }
 
-function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
+export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFields, overrideKmChegada, setOverrideKmChegada, overrideKmFim, setOverrideKmFim, overrideHoraChegada, setOverrideHoraChegada, overrideHoraFim, setOverrideHoraFim, overrideMutation, calcularMutation, aprovarMutation, rejeitarMutation, reabrirMutation, liberarFaturamentoMutation, salvarBillingMutation, pedagioValue, setPedagioValue, observacoesValue, setObservacoesValue, getBillingStatus, isLiveOs }: any) {
   const b = os.billing;
   const status = getBillingStatus(os);
   const isPendente = b?.status === "A_VERIFICAR";
@@ -1752,7 +1752,7 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
   );
 }
 
-function InfoCard({ icon, label, value, sub, mono }: { icon: any; label: string; value: string; sub?: string | null; mono?: boolean }) {
+export function InfoCard({ icon, label, value, sub, mono }: { icon: any; label: string; value: string; sub?: string | null; mono?: boolean }) {
   return (
     <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-100">
       <p className="text-[9px] font-bold text-neutral-400 uppercase flex items-center gap-1 mb-1">{icon} {label}</p>
@@ -1762,7 +1762,7 @@ function InfoCard({ icon, label, value, sub, mono }: { icon: any; label: string;
   );
 }
 
-function SectionTitle({ icon, title }: { icon: any; title: string }) {
+export function SectionTitle({ icon, title }: { icon: any; title: string }) {
   return (
     <div className="flex items-center gap-2 mb-3">
       <div className="w-7 h-7 rounded-lg bg-neutral-900 flex items-center justify-center text-white">{icon}</div>
@@ -1771,7 +1771,7 @@ function SectionTitle({ icon, title }: { icon: any; title: string }) {
   );
 }
 
-function MetricCard({ label, value, accent }: { label: string; value: string; accent: "blue" | "red" | "neutral" }) {
+export function MetricCard({ label, value, accent }: { label: string; value: string; accent: "blue" | "red" | "neutral" }) {
   const colors = {
     blue: "bg-blue-50 border-blue-100 text-blue-800",
     red: "bg-red-50 border-red-100 text-red-700",
@@ -1790,7 +1790,7 @@ function MetricCard({ label, value, accent }: { label: string; value: string; ac
   );
 }
 
-function FieldRow({ label, value, accent, mono, bold }: { label: string; value: string; accent?: "blue" | "amber" | "red" | "violet" | "green"; mono?: boolean; bold?: boolean }) {
+export function FieldRow({ label, value, accent, mono, bold }: { label: string; value: string; accent?: "blue" | "amber" | "red" | "violet" | "green"; mono?: boolean; bold?: boolean }) {
   const accentColors: Record<string, string> = {
     blue: "text-blue-700",
     amber: "text-amber-700",
@@ -1807,7 +1807,7 @@ function FieldRow({ label, value, accent, mono, bold }: { label: string; value: 
   );
 }
 
-function ValueCard({ label, value, color }: { label: string; value: string; color: "blue" | "amber" | "violet" | "neutral" }) {
+export function ValueCard({ label, value, color }: { label: string; value: string; color: "blue" | "amber" | "violet" | "neutral" }) {
   const styles: Record<string, string> = {
     blue: "bg-blue-50 border-blue-200 text-blue-700",
     amber: "bg-amber-50 border-amber-200 text-amber-700",
