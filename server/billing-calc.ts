@@ -57,7 +57,9 @@ export function calcHorasElapsedLocal(
   const start = parseDate(missionStartedAt);
   const end = completedDate ? parseDate(completedDate) : new Date();
   const diffMs = end.getTime() - start.getTime();
-  return Math.max(0, diffMs / (1000 * 60 * 60));
+  // Truncar para minutos inteiros (descartar segundos) — hora extra conta só HH:MM
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  return Math.max(0, diffMinutes / 60);
 }
 
 export function extractKmFromText(text: string | null | undefined): number | null {

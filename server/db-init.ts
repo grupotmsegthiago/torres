@@ -992,9 +992,11 @@ export async function ensureCalcMissionRPC() {
       CREATE OR REPLACE FUNCTION calc_mission_elapsed_hours(p_os_id integer)
       RETURNS numeric AS $$
         SELECT COALESCE(
-          EXTRACT(EPOCH FROM (
-            COALESCE(completed_date, (NOW() AT TIME ZONE 'America/Sao_Paulo')::timestamp) - mission_started_at
-          )) / 3600.0,
+          FLOOR(
+            EXTRACT(EPOCH FROM (
+              COALESCE(completed_date, (NOW() AT TIME ZONE 'America/Sao_Paulo')::timestamp) - mission_started_at
+            )) / 60.0
+          ) * 60.0 / 3600.0,
           0
         )
         FROM service_orders WHERE id = p_os_id;
