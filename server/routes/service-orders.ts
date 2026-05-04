@@ -787,8 +787,10 @@ import type { Express } from "express";
   });
 
   app.post("/api/service-orders", requireAuth, requireAdminRole, async (req, res) => {
+    console.log(`[DEBUG-OS] POST body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    console.log(`[DEBUG-OS] POST parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
     if (!parsed.data.scheduledDate) return res.status(400).json({ message: "Data do Agendamento é obrigatória" });
 
     const employeeIds = [parsed.data.assignedEmployeeId, parsed.data.assignedEmployee2Id].filter((id): id is number => id != null && id > 0);
@@ -915,6 +917,10 @@ import type { Express } from "express";
     }
 
     parsed.data.createdByUserId = req.user?.id || null;
+    if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
+    if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
+    if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
+    console.log(`[DEBUG-OS] POST final escorted going to storage:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
@@ -1035,8 +1041,10 @@ import type { Express } from "express";
   });
 
   app.patch("/api/service-orders/:id", requireAuth, requireAdminRole, async (req, res) => {
+    console.log(`[DEBUG-OS] PATCH body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    console.log(`[DEBUG-OS] PATCH parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
 
     if (parsed.data.status === "em_andamento" && parsed.data.missionStatus === "aguardando") {
       const existing = await storage.getServiceOrder(Number(req.params.id));
@@ -1256,6 +1264,11 @@ import type { Express } from "express";
       } catch (_e) {}
     }
 
+    if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
+    if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
+    if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
+    console.log(`[DEBUG-OS] PATCH final escorted going to storage:`, JSON.stringify({ dn: (parsed.data as any).escortedDriverName, dp: (parsed.data as any).escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
+
     let data;
     try {
       data = await storage.updateServiceOrder(Number(req.params.id), parsed.data);
@@ -1265,6 +1278,16 @@ import type { Express } from "express";
       return res.status(500).json({ message: "Erro ao salvar OS: " + updateErr.message });
     }
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
+
+    const driverPatch: Record<string, any> = {};
+    if (req.body.escortedDriverName !== undefined) driverPatch.escorted_driver_name = req.body.escortedDriverName;
+    if (req.body.escortedDriverPhone !== undefined) driverPatch.escorted_driver_phone = req.body.escortedDriverPhone;
+    if (req.body.escortedVehiclePlate !== undefined) driverPatch.escorted_vehicle_plate = req.body.escortedVehiclePlate;
+    if (Object.keys(driverPatch).length > 0) {
+      const { error: dpErr } = await supabaseAdmin.from("service_orders").update(driverPatch).eq("id", Number(req.params.id));
+      if (dpErr) console.error(`[DEBUG-OS] PATCH driver fallback error:`, dpErr.message);
+      else console.log(`[DEBUG-OS] PATCH driver fallback OK for OS #${req.params.id}:`, JSON.stringify(driverPatch));
+    }
 
     const newAssignedIds: number[] = [];
     if (parsed.data.assignedEmployeeId !== undefined && parsed.data.assignedEmployeeId !== existing?.assignedEmployeeId && parsed.data.assignedEmployeeId) {

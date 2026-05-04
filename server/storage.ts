@@ -588,11 +588,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
-    return resilientInsert<ServiceOrder>("service_orders", toSnakeObj(order as any));
+    const snake = toSnakeObj(order as any);
+    console.log(`[DEBUG-STORAGE] createServiceOrder escorted:`, JSON.stringify({ dn: snake.escorted_driver_name, dp: snake.escorted_driver_phone, vp: snake.escorted_vehicle_plate }));
+    return resilientInsert<ServiceOrder>("service_orders", snake);
   }
 
   async updateServiceOrder(id: number, order: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined> {
-    return resilientUpdate<ServiceOrder>("service_orders", toSnakeObj(order as any), { id });
+    const snake = toSnakeObj(order as any);
+    if (snake.escorted_driver_name !== undefined || snake.escorted_driver_phone !== undefined) {
+      console.log(`[DEBUG-STORAGE] updateServiceOrder #${id} escorted:`, JSON.stringify({ dn: snake.escorted_driver_name, dp: snake.escorted_driver_phone, vp: snake.escorted_vehicle_plate }));
+    }
+    return resilientUpdate<ServiceOrder>("service_orders", snake, { id });
   }
 
   async deleteServiceOrder(id: number): Promise<void> {

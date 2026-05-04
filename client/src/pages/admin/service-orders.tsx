@@ -934,6 +934,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     valorEstimado: data.valorEstimado ? Number(String(data.valorEstimado).replace(",", ".")) : null,
     pedagioEstimado: data.pedagioEstimado ? Number(String(data.pedagioEstimado).replace(",", ".")) : null,
     pedagioIdaVolta: !!data.pedagioIdaVolta,
+    escortedDriverName: data.escortedDriverName ?? "",
+    escortedDriverPhone: data.escortedDriverPhone ?? "",
+    escortedVehiclePlate: data.escortedVehiclePlate ?? "",
     ...(forceReassign ? { _forceReassign: true } : {}),
   });
 
@@ -945,6 +948,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
+      console.log("[DEBUG-OS-FE] mutation data escorted:", JSON.stringify({ dn: data.escortedDriverName, dp: data.escortedDriverPhone, vp: data.escortedVehiclePlate }));
+      const payload_debug = buildPayload(data, false);
+      console.log("[DEBUG-OS-FE] buildPayload escorted:", JSON.stringify({ dn: payload_debug.escortedDriverName, dp: payload_debug.escortedDriverPhone, vp: payload_debug.escortedVehiclePlate }));
       const novoStatus = String(data.status || "").toLowerCase();
       const isCancRec = novoStatus === "cancelada" || novoStatus === "recusada";
       const statusMudou = order && order.status !== data.status;
@@ -1731,7 +1737,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 Próximo <ChevronRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
+              <Button type="button" disabled={mutation.isPending || saveSuccess} onClick={() => { if (!form.scheduledDate) { toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento.", variant: "destructive" }); return; } console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step })); mutation.mutate(form); }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
               </Button>
