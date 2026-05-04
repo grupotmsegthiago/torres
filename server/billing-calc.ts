@@ -135,20 +135,25 @@ export function calcularFaturamentoLive(params: {
   };
 }
 
+function truncHHMM(t: string): string {
+  const parts = t.split(":");
+  return `${parts[0]}:${parts[1] || "00"}`;
+}
+
 export function calcularInicioCobranca(agendado?: string, chegadaReal?: string): { inicio_considerado: string; usou_agendado: boolean } {
   if (!agendado && !chegadaReal) return { inicio_considerado: "00:00", usou_agendado: false };
-  if (!agendado) return { inicio_considerado: chegadaReal!, usou_agendado: false };
-  if (!chegadaReal) return { inicio_considerado: agendado, usou_agendado: true };
-  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+  if (!agendado) return { inicio_considerado: truncHHMM(chegadaReal!), usou_agendado: false };
+  if (!chegadaReal) return { inicio_considerado: truncHHMM(agendado), usou_agendado: true };
+  const toMin = (t: string) => { const p = truncHHMM(t).split(":").map(Number); return p[0] * 60 + (p[1] || 0); };
   const minAg = toMin(agendado);
   const minReal = toMin(chegadaReal);
-  if (minReal <= minAg) return { inicio_considerado: chegadaReal, usou_agendado: false };
-  return { inicio_considerado: agendado, usou_agendado: true };
+  if (minReal <= minAg) return { inicio_considerado: truncHHMM(chegadaReal), usou_agendado: false };
+  return { inicio_considerado: truncHHMM(agendado), usou_agendado: true };
 }
 
 export function calcularHorasTrabalhadas(inicio: string, fim?: string): number {
   if (!fim) return 0;
-  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+  const toMin = (t: string) => { const p = truncHHMM(t).split(":").map(Number); return p[0] * 60 + (p[1] || 0); };
   let diff = toMin(fim) - toMin(inicio);
   if (diff < 0) diff += 24 * 60;
   return diff / 60;
@@ -219,7 +224,9 @@ export function calcularEscolta(dados: {
     valor_franquia = valorAcionamento;
     valor_km_extra_calc = fat_km_carregado;
     const horasExcedentes = Math.max(0, horas_missao - franquiaHoras);
-    fat_hora_extra = horasExcedentes * valorHoraExtra;
+    const horaExtraFracionada = contrato.hora_extra_fracionada !== false;
+    const horasExcedentesCobranca = horaExtraFracionada ? horasExcedentes : Math.ceil(horasExcedentes);
+    fat_hora_extra = horasExcedentesCobranca * valorHoraExtra;
   } else {
     fat_km_carregado = km_faturado_carregado * valorKmCarregado;
     fat_km_vazio = km_vazio * valorKmVazio;

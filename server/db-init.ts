@@ -691,6 +691,10 @@ export async function ensureDbSchema() {
     `).catch(() => {});
 
     await execSql(`
+      ALTER TABLE escort_contracts ADD COLUMN IF NOT EXISTS hora_extra_fracionada BOOLEAN DEFAULT true
+    `).catch(() => {});
+
+    await execSql(`
       UPDATE vehicles SET last_latitude = NULL, last_longitude = NULL
       WHERE CAST(COALESCE(NULLIF(last_latitude, ''), '1') AS NUMERIC) = 0
         AND CAST(COALESCE(NULLIF(last_longitude, ''), '1') AS NUMERIC) = 0

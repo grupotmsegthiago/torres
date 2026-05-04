@@ -199,6 +199,7 @@ import type { Express } from "express";
             franquia_horas: clientContract.franquia_horas,
             valor_hora_extra: clientContract.valor_hora_extra,
             valor_km_extra: clientContract.valor_km_extra || clientContract.valor_km_carregado,
+            hora_extra_fracionada: clientContract.hora_extra_fracionada !== false,
           } : null,
         };
       });

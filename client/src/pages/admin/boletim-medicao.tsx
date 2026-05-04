@@ -1368,7 +1368,9 @@ function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEditingFiel
 
   const franquiaHorasContract = Number(os.contractValues?.franquia_horas || 0);
   const valorHoraExtraContract = Number(os.contractValues?.valor_hora_extra || 0);
-  const horasExtrasCalc = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
+  const horaExtraFracionada = os.contractValues?.hora_extra_fracionada !== false;
+  const horasExtrasCalcRaw = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
+  const horasExtrasCalc = horaExtraFracionada ? horasExtrasCalcRaw : Math.ceil(horasExtrasCalcRaw);
   const horaExtraValorCalc = Math.round(horasExtrasCalc * valorHoraExtraContract * 100) / 100;
 
   const acionamento = Number(b?.fat_acionamento || 0);

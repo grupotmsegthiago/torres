@@ -63,6 +63,7 @@ interface EscortContract {
   adicional_periculosidade_pct: number; periculosidade_horas_limite: number;
   valor_acionamento: number; franquia_horas: number; franquia_km: number;
   valor_hora_extra: number; valor_km_extra: number;
+  hora_extra_fracionada?: boolean;
   valor_cancelamento: number; custo_deslocamento_100km: number;
   status: string;
 }
@@ -1118,6 +1119,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
     franquia_km: editing?.franquia_km?.toString() || "0",
     valor_hora_extra: editing?.valor_hora_extra?.toString() || "0",
     valor_km_extra: editing?.valor_km_extra?.toString() || "0",
+    hora_extra_fracionada: editing?.hora_extra_fracionada !== false ? "true" : "false",
     valor_cancelamento: editing?.valor_cancelamento?.toString() || "0",
     tabela_cancelamento: (editing as any)?.tabela_cancelamento?.toString() || "0",
     custo_deslocamento_100km: editing?.custo_deslocamento_100km?.toString() || "0",
@@ -1138,6 +1140,7 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
         franquia_km: parseBRL(form.franquia_km),
         valor_hora_extra: parseBRL(form.valor_hora_extra),
         valor_km_extra: parseBRL(form.valor_km_extra),
+        hora_extra_fracionada: form.hora_extra_fracionada === "true",
         valor_cancelamento: parseBRL(form.valor_cancelamento),
         tabela_cancelamento: parseBRL(form.tabela_cancelamento),
         custo_deslocamento_100km: parseBRL(form.custo_deslocamento_100km),
@@ -1181,6 +1184,14 @@ function PriceTableModal({ onClose, editing, clientId, clientName }: { onClose: 
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Franquia KM</label><input type="text" inputMode="decimal" placeholder="100" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.franquia_km} onChange={e => sf("franquia_km", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ Hora Extra</label><input type="text" inputMode="decimal" placeholder="130,00" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_hora_extra} onChange={e => sf("valor_hora_extra", e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$ KM Extra</label><input type="text" inputMode="decimal" placeholder="5,30" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-mono font-bold" value={form.valor_km_extra} onChange={e => sf("valor_km_extra", e.target.value)} /></div>
+              <div className="col-span-2">
+                <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Cobrança Hora Extra</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => sf("hora_extra_fracionada", "true")} className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-colors ${form.hora_extra_fracionada === "true" ? "bg-purple-600 text-white border-purple-600" : "bg-white text-neutral-600 border-neutral-200"}`}>Fracionada (minuto)</button>
+                  <button type="button" onClick={() => sf("hora_extra_fracionada", "false")} className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold border transition-colors ${form.hora_extra_fracionada === "false" ? "bg-purple-600 text-white border-purple-600" : "bg-white text-neutral-600 border-neutral-200"}`}>Hora Cheia (arredonda)</button>
+                </div>
+                <p className="text-[8px] text-neutral-400 mt-0.5">{form.hora_extra_fracionada === "true" ? "Cobra por minuto excedente (ex: 35min = 0,58h)" : "Arredonda para hora cheia (ex: 35min = 1h)"}</p>
+              </div>
             </div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg border border-red-100">
@@ -1555,7 +1566,7 @@ function ClientPastaView({ client, onBack }: { client: Client; onBack: () => voi
                   </div>
                   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
                     <span className="text-xs font-semibold text-neutral-500">Hora Extra</span>
-                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_extra || 0))}</span>
+                    <span className="text-sm font-bold text-neutral-900">{fmt(Number(cp.valor_hora_extra || 0))} <span className="text-[9px] font-normal text-neutral-400">({(cp as any).hora_extra_fracionada !== false ? "fracionada" : "hora cheia"})</span></span>
                   </div>
                   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-50">
                     <span className="text-xs font-semibold text-neutral-500">KM Extra</span>
