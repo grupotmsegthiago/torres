@@ -1704,7 +1704,7 @@ export function registerAsaasRoutes(app: Express) {
         .from("escort_billings")
         .select("*")
         .eq("client_id", clientId)
-        .not("status", "in", '("RECUSADA","FATURADA","FATURADO","CANCELADA")')
+        .not("status", "in", '("RECUSADA","CANCELADA","CANCELADO","FATURADA","FATURADO","PAGO","REJEITADA")')
         .gte("data_missao", fromDate)
         .lte("data_missao", toDate);
 
